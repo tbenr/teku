@@ -195,13 +195,13 @@ public class Web3jEth1Provider extends AbstractMonitorableEth1Provider {
   public SafeFuture<Boolean> validate() {
     if (validating.compareAndSet(false, true)) {
       LOG.debug("Validating endpoint {} ...", this.id);
-      return validateChainId()
+      return validateSyncing()
           .thenCompose(
               result -> {
                 if (result == Result.FAILED) {
                   return SafeFuture.completedFuture(result);
                 } else {
-                  return validateSyncing();
+                  return validateChainId();
                 }
               })
           .thenApply(
