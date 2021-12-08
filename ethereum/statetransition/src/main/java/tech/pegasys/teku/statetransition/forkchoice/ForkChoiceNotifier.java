@@ -92,7 +92,7 @@ public class ForkChoiceNotifier {
   }
 
   public void onForkChoiceUpdated(final ForkChoiceState forkChoiceState) {
-    eventThread.execute(() -> internalForkChoiceUpdated(forkChoiceState));
+    eventThread.execute(() -> internalForkChoiceUpdated(forkChoiceState, true));
   }
 
   public void onAttestationsDue(final UInt64 slot) {
@@ -221,7 +221,7 @@ public class ForkChoiceNotifier {
         new ForkChoiceState(
             parentExecutionBlockHash, parentExecutionBlockHash, finalizedExecutionBlockHash);
 
-    internalForkChoiceUpdated(newForkChoiceState);
+    internalForkChoiceUpdated(newForkChoiceState, false);
     checkState(
         lastSentForkChoiceState
             .map(lsfcState -> lsfcState.equals(newForkChoiceState))
@@ -263,10 +263,11 @@ public class ForkChoiceNotifier {
     }
 
     // Update payload attributes in case we now need to propose the next block
-    updatePayloadAttributes(currentSlot.plus(1));
+    updatePayloadAttributesAndCallForkChoiceUpdate(currentSlot.plus(1));
   }
 
-  private void internalForkChoiceUpdated(final ForkChoiceState forkChoiceState) {
+  private void internalForkChoiceUpdated(
+      final ForkChoiceState forkChoiceState, final boolean nextSlot) {
     eventThread.checkOnEventThread();
 
     if (this.forkChoiceState.isPresent() && this.forkChoiceState.get().equals(forkChoiceState)) {
@@ -277,14 +278,16 @@ public class ForkChoiceNotifier {
     this.forkChoiceState = Optional.of(forkChoiceState);
     recentChainData
         .getCurrentSlot()
-        .ifPresent(currentSlot -> updatePayloadAttributes(currentSlot.plus(1)));
-    sendForkChoiceUpdated();
+        .ifPresent(
+            currentSlot ->
+                updatePayloadAttributesAndCallForkChoiceUpdate(
+                    nextSlot ? currentSlot.plus(1) : currentSlot));
   }
 
   private void internalAttestationsDue(final UInt64 slot) {
     eventThread.checkOnEventThread();
     // Assume `slot` is empty and check if we need to prepare to propose in the next slot
-    updatePayloadAttributes(slot.plus(1));
+    updatePayloadAttributesAndCallForkChoiceUpdate(slot.plus(1));
   }
 
   private void sendForkChoiceUpdated() {
@@ -312,10 +315,13 @@ public class ForkChoiceNotifier {
                 "Could not notify EL of fork choice update because fork choice state is not yet known"));
   }
 
-  private void updatePayloadAttributes(final UInt64 blockSlot) {
+  private void updatePayloadAttributesAndCallForkChoiceUpdate(final UInt64 blockSlot) {
     calculatePayloadAttributes(blockSlot)
         .thenAcceptAsync(
-            newPayloadAttributes -> updatePayloadAttributes(blockSlot, newPayloadAttributes),
+            newPayloadAttributes -> {
+              updatePayloadAttributes(blockSlot, newPayloadAttributes);
+              sendForkChoiceUpdated();
+            },
             eventThread)
         .finish(
             error ->
@@ -330,7 +336,7 @@ public class ForkChoiceNotifier {
       return;
     }
     final UInt64 currentSlot = recentChainData.getCurrentSlot().orElse(UInt64.ZERO);
-    if (currentSlot.isGreaterThanOrEqualTo(blockSlot)) {
+    if (currentSlot.isGreaterThan(blockSlot)) {
       // Slot has already progressed so this update is too late, just drop it.
       LOG.warn(
           "Payload attribute calculation for slot {} took too long. Slot was already {}",
@@ -339,7 +345,6 @@ public class ForkChoiceNotifier {
       return;
     }
     payloadAttributes = newPayloadAttributes;
-    sendForkChoiceUpdated();
   }
 
   private Optional<Bytes8> handleForkChoiceResult(

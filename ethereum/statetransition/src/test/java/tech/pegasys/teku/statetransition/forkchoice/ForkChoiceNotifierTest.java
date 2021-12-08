@@ -337,7 +337,8 @@ class ForkChoiceNotifierTest {
 
     notifier.onTerminalBlockReached(terminalBlockHash);
 
-    validateGetPayloadIOnTheFlyRetrieval(blockRoot, forkChoiceState, payloadId, payloadAttributes);
+    validateGetPayloadIOnTheFlyRetrieval(
+        blockSlot, blockRoot, forkChoiceState, payloadId, payloadAttributes);
   }
 
   @Test
@@ -357,7 +358,7 @@ class ForkChoiceNotifierTest {
     final PayloadAttributes payloadAttributes = withProposerForSlot(headState, blockSlot);
 
     validateGetPayloadIOnTheFlyRetrieval(
-        blockRoot, nonFinalizedForkChoiceState, payloadId, payloadAttributes);
+        blockSlot, blockRoot, nonFinalizedForkChoiceState, payloadId, payloadAttributes);
   }
 
   @Test
@@ -373,10 +374,11 @@ class ForkChoiceNotifierTest {
     final PayloadAttributes payloadAttributes = withProposerForSlot(headState, blockSlot);
 
     validateGetPayloadIOnTheFlyRetrieval(
-        blockRoot, finalizedForkChoiceState, payloadId, payloadAttributes);
+        blockSlot, blockRoot, finalizedForkChoiceState, payloadId, payloadAttributes);
   }
 
   private void validateGetPayloadIOnTheFlyRetrieval(
+      final UInt64 blockSlot,
       final Bytes32 blockRoot,
       final ForkChoiceState forkChoiceState,
       final Bytes8 payloadId,
@@ -384,6 +386,8 @@ class ForkChoiceNotifierTest {
     final SafeFuture<ForkChoiceUpdatedResult> responseFuture = new SafeFuture<>();
     when(executionEngineChannel.forkChoiceUpdated(forkChoiceState, Optional.of(payloadAttributes)))
         .thenReturn(responseFuture);
+
+    storageSystem.chainUpdater().setCurrentSlot(blockSlot);
 
     // Initially has no payload ID.
     assertThatSafeFuture(notifier.getPayloadId(blockRoot)).isNotCompleted();
