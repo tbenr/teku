@@ -159,4 +159,8 @@ public interface TreeNode {
   default TreeNode updated(long generalizedIndex, TreeNode node) {
     return updated(generalizedIndex, oldNode -> node);
   }
+
+  default boolean isLeaf() {
+    return false;
+  }
 }
