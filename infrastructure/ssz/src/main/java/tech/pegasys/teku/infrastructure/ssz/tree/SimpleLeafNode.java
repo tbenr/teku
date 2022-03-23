@@ -15,6 +15,7 @@ package tech.pegasys.teku.infrastructure.ssz.tree;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
+import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.Objects;
 import org.apache.tuweni.bytes.Bytes;
@@ -30,7 +31,7 @@ class SimpleLeafNode implements LeafNode, TreeNode {
     if (data.size() == MAX_BYTE_SIZE) {
       // if data is Bytes32, it will pass throw with no object creation
       // otherwise translate types to Bytes32
-      this.hashTreeRoot = Bytes32.wrap(data.copy());
+      this.hashTreeRoot = Bytes32.wrap(data.toArrayUnsafe());
       this.data = hashTreeRoot;
       return;
     }
@@ -55,6 +56,18 @@ class SimpleLeafNode implements LeafNode, TreeNode {
 
     hashTreeRoot = Bytes32.wrap(Arrays.copyOf(data.toArrayUnsafe(), MAX_BYTE_SIZE));
     return hashTreeRoot;
+  }
+
+  @Override
+  public void updateDigest(MessageDigest messageDigest) {
+    if (hashTreeRoot != null) {
+      hashTreeRoot.update(messageDigest);
+      return;
+    }
+    data.update(messageDigest);
+    if (data.size() < MAX_BYTE_SIZE) {
+      ZERO_LEAVES[MAX_BYTE_SIZE - data.size()].getData().update(messageDigest);
+    }
   }
 
   @Override

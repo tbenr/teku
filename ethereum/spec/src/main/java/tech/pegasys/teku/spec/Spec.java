@@ -13,8 +13,12 @@
 
 package tech.pegasys.teku.spec;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.base.Preconditions;
 import it.unimi.dsi.fastutil.ints.IntList;
+import java.io.File;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -248,6 +252,22 @@ public class Spec {
         .getSchemaDefinitions()
         .getSignedBeaconBlockSchema()
         .sszDeserialize(serializedState);
+  }
+
+  public SignedBeaconBlock deserializeJsonSignedBeaconBlock(
+      final ObjectMapper objectMapper, final File jsonFile) throws IOException {
+    UInt64 slot =
+        UInt64.valueOf(
+            objectMapper
+                .createParser(jsonFile)
+                .readValueAs(ObjectNode.class)
+                .get("message")
+                .get("slot")
+                .textValue());
+    return atSlot(slot)
+        .getSchemaDefinitions()
+        .getSignedBeaconBlockSchema()
+        .jsonDeserialize(objectMapper.createParser(jsonFile));
   }
 
   public BeaconBlock deserializeBeaconBlock(final Bytes serializedState) {

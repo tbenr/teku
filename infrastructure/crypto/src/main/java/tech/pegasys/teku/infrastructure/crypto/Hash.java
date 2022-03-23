@@ -14,6 +14,7 @@
 package tech.pegasys.teku.infrastructure.crypto;
 
 import java.security.MessageDigest;
+import java.util.function.Consumer;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 
@@ -42,6 +43,13 @@ public class Hash {
     a.update(digest);
     b.update(digest);
     c.update(digest);
+    return Bytes32.wrap(digest.digest());
+  }
+
+  public static Bytes32 sha256(final Consumer<MessageDigest> a, final Consumer<MessageDigest> b) {
+    final MessageDigest digest = MessageDigestFactory.createSha256();
+    a.accept(digest);
+    b.accept(digest);
     return Bytes32.wrap(digest.digest());
   }
 }

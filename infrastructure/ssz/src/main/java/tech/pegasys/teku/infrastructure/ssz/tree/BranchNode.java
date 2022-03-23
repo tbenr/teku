@@ -62,7 +62,7 @@ public interface BranchNode extends TreeNode {
 
   @Override
   default Bytes32 hashTreeRoot() {
-    return Hash.sha256(left().hashTreeRoot(), right().hashTreeRoot());
+    return Hash.sha256(md -> left().updateDigest(md), md -> right().updateDigest(md));
   }
 
   @NotNull

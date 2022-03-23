@@ -17,15 +17,15 @@ import java.util.concurrent.TimeUnit;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Warmup;
-import tech.pegasys.teku.infrastructure.ssz.SimpleOffsetSerializable;
 import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
+import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 
 public class SSZBenchmark {
   private static DataStructureUtil dataStructureUtil =
       new DataStructureUtil(TestSpecFactory.createMinimalBellatrix());
-  private static SimpleOffsetSerializable state = dataStructureUtil.randomBeaconState();
+  private static BeaconState state = dataStructureUtil.randomBeaconState();
 
   @Benchmark
   @Warmup(iterations = 2, time = 100, timeUnit = TimeUnit.MILLISECONDS)
