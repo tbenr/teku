@@ -56,6 +56,7 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
 
   private final Spec spec;
   private final Store store;
+  private final ReadWriteLock timeLock;
   private final ReadWriteLock lock;
   private final StorageUpdateChannel storageUpdateChannel;
 
@@ -77,6 +78,7 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
   StoreTransaction(
       final Spec spec,
       final Store store,
+      final ReadWriteLock timeLock,
       final ReadWriteLock lock,
       final StorageUpdateChannel storageUpdateChannel,
       final UpdatableStore.StoreUpdateHandler updateHandler,
@@ -84,6 +86,7 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
       final boolean txPerformanceEnabled) {
     this.spec = spec;
     this.store = store;
+    this.timeLock = timeLock;
     this.lock = lock;
     this.storageUpdateChannel = storageUpdateChannel;
     this.updateHandler = updateHandler;
@@ -172,9 +175,11 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
                   TransactionPerformanceTracker::retrieveLastFinalizedCompleted);
               final StoreTransactionUpdates updates;
               // Lock so that we have a consistent view while calculating our updates
+              final Lock writeTimeLock = timeLock.writeLock();
               final Lock writeLock = lock.writeLock();
               LockLogger ll = LockLogger.waitingWrite();
               writeLock.lock();
+              writeTimeLock.lock();
               try {
                 ll.obtained();
                 transactionPerformanceTracker.ifPresent(
@@ -183,6 +188,7 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
               } finally {
                 ll.releasing();
                 writeLock.unlock();
+                writeTimeLock.unlock();
               }
 
               final StorageUpdate storageUpdate = updates.createStorageUpdate();
@@ -224,11 +230,13 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
   private void applyToStore(
       final StoreTransactionUpdates updates, final UpdateResult updateResult) {
     final Lock writeLock = lock.writeLock();
+    final Lock writeTimeLock = timeLock.writeLock();
     transactionPerformanceTracker.ifPresent(
         TransactionPerformanceTracker::applyToStoreWriteLockAcquiring);
     // Propagate changes to Store
     LockLogger ll = LockLogger.waitingWrite();
     writeLock.lock();
+    writeTimeLock.lock();
     try {
       ll.obtained();
       transactionPerformanceTracker.ifPresent(
@@ -238,6 +246,7 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
     } finally {
       ll.releasing();
       writeLock.unlock();
+      writeTimeLock.unlock();
     }
     transactionPerformanceTracker.ifPresent(TransactionPerformanceTracker::applyToStoreCompleted);
 

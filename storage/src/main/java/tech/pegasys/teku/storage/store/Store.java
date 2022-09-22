@@ -73,6 +73,8 @@ class Store implements UpdatableStore {
 
   private final int hotStatePersistenceFrequencyInEpochs;
 
+  private final ReadWriteLock timeLock = new ReentrantReadWriteLock();
+  private final Lock readTimeLock = timeLock.readLock();
   private final ReadWriteLock lock = new ReentrantReadWriteLock();
   private final Lock readLock = lock.readLock();
 
@@ -363,7 +365,14 @@ class Store implements UpdatableStore {
       final TimeProvider timeProvider,
       final boolean txPerformanceEnabled) {
     return new tech.pegasys.teku.storage.store.StoreTransaction(
-        spec, this, lock, storageUpdateChannel, updateHandler, timeProvider, txPerformanceEnabled);
+        spec,
+        this,
+        timeLock,
+        lock,
+        storageUpdateChannel,
+        updateHandler,
+        timeProvider,
+        txPerformanceEnabled);
   }
 
   @Override
@@ -374,26 +383,26 @@ class Store implements UpdatableStore {
   @Override
   public UInt64 getTimeMillis() {
     LockLogger ll = LockLogger.waitingRead();
-    readLock.lock();
+    readTimeLock.lock();
     try {
       ll.obtained();
       return timeMillis;
     } finally {
       ll.releasing();
-      readLock.unlock();
+      readTimeLock.unlock();
     }
   }
 
   @Override
   public UInt64 getGenesisTime() {
     LockLogger ll = LockLogger.waitingRead();
-    readLock.lock();
+    readTimeLock.lock();
     try {
       ll.obtained();
       return genesisTime;
     } finally {
       ll.releasing();
-      readLock.unlock();
+      readTimeLock.unlock();
     }
   }
 
