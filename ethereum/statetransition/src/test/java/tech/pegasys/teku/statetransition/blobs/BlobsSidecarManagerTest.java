@@ -22,11 +22,14 @@ import static org.mockito.Mockito.when;
 import static tech.pegasys.teku.spec.logic.versions.deneb.blobs.BlobsSidecarAvailabilityChecker.BlobsSidecarAndValidationResult.NOT_REQUIRED;
 import static tech.pegasys.teku.spec.logic.versions.deneb.blobs.BlobsSidecarAvailabilityChecker.BlobsSidecarAndValidationResult.validResult;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
+import tech.pegasys.teku.infrastructure.metrics.SettableLabelledGauge;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.ForkSchedule;
 import tech.pegasys.teku.spec.Spec;
@@ -34,11 +37,15 @@ import tech.pegasys.teku.spec.SpecVersion;
 import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.deneb.SignedBeaconBlockAndBlobsSidecar;
+import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.deneb.SignedBlobSidecar;
 import tech.pegasys.teku.spec.datastructures.execution.versions.deneb.BlobsSidecar;
 import tech.pegasys.teku.spec.logic.common.helpers.MiscHelpers;
 import tech.pegasys.teku.spec.logic.versions.deneb.blobs.BlobsSidecarAvailabilityChecker;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
+import tech.pegasys.teku.statetransition.util.BlobSidecarPoolImpl;
+import tech.pegasys.teku.statetransition.util.FutureItems;
 import tech.pegasys.teku.statetransition.validation.BlobSidecarValidator;
+import tech.pegasys.teku.statetransition.validation.InternalValidationResult;
 import tech.pegasys.teku.storage.api.StorageQueryChannel;
 import tech.pegasys.teku.storage.api.StorageUpdateChannel;
 import tech.pegasys.teku.storage.client.RecentChainData;
@@ -54,11 +61,21 @@ public class BlobsSidecarManagerTest {
   private final StorageQueryChannel storageQueryChannel = mock(StorageQueryChannel.class);
   private final StorageUpdateChannel storageUpdateChannel = mock(StorageUpdateChannel.class);
   private final BlobSidecarValidator blobSidecarValidator = mock(BlobSidecarValidator.class);
+  private final BlobSidecarPoolImpl blobSidecarPool = mock(BlobSidecarPoolImpl.class);
+  private final Map<Bytes32, InternalValidationResult> invalidBlobSidecarRoots = new HashMap<>();
+  private final FutureItems<SignedBlobSidecar> futureBlobSidecars =
+      FutureItems.create(
+          sidecar -> sidecar.getBlobSidecar().getSlot(),
+          mock(SettableLabelledGauge.class),
+          "blob_sidecars");
   private final BlobsSidecarManagerImpl blobsSidecarManager =
       new BlobsSidecarManagerImpl(
           mockedSpec,
           recentChainData,
+          blobSidecarPool,
           blobSidecarValidator,
+          futureBlobSidecars,
+          invalidBlobSidecarRoots,
           storageQueryChannel,
           storageUpdateChannel);
 

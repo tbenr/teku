@@ -53,10 +53,11 @@ import tech.pegasys.teku.spec.datastructures.operations.SignedAggregateAndProof.
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.util.AttestationProcessingResult;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
+import tech.pegasys.teku.statetransition.blobs.BlockBlobsSidecarsTrackerFactory;
 import tech.pegasys.teku.statetransition.forkchoice.ForkChoice;
 import tech.pegasys.teku.statetransition.util.FutureItems;
 import tech.pegasys.teku.statetransition.util.PendingPool;
-import tech.pegasys.teku.statetransition.util.PendingPoolFactory;
+import tech.pegasys.teku.statetransition.util.PoolFactory;
 import tech.pegasys.teku.statetransition.validation.AggregateAttestationValidator;
 import tech.pegasys.teku.statetransition.validation.AttestationValidator;
 import tech.pegasys.teku.statetransition.validation.InternalValidationResult;
@@ -75,7 +76,8 @@ class AttestationManagerTest {
   private final ForkChoice forkChoice = mock(ForkChoice.class);
   private final StubMetricsSystem metricsSystem = new StubMetricsSystem();
   private final PendingPool<ValidateableAttestation> pendingAttestations =
-      new PendingPoolFactory(metricsSystem).createForAttestations(spec);
+      new PoolFactory(metricsSystem, mock(BlockBlobsSidecarsTrackerFactory.class))
+          .createPendingPoolForAttestations(spec);
   private final FutureItems<ValidateableAttestation> futureAttestations =
       FutureItems.create(
           ValidateableAttestation::getEarliestSlotForForkChoiceProcessing,

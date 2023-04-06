@@ -15,6 +15,8 @@ package tech.pegasys.teku.statetransition.blobs;
 
 import java.util.Collections;
 import java.util.Set;
+import org.apache.tuweni.bytes.Bytes32;
+import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.execution.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.networking.libp2p.rpc.BlobIdentifier;
 
@@ -23,11 +25,16 @@ public interface BlobSidecarPool {
   BlobSidecarPool NOOP =
       new BlobSidecarPool() {
         @Override
-        public void onNewBlobSidecar(final BlobSidecar blobSidecar) {}
+        public void add(final BlobSidecar blobSidecar) {}
 
         @Override
         public boolean containsBlobSidecar(final BlobIdentifier blobIdentifier) {
           return false;
+        }
+
+        @Override
+        public BlockBlobSidecarsTracker getBlockBlobsSidecarsTracker(SignedBeaconBlock block) {
+          throw new UnsupportedOperationException();
         }
 
         @Override
@@ -42,18 +49,34 @@ public interface BlobSidecarPool {
         @Override
         public void subscribeRequiredBlobSidecarDropped(
             final RequiredBlobSidecarDroppedSubscriber requiredBlobSidecarDroppedSubscriber) {}
+
+        @Override
+        public void subscribeRequiredBlockRootSubscriber(
+            final RequiredBlockRootSubscriber requiredBlockRootSubscriber) {}
+
+        @Override
+        public void subscribeRequiredBlockRootDropped(
+            final RequiredBlockRootDroppedSubscriber requiredBlockRootDroppedSubscriber) {}
       };
 
-  void onNewBlobSidecar(BlobSidecar blobSidecar);
+  void add(BlobSidecar blobSidecar);
 
   boolean containsBlobSidecar(BlobIdentifier blobIdentifier);
 
   Set<BlobIdentifier> getAllRequiredBlobSidecars();
 
+  BlockBlobSidecarsTracker getBlockBlobsSidecarsTracker(SignedBeaconBlock block);
+
   void subscribeRequiredBlobSidecar(RequiredBlobSidecarSubscriber requiredBlobSidecarSubscriber);
 
   void subscribeRequiredBlobSidecarDropped(
       RequiredBlobSidecarDroppedSubscriber requiredBlobSidecarDroppedSubscriber);
+
+  void subscribeRequiredBlockRootSubscriber(
+      RequiredBlockRootSubscriber requiredBlockRootSubscriber);
+
+  void subscribeRequiredBlockRootDropped(
+      RequiredBlockRootDroppedSubscriber requiredBlockRootDroppedSubscriber);
 
   interface RequiredBlobSidecarSubscriber {
     void onRequiredBlobSidecar(BlobIdentifier blobIdentifier);
@@ -61,5 +84,13 @@ public interface BlobSidecarPool {
 
   interface RequiredBlobSidecarDroppedSubscriber {
     void onRequiredBlobSidecarDropped(BlobIdentifier blobIdentifier);
+  }
+
+  interface RequiredBlockRootSubscriber {
+    void onRequiredBlockRoot(Bytes32 blockRoot);
+  }
+
+  interface RequiredBlockRootDroppedSubscriber {
+    void onRequiredBlockRootDropped(Bytes32 blockRoot);
   }
 }

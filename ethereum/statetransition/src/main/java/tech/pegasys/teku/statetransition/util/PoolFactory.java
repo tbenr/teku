@@ -21,14 +21,19 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.attestation.ValidateableAttestation;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
+import tech.pegasys.teku.statetransition.blobs.BlockBlobsSidecarsTrackerFactory;
 
-public class PendingPoolFactory {
+public class PoolFactory {
 
   private static final UInt64 DEFAULT_HISTORICAL_SLOT_TOLERANCE = UInt64.valueOf(320);
   private static final int DEFAULT_MAX_ITEMS = 5000;
+  private static final int DEFAULT_MAX_BLOCKS = 500;
   private final SettableLabelledGauge sizeGauge;
+  private final BlockBlobsSidecarsTrackerFactory blockBlobsSidecarsTrackerFactory;
 
-  public PendingPoolFactory(final MetricsSystem metricsSystem) {
+  public PoolFactory(
+      final MetricsSystem metricsSystem,
+      final BlockBlobsSidecarsTrackerFactory blockBlobsSidecarsTrackerFactory) {
     this.sizeGauge =
         SettableLabelledGauge.create(
             metricsSystem,
@@ -36,17 +41,18 @@ public class PendingPoolFactory {
             "pending_pool_size",
             "Number of items in pending pool",
             "type");
+    this.blockBlobsSidecarsTrackerFactory = blockBlobsSidecarsTrackerFactory;
   }
 
-  public PendingPool<SignedBeaconBlock> createForBlocks(final Spec spec) {
-    return createForBlocks(
+  public PendingPool<SignedBeaconBlock> createPendingPoolForBlocks(final Spec spec) {
+    return createPendingPoolForBlocks(
         spec,
         DEFAULT_HISTORICAL_SLOT_TOLERANCE,
         FutureItems.DEFAULT_FUTURE_SLOT_TOLERANCE,
-        DEFAULT_MAX_ITEMS);
+        DEFAULT_MAX_BLOCKS);
   }
 
-  public PendingPool<SignedBeaconBlock> createForBlocks(
+  public PendingPool<SignedBeaconBlock> createPendingPoolForBlocks(
       final Spec spec,
       final UInt64 historicalBlockTolerance,
       final UInt64 futureBlockTolerance,
@@ -63,7 +69,7 @@ public class PendingPoolFactory {
         SignedBeaconBlock::getSlot);
   }
 
-  public PendingPool<ValidateableAttestation> createForAttestations(final Spec spec) {
+  public PendingPool<ValidateableAttestation> createPendingPoolForAttestations(final Spec spec) {
     return new PendingPool<>(
         sizeGauge,
         "attestations",
@@ -74,5 +80,27 @@ public class PendingPoolFactory {
         ValidateableAttestation::hashTreeRoot,
         ValidateableAttestation::getDependentBlockRoots,
         ValidateableAttestation::getEarliestSlotForForkChoiceProcessing);
+  }
+
+  public BlobSidecarPoolImpl createPoolForBlobSidecar(final Spec spec) {
+    return createPoolForBlobSidecar(
+        spec,
+        DEFAULT_HISTORICAL_SLOT_TOLERANCE,
+        FutureItems.DEFAULT_FUTURE_SLOT_TOLERANCE,
+        DEFAULT_MAX_BLOCKS * spec.getMaxBlobsPerBlock().orElseThrow());
+  }
+
+  public BlobSidecarPoolImpl createPoolForBlobSidecar(
+      final Spec spec,
+      final UInt64 historicalBlockTolerance,
+      final UInt64 futureBlockTolerance,
+      final int maxItems) {
+    return new BlobSidecarPoolImpl(
+        sizeGauge,
+        spec,
+        historicalBlockTolerance,
+        futureBlockTolerance,
+        maxItems,
+        blockBlobsSidecarsTrackerFactory);
   }
 }

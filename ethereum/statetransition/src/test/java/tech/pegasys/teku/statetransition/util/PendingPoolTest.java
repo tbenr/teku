@@ -14,6 +14,7 @@
 package tech.pegasys.teku.statetransition.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,6 +28,7 @@ import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
+import tech.pegasys.teku.statetransition.blobs.BlockBlobsSidecarsTrackerFactory;
 
 public class PendingPoolTest {
   private final Spec spec = TestSpecFactory.createDefault();
@@ -36,8 +38,8 @@ public class PendingPoolTest {
   private final StubMetricsSystem metricsSystem = new StubMetricsSystem();
   private final int maxItems = 15;
   private final PendingPool<SignedBeaconBlock> pendingPool =
-      new PendingPoolFactory(metricsSystem)
-          .createForBlocks(spec, historicalTolerance, futureTolerance, maxItems);
+      new PoolFactory(metricsSystem, mock(BlockBlobsSidecarsTrackerFactory.class))
+          .createPendingPoolForBlocks(spec, historicalTolerance, futureTolerance, maxItems);
   private UInt64 currentSlot = historicalTolerance.times(2);
   private final List<Bytes32> requiredRootEvents = new ArrayList<>();
   private final List<Bytes32> requiredRootDroppedEvents = new ArrayList<>();

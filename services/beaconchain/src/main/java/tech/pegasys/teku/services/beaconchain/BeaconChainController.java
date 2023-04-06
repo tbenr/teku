@@ -109,6 +109,8 @@ import tech.pegasys.teku.statetransition.attestation.AttestationManager;
 import tech.pegasys.teku.statetransition.blobs.BlobSidecarPool;
 import tech.pegasys.teku.statetransition.blobs.BlobsSidecarManager;
 import tech.pegasys.teku.statetransition.blobs.BlobsSidecarManagerImpl;
+import tech.pegasys.teku.statetransition.blobs.BlockBlobsSidecarsTrackerFactory;
+import tech.pegasys.teku.statetransition.blobs.DefaultBlockBlobsSidecarsTrackerTimingStrategy;
 import tech.pegasys.teku.statetransition.block.BlockImportChannel;
 import tech.pegasys.teku.statetransition.block.BlockImportMetrics;
 import tech.pegasys.teku.statetransition.block.BlockImportNotifications;
@@ -134,7 +136,7 @@ import tech.pegasys.teku.statetransition.synccommittee.SyncCommitteeMessageValid
 import tech.pegasys.teku.statetransition.synccommittee.SyncCommitteeStateUtils;
 import tech.pegasys.teku.statetransition.util.FutureItems;
 import tech.pegasys.teku.statetransition.util.PendingPool;
-import tech.pegasys.teku.statetransition.util.PendingPoolFactory;
+import tech.pegasys.teku.statetransition.util.PoolFactory;
 import tech.pegasys.teku.statetransition.validation.AggregateAttestationValidator;
 import tech.pegasys.teku.statetransition.validation.AttestationValidator;
 import tech.pegasys.teku.statetransition.validation.AttesterSlashingValidator;
@@ -255,7 +257,7 @@ public class BeaconChainController extends Service implements BeaconChainControl
   protected UInt64 genesisTimeTracker = ZERO;
   protected BlockManager blockManager;
   protected TimerService timerService;
-  protected PendingPoolFactory pendingPoolFactory;
+  protected PoolFactory pendingPoolFactory;
   protected SettableLabelledGauge futureItemsMetric;
   protected IntSupplier rejectedExecutionCountSupplier;
 
@@ -273,7 +275,13 @@ public class BeaconChainController extends Service implements BeaconChainControl
     this.timeProvider = serviceConfig.getTimeProvider();
     this.eventChannels = serviceConfig.getEventChannels();
     this.metricsSystem = serviceConfig.getMetricsSystem();
-    this.pendingPoolFactory = new PendingPoolFactory(this.metricsSystem);
+    final BlockBlobsSidecarsTrackerFactory blockBlobsSidecarsTrackerFactory =
+        new BlockBlobsSidecarsTrackerFactory(
+            spec,
+            beaconAsyncRunner,
+            new DefaultBlockBlobsSidecarsTrackerTimingStrategy(
+                spec, recentChainData, timeProvider));
+    this.pendingPoolFactory = new PoolFactory(this.metricsSystem, blockBlobsSidecarsTrackerFactory);
     this.rejectedExecutionCountSupplier = serviceConfig.getRejectedExecutionsSupplier();
     this.slotEventsChannelPublisher = eventChannels.getPublisher(SlotEventsChannel.class);
     this.forkChoiceExecutor = new AsyncRunnerEventThread("forkchoice", asyncRunnerFactory);
@@ -494,15 +502,18 @@ public class BeaconChainController extends Service implements BeaconChainControl
 
   protected void initBlockPoolsAndCaches() {
     LOG.debug("BeaconChainController.initBlockPoolsAndCaches()");
-    pendingBlocks = pendingPoolFactory.createForBlocks(spec);
+    pendingBlocks = pendingPoolFactory.createPendingPoolForBlocks(spec);
     eventChannels.subscribe(FinalizedCheckpointChannel.class, pendingBlocks);
     invalidBlockRoots = LimitedMap.createSynchronized(500);
   }
 
   protected void initBlobSidecarPool() {
     LOG.debug("BeaconChainController.initBlobSidecarPool()");
-    // TODO: properly initialize the pool
-    blobSidecarPool = BlobSidecarPool.NOOP;
+    if (spec.isMilestoneSupported(SpecMilestone.DENEB)) {
+      blobSidecarPool = pendingPoolFactory.createPoolForBlobSidecar(spec);
+    } else {
+      blobSidecarPool = BlobSidecarPool.NOOP;
+    }
   }
 
   protected void initGossipValidationHelper() {
@@ -813,7 +824,7 @@ public class BeaconChainController extends Service implements BeaconChainControl
 
   protected void initAttestationManager() {
     final PendingPool<ValidateableAttestation> pendingAttestations =
-        pendingPoolFactory.createForAttestations(spec);
+        pendingPoolFactory.createPendingPoolForAttestations(spec);
     final FutureItems<ValidateableAttestation> futureAttestations =
         FutureItems.create(
             ValidateableAttestation::getEarliestSlotForForkChoiceProcessing,
