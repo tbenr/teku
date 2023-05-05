@@ -55,7 +55,6 @@ import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadResult;
 import tech.pegasys.teku.spec.datastructures.execution.GetPayloadResponse;
 import tech.pegasys.teku.spec.datastructures.execution.HeaderWithFallbackData;
 import tech.pegasys.teku.spec.datastructures.execution.PowBlock;
-import tech.pegasys.teku.spec.datastructures.execution.versions.deneb.GetPayloadResponseDeneb;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.util.BlobsUtil;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitionsBellatrix;
@@ -278,7 +277,7 @@ public class ExecutionLayerChannelStub implements ExecutionLayerChannel {
         blobsBundle.toBriefString());
 
     return SafeFuture.completedFuture(
-        new GetPayloadResponseDeneb(executionPayload, UInt256.ZERO, blobsBundle));
+        new GetPayloadResponse(executionPayload, UInt256.ZERO, blobsBundle));
   }
 
   @Override

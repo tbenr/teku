@@ -16,15 +16,41 @@ package tech.pegasys.teku.spec.datastructures.execution;
 import org.apache.tuweni.units.bigints.UInt256;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobsBundle;
 
-public interface GetPayloadResponse {
+public class GetPayloadResponse {
+  private final ExecutionPayload executionPayload;
+  private final UInt256 blockValue;
+  private final BlobsBundle blobsBundle;
 
-  ExecutionPayload getExecutionPayload();
-
-  default UInt256 getBlockValue() {
-    return UInt256.ZERO;
+  public GetPayloadResponse(final ExecutionPayload executionPayload) {
+    this.executionPayload = executionPayload;
+    this.blockValue = UInt256.ZERO;
+    this.blobsBundle = BlobsBundle.EMPTY_BUNDLE;
   }
 
-  default BlobsBundle getBlobsBundle() {
-    return BlobsBundle.EMPTY_BUNDLE;
+  public GetPayloadResponse(final ExecutionPayload executionPayload, final UInt256 blockValue) {
+    this.executionPayload = executionPayload;
+    this.blockValue = blockValue;
+    this.blobsBundle = BlobsBundle.EMPTY_BUNDLE;
+  }
+
+  public GetPayloadResponse(
+      final ExecutionPayload executionPayload,
+      final UInt256 blockValue,
+      final BlobsBundle blobsBundle) {
+    this.executionPayload = executionPayload;
+    this.blockValue = blockValue;
+    this.blobsBundle = blobsBundle;
+  }
+
+  public ExecutionPayload getExecutionPayload() {
+    return executionPayload;
+  }
+
+  public UInt256 getBlockValue() {
+    return blockValue;
+  }
+
+  public BlobsBundle getBlobsBundle() {
+    return blobsBundle;
   }
 }
