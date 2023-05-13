@@ -97,7 +97,7 @@ public class AttestationStateSelector {
       }
     }
 
-    if (isJustificationTooOld(targetBlockRoot, targetBlockSlot.get())) {
+    if (isJustificationTooOld(attestationData.getTarget())) {
       // we already justified a more recent slot on all compatible heads
       LOG.debug(
           "Ignored attestation gossip: attestationData target {}, source {}, head {} , slot {}",
@@ -155,17 +155,26 @@ public class AttestationStateSelector {
         .orElse(false);
   }
 
-  private boolean isJustificationTooOld(
-      final Bytes32 justifiedRoot, final UInt64 justifiedBlockSlot) {
+  private boolean isJustificationTooOld(final Checkpoint justifiedCheckpoint) {
+    final Bytes32 justifiedRoot = justifiedCheckpoint.getRoot();
+    final Optional<UInt64> maybeJustifiedBlockSlot =
+        recentChainData.getSlotForBlockRoot(justifiedRoot);
+
+    if (maybeJustifiedBlockSlot.isEmpty()) {
+      // justified block is unknown, must be too old
+      return true;
+    }
 
     return recentChainData.getChainHeads().stream()
         // must be attesting to a viable chain
-        .filter(head -> isAncestorOfChainHead(head.getRoot(), justifiedRoot, justifiedBlockSlot))
+        .filter(
+            head ->
+                isAncestorOfChainHead(head.getRoot(), justifiedRoot, maybeJustifiedBlockSlot.get()))
         // must be attesting to something that progresses justification
         .filter(
             head ->
                 isJustifiedCheckpointOfHeadOlderOrEqualToAttestationJustifiedSlot(
-                    head, justifiedBlockSlot))
+                    head, maybeJustifiedBlockSlot.get()))
         .findFirst()
         .isEmpty();
   }
