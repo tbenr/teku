@@ -899,7 +899,7 @@ public class KvStoreDatabase implements Database {
             update.getOptimisticTransitionBlockRoot());
 
     if (update.isBlobSidecarsEnabled()) {
-      updateBlobSidecars(update.getFinalizedBlocks(), update.getDeletedHotBlocks());
+      updateBlobSidecars(update.getFinalizedBlocks(), update.getFinalizedChildToParentMap(), update.getDeletedHotBlocks());
     }
 
     LOG.trace("Applying hot updates");
@@ -995,20 +995,43 @@ public class KvStoreDatabase implements Database {
   }
 
   private void updateBlobSidecars(
-      final Map<Bytes32, SignedBeaconBlock> finalizedBlocks,
+          final Map<Bytes32, SignedBeaconBlock> finalizedBlocks,
+      final Map<Bytes32, Bytes32> finalizedChildToParentMap,
       final Map<Bytes32, UInt64> deletedHotBlocks) {
     try (final FinalizedUpdater updater = finalizedUpdater()) {
       final Set<Bytes32> finalizedBlockRoots = finalizedBlocks.keySet();
       LOG.trace("Removing blob sidecars for deleted hot blocks");
-      List<UInt64> dropSlots =
+
+      List<UInt64> dropSlotsOld =
+              deletedHotBlocks.entrySet().stream()
+                      .filter(entry -> !finalizedBlockRoots.contains(entry.getKey()))
+                      .map(Map.Entry::getValue)
+                      .collect(Collectors.toList());
+
+      List<UInt64> dropSlotsNew =
           deletedHotBlocks.entrySet().stream()
-              .filter(entry -> !finalizedBlockRoots.contains(entry.getKey()))
+              .filter(entry -> !finalizedChildToParentMap.containsKey(entry.getKey()))
               .map(Map.Entry::getValue)
               .collect(Collectors.toList());
-      for (final UInt64 slot : dropSlots) {
+
+      if(!dropSlotsOld.containsAll(dropSlotsNew)) {
+        System.out.println("ALARM1");
+      }
+
+      if(!dropSlotsNew.containsAll(dropSlotsOld)) {
+        System.out.println("ALARM2");
+      }
+
+      for (final UInt64 slot : dropSlotsOld) {
         try (final Stream<SlotAndBlockRootAndBlobIndex> slotAndBlockRootAndBlobIndexStream =
             dao.streamBlobSidecarKeys(slot, slot)) {
-          slotAndBlockRootAndBlobIndexStream.forEach(updater::removeBlobSidecar);
+
+          slotAndBlockRootAndBlobIndexStream.forEach(slotAndBlockRootAndBlobIndex -> {
+            if(!dropSlotsNew.contains(slot)) {
+              System.out.println("avoid deleting WRONG blob: " + slotAndBlockRootAndBlobIndex);
+            }
+           updater.removeBlobSidecar(slotAndBlockRootAndBlobIndex);
+          });
         }
       }
 
