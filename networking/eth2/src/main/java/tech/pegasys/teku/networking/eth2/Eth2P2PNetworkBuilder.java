@@ -61,11 +61,9 @@ import tech.pegasys.teku.networking.p2p.network.P2PNetwork;
 import tech.pegasys.teku.networking.p2p.network.PeerHandler;
 import tech.pegasys.teku.networking.p2p.network.config.NetworkConfig;
 import tech.pegasys.teku.networking.p2p.peer.Peer;
-import tech.pegasys.teku.networking.p2p.reputation.DefaultReputationManager;
 import tech.pegasys.teku.networking.p2p.reputation.ReputationManager;
 import tech.pegasys.teku.networking.p2p.rpc.RpcMethod;
 import tech.pegasys.teku.spec.Spec;
-import tech.pegasys.teku.spec.config.Constants;
 import tech.pegasys.teku.spec.datastructures.attestation.ValidatableAttestation;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.SignedBlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
@@ -298,9 +296,7 @@ public class Eth2P2PNetworkBuilder {
       final GossipEncoding gossipEncoding,
       final SubnetSubscriptionService syncCommitteeSubnetService) {
     final PeerPools peerPools = new PeerPools();
-    final ReputationManager reputationManager =
-        new DefaultReputationManager(
-            metricsSystem, timeProvider, Constants.REPUTATION_MANAGER_CAPACITY, peerPools);
+    final ReputationManager reputationManager = ReputationManager.NOOP;
     PreparedGossipMessageFactory defaultMessageFactory =
         gossipEncoding.createPreparedGossipMessageFactory(
             combinedChainDataClient.getRecentChainData()::getMilestoneByForkDigest);
