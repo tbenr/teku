@@ -136,7 +136,13 @@ public class TransitionCommand implements Runnable {
     try (final InputStream in = selectInputStream(params);
         final OutputStream out = selectOutputStream(params)) {
       final Bytes inData = Bytes.wrap(ByteStreams.toByteArray(in));
+      long start = System.currentTimeMillis();
       BeaconState state = readState(spec, inData);
+      System.out.println("deserialization: " + (System.currentTimeMillis()-start) + " ms");
+
+      start = System.currentTimeMillis();
+      state.hashTreeRoot();
+      System.out.println("hashing: " + (System.currentTimeMillis()-start) + " ms");
 
       try {
         BeaconState result = transition.applyTransition(spec, state);
