@@ -21,6 +21,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.Provider;
 import java.security.Security;
+import java.util.stream.Collectors;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
@@ -84,11 +86,10 @@ public class MessageDigestFactory {
     }
     final Provider sunProvider = Security.getProvider("SUN");
     if (sunProvider == null) {
-      return new BouncyCastleProvider();
+      return BOUNCY_CASTLE_PROVIDER;
     }
     try {
       MessageDigest.getInstance(SHA_256, sunProvider);
-      printSha256ProviderInfo(sunProvider);
       return sunProvider;
     } catch (final Throwable t) {
       LOG.warn(
@@ -101,6 +102,6 @@ public class MessageDigestFactory {
   private static void printSha256ProviderInfo(final Provider amazonProvider) {
     System.out.println("Sha256Provider: " + amazonProvider.getName());
     System.out.println("Sha256Provider info: " + amazonProvider.getInfo());
-    System.out.println("Sha256Provider data: " + amazonProvider);
+    System.out.println("Sha256Provider map:\n"  + amazonProvider.entrySet().stream().map(Object::toString).collect(Collectors.joining("\n")));
   }
 }
