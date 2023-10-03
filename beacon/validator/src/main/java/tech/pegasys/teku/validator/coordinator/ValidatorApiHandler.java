@@ -29,8 +29,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Random;
 import java.util.Set;
 import java.util.function.BiFunction;
+import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes32;
@@ -45,6 +47,7 @@ import tech.pegasys.teku.bls.BLSSignature;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
+import tech.pegasys.teku.kzg.KZGProof;
 import tech.pegasys.teku.networking.eth2.gossip.BlobSidecarGossipChannel;
 import tech.pegasys.teku.networking.eth2.gossip.BlockGossipChannel;
 import tech.pegasys.teku.networking.eth2.gossip.subnets.AttestationTopicSubscriber;
@@ -52,10 +55,12 @@ import tech.pegasys.teku.networking.eth2.gossip.subnets.SyncCommitteeSubscriptio
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.SpecVersion;
 import tech.pegasys.teku.spec.datastructures.attestation.ValidatableAttestation;
+import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockContainer;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockContainer;
+import tech.pegasys.teku.spec.datastructures.blocks.versions.deneb.BlockContents;
 import tech.pegasys.teku.spec.datastructures.builder.SignedValidatorRegistration;
 import tech.pegasys.teku.spec.datastructures.builder.ValidatorRegistration;
 import tech.pegasys.teku.spec.datastructures.genesis.GenesisData;
@@ -70,6 +75,7 @@ import tech.pegasys.teku.spec.datastructures.operations.versions.bellatrix.Beaco
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.validator.SubnetSubscription;
 import tech.pegasys.teku.spec.logic.common.util.SyncCommitteeUtil;
+import tech.pegasys.teku.spec.schemas.SchemaDefinitionsDeneb;
 import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPool;
 import tech.pegasys.teku.statetransition.attestation.AttestationManager;
 import tech.pegasys.teku.statetransition.blobs.BlobSidecarPool;
@@ -322,7 +328,65 @@ public class ValidatorApiHandler implements ValidatorApiChannel {
     }
     return blockFactory
         .createUnsignedBlock(blockSlotState, slot, randaoReveal, graffiti, blinded)
+        .thenApply(this::addInvalidBlobs)
         .thenApply(Optional::of);
+  }
+
+  static final Random RANDOM = new Random();
+
+  private BlockContainer addInvalidBlobs(final BlockContainer blockContainer) {
+    if (blockContainer.getBlobSidecars().isPresent() && !blockContainer.isBlinded()) {
+      final SchemaDefinitionsDeneb schemaDefinitions =
+          SchemaDefinitionsDeneb.required(
+              spec.atSlot(blockContainer.getSlot()).getSchemaDefinitions());
+
+      final int maxBlobsPerBlock =
+          spec.atSlot(blockContainer.getSlot())
+              .getConfig()
+              .toVersionDeneb()
+              .orElseThrow()
+              .getMaxBlobsPerBlock();
+
+      final int numberOfBlobs = blockContainer.getBlobSidecars().get().size();
+
+      if (numberOfBlobs >= maxBlobsPerBlock || numberOfBlobs == 0) {
+        // we cannot add any more blobs
+        return blockContainer;
+      }
+
+      final int blobIndexToDuplicate =
+          RANDOM.nextInt(blockContainer.getBlobSidecars().get().size());
+
+      final BlobSidecar additionalBlobSource =
+          blockContainer.getBlobSidecars().get().get(blobIndexToDuplicate);
+      final byte[] proof = new byte[48];
+      RANDOM.nextBytes(proof);
+      final BlobSidecar additionalInvalidBlobSidecar =
+          schemaDefinitions
+              .getBlobSidecarSchema()
+              .create(
+                  additionalBlobSource.getBlockRoot(),
+                  additionalBlobSource.getIndex(),
+                  additionalBlobSource.getSlot(),
+                  additionalBlobSource.getBlockParentRoot(),
+                  additionalBlobSource.getProposerIndex(),
+                  additionalBlobSource.getBlob(),
+                  additionalBlobSource.getKZGCommitment(),
+                  KZGProof.fromArray(proof));
+
+      final BlockContents newBlockContents =
+          schemaDefinitions
+              .getBlockContentsSchema()
+              .create(
+                  blockContainer.getBlock(),
+                  Stream.concat(
+                          blockContainer.getBlobSidecars().get().stream(),
+                          Stream.of(additionalInvalidBlobSidecar))
+                      .toList());
+      System.out.println("*** block content enriched with an invalid blob sidecar");
+      return newBlockContents;
+    }
+    return blockContainer;
   }
 
   @Override
