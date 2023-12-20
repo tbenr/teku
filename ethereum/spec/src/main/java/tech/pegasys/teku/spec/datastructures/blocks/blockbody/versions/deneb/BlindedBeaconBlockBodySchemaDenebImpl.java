@@ -138,9 +138,9 @@ public class BlindedBeaconBlockBodySchemaDenebImpl
   @Override
   public SafeFuture<BeaconBlockBody> createBlockBody(
       final Consumer<BeaconBlockBodyBuilder> builderConsumer) {
-    final BeaconBlockBodyBuilderDeneb builder = new BeaconBlockBodyBuilderDeneb();
+    final BeaconBlockBodyBuilderDeneb builder = new BeaconBlockBodyBuilderDeneb(__ -> this);
     builderConsumer.accept(builder);
-    return builder.build(__ -> this);
+    return builder.build();
   }
 
   @Override

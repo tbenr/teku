@@ -143,7 +143,7 @@ public class SchemaDefinitionsAltair extends AbstractSchemaDefinitions {
 
   @Override
   public BeaconBlockBodyBuilder createBeaconBlockBodyBuilder() {
-    return new BeaconBlockBodyBuilderAltair();
+    return new BeaconBlockBodyBuilderAltair(__ -> beaconBlockBodySchema);
   }
 
   @Override

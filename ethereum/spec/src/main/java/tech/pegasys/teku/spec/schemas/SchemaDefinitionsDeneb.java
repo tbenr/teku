@@ -232,7 +232,8 @@ public class SchemaDefinitionsDeneb extends SchemaDefinitionsCapella {
 
   @Override
   public BeaconBlockBodyBuilder createBeaconBlockBodyBuilder() {
-    return new BeaconBlockBodyBuilderDeneb();
+    return new BeaconBlockBodyBuilderDeneb(
+        isBlinded -> isBlinded ? blindedBeaconBlockBodySchema : beaconBlockBodySchema);
   }
 
   public BlobSchema getBlobSchema() {

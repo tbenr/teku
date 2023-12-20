@@ -32,7 +32,10 @@ public class BeaconBlockBodyBuilderBellatrix extends BeaconBlockBodyBuilderAltai
   protected SafeFuture<ExecutionPayload> executionPayload;
   protected SafeFuture<ExecutionPayloadHeader> executionPayloadHeader;
 
-  public BeaconBlockBodyBuilderBellatrix() {}
+  public BeaconBlockBodyBuilderBellatrix(
+      final Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver) {
+    super(blindedToSchemaResolver);
+  }
 
   @Override
   public Boolean supportsExecutionPayload() {
@@ -56,12 +59,14 @@ public class BeaconBlockBodyBuilderBellatrix extends BeaconBlockBodyBuilderAltai
   @SuppressWarnings("unchecked")
   protected <T> T getAndValidateSchema(
       final Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver,
-      final Class<? extends T> schemaType) {
+      final Class<T> expectedSchemaType) {
     final BeaconBlockBodySchema<?> schema = blindedToSchemaResolver.apply(isBlinded());
     checkNotNull(schema, "schema must be specified");
     checkArgument(
-        schemaType.isInstance(schema),
-        String.format("Schema should be: %s", schemaType.getSimpleName()));
+        expectedSchemaType == schema.getClass(),
+        String.format(
+            "Schema should be %s but was %s",
+            expectedSchemaType.getSimpleName(), schema.getClass().getSimpleName()));
     return (T) schema;
   }
 
@@ -78,8 +83,7 @@ public class BeaconBlockBodyBuilderBellatrix extends BeaconBlockBodyBuilderAltai
   }
 
   @Override
-  public SafeFuture<BeaconBlockBody> build(
-      final Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver) {
+  public SafeFuture<BeaconBlockBody> build() {
     validate();
     if (isBlinded()) {
       final BlindedBeaconBlockBodySchemaBellatrixImpl schema =

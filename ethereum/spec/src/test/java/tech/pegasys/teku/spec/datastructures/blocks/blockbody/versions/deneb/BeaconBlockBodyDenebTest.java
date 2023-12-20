@@ -66,9 +66,7 @@ class BeaconBlockBodyDenebTest extends AbstractBeaconBlockBodyTest<BeaconBlockBo
       final Consumer<BeaconBlockBodyBuilder> contentProvider) {
     final BeaconBlockBodyBuilder bodyBuilder = createBeaconBlockBodyBuilder();
     contentProvider.accept(bodyBuilder);
-    return bodyBuilder
-        .build(__ -> spec.getGenesisSchemaDefinitions().getBeaconBlockBodySchema())
-        .thenApply(body -> body.toVersionDeneb().orElseThrow());
+    return bodyBuilder.build().thenApply(body -> body.toVersionDeneb().orElseThrow());
   }
 
   @Override
@@ -76,9 +74,7 @@ class BeaconBlockBodyDenebTest extends AbstractBeaconBlockBodyTest<BeaconBlockBo
       Consumer<BeaconBlockBodyBuilder> contentProvider) {
     final BeaconBlockBodyBuilder bodyBuilder = createBeaconBlockBodyBuilder();
     contentProvider.accept(bodyBuilder);
-    return bodyBuilder
-        .build(__ -> spec.getGenesisSchemaDefinitions().getBlindedBeaconBlockBodySchema())
-        .thenApply(body -> body.toBlindedVersionDeneb().orElseThrow());
+    return bodyBuilder.build().thenApply(body -> body.toBlindedVersionDeneb().orElseThrow());
   }
 
   @Override

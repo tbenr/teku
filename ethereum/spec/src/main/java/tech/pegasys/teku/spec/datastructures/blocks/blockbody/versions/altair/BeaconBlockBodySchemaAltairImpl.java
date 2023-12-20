@@ -111,9 +111,9 @@ public class BeaconBlockBodySchemaAltairImpl
   @Override
   public SafeFuture<BeaconBlockBody> createBlockBody(
       final Consumer<BeaconBlockBodyBuilder> builderConsumer) {
-    final BeaconBlockBodyBuilderAltair builder = new BeaconBlockBodyBuilderAltair();
+    final BeaconBlockBodyBuilderAltair builder = new BeaconBlockBodyBuilderAltair(__ -> this);
     builderConsumer.accept(builder);
-    return builder.build(__ -> this);
+    return builder.build();
   }
 
   @Override

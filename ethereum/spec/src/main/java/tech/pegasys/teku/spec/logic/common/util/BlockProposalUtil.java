@@ -17,7 +17,6 @@ import static com.google.common.base.Preconditions.checkArgument;
 
 import java.util.Optional;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.bls.BLSSignatureVerifier;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
@@ -29,7 +28,6 @@ import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlockSchema;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.BeaconBlockBody;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.BeaconBlockBodyBuilder;
-import tech.pegasys.teku.spec.datastructures.blocks.blockbody.BeaconBlockBodySchema;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.logic.common.block.BlockProcessor;
 import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.BlockProcessingException;
@@ -60,13 +58,7 @@ public class BlockProposalUtil {
         blockSlotState.getSlot());
 
     // Create block body
-    final SafeFuture<? extends BeaconBlockBody> beaconBlockBody =
-        createBlockBody(
-            bodyBuilder,
-            isBlinded ->
-                isBlinded
-                    ? schemaDefinitions.getBlindedBeaconBlockSchema().getBodySchema()
-                    : schemaDefinitions.getBeaconBlockSchema().getBodySchema());
+    final SafeFuture<? extends BeaconBlockBody> beaconBlockBody = createBlockBody(bodyBuilder);
 
     // Create initial block with some stubs
     final Bytes32 tmpStateRoot = Bytes32.ZERO;
@@ -114,10 +106,9 @@ public class BlockProposalUtil {
   }
 
   private SafeFuture<? extends BeaconBlockBody> createBlockBody(
-      final Consumer<BeaconBlockBodyBuilder> builderConsumer,
-      final Function<Boolean, BeaconBlockBodySchema<?>> schemaResolver) {
+      final Consumer<BeaconBlockBodyBuilder> builderConsumer) {
     final BeaconBlockBodyBuilder builder = schemaDefinitions.createBeaconBlockBodyBuilder();
     builderConsumer.accept(builder);
-    return builder.build(schemaResolver);
+    return builder.build();
   }
 }

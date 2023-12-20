@@ -33,9 +33,7 @@ public class BeaconBlockBodyPhase0Test extends AbstractBeaconBlockBodyTest<Beaco
       final Consumer<BeaconBlockBodyBuilder> contentProvider) {
     final BeaconBlockBodyBuilder bodyBuilder = createBeaconBlockBodyBuilder();
     contentProvider.accept(bodyBuilder);
-    return bodyBuilder
-        .build(__ -> spec.getGenesisSchemaDefinitions().getBeaconBlockBodySchema())
-        .thenApply(body -> (BeaconBlockBodyPhase0) body);
+    return bodyBuilder.build().thenApply(body -> (BeaconBlockBodyPhase0) body);
   }
 
   @Override

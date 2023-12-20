@@ -25,11 +25,12 @@ import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.phase0.Be
 import tech.pegasys.teku.spec.datastructures.type.SszSignature;
 
 public class BeaconBlockBodyBuilderAltair extends BeaconBlockBodyBuilderPhase0 {
-
-  //  private final BeaconBlockBodySchemaAltairImpl schema;
   protected SyncAggregate syncAggregate;
 
-  public BeaconBlockBodyBuilderAltair() {}
+  public BeaconBlockBodyBuilderAltair(
+      final Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver) {
+    super(blindedToSchemaResolver);
+  }
 
   @Override
   public Boolean supportsSyncAggregate() {
@@ -49,8 +50,7 @@ public class BeaconBlockBodyBuilderAltair extends BeaconBlockBodyBuilderPhase0 {
   }
 
   @Override
-  public SafeFuture<BeaconBlockBody> build(
-      final Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver) {
+  public SafeFuture<BeaconBlockBody> build() {
     validate();
     final BeaconBlockBodySchemaAltairImpl schema =
         getAndValidateSchema(blindedToSchemaResolver, BeaconBlockBodySchemaAltairImpl.class);

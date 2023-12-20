@@ -33,7 +33,10 @@ public class BeaconBlockBodyBuilderDeneb extends BeaconBlockBodyBuilderCapella {
 
   private SafeFuture<SszList<SszKZGCommitment>> blobKzgCommitments;
 
-  public BeaconBlockBodyBuilderDeneb() {}
+  public BeaconBlockBodyBuilderDeneb(
+      final Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver) {
+    super(blindedToSchemaResolver);
+  }
 
   @Override
   public Boolean supportsKzgCommitments() {
@@ -54,8 +57,7 @@ public class BeaconBlockBodyBuilderDeneb extends BeaconBlockBodyBuilderCapella {
   }
 
   @Override
-  public SafeFuture<BeaconBlockBody> build(
-      final Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver) {
+  public SafeFuture<BeaconBlockBody> build() {
     validate();
     if (isBlinded()) {
       final BlindedBeaconBlockBodySchemaDenebImpl schema =

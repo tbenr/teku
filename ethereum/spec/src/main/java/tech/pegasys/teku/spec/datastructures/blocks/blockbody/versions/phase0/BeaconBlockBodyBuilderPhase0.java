@@ -47,8 +47,12 @@ public class BeaconBlockBodyBuilderPhase0 implements BeaconBlockBodyBuilder {
   protected SszList<AttesterSlashing> attesterSlashings;
   protected SszList<Deposit> deposits;
   protected SszList<SignedVoluntaryExit> voluntaryExits;
+  protected Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver;
 
-  public BeaconBlockBodyBuilderPhase0() {}
+  public BeaconBlockBodyBuilderPhase0(
+      final Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver) {
+    this.blindedToSchemaResolver = blindedToSchemaResolver;
+  }
 
   @Override
   public BeaconBlockBodyBuilder randaoReveal(final BLSSignature randaoReveal) {
@@ -147,16 +151,17 @@ public class BeaconBlockBodyBuilderPhase0 implements BeaconBlockBodyBuilder {
   @SuppressWarnings("unchecked")
   protected <T> T getAndValidateSchema(
       final Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver,
-      final Class<? extends T> schemaType) {
+      final Class<T> expectedSchemaType) {
     final BeaconBlockBodySchema<?> schema = blindedToSchemaResolver.apply(false);
     checkNotNull(schema, "schema must be specified");
-    checkArgument(schemaType.isInstance(schema), String.format("Schema should be: %s", schemaType));
+    checkArgument(
+        expectedSchemaType == schema.getClass(),
+        String.format("Schema should be: %s", expectedSchemaType));
     return (T) schema;
   }
 
   @Override
-  public SafeFuture<BeaconBlockBody> build(
-      final Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver) {
+  public SafeFuture<BeaconBlockBody> build() {
     validate();
     final BeaconBlockBodySchemaPhase0 schema =
         getAndValidateSchema(blindedToSchemaResolver, BeaconBlockBodySchemaPhase0.class);

@@ -32,7 +32,10 @@ public class BeaconBlockBodyBuilderCapella extends BeaconBlockBodyBuilderBellatr
 
   private SszList<SignedBlsToExecutionChange> blsToExecutionChanges;
 
-  public BeaconBlockBodyBuilderCapella() {}
+  public BeaconBlockBodyBuilderCapella(
+      final Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver) {
+    super(blindedToSchemaResolver);
+  }
 
   protected SszList<SignedBlsToExecutionChange> getBlsToExecutionChanges() {
     return blsToExecutionChanges;
@@ -57,8 +60,7 @@ public class BeaconBlockBodyBuilderCapella extends BeaconBlockBodyBuilderBellatr
   }
 
   @Override
-  public SafeFuture<BeaconBlockBody> build(
-      final Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver) {
+  public SafeFuture<BeaconBlockBody> build() {
     validate();
     if (isBlinded()) {
       final BlindedBeaconBlockBodySchemaCapellaImpl schema =

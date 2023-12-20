@@ -48,9 +48,7 @@ class BeaconBlockBodyAltairTest extends AbstractBeaconBlockBodyTest<BeaconBlockB
       final Consumer<BeaconBlockBodyBuilder> contentProvider) {
     final BeaconBlockBodyBuilder bodyBuilder = createBeaconBlockBodyBuilder();
     contentProvider.accept(bodyBuilder);
-    return bodyBuilder
-        .build(__ -> spec.getGenesisSchemaDefinitions().getBeaconBlockBodySchema())
-        .thenApply(body -> body.toVersionAltair().orElseThrow());
+    return bodyBuilder.build().thenApply(body -> body.toVersionAltair().orElseThrow());
   }
 
   @Override
