@@ -16,7 +16,6 @@ package tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.phase0;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 
-import java.util.function.Function;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.bls.BLSSignature;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
@@ -47,11 +46,11 @@ public class BeaconBlockBodyBuilderPhase0 implements BeaconBlockBodyBuilder {
   protected SszList<AttesterSlashing> attesterSlashings;
   protected SszList<Deposit> deposits;
   protected SszList<SignedVoluntaryExit> voluntaryExits;
-  protected Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver;
+  protected BeaconBlockBodySchema<?> schema;
 
   public BeaconBlockBodyBuilderPhase0(
-      final Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver) {
-    this.blindedToSchemaResolver = blindedToSchemaResolver;
+      final BeaconBlockBodySchema<? extends BeaconBlockBody> schema) {
+    this.schema = schema;
   }
 
   @Override
@@ -149,11 +148,8 @@ public class BeaconBlockBodyBuilderPhase0 implements BeaconBlockBodyBuilder {
   }
 
   @SuppressWarnings("unchecked")
-  protected <T> T getAndValidateSchema(
-      final Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver,
-      final Class<T> expectedSchemaType) {
-    final BeaconBlockBodySchema<?> schema = blindedToSchemaResolver.apply(false);
-    checkNotNull(schema, "schema must be specified");
+  protected <T> T getAndValidateSchema(final boolean blinded, final Class<T> expectedSchemaType) {
+    checkNotNull(schema, "Schema must be specified");
     checkArgument(
         expectedSchemaType == schema.getClass(),
         String.format("Schema should be: %s", expectedSchemaType));
@@ -164,7 +160,7 @@ public class BeaconBlockBodyBuilderPhase0 implements BeaconBlockBodyBuilder {
   public SafeFuture<BeaconBlockBody> build() {
     validate();
     final BeaconBlockBodySchemaPhase0 schema =
-        getAndValidateSchema(blindedToSchemaResolver, BeaconBlockBodySchemaPhase0.class);
+        getAndValidateSchema(false, BeaconBlockBodySchemaPhase0.class);
     return SafeFuture.completedFuture(
         new BeaconBlockBodyPhase0(
             schema,

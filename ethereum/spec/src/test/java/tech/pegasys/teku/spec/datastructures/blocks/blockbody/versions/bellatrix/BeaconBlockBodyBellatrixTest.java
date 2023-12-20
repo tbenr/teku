@@ -29,6 +29,7 @@ import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.spec.SpecMilestone;
 import tech.pegasys.teku.spec.datastructures.blocks.Eth1Data;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.BeaconBlockBodyBuilder;
+import tech.pegasys.teku.spec.datastructures.blocks.blockbody.BeaconBlockBodySchema;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.common.AbstractBeaconBlockBodyTest;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.altair.SyncAggregate;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
@@ -101,10 +102,10 @@ class BeaconBlockBodyBellatrixTest extends AbstractBeaconBlockBodyTest<BeaconBlo
   @SuppressWarnings("unchecked")
   void builderShouldFailWhenOverridingBlindedSchemaWithANullSchema() {
     BeaconBlockBodyBuilderBellatrix beaconBlockBodyBuilderBellatrix =
-        new BeaconBlockBodyBuilderBellatrix(__ -> blindedBlockBodySchema);
+        new BeaconBlockBodyBuilderBellatrix(null, blindedBlockBodySchema);
     Exception exception =
         assertThrows(
-            IllegalArgumentException.class,
+            NullPointerException.class,
             () ->
                 beaconBlockBodyBuilderBellatrix
                     .randaoReveal(mock(BLSSignature.class))
@@ -118,19 +119,18 @@ class BeaconBlockBodyBellatrixTest extends AbstractBeaconBlockBodyTest<BeaconBlo
                     .executionPayload(mock(SafeFuture.class))
                     .syncAggregate(mock(SyncAggregate.class))
                     .build());
-    assertEquals(
-        exception.getMessage(),
-        "Schema should be BeaconBlockBodySchemaBellatrixImpl but was BlindedBeaconBlockBodySchemaBellatrixImpl");
+    assertEquals(exception.getMessage(), "Schema must be specified");
   }
 
   @Test
   @SuppressWarnings("unchecked")
   void builderShouldFailWhenOverridingSchemaWithANullBlindedSchema() {
     BeaconBlockBodyBuilderBellatrix beaconBlockBodyBuilderBellatrix =
-        new BeaconBlockBodyBuilderBellatrix(__ -> blockBodySchema);
+        new BeaconBlockBodyBuilderBellatrix(
+            (BeaconBlockBodySchema<? extends BeaconBlockBodyBellatrix>) blockBodySchema, null);
     Exception exception =
         assertThrows(
-            IllegalArgumentException.class,
+            NullPointerException.class,
             () ->
                 beaconBlockBodyBuilderBellatrix
                     .randaoReveal(mock(BLSSignature.class))
@@ -144,9 +144,7 @@ class BeaconBlockBodyBellatrixTest extends AbstractBeaconBlockBodyTest<BeaconBlo
                     .executionPayloadHeader(mock(SafeFuture.class))
                     .syncAggregate(mock(SyncAggregate.class))
                     .build());
-    assertEquals(
-        exception.getMessage(),
-        "Schema should be BlindedBeaconBlockBodySchemaBellatrixImpl but was BeaconBlockBodySchemaBellatrixImpl");
+    assertEquals(exception.getMessage(), "Blinded schema must be specified");
   }
 
   @Override

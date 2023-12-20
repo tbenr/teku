@@ -61,7 +61,7 @@ public abstract class AbstractBeaconBlockBodyTest<T extends BeaconBlockBody> {
   protected T defaultBlockBody;
   protected BlindedBeaconBlockBodyBellatrix defaultBlindedBlockBody;
   protected BeaconBlockBodySchema<?> blockBodySchema;
-  protected BeaconBlockBodySchema<?> blindedBlockBodySchema;
+  protected BeaconBlockBodySchema<? extends BlindedBeaconBlockBodyBellatrix> blindedBlockBodySchema;
 
   protected void setUpBaseClass(final SpecMilestone milestone, Runnable additionalSetup) {
     spec = TestSpecFactory.createMinimal(milestone);

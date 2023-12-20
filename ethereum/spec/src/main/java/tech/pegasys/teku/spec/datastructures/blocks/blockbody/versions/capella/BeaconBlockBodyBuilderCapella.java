@@ -15,7 +15,6 @@ package tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.capella;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
-import java.util.function.Function;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
@@ -33,8 +32,9 @@ public class BeaconBlockBodyBuilderCapella extends BeaconBlockBodyBuilderBellatr
   private SszList<SignedBlsToExecutionChange> blsToExecutionChanges;
 
   public BeaconBlockBodyBuilderCapella(
-      final Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver) {
-    super(blindedToSchemaResolver);
+      final BeaconBlockBodySchema<? extends BeaconBlockBodyCapella> schema,
+      final BeaconBlockBodySchema<? extends BlindedBeaconBlockBodyCapella> blindedSchema) {
+    super(schema, blindedSchema);
   }
 
   protected SszList<SignedBlsToExecutionChange> getBlsToExecutionChanges() {
@@ -64,8 +64,7 @@ public class BeaconBlockBodyBuilderCapella extends BeaconBlockBodyBuilderBellatr
     validate();
     if (isBlinded()) {
       final BlindedBeaconBlockBodySchemaCapellaImpl schema =
-          getAndValidateSchema(
-              blindedToSchemaResolver, BlindedBeaconBlockBodySchemaCapellaImpl.class);
+          getAndValidateSchema(true, BlindedBeaconBlockBodySchemaCapellaImpl.class);
       return executionPayloadHeader.thenApply(
           header ->
               new BlindedBeaconBlockBodyCapellaImpl(
@@ -84,7 +83,7 @@ public class BeaconBlockBodyBuilderCapella extends BeaconBlockBodyBuilderBellatr
     }
 
     final BeaconBlockBodySchemaCapellaImpl schema =
-        getAndValidateSchema(blindedToSchemaResolver, BeaconBlockBodySchemaCapellaImpl.class);
+        getAndValidateSchema(false, BeaconBlockBodySchemaCapellaImpl.class);
     return executionPayload.thenApply(
         payload ->
             new BeaconBlockBodyCapellaImpl(

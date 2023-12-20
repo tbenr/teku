@@ -17,7 +17,6 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 
-import java.util.function.Function;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.BeaconBlockBody;
@@ -31,10 +30,13 @@ import tech.pegasys.teku.spec.datastructures.type.SszSignature;
 public class BeaconBlockBodyBuilderBellatrix extends BeaconBlockBodyBuilderAltair {
   protected SafeFuture<ExecutionPayload> executionPayload;
   protected SafeFuture<ExecutionPayloadHeader> executionPayloadHeader;
+  protected final BeaconBlockBodySchema<? extends BlindedBeaconBlockBodyBellatrix> blindedSchema;
 
   public BeaconBlockBodyBuilderBellatrix(
-      final Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver) {
-    super(blindedToSchemaResolver);
+      final BeaconBlockBodySchema<? extends BeaconBlockBodyBellatrix> schema,
+      final BeaconBlockBodySchema<? extends BlindedBeaconBlockBodyBellatrix> blindedSchema) {
+    super(schema);
+    this.blindedSchema = blindedSchema;
   }
 
   @Override
@@ -57,11 +59,15 @@ public class BeaconBlockBodyBuilderBellatrix extends BeaconBlockBodyBuilderAltai
 
   @Override
   @SuppressWarnings("unchecked")
-  protected <T> T getAndValidateSchema(
-      final Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver,
-      final Class<T> expectedSchemaType) {
-    final BeaconBlockBodySchema<?> schema = blindedToSchemaResolver.apply(isBlinded());
-    checkNotNull(schema, "schema must be specified");
+  protected <T> T getAndValidateSchema(final boolean blinded, final Class<T> expectedSchemaType) {
+    final BeaconBlockBodySchema<?> schema;
+    if (blinded) {
+      schema = this.blindedSchema;
+      checkNotNull(schema, "Blinded schema must be specified");
+    } else {
+      schema = this.schema;
+      checkNotNull(schema, "Schema must be specified");
+    }
     checkArgument(
         expectedSchemaType == schema.getClass(),
         String.format(
@@ -87,8 +93,7 @@ public class BeaconBlockBodyBuilderBellatrix extends BeaconBlockBodyBuilderAltai
     validate();
     if (isBlinded()) {
       final BlindedBeaconBlockBodySchemaBellatrixImpl schema =
-          getAndValidateSchema(
-              blindedToSchemaResolver, BlindedBeaconBlockBodySchemaBellatrixImpl.class);
+          getAndValidateSchema(true, BlindedBeaconBlockBodySchemaBellatrixImpl.class);
       return executionPayloadHeader.thenApply(
           header ->
               new BlindedBeaconBlockBodyBellatrixImpl(
@@ -106,7 +111,7 @@ public class BeaconBlockBodyBuilderBellatrix extends BeaconBlockBodyBuilderAltai
     }
 
     final BeaconBlockBodySchemaBellatrixImpl schema =
-        getAndValidateSchema(blindedToSchemaResolver, BeaconBlockBodySchemaBellatrixImpl.class);
+        getAndValidateSchema(false, BeaconBlockBodySchemaBellatrixImpl.class);
     return executionPayload.thenApply(
         payload ->
             new BeaconBlockBodyBellatrixImpl(

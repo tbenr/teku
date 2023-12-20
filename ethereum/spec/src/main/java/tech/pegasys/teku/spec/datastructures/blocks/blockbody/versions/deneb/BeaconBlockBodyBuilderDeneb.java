@@ -15,7 +15,6 @@ package tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.deneb;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
-import java.util.function.Function;
 import org.apache.commons.lang3.tuple.Pair;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
@@ -34,8 +33,9 @@ public class BeaconBlockBodyBuilderDeneb extends BeaconBlockBodyBuilderCapella {
   private SafeFuture<SszList<SszKZGCommitment>> blobKzgCommitments;
 
   public BeaconBlockBodyBuilderDeneb(
-      final Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver) {
-    super(blindedToSchemaResolver);
+      final BeaconBlockBodySchema<? extends BeaconBlockBodyDeneb> schema,
+      final BeaconBlockBodySchema<? extends BlindedBeaconBlockBodyDeneb> blindedSchema) {
+    super(schema, blindedSchema);
   }
 
   @Override
@@ -61,8 +61,7 @@ public class BeaconBlockBodyBuilderDeneb extends BeaconBlockBodyBuilderCapella {
     validate();
     if (isBlinded()) {
       final BlindedBeaconBlockBodySchemaDenebImpl schema =
-          getAndValidateSchema(
-              blindedToSchemaResolver, BlindedBeaconBlockBodySchemaDenebImpl.class);
+          getAndValidateSchema(true, BlindedBeaconBlockBodySchemaDenebImpl.class);
       return executionPayloadHeader
           .thenCompose(
               header -> blobKzgCommitments.thenApply(commitments -> Pair.of(header, commitments)))
@@ -86,7 +85,7 @@ public class BeaconBlockBodyBuilderDeneb extends BeaconBlockBodyBuilderCapella {
     }
 
     final BeaconBlockBodySchemaDenebImpl schema =
-        getAndValidateSchema(blindedToSchemaResolver, BeaconBlockBodySchemaDenebImpl.class);
+        getAndValidateSchema(false, BeaconBlockBodySchemaDenebImpl.class);
     return executionPayload
         .thenCompose(
             payload -> blobKzgCommitments.thenApply(commitments -> Pair.of(payload, commitments)))

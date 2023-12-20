@@ -15,7 +15,6 @@ package tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.altair;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
-import java.util.function.Function;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.BeaconBlockBody;
@@ -28,8 +27,8 @@ public class BeaconBlockBodyBuilderAltair extends BeaconBlockBodyBuilderPhase0 {
   protected SyncAggregate syncAggregate;
 
   public BeaconBlockBodyBuilderAltair(
-      final Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver) {
-    super(blindedToSchemaResolver);
+      final BeaconBlockBodySchema<? extends BeaconBlockBody> schema) {
+    super(schema);
   }
 
   @Override
@@ -53,7 +52,7 @@ public class BeaconBlockBodyBuilderAltair extends BeaconBlockBodyBuilderPhase0 {
   public SafeFuture<BeaconBlockBody> build() {
     validate();
     final BeaconBlockBodySchemaAltairImpl schema =
-        getAndValidateSchema(blindedToSchemaResolver, BeaconBlockBodySchemaAltairImpl.class);
+        getAndValidateSchema(false, BeaconBlockBodySchemaAltairImpl.class);
 
     return SafeFuture.completedFuture(
         new BeaconBlockBodyAltairImpl(

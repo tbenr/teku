@@ -882,8 +882,7 @@ class BlockOperationSelectorFactoryTest {
     }
 
     @Override
-    public SafeFuture<? extends BeaconBlockBody> build(
-        Function<Boolean, BeaconBlockBodySchema<?>> blindedToSchemaResolver) {
+    public SafeFuture<? extends BeaconBlockBody> build() {
       return null;
     }
   }
