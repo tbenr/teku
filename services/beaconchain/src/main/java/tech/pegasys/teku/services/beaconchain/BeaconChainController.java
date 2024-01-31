@@ -268,7 +268,7 @@ public class BeaconChainController extends Service implements BeaconChainControl
   protected volatile BlobSidecarManager blobSidecarManager;
   protected volatile Optional<TerminalPowBlockMonitor> terminalPowBlockMonitor = Optional.empty();
   protected volatile Optional<DataUnavailableBlockPool> dataUnavailableBlockPool = Optional.empty();
-  protected volatile ProposersDataManager proposersDataManager;
+  protected final SafeFuture<ProposersDataManager> proposersDataManagerFuture = new SafeFuture<>();
   protected volatile KeyValueStore<String, Bytes> keyValueStore;
   protected volatile StorageQueryChannel storageQueryChannel;
   protected volatile StorageUpdateChannel storageUpdateChannel;
@@ -400,7 +400,7 @@ public class BeaconChainController extends Service implements BeaconChainControl
     final VoteUpdateChannel voteUpdateChannel = eventChannels.getPublisher(VoteUpdateChannel.class);
 
     final ValidatorIsConnectedProvider validatorIsConnectedProvider =
-        new ValidatorIsConnectedProviderImpl(() -> forkChoiceNotifier);
+        new ValidatorIsConnectedProviderImpl(proposersDataManagerFuture);
     // Init other services
     return initWeakSubjectivity(storageQueryChannel, storageUpdateChannel)
         .thenCompose(
@@ -720,7 +720,7 @@ public class BeaconChainController extends Service implements BeaconChainControl
             .voluntaryExitPool(voluntaryExitPool)
             .blsToExecutionChangePool(blsToExecutionChangePool)
             .syncCommitteeContributionPool(syncCommitteeContributionPool)
-            .proposersDataManager(proposersDataManager)
+            .proposersDataManager(proposersDataManagerFuture.getImmediately())
             .forkChoiceNotifier(forkChoiceNotifier)
             .rejectedExecutionSupplier(rejectedExecutionCountSupplier)
             .build();
@@ -915,7 +915,7 @@ public class BeaconChainController extends Service implements BeaconChainControl
             performanceTracker,
             spec,
             forkChoiceTrigger,
-            proposersDataManager,
+            proposersDataManagerFuture.getImmediately(),
             syncCommitteeMessagePool,
             syncCommitteeContributionPool,
             syncCommitteeSubscriptionManager,
@@ -1279,7 +1279,7 @@ public class BeaconChainController extends Service implements BeaconChainControl
     final AsyncRunnerEventThread eventThread =
         new AsyncRunnerEventThread("forkChoiceNotifier", asyncRunnerFactory);
     eventThread.start();
-    proposersDataManager =
+    final ProposersDataManager proposersDataManager =
         new ProposersDataManager(
             eventThread,
             spec,
@@ -1288,6 +1288,7 @@ public class BeaconChainController extends Service implements BeaconChainControl
             recentChainData,
             getProposerDefaultFeeRecipient(),
             beaconConfig.eth2NetworkConfig().isForkChoiceUpdatedAlwaysSendPayloadAttributes());
+    proposersDataManagerFuture.complete(proposersDataManager);
     eventChannels.subscribe(SlotEventsChannel.class, proposersDataManager);
     forkChoiceNotifier =
         new ForkChoiceNotifierImpl(

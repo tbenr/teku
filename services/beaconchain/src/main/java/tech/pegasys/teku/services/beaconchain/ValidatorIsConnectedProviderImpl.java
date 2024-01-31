@@ -13,20 +13,23 @@
 
 package tech.pegasys.teku.services.beaconchain;
 
-import java.util.function.Supplier;
+import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
-import tech.pegasys.teku.statetransition.forkchoice.ForkChoiceNotifier;
+import tech.pegasys.teku.statetransition.forkchoice.ProposersDataManager;
 import tech.pegasys.teku.storage.client.ValidatorIsConnectedProvider;
 
 public class ValidatorIsConnectedProviderImpl implements ValidatorIsConnectedProvider {
-  private final Supplier<ForkChoiceNotifier> forkChoiceNotifier;
+  private final SafeFuture<ProposersDataManager> proposersDataManagerFuture;
 
-  public ValidatorIsConnectedProviderImpl(Supplier<ForkChoiceNotifier> forkChoiceNotifier) {
-    this.forkChoiceNotifier = forkChoiceNotifier;
+  public ValidatorIsConnectedProviderImpl(
+      final SafeFuture<ProposersDataManager> proposersDataManagerFuture) {
+    this.proposersDataManagerFuture = proposersDataManagerFuture;
   }
 
   @Override
   public boolean isValidatorConnected(int validatorId, UInt64 slot) {
-    return forkChoiceNotifier.get().validatorIsConnected(UInt64.valueOf(validatorId), slot);
+    return proposersDataManagerFuture
+        .getImmediately()
+        .validatorIsConnected(UInt64.valueOf(validatorId), slot);
   }
 }
