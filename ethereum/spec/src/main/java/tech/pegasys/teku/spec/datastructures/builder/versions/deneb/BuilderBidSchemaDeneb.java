@@ -19,6 +19,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema4;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt256;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobKzgCommitmentsSchema;
 import tech.pegasys.teku.spec.datastructures.builder.BuilderBid;
@@ -45,11 +46,11 @@ public class BuilderBidSchemaDeneb
       final BlobKzgCommitmentsSchema blobKzgCommitmentsSchema) {
     super(
         containerName,
-        namedSchema(
+        NamedSchema.namedSchema(
             "header", SszSchema.as(ExecutionPayloadHeader.class, executionPayloadHeaderSchema)),
-        namedSchema("blob_kzg_commitments", blobKzgCommitmentsSchema),
-        namedSchema("value", SszPrimitiveSchemas.UINT256_SCHEMA),
-        namedSchema("pubkey", SszPublicKeySchema.INSTANCE));
+        NamedSchema.namedSchema("blob_kzg_commitments", blobKzgCommitmentsSchema),
+        NamedSchema.namedSchema("value", SszPrimitiveSchemas.UINT256_SCHEMA),
+        NamedSchema.namedSchema("pubkey", SszPublicKeySchema.INSTANCE));
   }
 
   @Override

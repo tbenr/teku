@@ -26,6 +26,7 @@ import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
@@ -40,14 +41,14 @@ public class DepositTreeSnapshot
     private DepositTreeSnapshotSchema() {
       super(
           "DepositTreeSnapshot",
-          namedSchema(
+          NamedSchema.namedSchema(
               "finalized",
               SszListSchema.create(
                   SszPrimitiveSchemas.BYTES32_SCHEMA, DEPOSIT_CONTRACT_TREE_DEPTH)),
-          namedSchema("deposit_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
-          namedSchema("deposit_count", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("execution_block_hash", SszPrimitiveSchemas.BYTES32_SCHEMA),
-          namedSchema("execution_block_height", SszPrimitiveSchemas.UINT64_SCHEMA));
+          NamedSchema.namedSchema("deposit_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
+          NamedSchema.namedSchema("deposit_count", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("execution_block_hash", SszPrimitiveSchemas.BYTES32_SCHEMA),
+          NamedSchema.namedSchema("execution_block_height", SszPrimitiveSchemas.UINT64_SCHEMA));
     }
 
     @Override

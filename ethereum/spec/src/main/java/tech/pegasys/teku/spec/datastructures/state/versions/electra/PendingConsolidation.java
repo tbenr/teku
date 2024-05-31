@@ -17,6 +17,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.Container2;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 
 public class PendingConsolidation extends Container2<PendingConsolidation, SszUInt64, SszUInt64> {
@@ -37,8 +38,8 @@ public class PendingConsolidation extends Container2<PendingConsolidation, SszUI
     public PendingConsolidationSchema() {
       super(
           "PendingConsolidation",
-          namedSchema("source_index", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("target_index", SszPrimitiveSchemas.UINT64_SCHEMA));
+          NamedSchema.namedSchema("source_index", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("target_index", SszPrimitiveSchemas.UINT64_SCHEMA));
     }
 
     @Override

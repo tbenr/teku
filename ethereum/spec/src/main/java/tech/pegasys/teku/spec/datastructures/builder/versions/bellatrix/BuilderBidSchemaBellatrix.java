@@ -18,6 +18,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema3;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt256;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.datastructures.builder.BuilderBid;
 import tech.pegasys.teku.spec.datastructures.builder.BuilderBidBuilder;
@@ -36,10 +37,10 @@ public class BuilderBidSchemaBellatrix
       final ExecutionPayloadHeaderSchema<?> executionPayloadHeaderSchema) {
     super(
         containerName,
-        namedSchema(
+        NamedSchema.namedSchema(
             "header", SszSchema.as(ExecutionPayloadHeader.class, executionPayloadHeaderSchema)),
-        namedSchema("value", SszPrimitiveSchemas.UINT256_SCHEMA),
-        namedSchema("pubkey", SszPublicKeySchema.INSTANCE));
+        NamedSchema.namedSchema("value", SszPrimitiveSchemas.UINT256_SCHEMA),
+        NamedSchema.namedSchema("pubkey", SszPublicKeySchema.INSTANCE));
   }
 
   @Override

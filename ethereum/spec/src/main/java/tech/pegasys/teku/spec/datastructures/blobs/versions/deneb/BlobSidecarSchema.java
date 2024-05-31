@@ -24,6 +24,7 @@ import tech.pegasys.teku.infrastructure.ssz.schema.SszFieldName;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszBytes32VectorSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.kzg.KZGCommitment;
@@ -56,12 +57,12 @@ public class BlobSidecarSchema
       final int kzgCommitmentInclusionProofDepth) {
     super(
         "BlobSidecar",
-        namedSchema("index", SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema(FIELD_BLOB, blobSchema),
-        namedSchema("kzg_commitment", SszKZGCommitmentSchema.INSTANCE),
-        namedSchema("kzg_proof", SszKZGProofSchema.INSTANCE),
-        namedSchema(FIELD_SIGNED_BLOCK_HEADER, signedBeaconBlockHeaderSchema),
-        namedSchema(
+        NamedSchema.namedSchema("index", SszPrimitiveSchemas.UINT64_SCHEMA),
+        NamedSchema.namedSchema(FIELD_BLOB, blobSchema),
+        NamedSchema.namedSchema("kzg_commitment", SszKZGCommitmentSchema.INSTANCE),
+        NamedSchema.namedSchema("kzg_proof", SszKZGProofSchema.INSTANCE),
+        NamedSchema.namedSchema(FIELD_SIGNED_BLOCK_HEADER, signedBeaconBlockHeaderSchema),
+        NamedSchema.namedSchema(
             FIELD_KZG_COMMITMENT_INCLUSION_PROOF,
             SszBytes32VectorSchema.create(kzgCommitmentInclusionProofDepth)));
   }

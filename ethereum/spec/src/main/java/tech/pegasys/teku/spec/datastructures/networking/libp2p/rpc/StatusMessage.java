@@ -21,6 +21,7 @@ import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes4;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
@@ -37,11 +38,11 @@ public class StatusMessage
     public StatusMessageSchema() {
       super(
           "StatusMessage",
-          namedSchema("fork_digest", SszPrimitiveSchemas.BYTES4_SCHEMA),
-          namedSchema("finalized_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
-          namedSchema("finalized_epoch", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("head_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
-          namedSchema("head_slot", SszPrimitiveSchemas.UINT64_SCHEMA));
+          NamedSchema.namedSchema("fork_digest", SszPrimitiveSchemas.BYTES4_SCHEMA),
+          NamedSchema.namedSchema("finalized_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
+          NamedSchema.namedSchema("finalized_epoch", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("head_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
+          NamedSchema.namedSchema("head_slot", SszPrimitiveSchemas.UINT64_SCHEMA));
     }
 
     @Override

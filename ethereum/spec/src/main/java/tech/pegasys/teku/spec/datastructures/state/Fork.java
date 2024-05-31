@@ -20,6 +20,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema3;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes4;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
@@ -30,9 +31,9 @@ public class Fork extends Container3<Fork, SszBytes4, SszBytes4, SszUInt64> {
     public ForkSchema() {
       super(
           "Fork",
-          namedSchema("previous_version", SszPrimitiveSchemas.BYTES4_SCHEMA),
-          namedSchema("current_version", SszPrimitiveSchemas.BYTES4_SCHEMA),
-          namedSchema("epoch", SszPrimitiveSchemas.UINT64_SCHEMA));
+          NamedSchema.namedSchema("previous_version", SszPrimitiveSchemas.BYTES4_SCHEMA),
+          NamedSchema.namedSchema("current_version", SszPrimitiveSchemas.BYTES4_SCHEMA),
+          NamedSchema.namedSchema("epoch", SszPrimitiveSchemas.UINT64_SCHEMA));
     }
 
     @Override

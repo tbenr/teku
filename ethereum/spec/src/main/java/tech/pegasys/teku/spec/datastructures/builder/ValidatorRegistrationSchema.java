@@ -20,6 +20,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema4;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszByteVectorSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.datastructures.type.SszPublicKey;
@@ -31,10 +32,10 @@ public class ValidatorRegistrationSchema
   public ValidatorRegistrationSchema() {
     super(
         "ValidatorRegistration",
-        namedSchema("fee_recipient", SszByteVectorSchema.create(Bytes20.SIZE)),
-        namedSchema("gas_limit", SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema("timestamp", SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema("pubkey", SszPublicKeySchema.INSTANCE));
+        NamedSchema.namedSchema("fee_recipient", SszByteVectorSchema.create(Bytes20.SIZE)),
+        NamedSchema.namedSchema("gas_limit", SszPrimitiveSchemas.UINT64_SCHEMA),
+        NamedSchema.namedSchema("timestamp", SszPrimitiveSchemas.UINT64_SCHEMA),
+        NamedSchema.namedSchema("pubkey", SszPublicKeySchema.INSTANCE));
   }
 
   public ValidatorRegistration create(

@@ -17,6 +17,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.Container2;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
@@ -27,8 +28,8 @@ public class PendingBalanceDeposit extends Container2<PendingBalanceDeposit, Ssz
     public PendingBalanceDepositSchema() {
       super(
           "PendingBalanceDeposit",
-          namedSchema("index", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("amount", SszPrimitiveSchemas.UINT64_SCHEMA));
+          NamedSchema.namedSchema("index", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("amount", SszPrimitiveSchemas.UINT64_SCHEMA));
     }
 
     @Override

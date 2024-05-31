@@ -18,6 +18,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.Container2;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 
 public class SigningData extends Container2<SigningData, SszBytes32, SszBytes32> {
@@ -28,8 +29,8 @@ public class SigningData extends Container2<SigningData, SszBytes32, SszBytes32>
     public SigningDataSchema() {
       super(
           "SigningData",
-          namedSchema("object_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
-          namedSchema("domain", SszPrimitiveSchemas.BYTES32_SCHEMA));
+          NamedSchema.namedSchema("object_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
+          NamedSchema.namedSchema("domain", SszPrimitiveSchemas.BYTES32_SCHEMA));
     }
 
     @Override

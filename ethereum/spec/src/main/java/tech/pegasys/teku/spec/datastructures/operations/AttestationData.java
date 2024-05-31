@@ -19,6 +19,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema5;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
@@ -35,11 +36,11 @@ public class AttestationData
     public AttestationDataSchema() {
       super(
           "AttestationData",
-          namedSchema("slot", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("index", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("beacon_block_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
-          namedSchema("source", Checkpoint.SSZ_SCHEMA),
-          namedSchema("target", Checkpoint.SSZ_SCHEMA));
+          NamedSchema.namedSchema("slot", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("index", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("beacon_block_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
+          NamedSchema.namedSchema("source", Checkpoint.SSZ_SCHEMA),
+          NamedSchema.namedSchema("target", Checkpoint.SSZ_SCHEMA));
     }
 
     @Override

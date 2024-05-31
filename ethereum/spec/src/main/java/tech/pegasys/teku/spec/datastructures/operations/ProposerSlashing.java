@@ -15,6 +15,7 @@ package tech.pegasys.teku.spec.datastructures.operations;
 
 import tech.pegasys.teku.infrastructure.ssz.containers.Container2;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlockHeader;
 
@@ -27,8 +28,8 @@ public class ProposerSlashing
     public ProposerSlashingSchema() {
       super(
           "ProposerSlashing",
-          namedSchema("signed_header_1", SignedBeaconBlockHeader.SSZ_SCHEMA),
-          namedSchema("signed_header_2", SignedBeaconBlockHeader.SSZ_SCHEMA));
+          NamedSchema.namedSchema("signed_header_1", SignedBeaconBlockHeader.SSZ_SCHEMA),
+          NamedSchema.namedSchema("signed_header_2", SignedBeaconBlockHeader.SSZ_SCHEMA));
     }
 
     @Override

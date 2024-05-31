@@ -17,6 +17,7 @@ import com.google.common.base.MoreObjects;
 import tech.pegasys.teku.bls.BLSSignature;
 import tech.pegasys.teku.infrastructure.ssz.containers.Container2;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.datastructures.type.SszSignature;
 import tech.pegasys.teku.spec.datastructures.type.SszSignatureSchema;
@@ -31,8 +32,8 @@ public class SignedVoluntaryExit
     public SignedVoluntaryExitSchema() {
       super(
           "SignedVoluntaryExit",
-          namedSchema("message", VoluntaryExit.SSZ_SCHEMA),
-          namedSchema("signature", SszSignatureSchema.INSTANCE));
+          NamedSchema.namedSchema("message", VoluntaryExit.SSZ_SCHEMA),
+          NamedSchema.namedSchema("signature", SszSignatureSchema.INSTANCE));
     }
 
     @Override

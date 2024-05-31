@@ -43,6 +43,7 @@ import tech.pegasys.teku.infrastructure.ssz.schema.SszListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszByteListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszByteVectorSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.config.SpecConfigCapella;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
@@ -80,24 +81,26 @@ public class ExecutionPayloadSchemaCapella
   public ExecutionPayloadSchemaCapella(final SpecConfigCapella specConfig) {
     super(
         "ExecutionPayloadCapella",
-        namedSchema(PARENT_HASH, SszPrimitiveSchemas.BYTES32_SCHEMA),
-        namedSchema(FEE_RECIPIENT, SszByteVectorSchema.create(Bytes20.SIZE)),
-        namedSchema(STATE_ROOT, SszPrimitiveSchemas.BYTES32_SCHEMA),
-        namedSchema(RECEIPTS_ROOT, SszPrimitiveSchemas.BYTES32_SCHEMA),
-        namedSchema(LOGS_BLOOM, SszByteVectorSchema.create(specConfig.getBytesPerLogsBloom())),
-        namedSchema(PREV_RANDAO, SszPrimitiveSchemas.BYTES32_SCHEMA),
-        namedSchema(BLOCK_NUMBER, SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema(GAS_LIMIT, SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema(GAS_USED, SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema(TIMESTAMP, SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema(EXTRA_DATA, SszByteListSchema.create(specConfig.getMaxExtraDataBytes())),
-        namedSchema(BASE_FEE_PER_GAS, SszPrimitiveSchemas.UINT256_SCHEMA),
-        namedSchema(BLOCK_HASH, SszPrimitiveSchemas.BYTES32_SCHEMA),
-        namedSchema(
+        NamedSchema.namedSchema(PARENT_HASH, SszPrimitiveSchemas.BYTES32_SCHEMA),
+        NamedSchema.namedSchema(FEE_RECIPIENT, SszByteVectorSchema.create(Bytes20.SIZE)),
+        NamedSchema.namedSchema(STATE_ROOT, SszPrimitiveSchemas.BYTES32_SCHEMA),
+        NamedSchema.namedSchema(RECEIPTS_ROOT, SszPrimitiveSchemas.BYTES32_SCHEMA),
+        NamedSchema.namedSchema(
+            LOGS_BLOOM, SszByteVectorSchema.create(specConfig.getBytesPerLogsBloom())),
+        NamedSchema.namedSchema(PREV_RANDAO, SszPrimitiveSchemas.BYTES32_SCHEMA),
+        NamedSchema.namedSchema(BLOCK_NUMBER, SszPrimitiveSchemas.UINT64_SCHEMA),
+        NamedSchema.namedSchema(GAS_LIMIT, SszPrimitiveSchemas.UINT64_SCHEMA),
+        NamedSchema.namedSchema(GAS_USED, SszPrimitiveSchemas.UINT64_SCHEMA),
+        NamedSchema.namedSchema(TIMESTAMP, SszPrimitiveSchemas.UINT64_SCHEMA),
+        NamedSchema.namedSchema(
+            EXTRA_DATA, SszByteListSchema.create(specConfig.getMaxExtraDataBytes())),
+        NamedSchema.namedSchema(BASE_FEE_PER_GAS, SszPrimitiveSchemas.UINT256_SCHEMA),
+        NamedSchema.namedSchema(BLOCK_HASH, SszPrimitiveSchemas.BYTES32_SCHEMA),
+        NamedSchema.namedSchema(
             TRANSACTIONS,
             SszListSchema.create(
                 new TransactionSchema(specConfig), specConfig.getMaxTransactionsPerPayload())),
-        namedSchema(
+        NamedSchema.namedSchema(
             WITHDRAWALS,
             SszListSchema.create(Withdrawal.SSZ_SCHEMA, specConfig.getMaxWithdrawalsPerPayload())));
     this.defaultExecutionPayload = createFromBackingNode(getDefaultTree());

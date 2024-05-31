@@ -15,6 +15,7 @@ package tech.pegasys.teku.spec.datastructures.builder;
 
 import tech.pegasys.teku.bls.BLSSignature;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.datastructures.type.SszSignature;
 import tech.pegasys.teku.spec.datastructures.type.SszSignatureSchema;
@@ -26,8 +27,8 @@ public class SignedValidatorRegistrationSchema
       final ValidatorRegistrationSchema validatorRegistrationSchema) {
     super(
         "SignedValidatorRegistration",
-        namedSchema("message", validatorRegistrationSchema),
-        namedSchema("signature", SszSignatureSchema.INSTANCE));
+        NamedSchema.namedSchema("message", validatorRegistrationSchema),
+        NamedSchema.namedSchema("signature", SszSignatureSchema.INSTANCE));
   }
 
   public SignedValidatorRegistration create(

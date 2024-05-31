@@ -21,6 +21,7 @@ import java.util.TreeSet;
 import java.util.function.Supplier;
 import tech.pegasys.teku.infrastructure.ssz.containers.Container2;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
@@ -34,8 +35,8 @@ public class AttesterSlashing
         final IndexedAttestation.IndexedAttestationSchema indexedAttestationSchema) {
       super(
           "AttesterSlashing",
-          namedSchema("attestation_1", indexedAttestationSchema),
-          namedSchema("attestation_2", indexedAttestationSchema));
+          NamedSchema.namedSchema("attestation_1", indexedAttestationSchema),
+          NamedSchema.namedSchema("attestation_2", indexedAttestationSchema));
     }
 
     @Override

@@ -18,6 +18,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema7;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszBytes32VectorSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.config.SpecConfigAltair;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.altair.SyncAggregate;
@@ -38,18 +39,19 @@ public class LightClientUpdateSchema
   public LightClientUpdateSchema(final SpecConfigAltair specConfigAltair) {
     super(
         "LightClientUpdate",
-        namedSchema("attested_header", new LightClientHeaderSchema()),
-        namedSchema("next_sync_committee", new SyncCommittee.SyncCommitteeSchema(specConfigAltair)),
-        namedSchema(
+        NamedSchema.namedSchema("attested_header", new LightClientHeaderSchema()),
+        NamedSchema.namedSchema(
+            "next_sync_committee", new SyncCommittee.SyncCommitteeSchema(specConfigAltair)),
+        NamedSchema.namedSchema(
             "next_sync_committee_branch",
             SszBytes32VectorSchema.create(specConfigAltair.getSyncCommitteeBranchLength())),
-        namedSchema("finalized_header", new LightClientHeaderSchema()),
-        namedSchema(
+        NamedSchema.namedSchema("finalized_header", new LightClientHeaderSchema()),
+        NamedSchema.namedSchema(
             "finality_branch",
             SszBytes32VectorSchema.create(specConfigAltair.getFinalityBranchLength())),
-        namedSchema(
+        NamedSchema.namedSchema(
             "sync_aggregate", SyncAggregateSchema.create(specConfigAltair.getSyncCommitteeSize())),
-        namedSchema("signature_slot", SszPrimitiveSchemas.UINT64_SCHEMA));
+        NamedSchema.namedSchema("signature_slot", SszPrimitiveSchemas.UINT64_SCHEMA));
   }
 
   public LightClientUpdate create(

@@ -17,6 +17,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema3;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes4;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.config.SpecConfigAltair;
 
@@ -26,9 +27,9 @@ public class LightClientUpdateResponseSchema
   public LightClientUpdateResponseSchema(final SpecConfigAltair specConfigAltair) {
     super(
         "LightClientUpdateResponse",
-        namedSchema("response_chunk_len", SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema("context", SszPrimitiveSchemas.BYTES4_SCHEMA),
-        namedSchema("payload", new LightClientUpdateSchema(specConfigAltair)));
+        NamedSchema.namedSchema("response_chunk_len", SszPrimitiveSchemas.UINT64_SCHEMA),
+        NamedSchema.namedSchema("context", SszPrimitiveSchemas.BYTES4_SCHEMA),
+        NamedSchema.namedSchema("payload", new LightClientUpdateSchema(specConfigAltair)));
   }
 
   public LightClientUpdateResponse create(

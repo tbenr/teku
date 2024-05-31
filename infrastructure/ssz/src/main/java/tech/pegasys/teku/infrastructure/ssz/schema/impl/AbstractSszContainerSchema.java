@@ -32,7 +32,6 @@ import tech.pegasys.teku.infrastructure.json.types.DeserializableTypeDefinition;
 import tech.pegasys.teku.infrastructure.ssz.SszContainer;
 import tech.pegasys.teku.infrastructure.ssz.SszData;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszContainerSchema;
-import tech.pegasys.teku.infrastructure.ssz.schema.SszFieldName;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszType;
 import tech.pegasys.teku.infrastructure.ssz.schema.json.SszContainerTypeDefinition;
@@ -45,39 +44,6 @@ import tech.pegasys.teku.infrastructure.ssz.tree.TreeUtil;
 
 public abstract class AbstractSszContainerSchema<C extends SszContainer>
     implements SszContainerSchema<C> {
-
-  public static class NamedSchema<T extends SszData> {
-    private final String name;
-    private final SszSchema<T> schema;
-
-    public static <T extends SszData> NamedSchema<T> of(
-        final String name, final SszSchema<T> schema) {
-      return new NamedSchema<>(name, schema);
-    }
-
-    private NamedSchema(final String name, final SszSchema<T> schema) {
-      this.name = name;
-      this.schema = schema;
-    }
-
-    public String getName() {
-      return name;
-    }
-
-    public SszSchema<T> getSchema() {
-      return schema;
-    }
-  }
-
-  protected static <T extends SszData> NamedSchema<T> namedSchema(
-      final SszFieldName fieldName, final SszSchema<T> schema) {
-    return namedSchema(fieldName.getSszFieldName(), schema);
-  }
-
-  protected static <T extends SszData> NamedSchema<T> namedSchema(
-      final String fieldName, final SszSchema<T> schema) {
-    return new NamedSchema<>(fieldName, schema);
-  }
 
   private final Supplier<SszLengthBounds> sszLengthBounds =
       Suppliers.memoize(this::computeSszLengthBounds);

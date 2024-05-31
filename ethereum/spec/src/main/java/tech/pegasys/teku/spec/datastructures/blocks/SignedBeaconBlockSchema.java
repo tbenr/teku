@@ -16,6 +16,7 @@ package tech.pegasys.teku.spec.datastructures.blocks;
 import it.unimi.dsi.fastutil.longs.LongList;
 import tech.pegasys.teku.bls.BLSSignature;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.GIndexUtil;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.datastructures.type.SszSignature;
@@ -29,8 +30,8 @@ public class SignedBeaconBlockSchema
       final BeaconBlockSchema beaconBlockSchema, final String containerName) {
     super(
         containerName,
-        namedSchema(SignedBeaconBlockFields.MESSAGE, beaconBlockSchema),
-        namedSchema(SignedBeaconBlockFields.SIGNATURE, SszSignatureSchema.INSTANCE));
+        NamedSchema.namedSchema(SignedBeaconBlockFields.MESSAGE, beaconBlockSchema),
+        NamedSchema.namedSchema(SignedBeaconBlockFields.SIGNATURE, SszSignatureSchema.INSTANCE));
   }
 
   public SignedBeaconBlock create(final BeaconBlock message, final BLSSignature signature) {

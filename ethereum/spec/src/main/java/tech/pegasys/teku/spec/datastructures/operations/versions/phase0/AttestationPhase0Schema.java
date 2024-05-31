@@ -21,6 +21,7 @@ import tech.pegasys.teku.infrastructure.ssz.collections.SszBitvector;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema3;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszBitlistSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszBitvectorSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.datastructures.operations.Attestation;
 import tech.pegasys.teku.spec.datastructures.operations.AttestationData;
@@ -35,9 +36,10 @@ public class AttestationPhase0Schema
   public AttestationPhase0Schema(final long maxValidatorPerAttestation) {
     super(
         "AttestationPhase0",
-        namedSchema("aggregation_bits", SszBitlistSchema.create(maxValidatorPerAttestation)),
-        namedSchema("data", AttestationData.SSZ_SCHEMA),
-        namedSchema("signature", SszSignatureSchema.INSTANCE));
+        NamedSchema.namedSchema(
+            "aggregation_bits", SszBitlistSchema.create(maxValidatorPerAttestation)),
+        NamedSchema.namedSchema("data", AttestationData.SSZ_SCHEMA),
+        NamedSchema.namedSchema("signature", SszSignatureSchema.INSTANCE));
   }
 
   @Override

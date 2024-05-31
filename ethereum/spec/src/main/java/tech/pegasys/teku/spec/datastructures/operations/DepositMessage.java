@@ -20,6 +20,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema3;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.datastructures.type.SszPublicKey;
@@ -34,9 +35,9 @@ public class DepositMessage
     public DepositMessageSchema() {
       super(
           "DepositMessage",
-          namedSchema("pubkey", SszPublicKeySchema.INSTANCE),
-          namedSchema("withdrawal_credentials", SszPrimitiveSchemas.BYTES32_SCHEMA),
-          namedSchema("amount", SszPrimitiveSchemas.UINT64_SCHEMA));
+          NamedSchema.namedSchema("pubkey", SszPublicKeySchema.INSTANCE),
+          NamedSchema.namedSchema("withdrawal_credentials", SszPrimitiveSchemas.BYTES32_SCHEMA),
+          NamedSchema.namedSchema("amount", SszPrimitiveSchemas.UINT64_SCHEMA));
     }
 
     @Override

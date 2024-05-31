@@ -20,6 +20,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema3;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszByteVectorSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.datastructures.type.SszPublicKey;
@@ -31,9 +32,9 @@ public class BlsToExecutionChangeSchema
   public BlsToExecutionChangeSchema() {
     super(
         "BLSToExecutionChange",
-        namedSchema("validator_index", SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema("from_bls_pubkey", SszPublicKeySchema.INSTANCE),
-        namedSchema("to_execution_address", SszByteVectorSchema.create(Bytes20.SIZE)));
+        NamedSchema.namedSchema("validator_index", SszPrimitiveSchemas.UINT64_SCHEMA),
+        NamedSchema.namedSchema("from_bls_pubkey", SszPublicKeySchema.INSTANCE),
+        NamedSchema.namedSchema("to_execution_address", SszByteVectorSchema.create(Bytes20.SIZE)));
   }
 
   public BlsToExecutionChange create(

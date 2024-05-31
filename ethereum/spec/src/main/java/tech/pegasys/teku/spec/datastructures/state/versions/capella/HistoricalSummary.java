@@ -17,6 +17,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.Container2;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 
 public class HistoricalSummary extends Container2<HistoricalSummary, SszBytes32, SszBytes32> {
@@ -26,8 +27,8 @@ public class HistoricalSummary extends Container2<HistoricalSummary, SszBytes32,
     public HistoricalSummarySchema() {
       super(
           "HistoricalSummary",
-          namedSchema("block_summary_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
-          namedSchema("state_summary_root", SszPrimitiveSchemas.BYTES32_SCHEMA));
+          NamedSchema.namedSchema("block_summary_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
+          NamedSchema.namedSchema("state_summary_root", SszPrimitiveSchemas.BYTES32_SCHEMA));
     }
 
     @Override

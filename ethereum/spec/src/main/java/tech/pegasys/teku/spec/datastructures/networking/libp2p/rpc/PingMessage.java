@@ -17,6 +17,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.Container1;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema1;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
@@ -29,7 +30,8 @@ public class PingMessage extends Container1<PingMessage, SszUInt64> implements R
   static class PingMessageSchema extends ContainerSchema1<PingMessage, SszUInt64> {
 
     public PingMessageSchema() {
-      super("PingMessage", namedSchema("seq_number", SszPrimitiveSchemas.UINT64_SCHEMA));
+      super(
+          "PingMessage", NamedSchema.namedSchema("seq_number", SszPrimitiveSchemas.UINT64_SCHEMA));
     }
 
     @Override

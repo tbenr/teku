@@ -18,6 +18,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema3;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszBitvectorSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.config.NetworkingSpecConfig;
@@ -30,10 +31,10 @@ public class MetadataMessageSchemaAltair
   public MetadataMessageSchemaAltair(final NetworkingSpecConfig networkingSpecConfig) {
     super(
         "MetadataMessage",
-        namedSchema("seq_number", SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema(
+        NamedSchema.namedSchema("seq_number", SszPrimitiveSchemas.UINT64_SCHEMA),
+        NamedSchema.namedSchema(
             "attnets", SszBitvectorSchema.create(networkingSpecConfig.getAttestationSubnetCount())),
-        namedSchema(
+        NamedSchema.namedSchema(
             "syncnets", SszBitvectorSchema.create(NetworkConstants.SYNC_COMMITTEE_SUBNET_COUNT)));
   }
 

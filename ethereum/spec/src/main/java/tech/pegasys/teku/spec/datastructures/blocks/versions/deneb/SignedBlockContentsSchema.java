@@ -18,6 +18,7 @@ import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema3;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszFieldName;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszListSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.kzg.KZGProof;
 import tech.pegasys.teku.spec.config.SpecConfigDeneb;
@@ -44,11 +45,11 @@ public class SignedBlockContentsSchema
       final BlobSchema blobSchema) {
     super(
         containerName,
-        namedSchema("signed_block", signedBeaconBlockSchema),
-        namedSchema(
+        NamedSchema.namedSchema("signed_block", signedBeaconBlockSchema),
+        NamedSchema.namedSchema(
             FIELD_KZG_PROOFS,
             SszListSchema.create(SszKZGProofSchema.INSTANCE, specConfig.getMaxBlobsPerBlock())),
-        namedSchema(
+        NamedSchema.namedSchema(
             FIELD_BLOBS, SszListSchema.create(blobSchema, specConfig.getMaxBlobsPerBlock())));
   }
 

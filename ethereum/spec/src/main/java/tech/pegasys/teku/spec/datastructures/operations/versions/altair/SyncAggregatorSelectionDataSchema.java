@@ -16,6 +16,7 @@ package tech.pegasys.teku.spec.datastructures.operations.versions.altair;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
@@ -28,8 +29,8 @@ public class SyncAggregatorSelectionDataSchema
   private SyncAggregatorSelectionDataSchema() {
     super(
         "SyncAggregatorSelectionData",
-        namedSchema("slot", SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema("subcommittee_index", SszPrimitiveSchemas.UINT64_SCHEMA));
+        NamedSchema.namedSchema("slot", SszPrimitiveSchemas.UINT64_SCHEMA),
+        NamedSchema.namedSchema("subcommittee_index", SszPrimitiveSchemas.UINT64_SCHEMA));
   }
 
   @Override

@@ -17,6 +17,7 @@ import tech.pegasys.teku.bls.BLSSignature;
 import tech.pegasys.teku.infrastructure.ssz.collections.SszBitvector;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszBitvectorSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.datastructures.type.SszSignature;
 import tech.pegasys.teku.spec.datastructures.type.SszSignatureSchema;
@@ -32,8 +33,9 @@ public class SyncAggregateSchema
 
   public static SyncAggregateSchema create(final int syncCommitteeSize) {
     return new SyncAggregateSchema(
-        namedSchema("sync_committee_bits", SszBitvectorSchema.create(syncCommitteeSize)),
-        namedSchema("sync_committee_signature", SszSignatureSchema.INSTANCE));
+        NamedSchema.namedSchema(
+            "sync_committee_bits", SszBitvectorSchema.create(syncCommitteeSize)),
+        NamedSchema.namedSchema("sync_committee_signature", SszSignatureSchema.INSTANCE));
   }
 
   @Override

@@ -16,6 +16,7 @@ package tech.pegasys.teku.spec.datastructures.builder;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema3;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszListSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.config.SpecConfigDeneb;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.Blob;
@@ -36,12 +37,12 @@ public class BlobsBundleSchema
       final SpecConfigDeneb specConfig) {
     super(
         containerName,
-        namedSchema("commitments", blobKzgCommitmentsSchema),
-        namedSchema(
+        NamedSchema.namedSchema("commitments", blobKzgCommitmentsSchema),
+        NamedSchema.namedSchema(
             "proofs",
             SszListSchema.create(
                 SszKZGProofSchema.INSTANCE, specConfig.getMaxBlobCommitmentsPerBlock())),
-        namedSchema(
+        NamedSchema.namedSchema(
             "blobs", SszListSchema.create(blobSchema, specConfig.getMaxBlobCommitmentsPerBlock())));
   }
 

@@ -19,6 +19,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema3;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes4;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
@@ -30,9 +31,9 @@ public class EnrForkId extends Container3<EnrForkId, SszBytes4, SszBytes4, SszUI
     public EnrForkIdSchema() {
       super(
           "EnrForkId",
-          namedSchema("fork_digest", SszPrimitiveSchemas.BYTES4_SCHEMA),
-          namedSchema("next_fork_version", SszPrimitiveSchemas.BYTES4_SCHEMA),
-          namedSchema("next_fork_epoch", SszPrimitiveSchemas.UINT64_SCHEMA));
+          NamedSchema.namedSchema("fork_digest", SszPrimitiveSchemas.BYTES4_SCHEMA),
+          NamedSchema.namedSchema("next_fork_version", SszPrimitiveSchemas.BYTES4_SCHEMA),
+          NamedSchema.namedSchema("next_fork_epoch", SszPrimitiveSchemas.UINT64_SCHEMA));
     }
 
     @Override

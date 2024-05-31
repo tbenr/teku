@@ -16,6 +16,7 @@ package tech.pegasys.teku.reference.phase0.ssz_generic.containers;
 import static tech.pegasys.teku.reference.phase0.ssz_generic.containers.UInt16PrimitiveSchema.UINT16_SCHEMA;
 
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 
 public class SmallTestStructSchema extends ContainerSchema2<SmallTestStruct, SszUInt16, SszUInt16> {

@@ -35,7 +35,7 @@ import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt256;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszBitlistSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszBitvectorSchema;
-import tech.pegasys.teku.infrastructure.ssz.schema.impl.AbstractSszContainerSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
@@ -400,11 +400,10 @@ public class SszOptionalSchemaTest extends SszSchemaTestBase {
         SszContainerSchema.create(
             "Foo",
             List.of(
-                AbstractSszContainerSchema.NamedSchema.of(
-                    "value1", SszPrimitiveSchemas.UINT64_SCHEMA),
-                AbstractSszContainerSchema.NamedSchema.of(
+                NamedSchema.of("value1", SszPrimitiveSchemas.UINT64_SCHEMA),
+                NamedSchema.of(
                     "value2", SszOptionalSchema.create(SszPrimitiveSchemas.UINT64_SCHEMA)),
-                AbstractSszContainerSchema.NamedSchema.of(
+                NamedSchema.of(
                     "value3", SszOptionalSchema.create(SszPrimitiveSchemas.UINT256_SCHEMA))),
             Foo::new);
 
@@ -419,14 +418,11 @@ public class SszOptionalSchemaTest extends SszSchemaTestBase {
         SszContainerSchema.create(
             "TestSmallContainer",
             List.of(
-                AbstractSszContainerSchema.NamedSchema.of(
-                    "a", SszOptionalSchema.create(SszPrimitiveSchemas.BYTES32_SCHEMA)),
-                AbstractSszContainerSchema.NamedSchema.of("b", SszPrimitiveSchemas.BYTES32_SCHEMA),
-                AbstractSszContainerSchema.NamedSchema.of(
-                    "c", SszOptionalSchema.create(SszPrimitiveSchemas.BYTES32_SCHEMA)),
-                AbstractSszContainerSchema.NamedSchema.of("d", SszPrimitiveSchemas.BYTES32_SCHEMA),
-                AbstractSszContainerSchema.NamedSchema.of(
-                    "e", SszOptionalSchema.create(SszPrimitiveSchemas.BYTES32_SCHEMA))),
+                NamedSchema.of("a", SszOptionalSchema.create(SszPrimitiveSchemas.BYTES32_SCHEMA)),
+                NamedSchema.of("b", SszPrimitiveSchemas.BYTES32_SCHEMA),
+                NamedSchema.of("c", SszOptionalSchema.create(SszPrimitiveSchemas.BYTES32_SCHEMA)),
+                NamedSchema.of("d", SszPrimitiveSchemas.BYTES32_SCHEMA),
+                NamedSchema.of("e", SszOptionalSchema.create(SszPrimitiveSchemas.BYTES32_SCHEMA))),
             ContainerWithOptionals::new);
 
     private ContainerWithOptionals(

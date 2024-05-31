@@ -19,6 +19,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema3;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
@@ -30,9 +31,9 @@ public class Eth1Data extends Container3<Eth1Data, SszBytes32, SszUInt64, SszByt
     public Eth1DataSchema() {
       super(
           "Eth1Data",
-          namedSchema("deposit_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
-          namedSchema("deposit_count", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("block_hash", SszPrimitiveSchemas.BYTES32_SCHEMA));
+          NamedSchema.namedSchema("deposit_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
+          NamedSchema.namedSchema("deposit_count", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("block_hash", SszPrimitiveSchemas.BYTES32_SCHEMA));
     }
 
     @Override

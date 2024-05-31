@@ -22,6 +22,7 @@ import tech.pegasys.teku.infrastructure.ssz.primitive.SszBit;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
@@ -56,14 +57,15 @@ public class Validator
     public ValidatorSchema() {
       super(
           "Validator",
-          namedSchema("pubkey", SszPublicKeySchema.INSTANCE),
-          namedSchema("withdrawal_credentials", SszPrimitiveSchemas.BYTES32_SCHEMA),
-          namedSchema("effective_balance", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("slashed", SszPrimitiveSchemas.BIT_SCHEMA),
-          namedSchema("activation_eligibility_epoch", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("activation_epoch", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("exit_epoch", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("withdrawable_epoch", SszPrimitiveSchemas.UINT64_SCHEMA));
+          NamedSchema.namedSchema("pubkey", SszPublicKeySchema.INSTANCE),
+          NamedSchema.namedSchema("withdrawal_credentials", SszPrimitiveSchemas.BYTES32_SCHEMA),
+          NamedSchema.namedSchema("effective_balance", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("slashed", SszPrimitiveSchemas.BIT_SCHEMA),
+          NamedSchema.namedSchema(
+              "activation_eligibility_epoch", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("activation_epoch", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("exit_epoch", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("withdrawable_epoch", SszPrimitiveSchemas.UINT64_SCHEMA));
     }
 
     @Override

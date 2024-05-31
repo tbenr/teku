@@ -14,6 +14,7 @@
 package tech.pegasys.teku.spec.datastructures.blocks;
 
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.datastructures.type.SszSignature;
 import tech.pegasys.teku.spec.datastructures.type.SszSignatureSchema;
@@ -24,8 +25,8 @@ public class SignedBeaconBlockHeaderSchema
   public SignedBeaconBlockHeaderSchema() {
     super(
         "SignedBeaconBlockHeader",
-        namedSchema("message", BeaconBlockHeader.SSZ_SCHEMA),
-        namedSchema("signature", SszSignatureSchema.INSTANCE));
+        NamedSchema.namedSchema("message", BeaconBlockHeader.SSZ_SCHEMA),
+        NamedSchema.namedSchema("signature", SszSignatureSchema.INSTANCE));
   }
 
   @Override

@@ -19,6 +19,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema4;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszByteVectorSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
@@ -28,10 +29,10 @@ public class WithdrawalSchema
   public WithdrawalSchema() {
     super(
         "Withdrawal",
-        namedSchema("index", SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema("validator_index", SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema("address", SszByteVectorSchema.create(Bytes20.SIZE)),
-        namedSchema("amount", SszPrimitiveSchemas.UINT64_SCHEMA));
+        NamedSchema.namedSchema("index", SszPrimitiveSchemas.UINT64_SCHEMA),
+        NamedSchema.namedSchema("validator_index", SszPrimitiveSchemas.UINT64_SCHEMA),
+        NamedSchema.namedSchema("address", SszByteVectorSchema.create(Bytes20.SIZE)),
+        NamedSchema.namedSchema("amount", SszPrimitiveSchemas.UINT64_SCHEMA));
   }
 
   public Withdrawal create(

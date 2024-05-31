@@ -19,6 +19,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
@@ -31,8 +32,8 @@ public class Checkpoint extends Container2<Checkpoint, SszUInt64, SszBytes32> {
     public CheckpointSchema() {
       super(
           "Checkpoint",
-          namedSchema("epoch", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("root", SszPrimitiveSchemas.BYTES32_SCHEMA));
+          NamedSchema.namedSchema("epoch", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("root", SszPrimitiveSchemas.BYTES32_SCHEMA));
     }
 
     @Override

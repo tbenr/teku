@@ -17,6 +17,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.Container3;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema3;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
@@ -40,9 +41,9 @@ public class PendingPartialWithdrawal
     public PendingPartialWithdrawalSchema() {
       super(
           "PendingPartialWithdrawal",
-          namedSchema("index", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("amount", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("withdrawable_epoch", SszPrimitiveSchemas.UINT64_SCHEMA));
+          NamedSchema.namedSchema("index", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("amount", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("withdrawable_epoch", SszPrimitiveSchemas.UINT64_SCHEMA));
     }
 
     public PendingPartialWithdrawal create(

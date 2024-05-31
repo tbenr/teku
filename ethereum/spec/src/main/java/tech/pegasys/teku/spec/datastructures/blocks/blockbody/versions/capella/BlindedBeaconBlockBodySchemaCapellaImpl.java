@@ -21,6 +21,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema11;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.GIndexUtil;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.config.SpecConfigCapella;
@@ -96,36 +97,36 @@ public class BlindedBeaconBlockBodySchemaCapellaImpl
       final String containerName) {
     return new BlindedBeaconBlockBodySchemaCapellaImpl(
         containerName,
-        namedSchema(BlockBodyFields.RANDAO_REVEAL, SszSignatureSchema.INSTANCE),
-        namedSchema(BlockBodyFields.ETH1_DATA, Eth1Data.SSZ_SCHEMA),
-        namedSchema(BlockBodyFields.GRAFFITI, SszPrimitiveSchemas.BYTES32_SCHEMA),
-        namedSchema(
+        NamedSchema.namedSchema(BlockBodyFields.RANDAO_REVEAL, SszSignatureSchema.INSTANCE),
+        NamedSchema.namedSchema(BlockBodyFields.ETH1_DATA, Eth1Data.SSZ_SCHEMA),
+        NamedSchema.namedSchema(BlockBodyFields.GRAFFITI, SszPrimitiveSchemas.BYTES32_SCHEMA),
+        NamedSchema.namedSchema(
             BlockBodyFields.PROPOSER_SLASHINGS,
             SszListSchema.create(
                 ProposerSlashing.SSZ_SCHEMA, specConfig.getMaxProposerSlashings())),
-        namedSchema(
+        NamedSchema.namedSchema(
             BlockBodyFields.ATTESTER_SLASHINGS,
             SszListSchema.create(attesterSlashingSchema, specConfig.getMaxAttesterSlashings())),
-        namedSchema(
+        NamedSchema.namedSchema(
             BlockBodyFields.ATTESTATIONS,
             SszListSchema.create(
                 new AttestationPhase0Schema(maxValidatorsPerAttestation)
                     .castTypeToAttestationSchema(),
                 specConfig.getMaxAttestations())),
-        namedSchema(
+        NamedSchema.namedSchema(
             BlockBodyFields.DEPOSITS,
             SszListSchema.create(Deposit.SSZ_SCHEMA, specConfig.getMaxDeposits())),
-        namedSchema(
+        NamedSchema.namedSchema(
             BlockBodyFields.VOLUNTARY_EXITS,
             SszListSchema.create(
                 SignedVoluntaryExit.SSZ_SCHEMA, specConfig.getMaxVoluntaryExits())),
-        namedSchema(
+        NamedSchema.namedSchema(
             BlockBodyFields.SYNC_AGGREGATE,
             SyncAggregateSchema.create(specConfig.getSyncCommitteeSize())),
-        namedSchema(
+        NamedSchema.namedSchema(
             BlockBodyFields.EXECUTION_PAYLOAD_HEADER,
             new ExecutionPayloadHeaderSchemaCapella(specConfig)),
-        namedSchema(
+        NamedSchema.namedSchema(
             BlockBodyFields.BLS_TO_EXECUTION_CHANGES,
             SszListSchema.create(
                 signedBlsToExecutionChangeSchema, specConfig.getMaxBlsToExecutionChanges())));

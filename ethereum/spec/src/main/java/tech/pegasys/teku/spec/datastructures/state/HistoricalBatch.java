@@ -17,6 +17,7 @@ import tech.pegasys.teku.infrastructure.ssz.collections.SszBytes32Vector;
 import tech.pegasys.teku.infrastructure.ssz.containers.Container2;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszBytes32VectorSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 
 public class HistoricalBatch
@@ -28,8 +29,10 @@ public class HistoricalBatch
     public HistoricalBatchSchema(final int slotsPerHistoricalRoot) {
       super(
           "HistoricalBatch",
-          namedSchema("block_roots", SszBytes32VectorSchema.create(slotsPerHistoricalRoot)),
-          namedSchema("state_roots", SszBytes32VectorSchema.create(slotsPerHistoricalRoot)));
+          NamedSchema.namedSchema(
+              "block_roots", SszBytes32VectorSchema.create(slotsPerHistoricalRoot)),
+          NamedSchema.namedSchema(
+              "state_roots", SszBytes32VectorSchema.create(slotsPerHistoricalRoot)));
     }
 
     @Override

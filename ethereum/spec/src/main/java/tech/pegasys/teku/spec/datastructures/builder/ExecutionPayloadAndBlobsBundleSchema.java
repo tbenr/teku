@@ -15,6 +15,7 @@ package tech.pegasys.teku.spec.datastructures.builder;
 
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadSchema;
@@ -28,9 +29,9 @@ public class ExecutionPayloadAndBlobsBundleSchema
       final BlobsBundleSchema blobsBundleSchema) {
     super(
         "ExecutionPayloadAndBlobsBundle",
-        namedSchema(
+        NamedSchema.namedSchema(
             "execution_payload", SszSchema.as(ExecutionPayload.class, executionPayloadSchema)),
-        namedSchema("blobs_bundle", blobsBundleSchema));
+        NamedSchema.namedSchema("blobs_bundle", blobsBundleSchema));
   }
 
   @Override

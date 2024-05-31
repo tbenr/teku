@@ -17,6 +17,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.Container2;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
@@ -28,8 +29,8 @@ public class VoluntaryExit extends Container2<VoluntaryExit, SszUInt64, SszUInt6
     public VoluntaryExitSchema() {
       super(
           "VoluntaryExit",
-          namedSchema("epoch", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("validator_index", SszPrimitiveSchemas.UINT64_SCHEMA));
+          NamedSchema.namedSchema("epoch", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("validator_index", SszPrimitiveSchemas.UINT64_SCHEMA));
     }
 
     @Override

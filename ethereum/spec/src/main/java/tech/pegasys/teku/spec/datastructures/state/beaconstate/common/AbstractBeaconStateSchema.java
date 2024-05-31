@@ -19,6 +19,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
 import tech.pegasys.teku.infrastructure.ssz.schema.impl.AbstractSszContainerSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.sos.SszField;
 import tech.pegasys.teku.spec.config.SpecConfig;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
@@ -30,7 +31,10 @@ public abstract class AbstractBeaconStateSchema<
     extends AbstractSszContainerSchema<T> implements BeaconStateSchema<T, TMutable> {
   protected AbstractBeaconStateSchema(final String name, final List<SszField> allFields) {
     super(
-        name, allFields.stream().map(f -> namedSchema(f.getName(), f.getSchema().get())).toList());
+        name,
+        allFields.stream()
+            .map(f -> NamedSchema.namedSchema(f.getName(), f.getSchema().get()))
+            .toList());
     validateFields(allFields);
   }
 

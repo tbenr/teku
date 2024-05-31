@@ -19,6 +19,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema5;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
@@ -34,11 +35,11 @@ public class BeaconBlockHeader
     public BeaconBlockHeaderSchema() {
       super(
           "BeaconBlockHeader",
-          namedSchema("slot", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("proposer_index", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("parent_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
-          namedSchema("state_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
-          namedSchema("body_root", SszPrimitiveSchemas.BYTES32_SCHEMA));
+          NamedSchema.namedSchema("slot", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("proposer_index", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("parent_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
+          NamedSchema.namedSchema("state_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
+          NamedSchema.namedSchema("body_root", SszPrimitiveSchemas.BYTES32_SCHEMA));
     }
 
     @Override

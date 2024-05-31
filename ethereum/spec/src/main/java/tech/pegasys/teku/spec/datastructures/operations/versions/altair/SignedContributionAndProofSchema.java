@@ -15,6 +15,7 @@ package tech.pegasys.teku.spec.datastructures.operations.versions.altair;
 
 import tech.pegasys.teku.bls.BLSSignature;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.datastructures.type.SszSignature;
 import tech.pegasys.teku.spec.datastructures.type.SszSignatureSchema;
@@ -31,8 +32,8 @@ public class SignedContributionAndProofSchema
   public static SignedContributionAndProofSchema create(
       final ContributionAndProofSchema messageSchema) {
     return new SignedContributionAndProofSchema(
-        namedSchema("message", messageSchema),
-        namedSchema("signature", SszSignatureSchema.INSTANCE));
+        NamedSchema.namedSchema("message", messageSchema),
+        NamedSchema.namedSchema("signature", SszSignatureSchema.INSTANCE));
   }
 
   @Override

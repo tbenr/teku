@@ -18,6 +18,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.Container2;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
@@ -33,8 +34,8 @@ public class BlobSidecarsByRangeRequestMessage
     public BlobSidecarsByRangeRequestMessageSchema() {
       super(
           "BlobSidecarsByRangeRequestMessage",
-          namedSchema("start_slot", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("count", SszPrimitiveSchemas.UINT64_SCHEMA));
+          NamedSchema.namedSchema("start_slot", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("count", SszPrimitiveSchemas.UINT64_SCHEMA));
     }
 
     @Override

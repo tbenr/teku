@@ -20,6 +20,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes4;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 
 public class ForkData extends Container2<ForkData, SszBytes4, SszBytes32> {
@@ -29,8 +30,8 @@ public class ForkData extends Container2<ForkData, SszBytes4, SszBytes32> {
     public ForkDataSchema() {
       super(
           "ForkData",
-          namedSchema("current_version", SszPrimitiveSchemas.BYTES4_SCHEMA),
-          namedSchema("genesis_validators_root", SszPrimitiveSchemas.BYTES32_SCHEMA));
+          NamedSchema.namedSchema("current_version", SszPrimitiveSchemas.BYTES4_SCHEMA),
+          NamedSchema.namedSchema("genesis_validators_root", SszPrimitiveSchemas.BYTES32_SCHEMA));
     }
 
     @Override

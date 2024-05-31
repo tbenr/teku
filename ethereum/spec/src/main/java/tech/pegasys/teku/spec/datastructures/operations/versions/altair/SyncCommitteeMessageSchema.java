@@ -19,6 +19,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema4;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.datastructures.type.SszSignature;
@@ -32,10 +33,10 @@ public class SyncCommitteeMessageSchema
   private SyncCommitteeMessageSchema() {
     super(
         "SyncCommitteeMessage",
-        namedSchema("slot", SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema("beacon_block_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
-        namedSchema("validator_index", SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema("signature", SszSignatureSchema.INSTANCE));
+        NamedSchema.namedSchema("slot", SszPrimitiveSchemas.UINT64_SCHEMA),
+        NamedSchema.namedSchema("beacon_block_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
+        NamedSchema.namedSchema("validator_index", SszPrimitiveSchemas.UINT64_SCHEMA),
+        NamedSchema.namedSchema("signature", SszSignatureSchema.INSTANCE));
   }
 
   @Override

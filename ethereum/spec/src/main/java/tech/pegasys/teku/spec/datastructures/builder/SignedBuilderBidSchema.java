@@ -17,6 +17,7 @@ import tech.pegasys.teku.bls.BLSSignature;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszContainerSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.datastructures.type.SszSignature;
 import tech.pegasys.teku.spec.datastructures.type.SszSignatureSchema;
@@ -29,8 +30,8 @@ public class SignedBuilderBidSchema
       final String schemaName, final BuilderBidSchema<?> builderBidSchema) {
     super(
         schemaName,
-        namedSchema("message", SszSchema.as(BuilderBid.class, builderBidSchema)),
-        namedSchema("signature", SszSignatureSchema.INSTANCE));
+        NamedSchema.namedSchema("message", SszSchema.as(BuilderBid.class, builderBidSchema)),
+        NamedSchema.namedSchema("signature", SszSignatureSchema.INSTANCE));
   }
 
   public SignedBuilderBid create(final BuilderBid message, final BLSSignature signature) {

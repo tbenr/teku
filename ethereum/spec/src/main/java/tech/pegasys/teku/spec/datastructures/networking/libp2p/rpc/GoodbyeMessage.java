@@ -19,6 +19,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.Container1;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema1;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
@@ -28,7 +29,7 @@ public final class GoodbyeMessage extends Container1<GoodbyeMessage, SszUInt64>
   public static class GoodbyeMessageSchema extends ContainerSchema1<GoodbyeMessage, SszUInt64> {
 
     public GoodbyeMessageSchema() {
-      super("GoodbyeMessage", namedSchema("reason", SszPrimitiveSchemas.UINT64_SCHEMA));
+      super("GoodbyeMessage", NamedSchema.namedSchema("reason", SszPrimitiveSchemas.UINT64_SCHEMA));
     }
 
     @Override

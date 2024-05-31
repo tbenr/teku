@@ -18,6 +18,7 @@ import tech.pegasys.teku.infrastructure.ssz.SszVector;
 import tech.pegasys.teku.infrastructure.ssz.containers.Container2;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszVectorSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.config.SpecConfigAltair;
 import tech.pegasys.teku.spec.datastructures.type.SszPublicKey;
@@ -32,11 +33,11 @@ public class SyncCommittee
     public SyncCommitteeSchema(final SpecConfigAltair specConfigAltair) {
       super(
           "SyncCommittee",
-          namedSchema(
+          NamedSchema.namedSchema(
               "pubkeys",
               SszVectorSchema.create(
                   SszPublicKeySchema.INSTANCE, specConfigAltair.getSyncCommitteeSize())),
-          namedSchema("aggregate_pubkey", SszPublicKeySchema.INSTANCE));
+          NamedSchema.namedSchema("aggregate_pubkey", SszPublicKeySchema.INSTANCE));
     }
 
     @Override

@@ -14,6 +14,7 @@
 package tech.pegasys.teku.spec.datastructures.lightclient;
 
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema1;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlockHeader;
 
@@ -21,7 +22,7 @@ public class LightClientHeaderSchema
     extends ContainerSchema1<LightClientHeader, BeaconBlockHeader> {
 
   public LightClientHeaderSchema() {
-    super("LightClientHeader", namedSchema("beacon", BeaconBlockHeader.SSZ_SCHEMA));
+    super("LightClientHeader", NamedSchema.namedSchema("beacon", BeaconBlockHeader.SSZ_SCHEMA));
   }
 
   public LightClientHeader create(final BeaconBlockHeader beaconBlockHeader) {

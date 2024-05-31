@@ -17,6 +17,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.Container3;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema3;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
@@ -28,9 +29,9 @@ public class Consolidation extends Container3<Consolidation, SszUInt64, SszUInt6
     public ConsolidationSchema() {
       super(
           "Consolidation",
-          namedSchema("source_index", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("target_index", SszPrimitiveSchemas.UINT64_SCHEMA),
-          namedSchema("epoch", SszPrimitiveSchemas.UINT64_SCHEMA));
+          NamedSchema.namedSchema("source_index", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("target_index", SszPrimitiveSchemas.UINT64_SCHEMA),
+          NamedSchema.namedSchema("epoch", SszPrimitiveSchemas.UINT64_SCHEMA));
     }
 
     public Consolidation create(

@@ -23,6 +23,7 @@ import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszBitvectorSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.config.SpecConfigAltair;
@@ -50,14 +51,14 @@ public class SyncCommitteeContributionSchema
 
   public static SyncCommitteeContributionSchema create(final SpecConfigAltair specConfig) {
     return new SyncCommitteeContributionSchema(
-        namedSchema("slot", SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema("beacon_block_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
-        namedSchema("subcommittee_index", SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema(
+        NamedSchema.namedSchema("slot", SszPrimitiveSchemas.UINT64_SCHEMA),
+        NamedSchema.namedSchema("beacon_block_root", SszPrimitiveSchemas.BYTES32_SCHEMA),
+        NamedSchema.namedSchema("subcommittee_index", SszPrimitiveSchemas.UINT64_SCHEMA),
+        NamedSchema.namedSchema(
             "aggregation_bits",
             SszBitvectorSchema.create(
                 specConfig.getSyncCommitteeSize() / SYNC_COMMITTEE_SUBNET_COUNT)),
-        namedSchema("signature", SszSignatureSchema.INSTANCE));
+        NamedSchema.namedSchema("signature", SszSignatureSchema.INSTANCE));
   }
 
   public SyncCommitteeContribution create(
