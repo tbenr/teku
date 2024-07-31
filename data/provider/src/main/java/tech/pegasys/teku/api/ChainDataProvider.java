@@ -55,6 +55,7 @@ import tech.pegasys.teku.ethereum.json.types.beacon.StateValidatorData;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.bytes.Bytes4;
 import tech.pegasys.teku.infrastructure.ssz.Merkleizable;
+import tech.pegasys.teku.infrastructure.ssz.primitive.SszByte;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.SpecMilestone;
@@ -71,6 +72,7 @@ import tech.pegasys.teku.spec.datastructures.metadata.ObjectAndMetaData;
 import tech.pegasys.teku.spec.datastructures.metadata.StateAndMetaData;
 import tech.pegasys.teku.spec.datastructures.operations.Attestation;
 import tech.pegasys.teku.spec.datastructures.state.CommitteeAssignment;
+import tech.pegasys.teku.spec.datastructures.state.EpochParticipation;
 import tech.pegasys.teku.spec.datastructures.state.SyncCommittee;
 import tech.pegasys.teku.spec.logic.common.statetransition.epoch.status.ValidatorStatuses;
 import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.EpochProcessingException;
@@ -405,6 +407,20 @@ public class ChainDataProvider {
             .findFirst();
 
     return maybeValidator.map(data -> stateData.map(__ -> data));
+  }
+
+  public SafeFuture<Optional<ObjectAndMetaData<EpochParticipation>>> getStateParticipation(
+      final String stateIdParam) {
+    return fromState(
+        stateIdParam,
+        state ->
+            new EpochParticipation(
+                state.toVersionAltair().orElseThrow().getCurrentEpochParticipation().stream()
+                    .map(SszByte::get)
+                    .toList(),
+                state.toVersionAltair().orElseThrow().getPreviousEpochParticipation().stream()
+                    .map(SszByte::get)
+                    .toList()));
   }
 
   public SafeFuture<Optional<ObjectAndMetaData<List<CommitteeAssignment>>>> getStateCommittees(
