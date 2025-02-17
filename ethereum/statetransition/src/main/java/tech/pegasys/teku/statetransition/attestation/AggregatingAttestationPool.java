@@ -14,6 +14,11 @@
 package tech.pegasys.teku.statetransition.attestation;
 
 import it.unimi.dsi.fastutil.ints.Int2IntMap;
+import java.io.FileOutputStream;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -32,6 +37,7 @@ import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
 import tech.pegasys.teku.ethereum.events.SlotEventsChannel;
+import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.metrics.SettableGauge;
 import tech.pegasys.teku.infrastructure.metrics.TekuMetricCategory;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
@@ -172,6 +178,32 @@ public class AggregatingAttestationPool implements SlotEventsChannel {
 
   @Override
   public synchronized void onSlot(final UInt64 slot) {
+    System.out.println("slot: " + slot + " size: " + getSize());
+    if (getSize() > 100_000) {
+      System.out.println("dumping");
+
+      final BeaconState blockSlotState =
+          recentChainData
+              .getBestBlockRoot()
+              .map(recentChainData::retrieveBlockState)
+              .orElseThrow()
+              .join()
+              .orElseThrow();
+      dumpAttestations(slot);
+      SafeFuture.of(
+              SafeFuture.runAsync(
+                  () -> {
+                    try (OutputStream os =
+                        new FileOutputStream(
+                            "/tmp/blockPreState " + blockSlotState.getSlot() + ".ssz")) {
+                      blockSlotState.sszSerialize(os);
+                    } catch (final IOException e) {
+                      throw new UncheckedIOException(e);
+                    }
+                  }))
+          .finish(
+              () -> LOG.info("State dump completed."), err -> LOG.error("Failed to dump.", err));
+    }
     if (slot.compareTo(ATTESTATION_RETENTION_SLOTS) <= 0) {
       return;
     }
@@ -265,6 +297,27 @@ public class AggregatingAttestationPool implements SlotEventsChannel {
               return true;
             })
         .collect(attestationsSchema.collector());
+  }
+
+  private synchronized void dumpAttestations(final UInt64 slot) {
+    try (FileWriter fos = new FileWriter("/tmp/attestations_" + slot + ".multi_ssz")) {
+      dataHashBySlot.descendingMap().values().stream()
+          .flatMap(Collection::stream)
+          .map(attestationGroupByDataHash::get)
+          .filter(Objects::nonNull)
+          .flatMap(MatchingDataAttestationGroup::streamAttestations)
+          .forEach(
+              attestation -> {
+                try {
+                  fos.write(attestation.sszSerialize().toHexString());
+                  fos.write("\n");
+                } catch (IOException e) {
+                  throw new RuntimeException(e);
+                }
+              });
+    } catch (IOException e) {
+      System.out.println("An error occurred.");
+    }
   }
 
   public synchronized List<Attestation> getAttestations(
