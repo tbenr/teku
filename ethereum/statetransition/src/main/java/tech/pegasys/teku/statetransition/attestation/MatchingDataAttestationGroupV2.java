@@ -22,6 +22,7 @@ import java.util.Set;
 import java.util.Spliterator;
 import java.util.Spliterators;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -61,6 +62,9 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
       attestationsByValidatorCount =
           new ConcurrentSkipListMap<>(
               Comparator.reverseOrder()); // Most validators first, thread-safe map
+
+  private final ConcurrentMap<Integer, Set<ValidatableAttestation>>
+      singleAttestationsByCommitteeIndex = new ConcurrentHashMap<>();
 
   private final Spec spec;
   private final AtomicReference<Optional<Bytes32>> committeeShufflingSeedRef =
@@ -120,6 +124,7 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
    */
   @Override
   public boolean add(final ValidatableAttestation attestation) {
+    var start = System.nanoTime();
     // --- Read Lock Section (Only for includedValidators check) ---
     readLock.lock();
     try {
@@ -145,6 +150,13 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
     }
     // --- End Set Seed ---
 
+    if (attestation.isSingleAttestations()) {
+      final Set<ValidatableAttestation> singleAttestations =
+          singleAttestationsByCommitteeIndex.computeIfAbsent(
+              attestation.getAttestation().getFirstCommitteeIndex().intValue(),
+              __ -> ConcurrentHashMap.newKeySet());
+      return singleAttestations.add(attestation);
+    }
     // --- Add to Concurrent Collection (Outside Lock) ---
     // Add to the concurrent map - computeIfAbsent handles concurrency here
     final Set<ValidatableAttestation> attestations =
@@ -153,12 +165,48 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
             __ -> ConcurrentHashMap.newKeySet());
 
     // .add() on the ConcurrentHashMap.KeySetView is thread-safe
-    final boolean addedToSet = attestations.add(attestation);
+    final boolean added = attestations.add(attestation);
     // --- End Add to Concurrent Collection ---
 
-    // Return true if it wasn't redundant based on includedValidators check AND
-    // was successfully added to the underlying set.
-    return addedToSet;
+    if (added) {
+      final AttestationBitsAggregator aggregator = AttestationBitsAggregator.of(attestation);
+
+      attestation
+          .getAttestation()
+          .getCommitteeBits()
+          .ifPresent(
+              committeesBits ->
+                  committeesBits
+                      .streamAllSetBits()
+                      .forEach(
+                          committeeIndex -> {
+                            // No readLock needed here as pruning happens after the initial check
+                            final Set<ValidatableAttestation> singleAttestations =
+                                singleAttestationsByCommitteeIndex.get(committeeIndex);
+                            if (singleAttestations != null) {
+                              // removeIf on ConcurrentHashMap.KeySetView is thread-safe
+                              final int sizeBefore = singleAttestations.size();
+                              final boolean r =
+                                  singleAttestations.removeIf(
+                                      singleAttestation ->
+                                          aggregator.isSuperSetOf(
+                                              singleAttestation.getAttestation()));
+                              final int deltaSize = sizeBefore - singleAttestations.size();
+                              if (r) {
+                                System.out.println(
+                                    "Estimated removed single attestation: " + deltaSize);
+                              }
+                            }
+                          }));
+    }
+
+    var durationMicroSeconds = (System.nanoTime() - start) / 1_000;
+
+    if (durationMicroSeconds > 250) {
+      System.out.println("\"Slow\" add aggregation: " + durationMicroSeconds + " microseconds");
+    }
+
+    return added;
   }
 
   /**
@@ -239,7 +287,7 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
   @Override
   public boolean isEmpty() {
     // isEmpty() on ConcurrentSkipListMap is thread-safe and fast
-    return attestationsByValidatorCount.isEmpty();
+    return attestationsByValidatorCount.isEmpty() && singleAttestationsByCommitteeIndex.isEmpty();
   }
 
   @Override
@@ -247,7 +295,8 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
     // Iterate over the values (concurrent sets) and sum their sizes.
     // This gives an approximate size at a moment in time, acceptable for metrics.
     // No lock needed as iterating values and set.size() are safe.
-    return attestationsByValidatorCount.values().stream().mapToInt(Set::size).sum();
+    return attestationsByValidatorCount.values().stream().mapToInt(Set::size).sum()
+        + singleAttestationsByCommitteeIndex.size();
   }
 
   /**
@@ -282,7 +331,7 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
       includedValidators.or(attestation);
 
       // Calculate size *before* removal for accurate delta.
-      int sizeBefore = attestationsByValidatorCount.values().stream().mapToInt(Set::size).sum();
+      int sizeBefore = size();
 
       // Remove fully covered attestations using removeIf on the concurrent sets
       attestationsByValidatorCount
@@ -295,7 +344,17 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
       // Also remove empty sets from the outer map for cleanup
       attestationsByValidatorCount.entrySet().removeIf(entry -> entry.getValue().isEmpty());
 
-      int sizeAfter = attestationsByValidatorCount.values().stream().mapToInt(Set::size).sum();
+      singleAttestationsByCommitteeIndex.forEach(
+          (committeeIndex, singleAttestations) -> {
+            singleAttestations.removeIf(
+                singleAttestation ->
+                    includedValidators.isSuperSetOf(singleAttestation.getAttestation()));
+            if (singleAttestations.isEmpty()) {
+              singleAttestationsByCommitteeIndex.remove(committeeIndex);
+            }
+          });
+
+      int sizeAfter = size();
       numRemoved = sizeBefore - sizeAfter;
 
     } finally {
@@ -399,13 +458,26 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
       // Filter based on the iterator's local includedValidators copy
       // No lock needed for this read operation
       // Use outer class field attestationsByValidatorCount
-      return MatchingDataAttestationGroupV2.this.attestationsByValidatorCount.values().stream()
-          .flatMap(Set::stream) // streams the concurrent set safely
-          .filter(this::isAttestationRelevant)
-          // Check against the iterator's local copy of included validators
-          .filter(
-              candidate ->
-                  !iteratorSpecificIncludedValidators.isSuperSetOf(candidate.getAttestation()))
+      return Stream.concat(
+              MatchingDataAttestationGroupV2.this.attestationsByValidatorCount.values().stream()
+                  .flatMap(Set::stream) // streams the concurrent set safely
+                  .filter(this::isAttestationRelevant)
+                  // Check against the iterator's local copy of included validators
+                  .filter(
+                      candidate ->
+                          !iteratorSpecificIncludedValidators.isSuperSetOf(
+                              candidate.getAttestation())),
+              maybeCommitteeIndex.isPresent()
+                  ? Stream.empty()
+                  : MatchingDataAttestationGroupV2.this
+                      .singleAttestationsByCommitteeIndex
+                      .values()
+                      .stream()
+                      .flatMap(Set::stream)
+                      .filter(
+                          candidate ->
+                              !iteratorSpecificIncludedValidators.isSuperSetOf(
+                                  candidate.getAttestation())))
           .iterator();
     }
 
@@ -421,7 +493,7 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
 
       if (maybeCommitteeIndex.isEmpty()) {
         // Block proposal scenario (no committee filter) - consider all Electra attestations
-        return !candidate.getUnconvertedAttestation().isSingleAttestation();
+        return true; // !candidate.getUnconvertedAttestation().isSingleAttestation();
       }
 
       // Committee aggregation scenario

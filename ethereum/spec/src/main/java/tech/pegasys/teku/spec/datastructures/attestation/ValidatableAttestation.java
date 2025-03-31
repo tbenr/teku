@@ -64,6 +64,10 @@ public class ValidatableAttestation {
     this.attestation = aggregatedFormatFromSingleAttestation;
   }
 
+  public boolean isSingleAttestations() {
+    return unconvertedAttestation.isSingleAttestation();
+  }
+
   public static ValidatableAttestation from(final Spec spec, final Attestation attestation) {
     return new ValidatableAttestation(
         spec, attestation, Optional.empty(), OptionalInt.empty(), false);

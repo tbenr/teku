@@ -13,7 +13,10 @@
 
 package tech.pegasys.teku.statetransition.attestation;
 
+import static tech.pegasys.teku.infrastructure.logging.Converter.gweiToEth;
+
 import it.unimi.dsi.fastutil.ints.Int2IntMap;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
@@ -34,17 +37,23 @@ import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
+import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.metrics.SettableGauge;
 import tech.pegasys.teku.infrastructure.metrics.TekuMetricCategory;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszListSchema;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
+import tech.pegasys.teku.spec.cache.IndexedAttestationCache;
 import tech.pegasys.teku.spec.datastructures.attestation.ValidatableAttestation;
 import tech.pegasys.teku.spec.datastructures.operations.Attestation;
 import tech.pegasys.teku.spec.datastructures.operations.AttestationData;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
+import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.altair.BeaconStateAltair;
+import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.altair.MutableBeaconStateAltair;
+import tech.pegasys.teku.spec.logic.common.block.AbstractBlockProcessor;
 import tech.pegasys.teku.spec.logic.common.helpers.MiscHelpers;
+import tech.pegasys.teku.spec.logic.versions.altair.block.BlockProcessorAltair;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitions;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
@@ -110,13 +119,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
     final Optional<Int2IntMap> committeesSize =
         attestation.getCommitteesSize().or(() -> getCommitteesSize(attestation.getAttestation()));
     getOrCreateAttestationGroup(attestation.getAttestation(), committeesSize)
-        .ifPresent(
-            attestationGroup -> {
-              final boolean added = attestationGroup.add(attestation);
-              if (added) {
-                updateSize(1);
-              }
-            });
+        .ifPresent(attestationGroup -> attestationGroup.add(attestation));
     // Pruning is moved to onSlot to avoid contention during burst adds.
     // A slight overshoot of maximumAttestationCount between onSlot calls is acceptable.
   }
@@ -224,36 +227,126 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
   // No longer synchronized
   @Override
   public void onSlot(final UInt64 slot) {
+    var start = System.nanoTime();
+    final int currentActualSize =
+        attestationGroupByDataHash.values().stream()
+            .mapToInt(
+                MatchingDataAttestationGroup
+                    ::size) // Uses the group's potentially approximate size method
+            .sum();
+    System.out.println(
+        "Time taken to calculate currentActualSize ("
+            + currentActualSize
+            + ") "
+            + (System.nanoTime() - start) / 1_000
+            + " microseconds");
+    size.set(currentActualSize); // Atomically set the definitive size for this slot boundary
+    sizeGauge.set(currentActualSize);
+    LOG.trace("Attestation pool size recalculated to {}", currentActualSize);
+
     // Prune attestations older than ATTESTATION_RETENTION_SLOTS
     if (slot.compareTo(ATTESTATION_RETENTION_SLOTS) > 0) {
       final UInt64 firstValidAttestationSlot = slot.minus(ATTESTATION_RETENTION_SLOTS);
       removeAttestationsPriorToSlot(firstValidAttestationSlot);
     }
 
-    // Prune based on maximum size if needed
-    int currentSize = getSize();
-    if (currentSize > maximumAttestationCount) {
-      // Keep removing oldest slots until size is acceptable or only one slot remains
-      while (dataHashBySlot.size() > 1 && currentSize > maximumAttestationCount) {
-        LOG.trace(
-            "V2 Attestation cache at {} exceeds {}. Pruning...",
-            currentSize,
-            maximumAttestationCount);
-        final UInt64 oldestSlot = dataHashBySlot.firstKey();
-        // Remove slot immediately following the oldest to ensure we always keep at least one slot
-        removeAttestationsPriorToSlot(oldestSlot.plus(1));
-        final int newSize = getSize();
-        // Break if removal failed to change size or get oldest key (edge case for concurrent
-        // modification)
-        if (newSize == currentSize || oldestSlot.equals(dataHashBySlot.firstKey())) {
-          LOG.warn(
-              "V2 Failed to prune oldest slot {}, possibly due to concurrent access or no removable attestations. Skipping further pruning this cycle.",
-              oldestSlot);
-          break;
+    // Let's go with Option A for simplicity, accepting minor inaccuracy in the pruning target for
+    // this cycle:
+    int sizeForPruningCheck = currentActualSize; // Use the size calculated at the start of onSlot
+    while (dataHashBySlot.size() > 1 && sizeForPruningCheck > maximumAttestationCount) {
+      LOG.trace(
+          "V2 Attestation cache at {} (pre-prune estimate) exceeds {}. Pruning...",
+          sizeForPruningCheck,
+          maximumAttestationCount);
+      final UInt64 oldestSlot = dataHashBySlot.firstKey();
+      if (oldestSlot == null) break; // Handle empty map case
+
+      // Estimate the size reduction (since removeAttestationsPriorToSlot no longer updates 'size')
+      // This is tricky because group.size() is approximate.
+      // We might need to actually get the groups to be removed and sum their sizes *before*
+      // removal.
+      int estimatedRemovalCount = 0;
+      final Set<Bytes> hashesToRemove =
+          dataHashBySlot.get(oldestSlot.plus(1)); // Check slot *after* oldest
+      if (hashesToRemove != null) {
+        for (final Bytes hash : hashesToRemove) {
+          MatchingDataAttestationGroup group = attestationGroupByDataHash.get(hash);
+          if (group != null) {
+            estimatedRemovalCount += group.size();
+          }
         }
-        currentSize = newSize;
       }
+
+      removeAttestationsPriorToSlot(oldestSlot.plus(1)); // Remove the items
+
+      if (estimatedRemovalCount == 0) {
+        // If we estimated 0 removed, or failed to find the slot, break to avoid potential infinite
+        // loop
+        LOG.warn(
+            "Failed to prune oldest slot {} or estimated 0 removals. Skipping further pruning this cycle.",
+            oldestSlot);
+        break;
+      }
+      sizeForPruningCheck -= estimatedRemovalCount; // Reduce the size we are checking against
     }
+
+    // **** attestation aggregation estimation (block production emulation) ****//
+
+    final Optional<SafeFuture<BeaconState>> headState = recentChainData.getBestState();
+    if (headState.isEmpty()) {
+      return;
+    }
+
+    try {
+      var preState = spec.processSlots(headState.get().join(), slot);
+      var getAttestationsForBlockStart = System.nanoTime();
+      var attestationPacking =
+          getAttestationsForBlock(preState, new AttestationForkChecker(spec, preState));
+      var getAttestationsForBlockEnd = System.nanoTime();
+
+      var rewards =
+          gweiToEth(
+              UInt64.valueOf(
+                  calculateAttestationRewards(
+                      attestationPacking,
+                      BlockProcessorAltair.required(spec.atSlot(slot).getBlockProcessor()),
+                      preState)));
+
+      System.out.println(
+          "Time taken to getAttestationsForBlock ("
+              + attestationPacking.size()
+              + ") rewards: "
+              + rewards
+              + "ETH, timing: "
+              + (getAttestationsForBlockEnd - getAttestationsForBlockStart) / 1_000_000
+              + " milliseconds");
+
+    } catch (final Exception e) {
+
+    }
+  }
+
+  private long calculateAttestationRewards(
+      final SszList<Attestation> attestations,
+      final BlockProcessorAltair blockProcessor,
+      final BeaconState preState) {
+    final List<Optional<UInt64>> rewards = new ArrayList<>();
+    final MutableBeaconStateAltair mutableBeaconStateAltair =
+        BeaconStateAltair.required(preState).createWritableCopy();
+    final AbstractBlockProcessor.IndexedAttestationProvider indexedAttestationProvider =
+        blockProcessor.createIndexedAttestationProvider(
+            mutableBeaconStateAltair, IndexedAttestationCache.capturing());
+    attestations.forEach(
+        attestation ->
+            rewards.add(
+                blockProcessor.processAttestationProposerReward(
+                    mutableBeaconStateAltair, attestation, indexedAttestationProvider)));
+
+    return rewards.stream()
+        .filter(Optional::isPresent)
+        .map(Optional::get)
+        .map(UInt64::longValue)
+        .reduce(0L, Long::sum);
   }
 
   // Internal method, not synchronized, careful with concurrent access
@@ -273,7 +366,6 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
         firstValidAttestationSlot,
         slotsToRemove.size());
 
-    int removedCount = 0;
     for (final UInt64 slot : slotsToRemove) {
       // Remove from dataHashBySlot first
       final Set<Bytes> dataHashes = dataHashBySlot.remove(slot);
@@ -283,16 +375,10 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
           final MatchingDataAttestationGroup removedGroup = attestationGroupByDataHash.remove(key);
           if (removedGroup != null) {
             // Get size (needs read lock internally in MatchingDataAttestationGroupV2)
-            removedCount += removedGroup.size();
+            removedGroup.size();
           }
         }
       }
-    }
-
-    if (removedCount > 0) {
-      LOG.trace(
-          "V2 Removed {} attestations prior to slot {}", removedCount, firstValidAttestationSlot);
-      updateSize(-removedCount);
     }
   }
 
