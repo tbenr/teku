@@ -43,6 +43,10 @@ class BitvectorImpl {
     return new BitvectorImpl(bitset, size);
   }
 
+  public static BitvectorImpl wrapBitSet(final BitSet bitSet, final int size) {
+    return new BitvectorImpl(bitSet, size);
+  }
+
   public static int sszSerializationLength(final int size) {
     return bitsCeilToBytes(size);
   }
@@ -110,6 +114,10 @@ class BitvectorImpl {
   public boolean getBit(final int i) {
     checkElementIndex(i, size);
     return data.get(i);
+  }
+
+  public BitSet getAsBitSet() {
+    return (BitSet) data.clone();
   }
 
   public int getSize() {

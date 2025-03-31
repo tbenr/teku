@@ -13,6 +13,7 @@
 
 package tech.pegasys.teku.infrastructure.ssz.schema.collections;
 
+import java.util.BitSet;
 import java.util.stream.StreamSupport;
 import org.apache.tuweni.bytes.Bytes;
 import tech.pegasys.teku.infrastructure.ssz.collections.SszBitvector;
@@ -27,6 +28,8 @@ public interface SszBitvectorSchema<SszBitvectorT extends SszBitvector>
   }
 
   SszBitvectorT ofBits(int... setBitIndices);
+
+  SszBitvectorT wrapBitSet(int size, BitSet bitSet);
 
   default SszBitvectorT fromBytes(final Bytes bitvectorBytes) {
     return sszDeserialize(bitvectorBytes);

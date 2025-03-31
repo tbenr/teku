@@ -75,7 +75,7 @@ public class SszBitlistImpl extends SszListImpl<SszBit> implements SszBitlist {
 
   public static SszBitlistImpl wrapBitSet(
       final SszBitlistSchema<?> schema, final int size, final BitSet bitSet) {
-    return new SszBitlistImpl(schema, new BitlistImpl(size, schema.getMaxLength(), bitSet));
+    return new SszBitlistImpl(schema, BitlistImpl.wrapBitSet(size, schema.getMaxLength(), bitSet));
   }
 
   private final BitlistImpl value;
@@ -88,6 +88,11 @@ public class SszBitlistImpl extends SszListImpl<SszBit> implements SszBitlist {
   public SszBitlistImpl(final SszListSchema<SszBit, ?> schema, final BitlistImpl value) {
     super(schema, () -> toSszBitList(schema, value).getBackingNode());
     this.value = value;
+  }
+
+  @Override
+  public BitSet getAsBitSet() {
+    return value.getAsBitSet();
   }
 
   @SuppressWarnings("unchecked")
