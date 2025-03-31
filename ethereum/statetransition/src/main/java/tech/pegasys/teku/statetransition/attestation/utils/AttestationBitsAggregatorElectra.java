@@ -87,7 +87,7 @@ class AttestationBitsAggregatorElectra implements AttestationBitsAggregator {
 
     // Perform the OR operation using internal BitSets
     orInternal(
-        otherInternalCommitteeBits, otherInternalAggregationBits, other.getCommitteesSize(), false);
+        otherInternalCommitteeBits, otherInternalAggregationBits, false);
   }
 
   @Override
@@ -98,7 +98,7 @@ class AttestationBitsAggregatorElectra implements AttestationBitsAggregator {
 
     // Perform the OR operation using internal BitSets
     return orInternal(
-        otherInternalCommitteeBits, otherInternalAggregationBits, getCommitteesSize(other), true);
+        otherInternalCommitteeBits, otherInternalAggregationBits, true);
   }
 
   @Override
@@ -109,13 +109,7 @@ class AttestationBitsAggregatorElectra implements AttestationBitsAggregator {
 
     // Perform the OR operation using internal BitSets
     orInternal(
-        otherInternalCommitteeBits, otherInternalAggregationBits, getCommitteesSize(other), false);
-  }
-
-  // Helper to get committeesSize safely from Attestation or internal state
-  private Int2IntMap getCommitteesSize(final Attestation other) {
-    // Trust `this.committeesSize` is the correct one for the context.
-    return this.committeesSize;
+        otherInternalCommitteeBits, otherInternalAggregationBits, false);
   }
 
   /**
@@ -125,7 +119,6 @@ class AttestationBitsAggregatorElectra implements AttestationBitsAggregator {
   private boolean orInternal(
       final BitSet otherCommitteeBits,
       final BitSet otherAggregationBits,
-      final Int2IntMap otherCommitteesSize, // For potential validation
       final boolean isAggregation) {
 
     // Basic comparison using BitSet.equals() is efficient
@@ -336,8 +329,9 @@ class AttestationBitsAggregatorElectra implements AttestationBitsAggregator {
         cachedAggregationBitlistSize =
             calculateCombinedAggregationBitsetSize(
                 this.internalCommitteeBits, this.committeeBitsStartingPositions);
-        if (cachedAggregationBitlistSize < 0)
+        if (cachedAggregationBitlistSize < 0) {
           cachedAggregationBitlistSize = 0; // Handle empty case for schema wrap
+        }
       }
       // Convert internal BitSet back to SSZ Bitlist using the schema
       // Assumes wrapBitSet is efficient.

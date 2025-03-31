@@ -56,7 +56,7 @@ public class SszBitvectorSchemaImpl extends AbstractSszVectorSchema<SszBit, SszB
   }
 
   @Override
-  public SszBitvector wrapBitSet(int size, BitSet bitSet) {
+  public SszBitvector wrapBitSet(final int size, final BitSet bitSet) {
     return SszBitvectorImpl.wrapBitSet(this, size, bitSet);
   }
 

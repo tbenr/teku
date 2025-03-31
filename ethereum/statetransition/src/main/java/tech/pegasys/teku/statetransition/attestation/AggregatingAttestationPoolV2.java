@@ -259,7 +259,9 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
           sizeForPruningCheck,
           maximumAttestationCount);
       final UInt64 oldestSlot = dataHashBySlot.firstKey();
-      if (oldestSlot == null) break; // Handle empty map case
+      if (oldestSlot == null) {
+        break; // Handle empty map case
+      }
 
       // Estimate the size reduction (since removeAttestationsPriorToSlot no longer updates 'size')
       // This is tricky because group.size() is approximate.
@@ -322,7 +324,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
               + " milliseconds");
 
     } catch (final Exception e) {
-
+      System.out.println("An error occurred while simulating block attestation packing: " + e.getMessage());
     }
   }
 
