@@ -86,8 +86,7 @@ class AttestationBitsAggregatorElectra implements AttestationBitsAggregator {
     BitSet otherInternalAggregationBits = other.getAggregationBits().getAsBitSet();
 
     // Perform the OR operation using internal BitSets
-    orInternal(
-        otherInternalCommitteeBits, otherInternalAggregationBits, false);
+    orInternal(otherInternalCommitteeBits, otherInternalAggregationBits, false);
   }
 
   @Override
@@ -97,8 +96,7 @@ class AttestationBitsAggregatorElectra implements AttestationBitsAggregator {
     BitSet otherInternalAggregationBits = other.getAggregationBits().getAsBitSet();
 
     // Perform the OR operation using internal BitSets
-    return orInternal(
-        otherInternalCommitteeBits, otherInternalAggregationBits, true);
+    return orInternal(otherInternalCommitteeBits, otherInternalAggregationBits, true);
   }
 
   @Override
@@ -114,7 +112,7 @@ class AttestationBitsAggregatorElectra implements AttestationBitsAggregator {
       int otherCommitteeBit = otherInternalCommitteeBits.nextSetBit(0);
       int otherAggregationBit = otherInternalAggregationBits.nextSetBit(0);
 
-      if(internalCommitteeBits.get(otherCommitteeBit)) {
+      if (internalCommitteeBits.get(otherCommitteeBit)) {
         // Fill up the internal aggregation bits for this committee
         singleNonAggregatingFillUp(otherCommitteeBit, otherAggregationBit);
         return;
@@ -122,13 +120,11 @@ class AttestationBitsAggregatorElectra implements AttestationBitsAggregator {
     }
 
     // Perform the OR operation using internal BitSets
-    orInternal(
-        otherInternalCommitteeBits, otherInternalAggregationBits, false);
+    orInternal(otherInternalCommitteeBits, otherInternalAggregationBits, false);
   }
 
-  private void singleNonAggregatingFillUp(      final int otherCommitteeBit,
-                                                final int otherAggregationBit) {
-
+  private void singleNonAggregatingFillUp(
+      final int otherCommitteeBit, final int otherAggregationBit) {
 
     final int thisStartingPosition = committeeBitsStartingPositions.get(otherCommitteeBit);
     this.internalAggregationBits.set(thisStartingPosition + otherAggregationBit);

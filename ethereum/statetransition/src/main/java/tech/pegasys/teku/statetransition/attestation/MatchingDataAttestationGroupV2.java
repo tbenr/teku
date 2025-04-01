@@ -117,7 +117,7 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
   @Override
   public ValidatableAttestation fillUpAggregation(final ValidatableAttestation attestation) {
     final AggregateAttestationBuilder builder =
-            new AggregateAttestationBuilder(spec, attestationData);
+        new AggregateAttestationBuilder(spec, attestationData);
 
     final AttestationBitsAggregator localIncludedValidators;
 
@@ -131,16 +131,17 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
     builder.aggregate(attestation);
 
     singleAttestationsByCommitteeIndex.values().stream()
-            .flatMap(Set::stream)
-            .forEach(validatableAttestation -> {
-              if(localIncludedValidators.isSuperSetOf(validatableAttestation.getAttestation())) {
+        .flatMap(Set::stream)
+        .forEach(
+            validatableAttestation -> {
+              if (localIncludedValidators.isSuperSetOf(validatableAttestation.getAttestation())) {
                 // Already included, skip
                 System.out.println("*** already included");
                 return;
               }
-                if (builder.aggregate(validatableAttestation)) {
-                    localIncludedValidators.or(validatableAttestation.getAttestation());
-                }
+              if (builder.aggregate(validatableAttestation)) {
+                localIncludedValidators.or(validatableAttestation.getAttestation());
+              }
             });
 
     return builder.buildAggregate();
@@ -478,10 +479,12 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
       remainingAttestations.forEachRemaining(
           candidate -> {
             if (builder.aggregate(candidate)) {
-             // System.out.println("Aggregated candidate with bits: " + candidate.getAttestation().getAggregationBits().getBitCount());
+              // System.out.println("Aggregated candidate with bits: " +
+              // candidate.getAttestation().getAggregationBits().getBitCount());
               iteratorSpecificIncludedValidators.or(candidate.getAttestation());
             } else {
-              //System.out.println("Not aggregating candidate with bits: " + candidate.getAttestation().getAggregationBits().getBitCount());
+              // System.out.println("Not aggregating candidate with bits: " +
+              // candidate.getAttestation().getAggregationBits().getBitCount());
             }
           });
       return builder.buildAggregate();
@@ -493,26 +496,24 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
       // Filter based on the iterator's local includedValidators copy
       // No lock needed for this read operation
       // Use outer class field attestationsByValidatorCount
-//      if(fillUp) {
-//        return MatchingDataAttestationGroupV2.this
-//                      .singleAttestationsByCommitteeIndex
-//                      .values()
-//                      .stream()
-//                      .flatMap(Set::stream)
-//                      .filter(
-//                          candidate ->
-//                              !iteratorSpecificIncludedValidators.isSuperSetOf(
-//                                  candidate.getAttestation())).iterator();
-//      }
-      return
-              MatchingDataAttestationGroupV2.this.attestationsByValidatorCount.values().stream()
-                  .flatMap(Set::stream) // streams the concurrent set safely
-                  .filter(this::isAttestationRelevant)
-                  // Check against the iterator's local copy of included validators
-                  .filter(
-                      candidate ->
-                          !iteratorSpecificIncludedValidators.isSuperSetOf(
-                              candidate.getAttestation()))
+      //      if(fillUp) {
+      //        return MatchingDataAttestationGroupV2.this
+      //                      .singleAttestationsByCommitteeIndex
+      //                      .values()
+      //                      .stream()
+      //                      .flatMap(Set::stream)
+      //                      .filter(
+      //                          candidate ->
+      //                              !iteratorSpecificIncludedValidators.isSuperSetOf(
+      //                                  candidate.getAttestation())).iterator();
+      //      }
+      return MatchingDataAttestationGroupV2.this.attestationsByValidatorCount.values().stream()
+          .flatMap(Set::stream) // streams the concurrent set safely
+          .filter(this::isAttestationRelevant)
+          // Check against the iterator's local copy of included validators
+          .filter(
+              candidate ->
+                  !iteratorSpecificIncludedValidators.isSuperSetOf(candidate.getAttestation()))
           .iterator();
     }
 
