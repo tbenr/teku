@@ -107,9 +107,33 @@ class AttestationBitsAggregatorElectra implements AttestationBitsAggregator {
     BitSet otherInternalCommitteeBits = other.getCommitteeBitsRequired().getAsBitSet();
     BitSet otherInternalAggregationBits = other.getAggregationBits().getAsBitSet();
 
+    // Check if the other is a single non-aggregating attestation
+    if (otherInternalCommitteeBits.cardinality() == 1
+        && otherInternalAggregationBits.cardinality() == 1) {
+      // Extract the single committee and aggregation bit
+      int otherCommitteeBit = otherInternalCommitteeBits.nextSetBit(0);
+      int otherAggregationBit = otherInternalAggregationBits.nextSetBit(0);
+
+      if(internalCommitteeBits.get(otherCommitteeBit)) {
+        // Fill up the internal aggregation bits for this committee
+        singleNonAggregatingFillUp(otherCommitteeBit, otherAggregationBit);
+        return;
+      }
+    }
+
     // Perform the OR operation using internal BitSets
     orInternal(
         otherInternalCommitteeBits, otherInternalAggregationBits, false);
+  }
+
+  private void singleNonAggregatingFillUp(      final int otherCommitteeBit,
+                                                final int otherAggregationBit) {
+
+
+    final int thisStartingPosition = committeeBitsStartingPositions.get(otherCommitteeBit);
+    this.internalAggregationBits.set(thisStartingPosition + otherAggregationBit);
+
+    invalidateCache(); // State changed
   }
 
   /**

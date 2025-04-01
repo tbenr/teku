@@ -58,7 +58,7 @@ import tech.pegasys.teku.spec.logic.versions.electra.util.AttestationUtilElectra
 import tech.pegasys.teku.spec.schemas.SchemaDefinitionsElectra;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPool;
-import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPoolV1;
+import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPoolV2;
 import tech.pegasys.teku.statetransition.attestation.AttestationForkChecker;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
@@ -107,7 +107,7 @@ public class AggregatingAttestationPoolBenchmark {
         new HashMap<>();
 
     this.pool =
-        new AggregatingAttestationPoolV1(
+        new AggregatingAttestationPoolV2(
             SPEC, recentChainData, new NoOpMetricsSystem(), DEFAULT_MAXIMUM_ATTESTATION_COUNT);
     this.recentChainData = mock(RecentChainData.class);
 
@@ -269,7 +269,7 @@ public class AggregatingAttestationPoolBenchmark {
         new Blackhole(
             "Today's password is swordfish. I understand instantiating Blackholes directly is dangerous.");
 
-    for (int i = 0; i < 1; i++) {
+    for (int i = 0; i < 100; i++) {
       benchmark.getAttestationsForBlock(bh);
     }
   }

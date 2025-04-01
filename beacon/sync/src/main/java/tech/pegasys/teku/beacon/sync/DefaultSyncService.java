@@ -51,8 +51,7 @@ public class DefaultSyncService extends Service implements SyncService {
         forwardSyncService.start(),
         recentBlocksFetcher.start(),
         recentBlobSidecarsFetcher.start(),
-        syncStateTracker.start(),
-        historicalBlockSyncService.start());
+        syncStateTracker.start());
   }
 
   @Override

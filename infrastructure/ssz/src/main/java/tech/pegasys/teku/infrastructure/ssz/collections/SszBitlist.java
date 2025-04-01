@@ -46,6 +46,8 @@ public interface SszBitlist extends SszPrimitiveList<Boolean, SszBit>, SszBitSet
 
   BitSet getAsBitSet();
 
+  int getLastSetBitIndex();
+
   /**
    * Performs a logical OR of this bit list with the bit list argument.
    *

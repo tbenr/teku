@@ -67,6 +67,10 @@ class BitlistImpl {
     return (BitSet) data.clone();
   }
 
+  public int getLastSetBitIndex() {
+    return data.length() - 1;
+  }
+
   /**
    * Returns new instance of this BitlistImpl with set bits from the other BitlistImpl
    *

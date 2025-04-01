@@ -120,6 +120,12 @@ public class MatchingDataAttestationGroupV1 implements MatchingDataAttestationGr
         .add(attestation);
   }
 
+  @Override
+  public ValidatableAttestation fillUpAggregation(final ValidatableAttestation attestation) {
+    // not implemented
+    return attestation;
+  }
+
   /**
    * Iterates through the aggregation of attestations in this group. The iterator attempts to create
    * the minimum number of attestations that include all attestations in the group.

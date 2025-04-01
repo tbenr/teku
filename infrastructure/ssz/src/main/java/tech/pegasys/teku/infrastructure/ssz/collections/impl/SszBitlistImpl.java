@@ -95,6 +95,11 @@ public class SszBitlistImpl extends SszListImpl<SszBit> implements SszBitlist {
     return value.getAsBitSet();
   }
 
+  @Override
+  public int getLastSetBitIndex() {
+    return value.getLastSetBitIndex();
+  }
+
   @SuppressWarnings("unchecked")
   @Override
   public SszBitlistSchema<SszBitlist> getSchema() {

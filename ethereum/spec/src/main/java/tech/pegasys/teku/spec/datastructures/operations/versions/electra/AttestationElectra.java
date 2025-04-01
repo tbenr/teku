@@ -75,7 +75,9 @@ public class AttestationElectra
 
   @Override
   public UInt64 getFirstCommitteeIndex() {
-    return UInt64.valueOf(getCommitteeBitsRequired().streamAllSetBits().findFirst().orElseThrow());
+    // we actually dont care if its the first committee index or not,
+    // we just need to take one
+    return UInt64.valueOf(getCommitteeBitsRequired().getLastSetBitIndex());
   }
 
   @Override

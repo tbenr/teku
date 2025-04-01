@@ -233,6 +233,34 @@ public class AttestationBitsAggregatorElectraTest {
   }
 
   @Test
+  void aggregateSingleAttestationFillUp() {
+    /*
+     01|234 <- committee 0 and 1 indices
+     10|100 <- bits
+    */
+    final ValidatableAttestation initialAttestation = createAttestation(List.of(0, 1), 0, 2);
+
+    /*
+     123 <- committee 1 indices
+     001 <- bits
+    */
+    final ValidatableAttestation otherAttestation = createAttestation(List.of(1), 2);
+
+    final AttestationBitsAggregator aggregator = AttestationBitsAggregator.of(initialAttestation);
+
+    // calculate the or
+    aggregator.or(otherAttestation.getAttestation());
+
+    /*
+     01|234 <- committee 0 and 1 indices
+     10|101 <- bits
+    */
+
+    assertThat(aggregator.getCommitteeBits().streamAllSetBits()).containsExactly(0, 1);
+    assertThat(aggregator.getAggregationBits().streamAllSetBits()).containsExactly(0, 2, 4);
+  }
+
+  @Test
   void
       aggregateOnMultipleOverlappingCommitteeBitsButWithSomeOfAggregationOverlappingWhenNoCheck2() {
     /*

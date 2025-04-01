@@ -114,6 +114,38 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
     return attestationData;
   }
 
+  @Override
+  public ValidatableAttestation fillUpAggregation(final ValidatableAttestation attestation) {
+    final AggregateAttestationBuilder builder =
+            new AggregateAttestationBuilder(spec, attestationData);
+
+    final AttestationBitsAggregator localIncludedValidators;
+
+    readLock.lock();
+    try {
+      localIncludedValidators = includedValidators.copy();
+    } finally {
+      readLock.unlock();
+    }
+
+    builder.aggregate(attestation);
+
+    singleAttestationsByCommitteeIndex.values().stream()
+            .flatMap(Set::stream)
+            .forEach(validatableAttestation -> {
+              if(localIncludedValidators.isSuperSetOf(validatableAttestation.getAttestation())) {
+                // Already included, skip
+                System.out.println("*** already included");
+                return;
+              }
+                if (builder.aggregate(validatableAttestation)) {
+                    localIncludedValidators.or(validatableAttestation.getAttestation());
+                }
+            });
+
+    return builder.buildAggregate();
+  }
+
   /**
    * Adds an attestation to this group. When possible, the attestation will be aggregated with
    * others during iteration. Ignores attestations with no new, unseen aggregation bits. Optimized
@@ -202,7 +234,7 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
 
     var durationMicroSeconds = (System.nanoTime() - start) / 1_000;
 
-    if (durationMicroSeconds > 250) {
+    if (durationMicroSeconds > 1000) {
       System.out.println("\"Slow\" add aggregation: " + durationMicroSeconds + " microseconds");
     }
 
@@ -446,7 +478,10 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
       remainingAttestations.forEachRemaining(
           candidate -> {
             if (builder.aggregate(candidate)) {
+             // System.out.println("Aggregated candidate with bits: " + candidate.getAttestation().getAggregationBits().getBitCount());
               iteratorSpecificIncludedValidators.or(candidate.getAttestation());
+            } else {
+              //System.out.println("Not aggregating candidate with bits: " + candidate.getAttestation().getAggregationBits().getBitCount());
             }
           });
       return builder.buildAggregate();
@@ -458,7 +493,18 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
       // Filter based on the iterator's local includedValidators copy
       // No lock needed for this read operation
       // Use outer class field attestationsByValidatorCount
-      return Stream.concat(
+//      if(fillUp) {
+//        return MatchingDataAttestationGroupV2.this
+//                      .singleAttestationsByCommitteeIndex
+//                      .values()
+//                      .stream()
+//                      .flatMap(Set::stream)
+//                      .filter(
+//                          candidate ->
+//                              !iteratorSpecificIncludedValidators.isSuperSetOf(
+//                                  candidate.getAttestation())).iterator();
+//      }
+      return
               MatchingDataAttestationGroupV2.this.attestationsByValidatorCount.values().stream()
                   .flatMap(Set::stream) // streams the concurrent set safely
                   .filter(this::isAttestationRelevant)
@@ -466,18 +512,7 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
                   .filter(
                       candidate ->
                           !iteratorSpecificIncludedValidators.isSuperSetOf(
-                              candidate.getAttestation())),
-              maybeCommitteeIndex.isPresent()
-                  ? Stream.empty()
-                  : MatchingDataAttestationGroupV2.this
-                      .singleAttestationsByCommitteeIndex
-                      .values()
-                      .stream()
-                      .flatMap(Set::stream)
-                      .filter(
-                          candidate ->
-                              !iteratorSpecificIncludedValidators.isSuperSetOf(
-                                  candidate.getAttestation())))
+                              candidate.getAttestation()))
           .iterator();
     }
 

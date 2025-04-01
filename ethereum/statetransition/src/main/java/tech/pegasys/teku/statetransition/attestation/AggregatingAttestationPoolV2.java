@@ -37,6 +37,7 @@ import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
+import tech.pegasys.teku.bls.BLSSignatureVerifier;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.metrics.SettableGauge;
 import tech.pegasys.teku.infrastructure.metrics.TekuMetricCategory;
@@ -55,6 +56,7 @@ import tech.pegasys.teku.spec.logic.common.block.AbstractBlockProcessor;
 import tech.pegasys.teku.spec.logic.common.helpers.MiscHelpers;
 import tech.pegasys.teku.spec.logic.versions.altair.block.BlockProcessorAltair;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitions;
+import tech.pegasys.teku.statetransition.attestation.utils.RewardBasedAttestationComparator;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
 /**
@@ -306,6 +308,13 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
           getAttestationsForBlock(preState, new AttestationForkChecker(spec, preState));
       var getAttestationsForBlockEnd = System.nanoTime();
 
+      spec.atSlot(slot).getBlockProcessor().processAttestations(
+              BeaconStateAltair.required(preState).createWritableCopy(), attestationPacking,
+              BLSSignatureVerifier.SIMPLE
+      );
+
+      System.out.println("attestation verification done");
+
       var rewards =
           gweiToEth(
               UInt64.valueOf(
@@ -325,6 +334,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
 
     } catch (final Exception e) {
       System.out.println("An error occurred while simulating block attestation packing: " + e.getMessage());
+      e.printStackTrace();
     }
   }
 
@@ -426,6 +436,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
     final UInt64 currentEpoch = spec.getCurrentEpoch(stateAtBlockSlot);
     final int previousEpochLimit = spec.getPreviousEpochAttestationCapacity(stateAtBlockSlot);
 
+    Comparator<ValidatableAttestation> comparator = RewardBasedAttestationComparator.create(spec, stateAtBlockSlot).comparator();
     final SchemaDefinitions schemaDefinitions =
         spec.atSlot(stateAtBlockSlot.getSlot()).getSchemaDefinitions();
 
@@ -436,6 +447,8 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
         schemaDefinitions.getAttestationSchema().requiresCommitteeBits();
 
     final AtomicInteger prevEpochCount = new AtomicInteger(0);
+
+    final long timeLimit = System.nanoTime() + 500_000_000L; // 0.5 second time limit
 
     // Iterating ConcurrentSkipListMap is weakly consistent and safe
     return dataHashBySlot
@@ -451,7 +464,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
                     stateAtBlockSlot,
                     forkChecker,
                     blockRequiresAttestationsWithCommitteeBits))
-        .limit(attestationsSchema.getMaxLength())
+
         .filter(
             attestation -> {
               if (spec.computeEpochAtSlot(attestation.getData().getSlot())
@@ -461,15 +474,40 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
               }
               return true;
             })
+            //.limit(attestationsSchema.getMaxLength()*2)
+            .sorted(comparator)
+            .limit(attestationsSchema.getMaxLength())
+            .peek(attestation -> System.out.println("before fillUpAttestation attestation: " + attestation.getAttestation().getAggregationBits().getBitCount()))
+            .map(validatableAttestation -> fillUpAttestation(validatableAttestation, timeLimit))
+            .peek(attestation -> System.out.println("after fillUpAttestation attestation: " + attestation.getAttestation().getAggregationBits().getBitCount()))
+            .map(ValidatableAttestation::getAttestation)
         .collect(attestationsSchema.collector());
   }
 
+  private ValidatableAttestation fillUpAttestation(
+      final ValidatableAttestation attestation, final long timeLimit) {
+    if(System.nanoTime() > timeLimit) {
+        System.out.println("Time limit reached, skipping fillUpAttestation");
+        return attestation;
+    }
+    return Optional.ofNullable(attestationGroupByDataHash.get(attestation.getData().hashTreeRoot()))
+            .map(
+                    group -> group.fillUpAggregation(attestation)
+            ).orElse(attestation);
+  }
+
   // Internal helper, not synchronized
-  private Stream<Attestation> streamAggregatesForDataHashesBySlot(
+  private Stream<ValidatableAttestation> streamAggregatesForDataHashesBySlot(
       final Set<Bytes> dataHashSetForSlot, // Assumed concurrent set
       final BeaconState stateAtBlockSlot,
       final AttestationForkChecker forkChecker,
       final boolean blockRequiresAttestationsWithCommitteeBits) {
+
+//    var maybeSlot = dataHashSetForSlot.stream().findFirst().map(attestationGroupByDataHash::get).filter(Objects::nonNull).map(validatableAttestations -> validatableAttestations.getAttestationData().getSlot());
+//
+//    maybeSlot.ifPresent(slot->
+//    System.out.println("streamAggregatesForDataHashesBySlot slot: " + slot +" size: " + dataHashSetForSlot.size())
+//    );
 
     // Stream over the concurrent set is safe
     return dataHashSetForSlot.stream()
@@ -479,11 +517,11 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
         .filter(group -> group.isValid(stateAtBlockSlot, spec)) // Add spec param
         .filter(forkChecker::areAttestationsFromCorrectFork) // Assumed thread-safe or stateless
         .flatMap(MatchingDataAttestationGroup::stream) // Must return a safe stream
-        .map(ValidatableAttestation::getAttestation)
+        //.map(ValidatableAttestation::getAttestation)
         .filter(
             attestation ->
-                attestation.requiresCommitteeBits() == blockRequiresAttestationsWithCommitteeBits)
-        .sorted(ATTESTATION_INCLUSION_COMPARATOR); // Sorting happens on collected stream elements
+                attestation.getAttestation().requiresCommitteeBits() == blockRequiresAttestationsWithCommitteeBits);
+        //.sorted(ATTESTATION_INCLUSION_COMPARATOR); // Sorting happens on collected stream elements
   }
 
   // No longer synchronized

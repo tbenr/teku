@@ -46,6 +46,8 @@ public interface MatchingDataAttestationGroup extends Iterable<ValidatableAttest
    */
   boolean add(ValidatableAttestation attestation);
 
+  ValidatableAttestation fillUpAggregation(ValidatableAttestation attestation);
+
   /**
    * Returns a stream that produces aggregated attestations covering all validators in this group.
    * Equivalent to stream(Optional.empty()).
