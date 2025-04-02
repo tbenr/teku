@@ -121,7 +121,8 @@ public class MatchingDataAttestationGroupV1 implements MatchingDataAttestationGr
   }
 
   @Override
-  public ValidatableAttestation fillUpAggregation(final ValidatableAttestation attestation) {
+  public ValidatableAttestation fillUpAggregation(
+      final ValidatableAttestation attestation, final long timeLimitNanos) {
     // not implemented
     return attestation;
   }

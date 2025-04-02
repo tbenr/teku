@@ -31,6 +31,8 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.ssz.collections.SszBitvector;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
@@ -56,6 +58,7 @@ import tech.pegasys.teku.statetransition.attestation.utils.AttestationBitsAggreg
  * <p>This V2 implementation uses concurrent collections and a ReadWriteLock for thread-safety.
  */
 public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGroup {
+  private static final Logger LOG = LogManager.getLogger();
 
   // Use Concurrent collections and lock for thread safety
   private final ConcurrentNavigableMap<Integer, Set<ValidatableAttestation>>
@@ -92,15 +95,19 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
   private final Lock readLock = lock.readLock();
   private final Lock writeLock = lock.writeLock();
 
+  private final boolean earlyDropSingleAttestations;
+
   public MatchingDataAttestationGroupV2(
       final Spec spec,
       final AttestationData attestationData,
-      final Optional<Int2IntMap> committeesSize) {
+      final Optional<Int2IntMap> committeesSize,
+      final boolean earlyDropSingleAttestations) {
     this.spec = spec;
     this.attestationData = attestationData;
     this.committeesSize = committeesSize;
     // Initialization happens before concurrent access is possible
     this.includedValidators = createEmptyAttestationBits();
+    this.earlyDropSingleAttestations = earlyDropSingleAttestations;
   }
 
   private AttestationBitsAggregator createEmptyAttestationBits() {
@@ -115,34 +122,29 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
   }
 
   @Override
-  public ValidatableAttestation fillUpAggregation(final ValidatableAttestation attestation) {
+  public ValidatableAttestation fillUpAggregation(
+      final ValidatableAttestation attestation, final long timeLimitNanos) {
     final AggregateAttestationBuilder builder =
         new AggregateAttestationBuilder(spec, attestationData);
-
-    final AttestationBitsAggregator localIncludedValidators;
-
-    readLock.lock();
-    try {
-      localIncludedValidators = includedValidators.copy();
-    } finally {
-      readLock.unlock();
-    }
 
     builder.aggregate(attestation);
 
     singleAttestationsByCommitteeIndex.values().stream()
         .flatMap(Set::stream)
-        .forEach(
-            validatableAttestation -> {
-              if (localIncludedValidators.isSuperSetOf(validatableAttestation.getAttestation())) {
-                // Already included, skip
-                System.out.println("*** already included");
-                return;
+        .map(
+            singleAttestation -> {
+              builder.aggregate(singleAttestation);
+              return Void.TYPE;
+            })
+        .takeWhile(
+            __ -> {
+              if (System.nanoTime() > timeLimitNanos) {
+                LOG.info("Timeout while aggregating single attestations");
+                return false;
               }
-              if (builder.aggregate(validatableAttestation)) {
-                localIncludedValidators.or(validatableAttestation.getAttestation());
-              }
-            });
+              return true;
+            })
+        .forEach(__ -> {});
 
     return builder.buildAggregate();
   }
@@ -157,7 +159,6 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
    */
   @Override
   public boolean add(final ValidatableAttestation attestation) {
-    var start = System.nanoTime();
     // --- Read Lock Section (Only for includedValidators check) ---
     readLock.lock();
     try {
@@ -201,7 +202,7 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
     final boolean added = attestations.add(attestation);
     // --- End Add to Concurrent Collection ---
 
-    if (added) {
+    if (earlyDropSingleAttestations && added) {
       final AttestationBitsAggregator aggregator = AttestationBitsAggregator.of(attestation);
 
       attestation
@@ -217,26 +218,11 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
                             final Set<ValidatableAttestation> singleAttestations =
                                 singleAttestationsByCommitteeIndex.get(committeeIndex);
                             if (singleAttestations != null) {
-                              // removeIf on ConcurrentHashMap.KeySetView is thread-safe
-                              final int sizeBefore = singleAttestations.size();
-                              final boolean r =
-                                  singleAttestations.removeIf(
-                                      singleAttestation ->
-                                          aggregator.isSuperSetOf(
-                                              singleAttestation.getAttestation()));
-                              final int deltaSize = sizeBefore - singleAttestations.size();
-                              if (r) {
-                                System.out.println(
-                                    "Estimated removed single attestation: " + deltaSize);
-                              }
+                              singleAttestations.removeIf(
+                                  singleAttestation ->
+                                      aggregator.isSuperSetOf(singleAttestation.getAttestation()));
                             }
                           }));
-    }
-
-    var durationMicroSeconds = (System.nanoTime() - start) / 1_000;
-
-    if (durationMicroSeconds > 1000) {
-      System.out.println("\"Slow\" add aggregation: " + durationMicroSeconds + " microseconds");
     }
 
     return added;

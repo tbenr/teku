@@ -30,6 +30,6 @@ public class MatchingDataAttestationGroupV2Test extends MatchingDataAttestationG
       final Spec spec,
       final AttestationData attestationData,
       final Optional<Int2IntMap> committeeSizes) {
-    return new MatchingDataAttestationGroupV2(spec, attestationData, committeeSizes);
+    return new MatchingDataAttestationGroupV2(spec, attestationData, committeeSizes, false);
   }
 }
