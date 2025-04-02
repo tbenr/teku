@@ -315,7 +315,7 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
     // This gives an approximate size at a moment in time, acceptable for metrics.
     // No lock needed as iterating values and set.size() are safe.
     return attestationsByValidatorCount.values().stream().mapToInt(Set::size).sum()
-        + singleAttestationsByCommitteeIndex.size();
+        + singleAttestationsByCommitteeIndex.values().stream().mapToInt(Set::size).sum();
   }
 
   /**

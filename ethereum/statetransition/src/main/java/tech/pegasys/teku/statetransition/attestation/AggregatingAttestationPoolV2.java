@@ -355,10 +355,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
   // No longer synchronized
   @Override
   public int getSize() {
-
-    return attestationGroupByDataHash.values().stream()
-        .map(MatchingDataAttestationGroup::size)
-        .reduce(0, Integer::sum);
+    return size.get();
   }
 
   // No longer synchronized

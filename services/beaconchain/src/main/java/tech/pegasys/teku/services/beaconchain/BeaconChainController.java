@@ -1211,9 +1211,13 @@ public class BeaconChainController extends Service implements BeaconChainControl
                 DEFAULT_MAXIMUM_ATTESTATION_COUNT,
                 AggregatingAttestationPoolProfiler.INSTANCE,
                 500,
-                false)
+                true)
             : new AggregatingAttestationPoolV1(
-                spec, recentChainData, metricsSystem, DEFAULT_MAXIMUM_ATTESTATION_COUNT);
+                spec,
+                recentChainData,
+                metricsSystem,
+                AggregatingAttestationPoolProfiler.INSTANCE,
+                DEFAULT_MAXIMUM_ATTESTATION_COUNT);
     eventChannels.subscribe(SlotEventsChannel.class, attestationPool);
     blockImporter.subscribeToVerifiedBlockAttestations(
         attestationPool::onAttestationsIncludedInBlock);

@@ -45,6 +45,7 @@ import tech.pegasys.teku.spec.datastructures.operations.AttestationData;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.logic.common.helpers.MiscHelpers;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitions;
+import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfiler;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
 /**
@@ -69,6 +70,7 @@ public class AggregatingAttestationPoolV1 implements AggregatingAttestationPool 
   private final RecentChainData recentChainData;
   private final SettableGauge sizeGauge;
   private final int maximumAttestationCount;
+  private final AggregatingAttestationPoolProfiler aggregatingAttestationPoolProfiler;
 
   private final AtomicInteger size = new AtomicInteger(0);
 
@@ -76,6 +78,7 @@ public class AggregatingAttestationPoolV1 implements AggregatingAttestationPool 
       final Spec spec,
       final RecentChainData recentChainData,
       final MetricsSystem metricsSystem,
+      final AggregatingAttestationPoolProfiler aggregatingAttestationPoolProfiler,
       final int maximumAttestationCount) {
     this.spec = spec;
     this.recentChainData = recentChainData;
@@ -86,6 +89,7 @@ public class AggregatingAttestationPoolV1 implements AggregatingAttestationPool 
             "attestation_pool_size",
             "The number of attestations available to be included in proposed blocks");
     this.maximumAttestationCount = maximumAttestationCount;
+    this.aggregatingAttestationPoolProfiler = aggregatingAttestationPoolProfiler;
   }
 
   @Override
@@ -203,6 +207,8 @@ public class AggregatingAttestationPoolV1 implements AggregatingAttestationPool 
     }
     final UInt64 firstValidAttestationSlot = slot.minus(ATTESTATION_RETENTION_SLOTS);
     removeAttestationsPriorToSlot(firstValidAttestationSlot);
+
+    aggregatingAttestationPoolProfiler.execute(spec, slot, recentChainData, this);
   }
 
   private void removeAttestationsPriorToSlot(final UInt64 firstValidAttestationSlot) {
