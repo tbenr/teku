@@ -13,7 +13,14 @@
 
 package tech.pegasys.teku.statetransition.attestation;
 
+import static tech.pegasys.teku.networks.Eth2NetworkConfiguration.DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_BLOCK_AGGREGATION_TIME_LIMIT_MILLIS;
+import static tech.pegasys.teku.networks.Eth2NetworkConfiguration.DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_EARLY_DROP_SINGLE_ATTESTATIONS_ENABLED;
+
+import com.google.common.annotations.VisibleForTesting;
 import it.unimi.dsi.fastutil.ints.Int2IntMap;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
@@ -29,6 +36,8 @@ import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVPrinter;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes;
@@ -46,7 +55,7 @@ import tech.pegasys.teku.spec.datastructures.operations.AttestationData;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.logic.common.helpers.MiscHelpers;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitions;
-import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfiler;
+import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfilerCSV;
 import tech.pegasys.teku.statetransition.attestation.utils.RewardBasedAttestationComparator;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
@@ -82,19 +91,53 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
   private final RecentChainData recentChainData;
   private final SettableGauge sizeGauge;
   private final int maximumAttestationCount;
-  private final AggregatingAttestationPoolProfiler aggregatingAttestationPoolProfiler;
+  private final AggregatingAttestationPoolProfilerCSV aggregatingAttestationPoolProfiler;
 
   private final long maxBlockAggregationTimeNanos;
   private final boolean earlyDropSingleAttestations;
 
   private final AtomicInteger size = new AtomicInteger(0);
 
+  private static final String[] ATTESTATION_IMPROVEMENT_HEADERS = {
+    "slot",
+    "pool_size",
+    "index_in_block",
+    "attesation_bits_count",
+    "filled_up",
+    "block_root",
+    "source",
+    "target",
+    "data"
+  };
+
+  private static final FileWriter attestationImprovementsFileWriter;
+  private static final CSVPrinter attestationImprovementsCSVPrinter;
+
+  static {
+    try {
+      CSVFormat.Builder csvFormatBuilder = CSVFormat.DEFAULT.builder();
+      File packingSummaryFile = new File("fill_up_details.csv");
+
+      if (packingSummaryFile.exists()) {
+        attestationImprovementsFileWriter = new FileWriter(packingSummaryFile, true);
+        csvFormatBuilder.setSkipHeaderRecord(true);
+      } else {
+        attestationImprovementsFileWriter = new FileWriter(packingSummaryFile);
+        csvFormatBuilder.setHeader(ATTESTATION_IMPROVEMENT_HEADERS);
+      }
+      attestationImprovementsCSVPrinter =
+          new CSVPrinter(attestationImprovementsFileWriter, csvFormatBuilder.get());
+    } catch (final IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
   public AggregatingAttestationPoolV2(
       final Spec spec,
       final RecentChainData recentChainData,
       final MetricsSystem metricsSystem,
       final int maximumAttestationCount,
-      final AggregatingAttestationPoolProfiler aggregatingAttestationPoolProfiler,
+      final AggregatingAttestationPoolProfilerCSV aggregatingAttestationPoolProfiler,
       final int maxBlockAggregationTimeMillis,
       final boolean earlyDropSingleAttestations) {
     this.spec = spec;
@@ -109,6 +152,28 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
     this.aggregatingAttestationPoolProfiler = aggregatingAttestationPoolProfiler;
     this.maxBlockAggregationTimeNanos = maxBlockAggregationTimeMillis * 1_000_000L;
     this.earlyDropSingleAttestations = earlyDropSingleAttestations;
+  }
+
+  @VisibleForTesting
+  public AggregatingAttestationPoolV2(
+      final Spec spec,
+      final RecentChainData recentChainData,
+      final MetricsSystem metricsSystem,
+      final int maximumAttestationCount) {
+    this.spec = spec;
+    this.recentChainData = recentChainData;
+    this.sizeGauge =
+        SettableGauge.create(
+            metricsSystem,
+            TekuMetricCategory.BEACON,
+            "attestation_pool_size",
+            "The number of attestations available to be included in proposed blocks (V2 Pool)");
+    this.maximumAttestationCount = maximumAttestationCount;
+    this.aggregatingAttestationPoolProfiler = AggregatingAttestationPoolProfilerCSV.INSTANCE;
+    this.maxBlockAggregationTimeNanos =
+        DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_BLOCK_AGGREGATION_TIME_LIMIT_MILLIS * 1_000_000L;
+    this.earlyDropSingleAttestations =
+        DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_EARLY_DROP_SINGLE_ATTESTATIONS_ENABLED;
   }
 
   // No longer synchronized
@@ -407,16 +472,47 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
         .sorted(comparator)
         .limit(attestationsSchema.getMaxLength())
         .peek(
-            attestation ->
-                LOG.info(
-                    "before fillUpAttestation, bits: {}",
-                    attestation.getAttestation().getAggregationBits().getBitCount()))
+            attestation -> {
+              LOG.info(
+                  "before fillUpAttestation, bits: {}",
+                  attestation.getAttestation().getAggregationBits().getBitCount());
+              try {
+                attestationImprovementsCSVPrinter.printRecord(
+                    stateAtBlockSlot.getSlot(),
+                    size.get(),
+                    attestation.getAttestation().getData().getIndex(),
+                    attestation.getAttestation().getAggregationBits().getBitCount(),
+                    0, // not filled up
+                    attestation.getAttestation().getData().getBeaconBlockRoot(),
+                    attestation.getAttestation().getData().getSource().getEpoch(),
+                    attestation.getAttestation().getData().getTarget().getEpoch(),
+                    attestation.getAttestation().getData());
+              } catch (IOException e) {
+                LOG.error("Error printing CSV record", e);
+              }
+            })
         .map(validatableAttestation -> fillUpAttestation(validatableAttestation, timeLimitNanos))
         .peek(
-            attestation ->
-                LOG.info(
-                    "after fillUpAttestation, bits: {}",
-                    attestation.getAttestation().getAggregationBits().getBitCount()))
+            attestation -> {
+              LOG.info(
+                  "after fillUpAttestation, bits: {}",
+                  attestation.getAttestation().getAggregationBits().getBitCount());
+
+              try {
+                attestationImprovementsCSVPrinter.printRecord(
+                    stateAtBlockSlot.getSlot(),
+                    size.get(),
+                    attestation.getAttestation().getData().getIndex(),
+                    attestation.getAttestation().getAggregationBits().getBitCount(),
+                    1, // filled up
+                    attestation.getAttestation().getData().getBeaconBlockRoot(),
+                    attestation.getAttestation().getData().getSource().getEpoch(),
+                    attestation.getAttestation().getData().getTarget().getEpoch(),
+                    attestation.getAttestation().getData());
+              } catch (IOException e) {
+                LOG.error("Error printing CSV record", e);
+              }
+            })
         .map(ValidatableAttestation::getAttestation)
         .collect(attestationsSchema.collector());
   }

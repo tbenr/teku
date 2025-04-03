@@ -302,10 +302,41 @@ public class Eth2NetworkOptions {
       description = "Enable the new aggregating attestation pool.",
       arity = "0..1",
       fallbackValue = "true",
-      showDefaultValue = Visibility.ALWAYS,
       hidden = true)
   private boolean aggregatingAttestationPoolV2Enabled =
       Eth2NetworkConfiguration.DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_ENABLED;
+
+  @Option(
+      names = {"--Xaggregating-attestation-pool-v2-profiling-enabled"},
+      paramLabel = "<BOOLEAN>",
+      description = "Enable the profiler for the aggregating attestation pool V2",
+      arity = "0..1",
+      fallbackValue = "true",
+      hidden = true)
+  private boolean aggregatingAttestationPoolV2ProfilingEnabled =
+      Eth2NetworkConfiguration.DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_ENABLED;
+
+  @Option(
+      names = {"--Xaggregating-attestation-pool-v2-block-aggregation-time-limit"},
+      paramLabel = "<NUMBER>",
+      description = "Maximum time to spend packing attestations when producing a block.",
+      arity = "0..1",
+      hidden = true)
+  private int aggregatingAttestationPoolV2BlockAggregationTimeLimit =
+      Eth2NetworkConfiguration
+          .DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_BLOCK_AGGREGATION_TIME_LIMIT_MILLIS;
+
+  @Option(
+      names = {"--Xaggregating-attestation-pool-v2-early-drop-single-attestations-enabled"},
+      paramLabel = "<BOOLEAN>",
+      description =
+          "Discard single attestations upon receiving an attestation that contains that single attestation.",
+      arity = "0..1",
+      fallbackValue = "true",
+      hidden = true)
+  private boolean aggregatingAttestationPoolV2EarlyDropSingleAttestationsEnabled =
+      Eth2NetworkConfiguration
+          .DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_EARLY_DROP_SINGLE_ATTESTATIONS_ENABLED;
 
   public Eth2NetworkConfiguration getNetworkConfiguration() {
     return createEth2NetworkConfig(builder -> {});
@@ -392,6 +423,7 @@ public class Eth2NetworkOptions {
     if (eth1DepositContractDeployBlockOverride != null) {
       builder.eth1DepositContractDeployBlock(eth1DepositContractDeployBlockOverride);
     }
+
     builder
         .ignoreWeakSubjectivityPeriodEnabled(ignoreWeakSubjectivityPeriodEnabled)
         .safeSlotsToImportOptimistically(safeSlotsToImportOptimistically)
@@ -399,6 +431,11 @@ public class Eth2NetworkOptions {
         .asyncBeaconChainMaxThreads(asyncBeaconChainMaxThreads)
         .forkChoiceLateBlockReorgEnabled(forkChoiceLateBlockReorgEnabled)
         .aggregatingAttestationPoolV2Enabled(aggregatingAttestationPoolV2Enabled)
+        .aggregatingAttestationPoolV2ProfilingEnabled(aggregatingAttestationPoolV2ProfilingEnabled)
+        .aggregatingAttestationPoolV2BlockAggregationTimeLimit(
+            aggregatingAttestationPoolV2BlockAggregationTimeLimit)
+        .aggregatingAttestationPoolV2EarlyDropSingleAttestationsEnabled(
+            aggregatingAttestationPoolV2EarlyDropSingleAttestationsEnabled)
         .epochsStoreBlobs(epochsStoreBlobs)
         .forkChoiceUpdatedAlwaysSendPayloadAttributes(forkChoiceUpdatedAlwaysSendPayloadAttributes)
         .rustKzgEnabled(rustKzgEnabled);

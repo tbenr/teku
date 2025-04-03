@@ -127,6 +127,7 @@ import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPoolV
 import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPoolV2;
 import tech.pegasys.teku.statetransition.attestation.AttestationManager;
 import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfiler;
+import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfilerCSV;
 import tech.pegasys.teku.statetransition.blobs.BlobSidecarManager;
 import tech.pegasys.teku.statetransition.blobs.BlobSidecarManager.RemoteOrigin;
 import tech.pegasys.teku.statetransition.blobs.BlobSidecarManagerImpl;
@@ -1202,16 +1203,20 @@ public class BeaconChainController extends Service implements BeaconChainControl
 
   public void initAttestationPool() {
     LOG.debug("BeaconChainController.initAttestationPool()");
+    final Eth2NetworkConfiguration eth2NetworkConfiguration = beaconConfig.eth2NetworkConfig();
     attestationPool =
-        beaconConfig.eth2NetworkConfig().isAggregatingAttestationPoolV2Enabled()
+        eth2NetworkConfiguration.isAggregatingAttestationPoolV2Enabled()
             ? new AggregatingAttestationPoolV2(
                 spec,
                 recentChainData,
                 metricsSystem,
                 DEFAULT_MAXIMUM_ATTESTATION_COUNT,
-                AggregatingAttestationPoolProfiler.INSTANCE,
-                500,
-                true)
+                eth2NetworkConfiguration.isAggregatingAttestationPoolV2ProfilingEnabled()
+                    ? AggregatingAttestationPoolProfilerCSV.INSTANCE
+                    : AggregatingAttestationPoolProfilerCSV.NOOP,
+                eth2NetworkConfiguration.getAggregatingAttestationPoolV2BlockAggregationTimeLimit(),
+                eth2NetworkConfiguration
+                    .isAggregatingAttestationPoolV2EarlyDropSingleAttestationsEnabled())
             : new AggregatingAttestationPoolV1(
                 spec,
                 recentChainData,

@@ -26,6 +26,7 @@ dependencies {
   implementation project(':storage:api')
 
   implementation 'io.consensys.tuweni:tuweni-units'
+  implementation 'org.apache.commons:commons-csv'
 
   testImplementation testFixtures(project(':ethereum:spec'))
   testImplementation testFixtures(project(':ethereum:networks'))
