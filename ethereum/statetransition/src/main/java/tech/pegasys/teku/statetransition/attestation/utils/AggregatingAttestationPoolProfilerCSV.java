@@ -123,9 +123,11 @@ public class AggregatingAttestationPoolProfilerCSV {
           .longValue();
 
   static {
+    final String tekuProfilerCsvBasepath = System.getenv("TEKU_PROFILER_CSV_BASEPATH");
+
     try {
       CSVFormat.Builder csvFormatBuilder = CSVFormat.DEFAULT.builder();
-      File packingSummaryFile = new File("packing_summary.csv");
+      File packingSummaryFile = new File(tekuProfilerCsvBasepath + "/packing_summary.csv");
 
       if (packingSummaryFile.exists()) {
         PACKING_SUMMARY_FILE_WRITER =
@@ -144,7 +146,7 @@ public class AggregatingAttestationPoolProfilerCSV {
 
     try {
       CSVFormat.Builder csvFormatBuilder = CSVFormat.DEFAULT.builder();
-      File attestationsDetailsFile = new File("attestations_details.csv");
+      File attestationsDetailsFile = new File(tekuProfilerCsvBasepath + "/attestations_details.csv");
       if (attestationsDetailsFile.exists()) {
         ATTESTATION_DETAILS_FILE_WRITER =
             new FileWriter(attestationsDetailsFile, StandardCharsets.UTF_8, true);
@@ -162,7 +164,7 @@ public class AggregatingAttestationPoolProfilerCSV {
 
     try {
       CSVFormat.Builder csvFormatBuilder = CSVFormat.DEFAULT.builder();
-      File packingSummaryFile = new File("fill_up_details.csv");
+      File packingSummaryFile = new File(tekuProfilerCsvBasepath + "/fill_up_details.csv");
 
       if (packingSummaryFile.exists()) {
         ATTESTATION_IMPROVEMENTS_FILE_WRITER =
