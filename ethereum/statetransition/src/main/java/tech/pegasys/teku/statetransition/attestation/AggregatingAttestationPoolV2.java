@@ -13,14 +13,8 @@
 
 package tech.pegasys.teku.statetransition.attestation;
 
-import static tech.pegasys.teku.networks.Eth2NetworkConfiguration.DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_BLOCK_AGGREGATION_TIME_LIMIT_MILLIS;
-import static tech.pegasys.teku.networks.Eth2NetworkConfiguration.DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_EARLY_DROP_SINGLE_ATTESTATIONS_ENABLED;
-
 import com.google.common.annotations.VisibleForTesting;
 import it.unimi.dsi.fastutil.ints.Int2IntMap;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
@@ -36,8 +30,6 @@ import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
-import org.apache.commons.csv.CSVFormat;
-import org.apache.commons.csv.CSVPrinter;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes;
@@ -56,7 +48,7 @@ import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.logic.common.helpers.MiscHelpers;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitions;
 import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfilerCSV;
-import tech.pegasys.teku.statetransition.attestation.utils.RewardBasedAttestationComparator;
+import tech.pegasys.teku.statetransition.attestation.utils.AttestationRewardCalculator;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
 /**
@@ -98,40 +90,6 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
 
   private final AtomicInteger size = new AtomicInteger(0);
 
-  private static final String[] ATTESTATION_IMPROVEMENT_HEADERS = {
-    "slot",
-    "pool_size",
-    "index_in_block",
-    "attesation_bits_count",
-    "filled_up",
-    "block_root",
-    "source",
-    "target",
-    "data"
-  };
-
-  private static final FileWriter attestationImprovementsFileWriter;
-  private static final CSVPrinter attestationImprovementsCSVPrinter;
-
-  static {
-    try {
-      CSVFormat.Builder csvFormatBuilder = CSVFormat.DEFAULT.builder();
-      File packingSummaryFile = new File("fill_up_details.csv");
-
-      if (packingSummaryFile.exists()) {
-        attestationImprovementsFileWriter = new FileWriter(packingSummaryFile, true);
-        csvFormatBuilder.setSkipHeaderRecord(true);
-      } else {
-        attestationImprovementsFileWriter = new FileWriter(packingSummaryFile);
-        csvFormatBuilder.setHeader(ATTESTATION_IMPROVEMENT_HEADERS);
-      }
-      attestationImprovementsCSVPrinter =
-          new CSVPrinter(attestationImprovementsFileWriter, csvFormatBuilder.get());
-    } catch (final IOException e) {
-      throw new RuntimeException(e);
-    }
-  }
-
   public AggregatingAttestationPoolV2(
       final Spec spec,
       final RecentChainData recentChainData,
@@ -170,10 +128,8 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
             "The number of attestations available to be included in proposed blocks (V2 Pool)");
     this.maximumAttestationCount = maximumAttestationCount;
     this.aggregatingAttestationPoolProfiler = AggregatingAttestationPoolProfilerCSV.INSTANCE;
-    this.maxBlockAggregationTimeNanos =
-        DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_BLOCK_AGGREGATION_TIME_LIMIT_MILLIS * 1_000_000L;
-    this.earlyDropSingleAttestations =
-        DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_EARLY_DROP_SINGLE_ATTESTATIONS_ENABLED;
+    this.maxBlockAggregationTimeNanos = 500 * 1_000_000L; // 500ms
+    this.earlyDropSingleAttestations = false;
   }
 
   // No longer synchronized
@@ -423,6 +379,13 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
     return size.get();
   }
 
+  public record ValidatableAttestationWithSortingReward(
+      ValidatableAttestation validatableAttestation, long sortingRewardNumerator) {}
+
+  static final Comparator<ValidatableAttestationWithSortingReward> REWARD_COMPARATOR =
+      Comparator.comparingLong(ValidatableAttestationWithSortingReward::sortingRewardNumerator)
+          .reversed();
+
   // No longer synchronized
   @Override
   public SszList<Attestation> getAttestationsForBlock(
@@ -430,8 +393,8 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
     final UInt64 currentEpoch = spec.getCurrentEpoch(stateAtBlockSlot);
     final int previousEpochLimit = spec.getPreviousEpochAttestationCapacity(stateAtBlockSlot);
 
-    Comparator<ValidatableAttestation> comparator =
-        RewardBasedAttestationComparator.create(spec, stateAtBlockSlot).comparator();
+    final AttestationRewardCalculator attestationRewardCalculator =
+        AttestationRewardCalculator.create(spec, stateAtBlockSlot);
     final SchemaDefinitions schemaDefinitions =
         spec.atSlot(stateAtBlockSlot.getSlot()).getSchemaDefinitions();
 
@@ -469,63 +432,43 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
               return true;
             })
         // .limit(attestationsSchema.getMaxLength()*2)
-        .sorted(comparator)
+        .map(
+            validatableAttestation ->
+                new ValidatableAttestationWithSortingReward(
+                    validatableAttestation,
+                    attestationRewardCalculator.getRewardNumeratorForAttestation(
+                        validatableAttestation.getAttestation())))
+        .sorted(REWARD_COMPARATOR)
         .limit(attestationsSchema.getMaxLength())
         .peek(
-            attestation -> {
-              LOG.info(
-                  "before fillUpAttestation, bits: {}",
-                  attestation.getAttestation().getAggregationBits().getBitCount());
-              try {
-                attestationImprovementsCSVPrinter.printRecord(
-                    stateAtBlockSlot.getSlot(),
-                    size.get(),
-                    attestation.getAttestation().getData().getIndex(),
-                    attestation.getAttestation().getAggregationBits().getBitCount(),
-                    0, // not filled up
-                    attestation.getAttestation().getData().getBeaconBlockRoot(),
-                    attestation.getAttestation().getData().getSource().getEpoch(),
-                    attestation.getAttestation().getData().getTarget().getEpoch(),
-                    attestation.getAttestation().getData());
-              } catch (IOException e) {
-                LOG.error("Error printing CSV record", e);
-              }
-            })
+            attestation ->
+                aggregatingAttestationPoolProfiler.onPreFillUp(stateAtBlockSlot, attestation))
         .map(validatableAttestation -> fillUpAttestation(validatableAttestation, timeLimitNanos))
         .peek(
-            attestation -> {
-              LOG.info(
-                  "after fillUpAttestation, bits: {}",
-                  attestation.getAttestation().getAggregationBits().getBitCount());
-
-              try {
-                attestationImprovementsCSVPrinter.printRecord(
-                    stateAtBlockSlot.getSlot(),
-                    size.get(),
-                    attestation.getAttestation().getData().getIndex(),
-                    attestation.getAttestation().getAggregationBits().getBitCount(),
-                    1, // filled up
-                    attestation.getAttestation().getData().getBeaconBlockRoot(),
-                    attestation.getAttestation().getData().getSource().getEpoch(),
-                    attestation.getAttestation().getData().getTarget().getEpoch(),
-                    attestation.getAttestation().getData());
-              } catch (IOException e) {
-                LOG.error("Error printing CSV record", e);
-              }
-            })
-        .map(ValidatableAttestation::getAttestation)
+            attestation ->
+                aggregatingAttestationPoolProfiler.onPostFillUp(stateAtBlockSlot, attestation))
+        .map(
+            validatableAttestationWithSortingReward ->
+                validatableAttestationWithSortingReward.validatableAttestation().getAttestation())
         .collect(attestationsSchema.collector());
   }
 
-  private ValidatableAttestation fillUpAttestation(
-      final ValidatableAttestation attestation, final long timeLimitNanos) {
+  private ValidatableAttestationWithSortingReward fillUpAttestation(
+      final ValidatableAttestationWithSortingReward attestationWithRewards,
+      final long timeLimitNanos) {
     if (System.nanoTime() > timeLimitNanos) {
       LOG.info("Time limit reached, skipping fillUpAttestation");
-      return attestation;
+      return attestationWithRewards;
     }
+
+    var attestation = attestationWithRewards.validatableAttestation();
     return Optional.ofNullable(attestationGroupByDataHash.get(attestation.getData().hashTreeRoot()))
-        .map(group -> group.fillUpAggregation(attestation, timeLimitNanos))
-        .orElse(attestation);
+        .map(
+            group ->
+                new ValidatableAttestationWithSortingReward(
+                    group.fillUpAggregation(attestation, timeLimitNanos),
+                    attestationWithRewards.sortingRewardNumerator))
+        .orElse(attestationWithRewards);
   }
 
   // Internal helper, not synchronized

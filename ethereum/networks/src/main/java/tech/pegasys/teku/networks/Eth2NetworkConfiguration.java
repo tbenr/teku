@@ -58,8 +58,9 @@ public class Eth2NetworkConfiguration {
 
   public static final boolean DEFAULT_FORK_CHOICE_LATE_BLOCK_REORG_ENABLED = false;
 
+  public static final boolean DEFAULT_AGGREGATING_ATTESTATION_POOL_PROFILING_ENABLED = false;
+
   public static final boolean DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_ENABLED = false;
-  public static final boolean DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_PROFILING_ENABLED = false;
   public static final int
       DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_BLOCK_AGGREGATION_TIME_LIMIT_MILLIS = 500;
   public static final boolean
@@ -126,7 +127,7 @@ public class Eth2NetworkConfiguration {
   private final int pendingAttestationsMaxQueue;
   private final boolean rustKzgEnabled;
   private final boolean aggregatingAttestationPoolV2Enabled;
-  private final boolean aggregatingAttestationPoolV2ProfilingEnabled;
+  private final boolean aggregatingAttestationPoolProfilingEnabled;
   private final int aggregatingAttestationPoolV2BlockAggregationTimeLimit;
   private final boolean aggregatingAttestationPoolV2EarlyDropSingleAttestationsEnabled;
 
@@ -159,7 +160,7 @@ public class Eth2NetworkConfiguration {
       final boolean rustKzgEnabled,
       final int pendingAttestationsMaxQueue,
       final boolean aggregatingAttestationPoolV2Enabled,
-      final boolean aggregatingAttestationPoolV2ProfilingEnabled,
+      final boolean aggregatingAttestationPoolProfilingEnabled,
       final int aggregatingAttestationPoolV2BlockAggregationTimeLimit,
       final boolean aggregatingAttestationPoolV2EarlyDropSingleAttestationsEnabled) {
     this.spec = spec;
@@ -194,8 +195,7 @@ public class Eth2NetworkConfiguration {
     this.pendingAttestationsMaxQueue = pendingAttestationsMaxQueue;
     this.rustKzgEnabled = rustKzgEnabled;
     this.aggregatingAttestationPoolV2Enabled = aggregatingAttestationPoolV2Enabled;
-    this.aggregatingAttestationPoolV2ProfilingEnabled =
-        aggregatingAttestationPoolV2ProfilingEnabled;
+    this.aggregatingAttestationPoolProfilingEnabled = aggregatingAttestationPoolProfilingEnabled;
     this.aggregatingAttestationPoolV2BlockAggregationTimeLimit =
         aggregatingAttestationPoolV2BlockAggregationTimeLimit;
     this.aggregatingAttestationPoolV2EarlyDropSingleAttestationsEnabled =
@@ -317,8 +317,8 @@ public class Eth2NetworkConfiguration {
     return aggregatingAttestationPoolV2Enabled;
   }
 
-  public boolean isAggregatingAttestationPoolV2ProfilingEnabled() {
-    return aggregatingAttestationPoolV2ProfilingEnabled;
+  public boolean isAggregatingAttestationPoolProfilingEnabled() {
+    return aggregatingAttestationPoolProfilingEnabled;
   }
 
   public int getAggregatingAttestationPoolV2BlockAggregationTimeLimit() {
@@ -363,8 +363,8 @@ public class Eth2NetworkConfiguration {
         && asyncP2pMaxQueue == that.asyncP2pMaxQueue
         && forkChoiceLateBlockReorgEnabled == that.forkChoiceLateBlockReorgEnabled
         && aggregatingAttestationPoolV2Enabled == that.aggregatingAttestationPoolV2Enabled
-        && aggregatingAttestationPoolV2ProfilingEnabled
-            == that.aggregatingAttestationPoolV2ProfilingEnabled
+        && aggregatingAttestationPoolProfilingEnabled
+            == that.aggregatingAttestationPoolProfilingEnabled
         && aggregatingAttestationPoolV2BlockAggregationTimeLimit
             == that.aggregatingAttestationPoolV2BlockAggregationTimeLimit
         && aggregatingAttestationPoolV2EarlyDropSingleAttestationsEnabled
@@ -422,7 +422,7 @@ public class Eth2NetworkConfiguration {
         aggregatingAttestationPoolV2Enabled,
         forkChoiceUpdatedAlwaysSendPayloadAttributes,
         rustKzgEnabled,
-        aggregatingAttestationPoolV2ProfilingEnabled,
+        aggregatingAttestationPoolProfilingEnabled,
         aggregatingAttestationPoolV2BlockAggregationTimeLimit,
         aggregatingAttestationPoolV2EarlyDropSingleAttestationsEnabled);
   }
@@ -466,8 +466,8 @@ public class Eth2NetworkConfiguration {
     private boolean rustKzgEnabled = DEFAULT_RUST_KZG_ENABLED;
     private boolean aggregatingAttestationPoolV2Enabled =
         DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_ENABLED;
-    private boolean aggregatingAttestationPoolV2ProfilingEnabled =
-        DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_PROFILING_ENABLED;
+    private boolean aggregatingAttestationPoolProfilingEnabled =
+        DEFAULT_AGGREGATING_ATTESTATION_POOL_PROFILING_ENABLED;
     private int aggregatingAttestationPoolV2BlockAggregationTimeLimit =
         DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_BLOCK_AGGREGATION_TIME_LIMIT_MILLIS;
     private boolean aggregatingAttestationPoolV2EarlyDropSingleAttestationsEnabled =
@@ -575,7 +575,7 @@ public class Eth2NetworkConfiguration {
           rustKzgEnabled,
           pendingAttestationsMaxQueue.orElse(DEFAULT_MAX_QUEUE_PENDING_ATTESTATIONS),
           aggregatingAttestationPoolV2Enabled,
-          aggregatingAttestationPoolV2ProfilingEnabled,
+          aggregatingAttestationPoolProfilingEnabled,
           aggregatingAttestationPoolV2BlockAggregationTimeLimit,
           aggregatingAttestationPoolV2EarlyDropSingleAttestationsEnabled);
     }
@@ -1183,10 +1183,9 @@ public class Eth2NetworkConfiguration {
       return this;
     }
 
-    public Builder aggregatingAttestationPoolV2ProfilingEnabled(
-        final boolean aggregatingAttestationPoolV2ProfilingEnabled) {
-      this.aggregatingAttestationPoolV2ProfilingEnabled =
-          aggregatingAttestationPoolV2ProfilingEnabled;
+    public Builder aggregatingAttestationPoolProfilingEnabled(
+        final boolean aggregatingAttestationPoolProfilingEnabled) {
+      this.aggregatingAttestationPoolProfilingEnabled = aggregatingAttestationPoolProfilingEnabled;
       return this;
     }
 

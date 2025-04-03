@@ -38,7 +38,7 @@ import tech.pegasys.teku.statetransition.attestation.AttestationForkChecker;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
 public class AggregatingAttestationPoolProfiler {
-  public static AggregatingAttestationPoolProfiler NOOP =
+  public static final AggregatingAttestationPoolProfiler NOOP =
       new AggregatingAttestationPoolProfiler() {
         @Override
         public void execute(
@@ -49,7 +49,7 @@ public class AggregatingAttestationPoolProfiler {
           // No-op
         }
       };
-  public static AggregatingAttestationPoolProfiler INSTANCE =
+  public static final AggregatingAttestationPoolProfiler INSTANCE =
       new AggregatingAttestationPoolProfiler();
 
   private AggregatingAttestationPoolProfiler() {

@@ -307,14 +307,14 @@ public class Eth2NetworkOptions {
       Eth2NetworkConfiguration.DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_ENABLED;
 
   @Option(
-      names = {"--Xaggregating-attestation-pool-v2-profiling-enabled"},
+      names = {"--Xaggregating-attestation-pool-profiling-enabled"},
       paramLabel = "<BOOLEAN>",
-      description = "Enable the profiler for the aggregating attestation pool V2",
+      description = "Enable the profiler for the aggregating attestation pool",
       arity = "0..1",
       fallbackValue = "true",
       hidden = true)
-  private boolean aggregatingAttestationPoolV2ProfilingEnabled =
-      Eth2NetworkConfiguration.DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_ENABLED;
+  private boolean aggregatingAttestationPoolProfilingEnabled =
+      Eth2NetworkConfiguration.DEFAULT_AGGREGATING_ATTESTATION_POOL_PROFILING_ENABLED;
 
   @Option(
       names = {"--Xaggregating-attestation-pool-v2-block-aggregation-time-limit"},
@@ -431,7 +431,7 @@ public class Eth2NetworkOptions {
         .asyncBeaconChainMaxThreads(asyncBeaconChainMaxThreads)
         .forkChoiceLateBlockReorgEnabled(forkChoiceLateBlockReorgEnabled)
         .aggregatingAttestationPoolV2Enabled(aggregatingAttestationPoolV2Enabled)
-        .aggregatingAttestationPoolV2ProfilingEnabled(aggregatingAttestationPoolV2ProfilingEnabled)
+        .aggregatingAttestationPoolProfilingEnabled(aggregatingAttestationPoolProfilingEnabled)
         .aggregatingAttestationPoolV2BlockAggregationTimeLimit(
             aggregatingAttestationPoolV2BlockAggregationTimeLimit)
         .aggregatingAttestationPoolV2EarlyDropSingleAttestationsEnabled(
