@@ -60,7 +60,7 @@ import tech.pegasys.teku.spec.util.DataStructureUtil;
 import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPool;
 import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPoolV2;
 import tech.pegasys.teku.statetransition.attestation.AttestationForkChecker;
-import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfilerCSV;
+import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfiler;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
 @Warmup(iterations = 5, time = 2000, timeUnit = TimeUnit.MILLISECONDS)
@@ -113,8 +113,8 @@ public class AggregatingAttestationPoolBenchmark {
             recentChainData,
             new NoOpMetricsSystem(),
             DEFAULT_MAXIMUM_ATTESTATION_COUNT,
-            AggregatingAttestationPoolProfilerCSV.NOOP,
-            1000000,
+            AggregatingAttestationPoolProfiler.NOOP,
+            500,
             false,
             false);
     this.recentChainData = mock(RecentChainData.class);

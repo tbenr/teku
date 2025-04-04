@@ -47,36 +47,7 @@ import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPoolV
 import tech.pegasys.teku.statetransition.attestation.AttestationForkChecker;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
-public class AggregatingAttestationPoolProfilerCSV {
-
-  public static final AggregatingAttestationPoolProfilerCSV NOOP =
-      new AggregatingAttestationPoolProfilerCSV() {
-        @Override
-        public void execute(
-            final Spec spec,
-            final UInt64 slot,
-            final RecentChainData recentChainData,
-            final AggregatingAttestationPool aggregatingAttestationPool) {
-          // No-op
-        }
-
-        @Override
-        public void onPreFillUp(
-            final BeaconState stateAtBlockSlot,
-            final ValidatableAttestationWithSortingReward attestation) {
-          // No-op
-        }
-
-        @Override
-        public void onPostFillUp(
-            final BeaconState stateAtBlockSlot,
-            final ValidatableAttestationWithSortingReward attestation) {
-          // No-op
-        }
-      };
-  public static final AggregatingAttestationPoolProfilerCSV INSTANCE =
-      new AggregatingAttestationPoolProfilerCSV();
-
+public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttestationPoolProfiler {
   private static final String[] PACKING_SUMMARY_HEADERS = {
     "slot", "total_pool_size", "packed_attestations", "packing_time_millis", "total_rewards_eth"
   };
@@ -106,14 +77,9 @@ public class AggregatingAttestationPoolProfilerCSV {
     "data"
   };
 
-  private static final FileWriter PACKING_SUMMARY_FILE_WRITER;
-  private static final CSVPrinter PACKING_SUMMARY_CSV_PRINTER;
-
-  private static final FileWriter ATTESTATION_DETAILS_FILE_WRITER;
-  private static final CSVPrinter ATTESTATION_DETAILS_CSV_PRINTER;
-
-  private static final FileWriter ATTESTATION_IMPROVEMENTS_FILE_WRITER;
-  private static final CSVPrinter ATTESTATION_IMPROVEMENTS_CSV_PRINTER;
+  private final CSVPrinter packingSummaryCsvPrinter;
+  private final CSVPrinter attestationDetailsCsvPrinter;
+  private final CSVPrinter attestationImprovementsCsvPrinter;
 
   private static final long PROPOSER_REWARD_DENOMINATOR =
       WEIGHT_DENOMINATOR
@@ -122,42 +88,44 @@ public class AggregatingAttestationPoolProfilerCSV {
           .dividedBy(PROPOSER_WEIGHT)
           .longValue();
 
-  static {
+  public AggregatingAttestationPoolProfilerCSV() {
     final String tekuProfilerCsvBasepath = System.getenv("TEKU_PROFILER_CSV_BASEPATH");
 
     try {
       CSVFormat.Builder csvFormatBuilder = CSVFormat.DEFAULT.builder();
       File packingSummaryFile = new File(tekuProfilerCsvBasepath + "/packing_summary.csv");
 
+      FileWriter packingSummaryFileWriter;
       if (packingSummaryFile.exists()) {
-        PACKING_SUMMARY_FILE_WRITER =
-            new FileWriter(packingSummaryFile, StandardCharsets.UTF_8, true);
+        packingSummaryFileWriter = new FileWriter(packingSummaryFile, StandardCharsets.UTF_8, true);
         csvFormatBuilder.setSkipHeaderRecord(true);
       } else {
-        PACKING_SUMMARY_FILE_WRITER =
+        packingSummaryFileWriter =
             new FileWriter(packingSummaryFile, StandardCharsets.UTF_8, false);
         csvFormatBuilder.setHeader(PACKING_SUMMARY_HEADERS);
       }
-      PACKING_SUMMARY_CSV_PRINTER =
-          new CSVPrinter(PACKING_SUMMARY_FILE_WRITER, csvFormatBuilder.get());
+      this.packingSummaryCsvPrinter =
+          new CSVPrinter(packingSummaryFileWriter, csvFormatBuilder.get());
     } catch (final IOException e) {
       throw new RuntimeException(e);
     }
 
     try {
       CSVFormat.Builder csvFormatBuilder = CSVFormat.DEFAULT.builder();
-      File attestationsDetailsFile = new File(tekuProfilerCsvBasepath + "/attestations_details.csv");
+      File attestationsDetailsFile =
+          new File(tekuProfilerCsvBasepath + "/attestations_details.csv");
+      FileWriter attestationDetailsFileWriter;
       if (attestationsDetailsFile.exists()) {
-        ATTESTATION_DETAILS_FILE_WRITER =
+        attestationDetailsFileWriter =
             new FileWriter(attestationsDetailsFile, StandardCharsets.UTF_8, true);
         csvFormatBuilder.setSkipHeaderRecord(true);
       } else {
-        ATTESTATION_DETAILS_FILE_WRITER =
+        attestationDetailsFileWriter =
             new FileWriter(attestationsDetailsFile, StandardCharsets.UTF_8, false);
         csvFormatBuilder.setHeader(ATTESTATION_DETAILS_HEADERS);
       }
-      ATTESTATION_DETAILS_CSV_PRINTER =
-          new CSVPrinter(ATTESTATION_DETAILS_FILE_WRITER, csvFormatBuilder.get());
+      this.attestationDetailsCsvPrinter =
+          new CSVPrinter(attestationDetailsFileWriter, csvFormatBuilder.get());
     } catch (final IOException e) {
       throw new RuntimeException(e);
     }
@@ -166,24 +134,21 @@ public class AggregatingAttestationPoolProfilerCSV {
       CSVFormat.Builder csvFormatBuilder = CSVFormat.DEFAULT.builder();
       File packingSummaryFile = new File(tekuProfilerCsvBasepath + "/fill_up_details.csv");
 
+      FileWriter attestationImprovementsFileWriter;
       if (packingSummaryFile.exists()) {
-        ATTESTATION_IMPROVEMENTS_FILE_WRITER =
+        attestationImprovementsFileWriter =
             new FileWriter(packingSummaryFile, StandardCharsets.UTF_8, true);
         csvFormatBuilder.setSkipHeaderRecord(true);
       } else {
-        ATTESTATION_IMPROVEMENTS_FILE_WRITER =
+        attestationImprovementsFileWriter =
             new FileWriter(packingSummaryFile, StandardCharsets.UTF_8, false);
         csvFormatBuilder.setHeader(ATTESTATION_IMPROVEMENT_HEADERS);
       }
-      ATTESTATION_IMPROVEMENTS_CSV_PRINTER =
-          new CSVPrinter(ATTESTATION_IMPROVEMENTS_FILE_WRITER, csvFormatBuilder.get());
+      this.attestationImprovementsCsvPrinter =
+          new CSVPrinter(attestationImprovementsFileWriter, csvFormatBuilder.get());
     } catch (final IOException e) {
       throw new RuntimeException(e);
     }
-  }
-
-  private AggregatingAttestationPoolProfilerCSV() {
-    // Private constructor to prevent instantiation
   }
 
   private static final Logger LOG = LogManager.getLogger();
@@ -235,7 +200,7 @@ public class AggregatingAttestationPoolProfilerCSV {
           packingTotalTimeMillis);
 
       try {
-        PACKING_SUMMARY_CSV_PRINTER.printRecord(
+        packingSummaryCsvPrinter.printRecord(
             slot,
             aggregatingAttestationPoolSize,
             attestationPacking.size(),
@@ -255,7 +220,7 @@ public class AggregatingAttestationPoolProfilerCSV {
 
                 var numerator = rewardsCalculator.getRewardNumeratorForAttestation(attestation);
                 try {
-                  ATTESTATION_DETAILS_CSV_PRINTER.printRecord(
+                  attestationDetailsCsvPrinter.printRecord(
                       slot,
                       i,
                       preState.getSlot().minus(data.getSlot()),
@@ -278,19 +243,19 @@ public class AggregatingAttestationPoolProfilerCSV {
       LOG.error("Error occurred while profiling AggregatingAttestationPool", e);
     } finally {
       try {
-        PACKING_SUMMARY_CSV_PRINTER.flush();
+        packingSummaryCsvPrinter.flush();
       } catch (IOException e) {
         LOG.error("Failed to flush CSV printer", e);
       }
 
       try {
-        ATTESTATION_DETAILS_CSV_PRINTER.flush();
+        attestationDetailsCsvPrinter.flush();
       } catch (IOException e) {
         LOG.error("Failed to flush CSV printer", e);
       }
 
       try {
-        ATTESTATION_IMPROVEMENTS_CSV_PRINTER.flush();
+        attestationImprovementsCsvPrinter.flush();
       } catch (IOException e) {
         LOG.error("Failed to flush CSV printer", e);
       }
@@ -318,7 +283,7 @@ public class AggregatingAttestationPoolProfilerCSV {
     var sortingRewardNumerator = validatableAttestationWithSortingReward.sortingRewardNumerator();
 
     try {
-      ATTESTATION_IMPROVEMENTS_CSV_PRINTER.printRecord(
+      attestationImprovementsCsvPrinter.printRecord(
           stateAtBlockSlot.getSlot(),
           lastAttestationIndex,
           attestation.getAggregationBits().getBitCount(),
@@ -342,7 +307,7 @@ public class AggregatingAttestationPoolProfilerCSV {
     var sortingRewardNumerator = validatableAttestationWithSortingReward.sortingRewardNumerator();
 
     try {
-      ATTESTATION_IMPROVEMENTS_CSV_PRINTER.printRecord(
+      attestationImprovementsCsvPrinter.printRecord(
           stateAtBlockSlot.getSlot(),
           lastAttestationIndex,
           attestation.getAggregationBits().getBitCount(),

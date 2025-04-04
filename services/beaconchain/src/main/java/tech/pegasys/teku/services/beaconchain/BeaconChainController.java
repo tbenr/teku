@@ -126,6 +126,7 @@ import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPool;
 import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPoolV1;
 import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPoolV2;
 import tech.pegasys.teku.statetransition.attestation.AttestationManager;
+import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfiler;
 import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfilerCSV;
 import tech.pegasys.teku.statetransition.blobs.BlobSidecarManager;
 import tech.pegasys.teku.statetransition.blobs.BlobSidecarManager.RemoteOrigin;
@@ -1211,8 +1212,8 @@ public class BeaconChainController extends Service implements BeaconChainControl
                 metricsSystem,
                 DEFAULT_MAXIMUM_ATTESTATION_COUNT,
                 eth2NetworkConfiguration.isAggregatingAttestationPoolProfilingEnabled()
-                    ? AggregatingAttestationPoolProfilerCSV.INSTANCE
-                    : AggregatingAttestationPoolProfilerCSV.NOOP,
+                    ? new AggregatingAttestationPoolProfilerCSV()
+                    : AggregatingAttestationPoolProfiler.NOOP,
                 eth2NetworkConfiguration.getAggregatingAttestationPoolV2BlockAggregationTimeLimit(),
                 eth2NetworkConfiguration
                     .isAggregatingAttestationPoolV2EarlyDropSingleAttestationsEnabled(),
@@ -1222,8 +1223,8 @@ public class BeaconChainController extends Service implements BeaconChainControl
                 recentChainData,
                 metricsSystem,
                 eth2NetworkConfiguration.isAggregatingAttestationPoolProfilingEnabled()
-                    ? AggregatingAttestationPoolProfilerCSV.INSTANCE
-                    : AggregatingAttestationPoolProfilerCSV.NOOP,
+                    ? new AggregatingAttestationPoolProfilerCSV()
+                    : AggregatingAttestationPoolProfiler.NOOP,
                 DEFAULT_MAXIMUM_ATTESTATION_COUNT);
     eventChannels.subscribe(SlotEventsChannel.class, attestationPool);
     blockImporter.subscribeToVerifiedBlockAttestations(

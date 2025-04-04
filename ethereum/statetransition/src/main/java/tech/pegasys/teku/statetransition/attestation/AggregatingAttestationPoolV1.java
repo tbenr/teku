@@ -45,7 +45,7 @@ import tech.pegasys.teku.spec.datastructures.operations.AttestationData;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.logic.common.helpers.MiscHelpers;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitions;
-import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfilerCSV;
+import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfiler;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
 /**
@@ -70,7 +70,7 @@ public class AggregatingAttestationPoolV1 implements AggregatingAttestationPool 
   private final RecentChainData recentChainData;
   private final SettableGauge sizeGauge;
   private final int maximumAttestationCount;
-  private final AggregatingAttestationPoolProfilerCSV aggregatingAttestationPoolProfiler;
+  private final AggregatingAttestationPoolProfiler aggregatingAttestationPoolProfiler;
 
   private final AtomicInteger size = new AtomicInteger(0);
 
@@ -78,7 +78,7 @@ public class AggregatingAttestationPoolV1 implements AggregatingAttestationPool 
       final Spec spec,
       final RecentChainData recentChainData,
       final MetricsSystem metricsSystem,
-      final AggregatingAttestationPoolProfilerCSV aggregatingAttestationPoolProfiler,
+      final AggregatingAttestationPoolProfiler aggregatingAttestationPoolProfiler,
       final int maximumAttestationCount) {
     this.spec = spec;
     this.recentChainData = recentChainData;
