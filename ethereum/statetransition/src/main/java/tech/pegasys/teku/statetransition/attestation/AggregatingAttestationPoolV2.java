@@ -87,6 +87,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
 
   private final long maxBlockAggregationTimeNanos;
   private final boolean earlyDropSingleAttestations;
+  private final boolean parallel;
 
   private final AtomicInteger size = new AtomicInteger(0);
 
@@ -97,7 +98,8 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
       final int maximumAttestationCount,
       final AggregatingAttestationPoolProfilerCSV aggregatingAttestationPoolProfiler,
       final int maxBlockAggregationTimeMillis,
-      final boolean earlyDropSingleAttestations) {
+      final boolean earlyDropSingleAttestations,
+      final boolean parallel) {
     this.spec = spec;
     this.recentChainData = recentChainData;
     this.sizeGauge =
@@ -110,6 +112,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
     this.aggregatingAttestationPoolProfiler = aggregatingAttestationPoolProfiler;
     this.maxBlockAggregationTimeNanos = maxBlockAggregationTimeMillis * 1_000_000L;
     this.earlyDropSingleAttestations = earlyDropSingleAttestations;
+    this.parallel = parallel;
   }
 
   @VisibleForTesting
@@ -127,9 +130,10 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
             "attestation_pool_size",
             "The number of attestations available to be included in proposed blocks (V2 Pool)");
     this.maximumAttestationCount = maximumAttestationCount;
-    this.aggregatingAttestationPoolProfiler = AggregatingAttestationPoolProfilerCSV.INSTANCE;
-    this.maxBlockAggregationTimeNanos = 500 * 1_000_000L; // 500ms
+    this.aggregatingAttestationPoolProfiler = AggregatingAttestationPoolProfilerCSV.NOOP;
+    this.maxBlockAggregationTimeNanos = Integer.MAX_VALUE * 1_000_000L;
     this.earlyDropSingleAttestations = false;
+    this.parallel = false;
   }
 
   // No longer synchronized
@@ -409,12 +413,14 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
     final long timeLimitNanos = System.nanoTime() + maxBlockAggregationTimeNanos;
 
     // Iterating ConcurrentSkipListMap is weakly consistent and safe
-    return dataHashBySlot
-        // We can immediately skip any attestations from the block slot or later
-        .headMap(stateAtBlockSlot.getSlot(), false)
-        .descendingMap() // Safe view
-        .values()
-        .stream()
+    var dataHashes =
+        dataHashBySlot
+            // We can immediately skip any attestations from the block slot or later
+            .headMap(stateAtBlockSlot.getSlot(), false)
+            .descendingMap() // Safe view
+            .values();
+
+    return (parallel ? dataHashes.parallelStream() : dataHashes.stream())
         .flatMap(
             dataHashSetForSlot ->
                 streamAggregatesForDataHashesBySlot(
@@ -431,7 +437,6 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
               }
               return true;
             })
-        // .limit(attestationsSchema.getMaxLength()*2)
         .map(
             validatableAttestation ->
                 new ValidatableAttestationWithSortingReward(

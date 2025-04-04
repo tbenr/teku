@@ -34,7 +34,6 @@ import java.util.stream.StreamSupport;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes32;
-import tech.pegasys.teku.infrastructure.ssz.collections.SszBitvector;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.attestation.ValidatableAttestation;
@@ -478,55 +477,22 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
 
     // Fetches attestations not yet covered *by this iterator*
     private Iterator<ValidatableAttestation> getRemainingAttestations() {
-      // Stream over the concurrent map's values (concurrent sets)
-      // Filter based on the iterator's local includedValidators copy
-      // No lock needed for this read operation
-      // Use outer class field attestationsByValidatorCount
-      //      if(fillUp) {
-      //        return MatchingDataAttestationGroupV2.this
-      //                      .singleAttestationsByCommitteeIndex
-      //                      .values()
-      //                      .stream()
-      //                      .flatMap(Set::stream)
-      //                      .filter(
-      //                          candidate ->
-      //                              !iteratorSpecificIncludedValidators.isSuperSetOf(
-      //                                  candidate.getAttestation())).iterator();
-      //      }
-      return MatchingDataAttestationGroupV2.this.attestationsByValidatorCount.values().stream()
-          .flatMap(Set::stream) // streams the concurrent set safely
-          .filter(this::isAttestationRelevant)
+      return maybeCommitteeIndex
+          .map(
+              committeeIndex ->
+                  MatchingDataAttestationGroupV2.this
+                      .singleAttestationsByCommitteeIndex
+                      .get(committeeIndex.intValue())
+                      .stream())
+          .orElse(
+              MatchingDataAttestationGroupV2.this.attestationsByValidatorCount.values().stream()
+                  .flatMap(Set::stream) // streams the concurrent set safely
+              )
           // Check against the iterator's local copy of included validators
           .filter(
               candidate ->
                   !iteratorSpecificIncludedValidators.isSuperSetOf(candidate.getAttestation()))
           .iterator();
-    }
-
-    // Checks relevance based on committee index, reads attestation data (immutable)
-    private boolean isAttestationRelevant(final ValidatableAttestation candidate) {
-      // No lock needed, reads immutable parts of candidate
-      final Optional<SszBitvector> maybeCommitteeBits =
-          candidate.getAttestation().getCommitteeBits();
-      if (maybeCommitteeBits.isEmpty()) {
-        // Pre-Electra attestation, always relevant initially
-        return true;
-      }
-
-      if (maybeCommitteeIndex.isEmpty()) {
-        // Block proposal scenario (no committee filter) - consider all Electra attestations
-        return true; // !candidate.getUnconvertedAttestation().isSingleAttestation();
-      }
-
-      // Committee aggregation scenario
-      final SszBitvector committeeBits = maybeCommitteeBits.get();
-      if (!committeeBits.isSet(maybeCommitteeIndex.get().intValue())) {
-        // Must match the specific committee index
-        return false;
-      }
-
-      // Aggregate only single-committee attestations in this scenario
-      return committeeBits.getBitCount() == 1;
     }
   }
 }

@@ -60,6 +60,7 @@ import tech.pegasys.teku.spec.util.DataStructureUtil;
 import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPool;
 import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPoolV2;
 import tech.pegasys.teku.statetransition.attestation.AttestationForkChecker;
+import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfilerCSV;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
 @Warmup(iterations = 5, time = 2000, timeUnit = TimeUnit.MILLISECONDS)
@@ -108,7 +109,14 @@ public class AggregatingAttestationPoolBenchmark {
 
     this.pool =
         new AggregatingAttestationPoolV2(
-            SPEC, recentChainData, new NoOpMetricsSystem(), DEFAULT_MAXIMUM_ATTESTATION_COUNT);
+            SPEC,
+            recentChainData,
+            new NoOpMetricsSystem(),
+            DEFAULT_MAXIMUM_ATTESTATION_COUNT,
+            AggregatingAttestationPoolProfilerCSV.NOOP,
+            1000000,
+            false,
+            false);
     this.recentChainData = mock(RecentChainData.class);
 
     try (final FileInputStream fileInputStream = new FileInputStream(STATE_PATH)) {
@@ -269,7 +277,7 @@ public class AggregatingAttestationPoolBenchmark {
         new Blackhole(
             "Today's password is swordfish. I understand instantiating Blackholes directly is dangerous.");
 
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < 1; i++) {
       benchmark.getAttestationsForBlock(bh);
     }
   }

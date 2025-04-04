@@ -1215,7 +1215,8 @@ public class BeaconChainController extends Service implements BeaconChainControl
                     : AggregatingAttestationPoolProfilerCSV.NOOP,
                 eth2NetworkConfiguration.getAggregatingAttestationPoolV2BlockAggregationTimeLimit(),
                 eth2NetworkConfiguration
-                    .isAggregatingAttestationPoolV2EarlyDropSingleAttestationsEnabled())
+                    .isAggregatingAttestationPoolV2EarlyDropSingleAttestationsEnabled(),
+                eth2NetworkConfiguration.isAggregatingAttestationPoolV2ParallelEnabled())
             : new AggregatingAttestationPoolV1(
                 spec,
                 recentChainData,

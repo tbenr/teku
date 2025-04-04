@@ -338,6 +338,16 @@ public class Eth2NetworkOptions {
       Eth2NetworkConfiguration
           .DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_EARLY_DROP_SINGLE_ATTESTATIONS_ENABLED;
 
+  @Option(
+      names = {"--Xaggregating-attestation-pool-v2-parallel-enabled"},
+      paramLabel = "<BOOLEAN>",
+      description = "Enable parallel processing of aggregating attestations.",
+      arity = "0..1",
+      fallbackValue = "true",
+      hidden = true)
+  private boolean aggregatingAttestationPoolV2ParallelEnabled =
+      Eth2NetworkConfiguration.DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_PARALLEL_ENABLED;
+
   public Eth2NetworkConfiguration getNetworkConfiguration() {
     return createEth2NetworkConfig(builder -> {});
   }
@@ -436,6 +446,7 @@ public class Eth2NetworkOptions {
             aggregatingAttestationPoolV2BlockAggregationTimeLimit)
         .aggregatingAttestationPoolV2EarlyDropSingleAttestationsEnabled(
             aggregatingAttestationPoolV2EarlyDropSingleAttestationsEnabled)
+        .aggregatingAttestationPoolV2ParallelEnabled(aggregatingAttestationPoolV2ParallelEnabled)
         .epochsStoreBlobs(epochsStoreBlobs)
         .forkChoiceUpdatedAlwaysSendPayloadAttributes(forkChoiceUpdatedAlwaysSendPayloadAttributes)
         .rustKzgEnabled(rustKzgEnabled);
