@@ -62,6 +62,7 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
     "bits_count",
     "committee_bits_count",
     "final_reward",
+    "inblock_reward",
     "data",
   };
 
@@ -184,13 +185,13 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
               attestationPacking,
               BLSSignatureVerifier.SIMPLE);
 
-      var rewards =
-          gweiToEth(
-              UInt64.valueOf(
-                  calculateAttestationRewards(
-                      attestationPacking,
-                      BlockProcessorAltair.required(spec.atSlot(slot).getBlockProcessor()),
-                      preState)));
+      var attestationRewards =
+          calculateAttestationRewards(
+              attestationPacking,
+              BlockProcessorAltair.required(spec.atSlot(slot).getBlockProcessor()),
+              preState);
+
+      var rewards = gweiToEth(UInt64.valueOf(attestationRewards.stream().reduce(0L, Long::sum)));
 
       LOG.info(
           "getAttestationsForBlock for {} produced {} attestations, rewards: {} ETH, timing: {} milliseconds",
@@ -233,6 +234,7 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
                           .map(sszBits -> String.valueOf(sszBits.getBitCount()))
                           .orElse("N/A"),
                       getEthRewardFromNumerator(numerator),
+                      gweiToEth(UInt64.valueOf(attestationRewards.get(i))),
                       data.toString());
                 } catch (IOException e) {
                   LOG.error("Failed to write to CSV", e);
@@ -326,7 +328,7 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
     return gweiToEth(UInt64.valueOf(Long.divideUnsigned(numerator, PROPOSER_REWARD_DENOMINATOR)));
   }
 
-  private long calculateAttestationRewards(
+  private List<Long> calculateAttestationRewards(
       final SszList<Attestation> attestations,
       final BlockProcessorAltair blockProcessor,
       final BeaconState preState) {
@@ -346,6 +348,6 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
         .filter(Optional::isPresent)
         .map(Optional::get)
         .map(UInt64::longValue)
-        .reduce(0L, Long::sum);
+        .toList();
   }
 }

@@ -86,7 +86,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
   private final int maximumAttestationCount;
   private final AggregatingAttestationPoolProfiler aggregatingAttestationPoolProfiler;
 
-  private final long maxBlockAggregationTimeNanos;
+  private final long maxBlockAggregationTimeMillis;
   private final boolean earlyDropSingleAttestations;
   private final boolean parallel;
 
@@ -111,7 +111,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
             "The number of attestations available to be included in proposed blocks (V2 Pool)");
     this.maximumAttestationCount = maximumAttestationCount;
     this.aggregatingAttestationPoolProfiler = aggregatingAttestationPoolProfiler;
-    this.maxBlockAggregationTimeNanos = maxBlockAggregationTimeMillis * 1_000_000L;
+    this.maxBlockAggregationTimeMillis = maxBlockAggregationTimeMillis;
     this.earlyDropSingleAttestations = earlyDropSingleAttestations;
     this.parallel = parallel;
   }
@@ -132,7 +132,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
             "The number of attestations available to be included in proposed blocks (V2 Pool)");
     this.maximumAttestationCount = maximumAttestationCount;
     this.aggregatingAttestationPoolProfiler = AggregatingAttestationPoolProfilerCSV.NOOP;
-    this.maxBlockAggregationTimeNanos = Integer.MAX_VALUE * 1_000_000L;
+    this.maxBlockAggregationTimeMillis = 60_000;
     this.earlyDropSingleAttestations = false;
     this.parallel = false;
   }
@@ -411,7 +411,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
 
     final AtomicInteger prevEpochCount = new AtomicInteger(0);
 
-    final long timeLimitNanos = System.nanoTime() + maxBlockAggregationTimeNanos;
+    final long timeLimitMillis = System.currentTimeMillis() + maxBlockAggregationTimeMillis;
 
     // Iterating ConcurrentSkipListMap is weakly consistent and safe
     var dataHashes =
@@ -449,7 +449,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
         .peek(
             attestation ->
                 aggregatingAttestationPoolProfiler.onPreFillUp(stateAtBlockSlot, attestation))
-        .map(validatableAttestation -> fillUpAttestation(validatableAttestation, timeLimitNanos))
+        .map(validatableAttestation -> fillUpAttestation(validatableAttestation, timeLimitMillis))
         .peek(
             attestation ->
                 aggregatingAttestationPoolProfiler.onPostFillUp(stateAtBlockSlot, attestation))
@@ -461,8 +461,8 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
 
   private ValidatableAttestationWithSortingReward fillUpAttestation(
       final ValidatableAttestationWithSortingReward attestationWithRewards,
-      final long timeLimitNanos) {
-    if (System.nanoTime() > timeLimitNanos) {
+      final long timeLimitMillis) {
+    if (System.currentTimeMillis() > timeLimitMillis) {
       LOG.info("Time limit reached, skipping fillUpAttestation");
       return attestationWithRewards;
     }
@@ -472,7 +472,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
         .map(
             group ->
                 new ValidatableAttestationWithSortingReward(
-                    group.fillUpAggregation(attestation, timeLimitNanos),
+                    group.fillUpAggregation(attestation, timeLimitMillis),
                     attestationWithRewards.sortingRewardNumerator))
         .orElse(attestationWithRewards);
   }
