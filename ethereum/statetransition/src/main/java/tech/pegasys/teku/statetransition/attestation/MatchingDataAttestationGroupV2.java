@@ -88,6 +88,8 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
    */
   private AttestationBitsAggregator includedValidators;
 
+  private AttestationBitsAggregator fillUpAggregationBits;
+
   // Lock for protecting mutable state (committeeShufflingSeed, includedValidators, and mutations
   // to AttestationBitsAggregator instances within includedValidatorsBySlot)
   private final ReadWriteLock lock = new ReentrantReadWriteLock();
@@ -132,7 +134,12 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
         .flatMap(Set::stream)
         .map(
             singleAttestation -> {
-              builder.aggregate(singleAttestation);
+              if(fillUpAggregationBits != null && fillUpAggregationBits.isSuperSetOf(singleAttestation.getAttestation())) {
+                return Void.TYPE;
+              }
+              if(builder.aggregate(singleAttestation) && fillUpAggregationBits != null) {
+                fillUpAggregationBits.or(singleAttestation.getAttestation());
+              }
               return Void.TYPE;
             })
         .takeWhile(
@@ -145,7 +152,15 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
             })
         .forEach(__ -> {});
 
-    return builder.buildAggregate();
+    var aggregate = builder.buildAggregate();
+
+    if(fillUpAggregationBits == null) {
+      fillUpAggregationBits = AttestationBitsAggregator.of(aggregate);
+    } else {
+      fillUpAggregationBits.or(aggregate.getAttestation());
+    }
+
+    return aggregate;
   }
 
   /**
@@ -257,6 +272,7 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
     try {
       // Capture a copy of includedValidators under lock for the iterator's isolated use
       AttestationBitsAggregator includedValidatorsCopy = this.includedValidators.copy();
+      this.fillUpAggregationBits = null; // Reset fillup aggregation bits for the next iteration
 
       return new AggregatingIteratorV2(committeeIndex, includedValidatorsCopy);
     } finally {
