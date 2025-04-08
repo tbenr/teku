@@ -122,26 +122,26 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
 
   @Override
   public ValidatableAttestation fillUpAggregation(
-      final ValidatableAttestation attestation, final long timeLimitMillis) {
+      final ValidatableAttestation attestation, final long timeLimitNanos) {
     final AggregateAttestationBuilder builder =
         new AggregateAttestationBuilder(spec, attestationData);
 
     builder.aggregate(attestation);
 
     singleAttestationsByCommitteeIndex.values().stream()
-        .takeWhile(
-            __ -> {
-              if (System.currentTimeMillis() > timeLimitMillis) {
-                LOG.info("Timeout while aggregating single attestations");
-                return false;
-              }
-              return true;
-            })
         .flatMap(Set::stream)
         .map(
             singleAttestation -> {
               builder.aggregate(singleAttestation);
               return Void.TYPE;
+            })
+        .takeWhile(
+            __ -> {
+              if (System.nanoTime() > timeLimitNanos) {
+                LOG.info("Timeout while aggregating single attestations");
+                return false;
+              }
+              return true;
             })
         .forEach(__ -> {});
 
