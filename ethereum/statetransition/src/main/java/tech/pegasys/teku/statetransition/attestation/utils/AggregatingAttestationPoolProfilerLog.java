@@ -41,6 +41,7 @@ import tech.pegasys.teku.storage.client.RecentChainData;
 public class AggregatingAttestationPoolProfilerLog implements AggregatingAttestationPoolProfiler {
   private static final Logger LOG = LogManager.getLogger();
 
+  @Override
   public void execute(
       final Spec spec,
       final UInt64 slot,
@@ -105,11 +106,13 @@ public class AggregatingAttestationPoolProfilerLog implements AggregatingAttesta
 
   @Override
   public void onPreFillUp(
-      BeaconState stateAtBlockSlot, ValidatableAttestationWithSortingReward attestation) {}
+      final BeaconState stateAtBlockSlot,
+      final ValidatableAttestationWithSortingReward attestation) {}
 
   @Override
   public void onPostFillUp(
-      BeaconState stateAtBlockSlot, ValidatableAttestationWithSortingReward attestation) {}
+      final BeaconState stateAtBlockSlot,
+      final ValidatableAttestationWithSortingReward attestation) {}
 
   private long calculateAttestationRewards(
       final SszList<Attestation> attestations,

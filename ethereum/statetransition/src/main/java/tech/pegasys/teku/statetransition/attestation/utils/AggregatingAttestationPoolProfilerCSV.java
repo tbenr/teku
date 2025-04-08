@@ -154,6 +154,7 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
 
   private static final Logger LOG = LogManager.getLogger();
 
+  @Override
   public void execute(
       final Spec spec,
       final UInt64 slot,
@@ -270,6 +271,7 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
   @SuppressWarnings("NonFinalStaticField")
   static int lastAttestationIndex = -1;
 
+  @Override
   public void onPreFillUp(
       final BeaconState stateAtBlockSlot,
       final ValidatableAttestationWithSortingReward validatableAttestationWithSortingReward) {
@@ -300,6 +302,7 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
     }
   }
 
+  @Override
   public void onPostFillUp(
       final BeaconState stateAtBlockSlot,
       final ValidatableAttestationWithSortingReward validatableAttestationWithSortingReward) {
