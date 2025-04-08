@@ -348,8 +348,7 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
                     mutableBeaconStateAltair, attestation, indexedAttestationProvider)));
 
     return rewards.stream()
-        .filter(Optional::isPresent)
-        .map(Optional::get)
+        .map(maybeValue -> maybeValue.orElse(UInt64.ZERO))
         .map(UInt64::longValue)
         .toList();
   }
