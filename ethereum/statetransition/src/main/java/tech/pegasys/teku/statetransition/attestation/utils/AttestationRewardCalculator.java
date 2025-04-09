@@ -57,6 +57,14 @@ public class AttestationRewardCalculator {
     this.miscHelpers = miscHelpers;
   }
 
+  record AttestationWithRewardInfo(
+      Attestation attestation,
+      IntList attestingIndices,
+      List<Integer> participationFlagIndices,
+      SszList<SszByte> epochParticipation,
+      UInt64 rewardNumerator,
+      UInt64 rewardDenominator) {}
+
   public long getRewardNumeratorForAttestation(final Attestation attestation) {
     final AttestationData data = attestation.getData();
     final List<Integer> participationFlagIndices =

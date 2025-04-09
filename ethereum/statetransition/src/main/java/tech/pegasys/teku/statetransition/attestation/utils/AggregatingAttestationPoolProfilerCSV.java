@@ -43,8 +43,8 @@ import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.altair.M
 import tech.pegasys.teku.spec.logic.common.block.AbstractBlockProcessor;
 import tech.pegasys.teku.spec.logic.versions.altair.block.BlockProcessorAltair;
 import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPool;
-import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPoolV2.ValidatableAttestationWithSortingReward;
 import tech.pegasys.teku.statetransition.attestation.AttestationForkChecker;
+import tech.pegasys.teku.statetransition.attestation.utils.RewardBasedAttestationSorter.AttestationWithRewardInfo;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
 public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttestationPoolProfiler {
@@ -234,7 +234,7 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
                           .getCommitteeBits()
                           .map(sszBits -> String.valueOf(sszBits.getBitCount()))
                           .orElse("N/A"),
-                      getEthRewardFromNumerator(numerator),
+                      getEthRewardFromNumerator(UInt64.valueOf(numerator)),
                       gweiToEth(UInt64.valueOf(attestationRewards.get(i))),
                       data.toString());
                 } catch (IOException e) {
@@ -274,7 +274,7 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
   @Override
   public void onPreFillUp(
       final BeaconState stateAtBlockSlot,
-      final ValidatableAttestationWithSortingReward validatableAttestationWithSortingReward) {
+      final AttestationWithRewardInfo validatableAttestationWithSortingReward) {
     if (stateAtBlockSlot.getSlot().equals(lastSlot)) {
       lastAttestationIndex = lastAttestationIndex + 1;
     } else {
@@ -282,9 +282,8 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
       lastAttestationIndex = 0;
     }
 
-    var attestation =
-        validatableAttestationWithSortingReward.validatableAttestation().getAttestation();
-    var sortingRewardNumerator = validatableAttestationWithSortingReward.sortingRewardNumerator();
+    var attestation = validatableAttestationWithSortingReward.attestation().getAttestation();
+    var sortingRewardNumerator = validatableAttestationWithSortingReward.rewardNumerator();
 
     try {
       attestationImprovementsCsvPrinter.printRecord(
@@ -305,11 +304,10 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
   @Override
   public void onPostFillUp(
       final BeaconState stateAtBlockSlot,
-      final ValidatableAttestationWithSortingReward validatableAttestationWithSortingReward) {
+      final AttestationWithRewardInfo validatableAttestationWithSortingReward) {
 
-    var attestation =
-        validatableAttestationWithSortingReward.validatableAttestation().getAttestation();
-    var sortingRewardNumerator = validatableAttestationWithSortingReward.sortingRewardNumerator();
+    var attestation = validatableAttestationWithSortingReward.attestation().getAttestation();
+    var sortingRewardNumerator = validatableAttestationWithSortingReward.rewardNumerator();
 
     try {
       attestationImprovementsCsvPrinter.printRecord(
@@ -327,8 +325,8 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
     }
   }
 
-  private String getEthRewardFromNumerator(final long numerator) {
-    return gweiToEth(UInt64.valueOf(Long.divideUnsigned(numerator, PROPOSER_REWARD_DENOMINATOR)));
+  private String getEthRewardFromNumerator(final UInt64 numerator) {
+    return gweiToEth(numerator.dividedBy(PROPOSER_REWARD_DENOMINATOR));
   }
 
   private List<Long> calculateAttestationRewards(

@@ -34,8 +34,8 @@ import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.altair.M
 import tech.pegasys.teku.spec.logic.common.block.AbstractBlockProcessor;
 import tech.pegasys.teku.spec.logic.versions.altair.block.BlockProcessorAltair;
 import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPool;
-import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPoolV2.ValidatableAttestationWithSortingReward;
 import tech.pegasys.teku.statetransition.attestation.AttestationForkChecker;
+import tech.pegasys.teku.statetransition.attestation.utils.RewardBasedAttestationSorter.AttestationWithRewardInfo;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
 public class AggregatingAttestationPoolProfilerLog implements AggregatingAttestationPoolProfiler {
@@ -106,13 +106,11 @@ public class AggregatingAttestationPoolProfilerLog implements AggregatingAttesta
 
   @Override
   public void onPreFillUp(
-      final BeaconState stateAtBlockSlot,
-      final ValidatableAttestationWithSortingReward attestation) {}
+      final BeaconState stateAtBlockSlot, final AttestationWithRewardInfo attestation) {}
 
   @Override
   public void onPostFillUp(
-      final BeaconState stateAtBlockSlot,
-      final ValidatableAttestationWithSortingReward attestation) {}
+      final BeaconState stateAtBlockSlot, final AttestationWithRewardInfo attestation) {}
 
   private long calculateAttestationRewards(
       final SszList<Attestation> attestations,

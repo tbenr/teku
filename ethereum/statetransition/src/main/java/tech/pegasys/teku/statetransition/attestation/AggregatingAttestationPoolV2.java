@@ -49,7 +49,8 @@ import tech.pegasys.teku.spec.logic.common.helpers.MiscHelpers;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitions;
 import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfiler;
 import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfilerCSV;
-import tech.pegasys.teku.statetransition.attestation.utils.AttestationRewardCalculator;
+import tech.pegasys.teku.statetransition.attestation.utils.RewardBasedAttestationSorter;
+import tech.pegasys.teku.statetransition.attestation.utils.RewardBasedAttestationSorter.AttestationWithRewardInfo;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
 /**
@@ -398,8 +399,8 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
     final UInt64 currentEpoch = spec.getCurrentEpoch(stateAtBlockSlot);
     final int previousEpochLimit = spec.getPreviousEpochAttestationCapacity(stateAtBlockSlot);
 
-    final AttestationRewardCalculator attestationRewardCalculator =
-        AttestationRewardCalculator.create(spec, stateAtBlockSlot);
+    final RewardBasedAttestationSorter rewardBasedAttestationSorter =
+        RewardBasedAttestationSorter.create(spec, stateAtBlockSlot);
     final SchemaDefinitions schemaDefinitions =
         spec.atSlot(stateAtBlockSlot.getSlot()).getSchemaDefinitions();
 
@@ -421,31 +422,27 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
             .descendingMap() // Safe view
             .values();
 
-    return (parallel ? dataHashes.parallelStream() : dataHashes.stream())
-        .flatMap(
-            dataHashSetForSlot ->
-                streamAggregatesForDataHashesBySlot(
-                    dataHashSetForSlot, // dataHashSetForSlot is expected to be a Concurrent Set
-                    stateAtBlockSlot,
-                    forkChecker,
-                    blockRequiresAttestationsWithCommitteeBits))
-        .filter(
-            attestation -> {
-              if (spec.computeEpochAtSlot(attestation.getData().getSlot())
-                  .isLessThan(currentEpoch)) {
-                final int currentCount = prevEpochCount.getAndIncrement();
-                return currentCount < previousEpochLimit;
-              }
-              return true;
-            })
-        .map(
-            validatableAttestation ->
-                new ValidatableAttestationWithSortingReward(
-                    validatableAttestation,
-                    attestationRewardCalculator.getRewardNumeratorForAttestation(
-                        validatableAttestation.getAttestation())))
-        .sorted(REWARD_COMPARATOR)
-        .limit(attestationsSchema.getMaxLength())
+    var aggregates =
+        (parallel ? dataHashes.parallelStream() : dataHashes.stream())
+            .flatMap(
+                dataHashSetForSlot ->
+                    streamAggregatesForDataHashesBySlot(
+                        dataHashSetForSlot, // dataHashSetForSlot is expected to be a Concurrent Set
+                        stateAtBlockSlot,
+                        forkChecker,
+                        blockRequiresAttestationsWithCommitteeBits))
+            .filter(
+                attestation -> {
+                  if (spec.computeEpochAtSlot(attestation.getData().getSlot())
+                      .isLessThan(currentEpoch)) {
+                    final int currentCount = prevEpochCount.getAndIncrement();
+                    return currentCount < previousEpochLimit;
+                  }
+                  return true;
+                });
+    return rewardBasedAttestationSorter
+        .sort(aggregates.sequential(), Math.toIntExact(attestationsSchema.getMaxLength()))
+        .stream()
         .peek(
             attestation ->
                 aggregatingAttestationPoolProfiler.onPreFillUp(stateAtBlockSlot, attestation))
@@ -455,25 +452,28 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
                 aggregatingAttestationPoolProfiler.onPostFillUp(stateAtBlockSlot, attestation))
         .map(
             validatableAttestationWithSortingReward ->
-                validatableAttestationWithSortingReward.validatableAttestation().getAttestation())
+                validatableAttestationWithSortingReward.attestation().getAttestation())
         .collect(attestationsSchema.collector());
   }
 
-  private ValidatableAttestationWithSortingReward fillUpAttestation(
-      final ValidatableAttestationWithSortingReward attestationWithRewards,
-      final long timeLimitNanos) {
+  private AttestationWithRewardInfo fillUpAttestation(
+      final AttestationWithRewardInfo attestationWithRewards, final long timeLimitNanos) {
     if (System.nanoTime() > timeLimitNanos) {
       LOG.info("Time limit reached, skipping fillUpAttestation");
       return attestationWithRewards;
     }
 
-    var attestation = attestationWithRewards.validatableAttestation();
+    var attestation = attestationWithRewards.attestation();
     return Optional.ofNullable(attestationGroupByDataHash.get(attestation.getData().hashTreeRoot()))
         .map(
             group ->
-                new ValidatableAttestationWithSortingReward(
+                new AttestationWithRewardInfo(
                     group.fillUpAggregation(attestation, timeLimitNanos),
-                    attestationWithRewards.sortingRewardNumerator))
+                    attestationWithRewards.attestingIndices(),
+                    attestationWithRewards.participationFlagIndices(),
+                    Map.of(),
+                    attestationWithRewards.isCurrentEpoch(),
+                    attestationWithRewards.rewardNumerator()))
         .orElse(attestationWithRewards);
   }
 

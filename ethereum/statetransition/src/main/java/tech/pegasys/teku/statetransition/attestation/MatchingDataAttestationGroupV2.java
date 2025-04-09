@@ -134,10 +134,11 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
         .flatMap(Set::stream)
         .map(
             singleAttestation -> {
-              if(fillUpAggregationBits != null && fillUpAggregationBits.isSuperSetOf(singleAttestation.getAttestation())) {
+              if (fillUpAggregationBits != null
+                  && fillUpAggregationBits.isSuperSetOf(singleAttestation.getAttestation())) {
                 return Void.TYPE;
               }
-              if(builder.aggregate(singleAttestation) && fillUpAggregationBits != null) {
+              if (builder.aggregate(singleAttestation) && fillUpAggregationBits != null) {
                 fillUpAggregationBits.or(singleAttestation.getAttestation());
               }
               return Void.TYPE;
@@ -154,7 +155,7 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
 
     var aggregate = builder.buildAggregate();
 
-    if(fillUpAggregationBits == null) {
+    if (fillUpAggregationBits == null) {
       fillUpAggregationBits = AttestationBitsAggregator.of(aggregate);
     } else {
       fillUpAggregationBits.or(aggregate.getAttestation());
