@@ -282,8 +282,8 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
       lastAttestationIndex = 0;
     }
 
-    var attestation = validatableAttestationWithSortingReward.attestation().getAttestation();
-    var sortingRewardNumerator = validatableAttestationWithSortingReward.rewardNumerator();
+    var attestation = validatableAttestationWithSortingReward.getAttestation().getAttestation();
+    var sortingRewardNumerator = validatableAttestationWithSortingReward.getRewardNumerator();
 
     try {
       attestationImprovementsCsvPrinter.printRecord(
@@ -306,8 +306,8 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
       final BeaconState stateAtBlockSlot,
       final AttestationWithRewardInfo validatableAttestationWithSortingReward) {
 
-    var attestation = validatableAttestationWithSortingReward.attestation().getAttestation();
-    var sortingRewardNumerator = validatableAttestationWithSortingReward.rewardNumerator();
+    var attestation = validatableAttestationWithSortingReward.getAttestation().getAttestation();
+    var sortingRewardNumerator = validatableAttestationWithSortingReward.getRewardNumerator();
 
     try {
       attestationImprovementsCsvPrinter.printRecord(

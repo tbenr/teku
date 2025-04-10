@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
@@ -95,48 +96,50 @@ public class RewardBasedAttestationSorter {
     final List<AttestationWithRewardInfo> finalSortedAttestations =
         new ArrayList<>(maxAttestations);
 
-    var currentSorted =
-        attestations
-            .map(this::initializeRewardInfo)
-            .map(this::computeRewards)
-            .sorted(REWARD_COMPARATOR)
-            .collect(Collectors.toCollection(ArrayList::new));
+    final PriorityQueue<AttestationWithRewardInfo> attestationQueue =
+        new PriorityQueue<>(REWARD_COMPARATOR);
 
-    if (currentSorted.isEmpty()) {
+    attestations
+        .map(this::initializeRewardInfo)
+        .peek(this::computeRewards)
+        .forEach(attestationQueue::add);
+
+    if (attestationQueue.isEmpty()) {
       return finalSortedAttestations;
     }
 
     while (true) {
-      var bestRemainingAttestation = currentSorted.removeFirst();
-      finalSortedAttestations.add(bestRemainingAttestation);
+      final AttestationWithRewardInfo bestAttestation = attestationQueue.poll();
+      finalSortedAttestations.add(bestAttestation);
 
       // we reached the limit or there are no more attestations to process
-      if (finalSortedAttestations.size() >= maxAttestations || currentSorted.isEmpty()) {
+      if (finalSortedAttestations.size() >= maxAttestations || attestationQueue.isEmpty()) {
         return finalSortedAttestations;
       }
 
       // apply participation changes
-      var affectedParticipation = getEpochParticipation(bestRemainingAttestation);
-      if (bestRemainingAttestation.updatesEpochParticipation.isEmpty()) {
+      var affectedParticipation = getEpochParticipation(bestAttestation);
+      if (bestAttestation.updatesEpochParticipation.isEmpty()) {
         // no changes to participation
         continue;
       }
 
-      bestRemainingAttestation.updatesEpochParticipation.forEach(affectedParticipation::set);
+      bestAttestation.updatesEpochParticipation.forEach(affectedParticipation::set);
+
+      final List<AttestationWithRewardInfo> toReAdd = new ArrayList<>();
 
       // recalculate rewards for affected attestations
-      final boolean[] requireResorting = {false};
-      currentSorted.stream()
-          .filter(
-              attestation -> attestation.isCurrentEpoch == bestRemainingAttestation.isCurrentEpoch)
-          .forEach(
-              attestation -> {
-                computeRewards(attestation);
-                requireResorting[0] = true;
-              });
+      for (final AttestationWithRewardInfo potentiallyAffected : attestationQueue) {
+        if (potentiallyAffected.isCurrentEpoch == bestAttestation.isCurrentEpoch) {
+          computeRewards(potentiallyAffected);
+          toReAdd.add(potentiallyAffected);
+        }
+      }
 
-      if (requireResorting[0]) {
-        currentSorted.sort(REWARD_COMPARATOR);
+      if (!toReAdd.isEmpty()) {
+        // apply sorting
+        attestationQueue.removeAll(toReAdd);
+        attestationQueue.addAll(toReAdd);
       }
     }
   }
@@ -178,7 +181,7 @@ public class RewardBasedAttestationSorter {
         UInt64.ZERO);
   }
 
-  private AttestationWithRewardInfo computeRewards(final AttestationWithRewardInfo attestation) {
+  private void computeRewards(final AttestationWithRewardInfo attestation) {
 
     final List<Integer> participationFlagIndices = attestation.participationFlagIndices;
 
@@ -212,24 +215,56 @@ public class RewardBasedAttestationSorter {
       }
     }
 
-    return new AttestationWithRewardInfo(
-        attestation.attestation,
-        attestation.attestingIndices,
-        attestation.participationFlagIndices,
-        attestation.validatorBaseRewards,
-        updatesEpochParticipation,
-        attestation.isCurrentEpoch,
-        proposerRewardNumerator);
+    attestation.rewardNumerator = proposerRewardNumerator;
+    attestation.updatesEpochParticipation = updatesEpochParticipation;
   }
 
-  public record AttestationWithRewardInfo(
-      ValidatableAttestation attestation,
-      IntList attestingIndices,
-      List<Integer> participationFlagIndices,
-      Map<Integer, UInt64> validatorBaseRewards,
-      Map<Integer, Byte> updatesEpochParticipation,
-      boolean isCurrentEpoch,
-      UInt64 rewardNumerator) {}
+  public static class AttestationWithRewardInfo {
+    private final ValidatableAttestation attestation;
+    private final IntList attestingIndices;
+    private final List<Integer> participationFlagIndices;
+    private final Map<Integer, UInt64> validatorBaseRewards;
+    private final boolean isCurrentEpoch;
+
+    private Map<Integer, Byte> updatesEpochParticipation;
+    private UInt64 rewardNumerator;
+
+    public AttestationWithRewardInfo withAttestation(final ValidatableAttestation attestation) {
+      return new AttestationWithRewardInfo(
+          attestation,
+          this.attestingIndices,
+          this.participationFlagIndices,
+          this.validatorBaseRewards,
+          this.updatesEpochParticipation,
+          this.isCurrentEpoch,
+          this.rewardNumerator);
+    }
+
+    private AttestationWithRewardInfo(
+        final ValidatableAttestation attestation,
+        final IntList attestingIndices,
+        final List<Integer> participationFlagIndices,
+        final Map<Integer, UInt64> validatorBaseRewards,
+        final Map<Integer, Byte> updatesEpochParticipation,
+        final boolean isCurrentEpoch,
+        final UInt64 rewardNumerator) {
+      this.attestation = attestation;
+      this.attestingIndices = attestingIndices;
+      this.participationFlagIndices = participationFlagIndices;
+      this.validatorBaseRewards = validatorBaseRewards;
+      this.updatesEpochParticipation = updatesEpochParticipation;
+      this.isCurrentEpoch = isCurrentEpoch;
+      this.rewardNumerator = rewardNumerator;
+    }
+
+    public ValidatableAttestation getAttestation() {
+      return attestation;
+    }
+
+    public UInt64 getRewardNumerator() {
+      return rewardNumerator;
+    }
+  }
 
   static final Comparator<AttestationWithRewardInfo> REWARD_COMPARATOR =
       Comparator.<AttestationWithRewardInfo>comparingLong(

@@ -452,7 +452,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
                 aggregatingAttestationPoolProfiler.onPostFillUp(stateAtBlockSlot, attestation))
         .map(
             validatableAttestationWithSortingReward ->
-                validatableAttestationWithSortingReward.attestation().getAttestation())
+                validatableAttestationWithSortingReward.getAttestation().getAttestation())
         .collect(attestationsSchema.collector());
   }
 
@@ -463,18 +463,12 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
       return attestationWithRewards;
     }
 
-    var attestation = attestationWithRewards.attestation();
+    var attestation = attestationWithRewards.getAttestation();
     return Optional.ofNullable(attestationGroupByDataHash.get(attestation.getData().hashTreeRoot()))
         .map(
             group ->
-                new AttestationWithRewardInfo(
-                    group.fillUpAggregation(attestation, timeLimitNanos),
-                    attestationWithRewards.attestingIndices(),
-                    attestationWithRewards.participationFlagIndices(),
-                    attestationWithRewards.validatorBaseRewards(),
-                    Map.of(),
-                    attestationWithRewards.isCurrentEpoch(),
-                    attestationWithRewards.rewardNumerator()))
+                attestationWithRewards.withAttestation(
+                    group.fillUpAggregation(attestation, timeLimitNanos)))
         .orElse(attestationWithRewards);
   }
 
