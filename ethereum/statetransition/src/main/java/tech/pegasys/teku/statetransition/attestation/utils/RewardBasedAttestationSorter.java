@@ -25,7 +25,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.infrastructure.ssz.impl.AbstractSszPrimitive;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszByte;
@@ -39,6 +40,8 @@ import tech.pegasys.teku.spec.logic.versions.altair.helpers.BeaconStateAccessors
 import tech.pegasys.teku.spec.logic.versions.altair.helpers.MiscHelpersAltair;
 
 public class RewardBasedAttestationSorter {
+  private static final Logger LOG = LogManager.getLogger();
+
   private final Spec spec;
   private final BeaconStateAltair state;
   private final BeaconStateAccessorsAltair beaconStateAccessors;
@@ -94,65 +97,58 @@ public class RewardBasedAttestationSorter {
       final List<ValidatableAttestation> attestations, final int maxAttestations) {
 
     var start = System.nanoTime();
-    long initializationEnded = 0;
-    try {
+    final List<AttestationWithRewardInfo> finalSortedAttestations =
+        new ArrayList<>(maxAttestations);
 
-      final List<AttestationWithRewardInfo> finalSortedAttestations =
-              new ArrayList<>(maxAttestations);
+    final PriorityQueue<AttestationWithRewardInfo> attestationQueue =
+        new PriorityQueue<>(REWARD_COMPARATOR);
 
-      final PriorityQueue<AttestationWithRewardInfo> attestationQueue =
-              new PriorityQueue<>(REWARD_COMPARATOR);
+    attestations.stream()
+        .map(this::initializeRewardInfo)
+        .peek(this::computeRewards)
+        .forEach(attestationQueue::add);
 
-      attestations.stream()
-              .map(this::initializeRewardInfo)
-              .peek(this::computeRewards)
-              .forEach(attestationQueue::add);
+    if (attestationQueue.isEmpty()) {
+      return finalSortedAttestations;
+    }
 
-      if (attestationQueue.isEmpty()) {
+    var initializationEnded = System.nanoTime();
+    LOG.info("Initialization took {} ms.", (initializationEnded - start) / 1_000_000);
+
+    while (true) {
+      final AttestationWithRewardInfo bestAttestation = attestationQueue.poll();
+      finalSortedAttestations.add(bestAttestation);
+
+      // we reached the limit or there are no more attestations to process
+      if (finalSortedAttestations.size() >= maxAttestations || attestationQueue.isEmpty()) {
+        LOG.info("Sorting took: {} ms", (System.nanoTime() - initializationEnded) / 1_000_000);
         return finalSortedAttestations;
       }
 
-      initializationEnded = System.nanoTime();
-      System.out.println("Initialization took " + (initializationEnded - start) / 1_000_000 + " ms. Sorting " + attestationQueue.size() + " attestations.");
+      // apply participation changes
+      var affectedParticipation = getEpochParticipation(bestAttestation);
+      if (bestAttestation.updatesEpochParticipation.isEmpty()) {
+        // no changes to participation
+        continue;
+      }
 
-      while (true) {
-        final AttestationWithRewardInfo bestAttestation = attestationQueue.poll();
-        finalSortedAttestations.add(bestAttestation);
+      bestAttestation.updatesEpochParticipation.forEach(affectedParticipation::set);
 
-        // we reached the limit or there are no more attestations to process
-        if (finalSortedAttestations.size() >= maxAttestations || attestationQueue.isEmpty()) {
-          return finalSortedAttestations;
-        }
+      final List<AttestationWithRewardInfo> toReAdd = new ArrayList<>();
 
-        // apply participation changes
-        var affectedParticipation = getEpochParticipation(bestAttestation);
-        if (bestAttestation.updatesEpochParticipation.isEmpty()) {
-          // no changes to participation
-          continue;
-        }
-
-        bestAttestation.updatesEpochParticipation.forEach(affectedParticipation::set);
-
-        final List<AttestationWithRewardInfo> toReAdd = new ArrayList<>();
-
-        // recalculate rewards for affected attestations
-        for (final AttestationWithRewardInfo potentiallyAffected : attestationQueue) {
-          if (potentiallyAffected.isCurrentEpoch == bestAttestation.isCurrentEpoch) {
-            computeRewards(potentiallyAffected);
-            toReAdd.add(potentiallyAffected);
-          }
-        }
-
-        if (!toReAdd.isEmpty()) {
-          // make sure PriorityQueue reevaluates the order
-          attestationQueue.removeAll(toReAdd);
-          attestationQueue.addAll(toReAdd);
+      // recalculate rewards for affected attestations
+      for (final AttestationWithRewardInfo potentiallyAffected : attestationQueue) {
+        if (potentiallyAffected.isCurrentEpoch == bestAttestation.isCurrentEpoch) {
+          computeRewards(potentiallyAffected);
+          toReAdd.add(potentiallyAffected);
         }
       }
-    }
-    finally {
-        var duration = (System.nanoTime() - initializationEnded) / 1_000_000;
-        System.out.println("Sorting took: " + duration + " ms");
+
+      if (!toReAdd.isEmpty()) {
+        // make sure PriorityQueue reevaluates the order
+        attestationQueue.removeAll(toReAdd);
+        attestationQueue.addAll(toReAdd);
+      }
     }
   }
 
@@ -163,22 +159,18 @@ public class RewardBasedAttestationSorter {
         .collect(Collectors.toCollection(ByteArrayList::new));
   }
 
+  private final Map<Integer, UInt64> validatorBaseRewardCache = new Int2ObjectOpenHashMap<>();
+
+  private UInt64 getValidatorBaseRewards(final int index) {
+    return validatorBaseRewardCache.computeIfAbsent(
+        index,
+        k -> BeaconStateAccessorsAltair.required(beaconStateAccessors).getBaseReward(state, k));
+  }
+
   private AttestationWithRewardInfo initializeRewardInfo(final ValidatableAttestation attestation) {
     final boolean isCurrentEpoch =
         attestation.getData().getTarget().getEpoch().equals(spec.getCurrentEpoch(state));
     final IntList attestingIndices = spec.getAttestingIndices(state, attestation.getAttestation());
-
-    final Map<Integer, UInt64> validatorBaseRewards =
-        new Int2ObjectOpenHashMap<>(attestingIndices.size());
-
-    attestingIndices
-        .intStream()
-        .forEach(
-            attestingIndex ->
-                validatorBaseRewards.put(
-                    attestingIndex,
-                    BeaconStateAccessorsAltair.required(beaconStateAccessors)
-                        .getBaseReward(state, attestingIndex)));
 
     return new AttestationWithRewardInfo(
         attestation,
@@ -187,7 +179,6 @@ public class RewardBasedAttestationSorter {
             state,
             attestation.getData(),
             state.getSlot().minusMinZero(attestation.getData().getSlot())),
-        validatorBaseRewards,
         Map.of(),
         isCurrentEpoch,
         UInt64.ZERO);
@@ -206,7 +197,7 @@ public class RewardBasedAttestationSorter {
       final byte previousParticipationFlags = epochParticipation.get(attestingIndex);
       byte newParticipationFlags = 0;
 
-      final UInt64 baseReward = attestation.validatorBaseRewards.get(attestingIndex);
+      final UInt64 baseReward = getValidatorBaseRewards(attestingIndex);
 
       for (int flagIndex = 0; flagIndex < PARTICIPATION_FLAG_WEIGHTS.size(); flagIndex++) {
 
@@ -235,7 +226,6 @@ public class RewardBasedAttestationSorter {
     private final ValidatableAttestation attestation;
     private final IntList attestingIndices;
     private final List<Integer> participationFlagIndices;
-    private final Map<Integer, UInt64> validatorBaseRewards;
     private final boolean isCurrentEpoch;
 
     private Map<Integer, Byte> updatesEpochParticipation;
@@ -246,7 +236,6 @@ public class RewardBasedAttestationSorter {
           attestation,
           this.attestingIndices,
           this.participationFlagIndices,
-          this.validatorBaseRewards,
           this.updatesEpochParticipation,
           this.isCurrentEpoch,
           this.rewardNumerator);
@@ -256,14 +245,12 @@ public class RewardBasedAttestationSorter {
         final ValidatableAttestation attestation,
         final IntList attestingIndices,
         final List<Integer> participationFlagIndices,
-        final Map<Integer, UInt64> validatorBaseRewards,
         final Map<Integer, Byte> updatesEpochParticipation,
         final boolean isCurrentEpoch,
         final UInt64 rewardNumerator) {
       this.attestation = attestation;
       this.attestingIndices = attestingIndices;
       this.participationFlagIndices = participationFlagIndices;
-      this.validatorBaseRewards = validatorBaseRewards;
       this.updatesEpochParticipation = updatesEpochParticipation;
       this.isCurrentEpoch = isCurrentEpoch;
       this.rewardNumerator = rewardNumerator;

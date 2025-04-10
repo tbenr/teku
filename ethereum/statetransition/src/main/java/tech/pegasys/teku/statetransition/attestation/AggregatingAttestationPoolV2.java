@@ -440,9 +440,13 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
                     return currentCount < previousEpochLimit;
                   }
                   return true;
-                }).toList();
+                })
+            .toList();
 
-    System.out.println("fullAggregation: " + (System.nanoTime() - fullAggregationStart) / 1_000_000 + " ms");
+    LOG.info(
+        "Aggregation phase took {} ms. Produced {} aggregations.",
+        (System.nanoTime() - fullAggregationStart) / 1_000_000,
+        aggregates.size());
     return rewardBasedAttestationSorter
         .sort(aggregates, Math.toIntExact(attestationsSchema.getMaxLength()))
         .stream()
