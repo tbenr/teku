@@ -17,6 +17,7 @@ import static tech.pegasys.teku.spec.logic.versions.altair.helpers.MiscHelpersAl
 
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import it.unimi.dsi.fastutil.ints.Int2ByteOpenHashMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntList;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -150,13 +151,28 @@ public class RewardBasedAttestationSorter {
   private AttestationWithRewardInfo initializeRewardInfo(final ValidatableAttestation attestation) {
     final boolean isCurrentEpoch =
         attestation.getData().getTarget().getEpoch().equals(spec.getCurrentEpoch(state));
+    final IntList attestingIndices = spec.getAttestingIndices(state, attestation.getAttestation());
+
+    final Map<Integer, UInt64> validatorBaseRewards =
+        new Int2ObjectOpenHashMap<>(attestingIndices.size());
+
+    attestingIndices
+        .intStream()
+        .forEach(
+            attestingIndex ->
+                validatorBaseRewards.put(
+                    attestingIndex,
+                    BeaconStateAccessorsAltair.required(beaconStateAccessors)
+                        .getBaseReward(state, attestingIndex)));
+
     return new AttestationWithRewardInfo(
         attestation,
-        spec.getAttestingIndices(state, attestation.getAttestation()),
+        attestingIndices,
         beaconStateAccessors.getAttestationParticipationFlagIndices(
             state,
             attestation.getData(),
             state.getSlot().minusMinZero(attestation.getData().getSlot())),
+        validatorBaseRewards,
         Map.of(),
         isCurrentEpoch,
         UInt64.ZERO);
@@ -175,9 +191,7 @@ public class RewardBasedAttestationSorter {
       final byte previousParticipationFlags = epochParticipation.get(attestingIndex);
       byte newParticipationFlags = 0;
 
-      final UInt64 baseReward =
-          BeaconStateAccessorsAltair.required(beaconStateAccessors)
-              .getBaseReward(state, attestingIndex);
+      final UInt64 baseReward = attestation.validatorBaseRewards.get(attestingIndex);
 
       for (int flagIndex = 0; flagIndex < PARTICIPATION_FLAG_WEIGHTS.size(); flagIndex++) {
 
@@ -202,6 +216,7 @@ public class RewardBasedAttestationSorter {
         attestation.attestation,
         attestation.attestingIndices,
         attestation.participationFlagIndices,
+        attestation.validatorBaseRewards,
         updatesEpochParticipation,
         attestation.isCurrentEpoch,
         proposerRewardNumerator);
@@ -211,6 +226,7 @@ public class RewardBasedAttestationSorter {
       ValidatableAttestation attestation,
       IntList attestingIndices,
       List<Integer> participationFlagIndices,
+      Map<Integer, UInt64> validatorBaseRewards,
       Map<Integer, Byte> updatesEpochParticipation,
       boolean isCurrentEpoch,
       UInt64 rewardNumerator) {}

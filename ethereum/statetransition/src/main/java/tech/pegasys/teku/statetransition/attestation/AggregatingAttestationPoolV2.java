@@ -471,6 +471,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
                     group.fillUpAggregation(attestation, timeLimitNanos),
                     attestationWithRewards.attestingIndices(),
                     attestationWithRewards.participationFlagIndices(),
+                    attestationWithRewards.validatorBaseRewards(),
                     Map.of(),
                     attestationWithRewards.isCurrentEpoch(),
                     attestationWithRewards.rewardNumerator()))
