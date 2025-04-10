@@ -422,6 +422,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
             .descendingMap() // Safe view
             .values();
 
+    var fullAggregationStart = System.nanoTime();
     var aggregates =
         (parallel ? dataHashes.parallelStream() : dataHashes.stream())
             .flatMap(
@@ -439,9 +440,11 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
                     return currentCount < previousEpochLimit;
                   }
                   return true;
-                });
+                }).toList();
+
+    System.out.println("fullAggregation: " + (System.nanoTime() - fullAggregationStart) / 1_000_000 + " ms");
     return rewardBasedAttestationSorter
-        .sort(aggregates.sequential(), Math.toIntExact(attestationsSchema.getMaxLength()))
+        .sort(aggregates, Math.toIntExact(attestationsSchema.getMaxLength()))
         .stream()
         .peek(
             attestation ->

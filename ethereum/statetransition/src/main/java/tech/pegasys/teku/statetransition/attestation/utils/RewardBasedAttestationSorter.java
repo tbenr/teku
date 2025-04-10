@@ -91,56 +91,68 @@ public class RewardBasedAttestationSorter {
   }
 
   public List<AttestationWithRewardInfo> sort(
-      final Stream<ValidatableAttestation> attestations, final int maxAttestations) {
+      final List<ValidatableAttestation> attestations, final int maxAttestations) {
 
-    final List<AttestationWithRewardInfo> finalSortedAttestations =
-        new ArrayList<>(maxAttestations);
+    var start = System.nanoTime();
+    long initializationEnded = 0;
+    try {
 
-    final PriorityQueue<AttestationWithRewardInfo> attestationQueue =
-        new PriorityQueue<>(REWARD_COMPARATOR);
+      final List<AttestationWithRewardInfo> finalSortedAttestations =
+              new ArrayList<>(maxAttestations);
 
-    attestations
-        .map(this::initializeRewardInfo)
-        .peek(this::computeRewards)
-        .forEach(attestationQueue::add);
+      final PriorityQueue<AttestationWithRewardInfo> attestationQueue =
+              new PriorityQueue<>(REWARD_COMPARATOR);
 
-    if (attestationQueue.isEmpty()) {
-      return finalSortedAttestations;
-    }
+      attestations.stream()
+              .map(this::initializeRewardInfo)
+              .peek(this::computeRewards)
+              .forEach(attestationQueue::add);
 
-    while (true) {
-      final AttestationWithRewardInfo bestAttestation = attestationQueue.poll();
-      finalSortedAttestations.add(bestAttestation);
-
-      // we reached the limit or there are no more attestations to process
-      if (finalSortedAttestations.size() >= maxAttestations || attestationQueue.isEmpty()) {
+      if (attestationQueue.isEmpty()) {
         return finalSortedAttestations;
       }
 
-      // apply participation changes
-      var affectedParticipation = getEpochParticipation(bestAttestation);
-      if (bestAttestation.updatesEpochParticipation.isEmpty()) {
-        // no changes to participation
-        continue;
-      }
+      initializationEnded = System.nanoTime();
+      System.out.println("Initialization took " + (initializationEnded - start) / 1_000_000 + " ms. Sorting " + attestationQueue.size() + " attestations.");
 
-      bestAttestation.updatesEpochParticipation.forEach(affectedParticipation::set);
+      while (true) {
+        final AttestationWithRewardInfo bestAttestation = attestationQueue.poll();
+        finalSortedAttestations.add(bestAttestation);
 
-      final List<AttestationWithRewardInfo> toReAdd = new ArrayList<>();
+        // we reached the limit or there are no more attestations to process
+        if (finalSortedAttestations.size() >= maxAttestations || attestationQueue.isEmpty()) {
+          return finalSortedAttestations;
+        }
 
-      // recalculate rewards for affected attestations
-      for (final AttestationWithRewardInfo potentiallyAffected : attestationQueue) {
-        if (potentiallyAffected.isCurrentEpoch == bestAttestation.isCurrentEpoch) {
-          computeRewards(potentiallyAffected);
-          toReAdd.add(potentiallyAffected);
+        // apply participation changes
+        var affectedParticipation = getEpochParticipation(bestAttestation);
+        if (bestAttestation.updatesEpochParticipation.isEmpty()) {
+          // no changes to participation
+          continue;
+        }
+
+        bestAttestation.updatesEpochParticipation.forEach(affectedParticipation::set);
+
+        final List<AttestationWithRewardInfo> toReAdd = new ArrayList<>();
+
+        // recalculate rewards for affected attestations
+        for (final AttestationWithRewardInfo potentiallyAffected : attestationQueue) {
+          if (potentiallyAffected.isCurrentEpoch == bestAttestation.isCurrentEpoch) {
+            computeRewards(potentiallyAffected);
+            toReAdd.add(potentiallyAffected);
+          }
+        }
+
+        if (!toReAdd.isEmpty()) {
+          // make sure PriorityQueue reevaluates the order
+          attestationQueue.removeAll(toReAdd);
+          attestationQueue.addAll(toReAdd);
         }
       }
-
-      if (!toReAdd.isEmpty()) {
-        // apply sorting
-        attestationQueue.removeAll(toReAdd);
-        attestationQueue.addAll(toReAdd);
-      }
+    }
+    finally {
+        var duration = (System.nanoTime() - initializationEnded) / 1_000_000;
+        System.out.println("Sorting took: " + duration + " ms");
     }
   }
 
