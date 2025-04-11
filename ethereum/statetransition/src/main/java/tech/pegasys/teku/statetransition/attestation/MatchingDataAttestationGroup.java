@@ -46,7 +46,8 @@ public interface MatchingDataAttestationGroup extends Iterable<ValidatableAttest
    */
   boolean add(ValidatableAttestation attestation);
 
-  ValidatableAttestation fillUpAggregation(ValidatableAttestation attestation, long timeLimitNanos);
+  ValidatableAttestation fillUpAggregation(
+      UInt64 slot, ValidatableAttestation attestation, long timeLimitNanos);
 
   /**
    * Returns a stream that produces aggregated attestations covering all validators in this group.

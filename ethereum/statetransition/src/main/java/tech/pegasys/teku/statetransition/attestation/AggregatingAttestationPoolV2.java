@@ -88,7 +88,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
   private final AggregatingAttestationPoolProfiler aggregatingAttestationPoolProfiler;
 
   private final long maxBlockAggregationTimeNanos;
-  private final long baseAggregationTimeNanos = 150_000_000L; // 1ms
+  private final long maxTotalBlockAggregationTimeMillis;
   private final boolean earlyDropSingleAttestations;
   private final boolean parallel;
 
@@ -101,6 +101,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
       final int maximumAttestationCount,
       final AggregatingAttestationPoolProfiler aggregatingAttestationPoolProfiler,
       final int maxBlockAggregationTimeMillis,
+      final int maxTotalBlockAggregationTimeMillis,
       final boolean earlyDropSingleAttestations,
       final boolean parallel) {
     this.spec = spec;
@@ -114,6 +115,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
     this.maximumAttestationCount = maximumAttestationCount;
     this.aggregatingAttestationPoolProfiler = aggregatingAttestationPoolProfiler;
     this.maxBlockAggregationTimeNanos = maxBlockAggregationTimeMillis * 1_000_000L;
+    this.maxTotalBlockAggregationTimeMillis = maxTotalBlockAggregationTimeMillis * 1_000_000L;
     this.earlyDropSingleAttestations = earlyDropSingleAttestations;
     this.parallel = parallel;
   }
@@ -135,6 +137,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
     this.maximumAttestationCount = maximumAttestationCount;
     this.aggregatingAttestationPoolProfiler = AggregatingAttestationPoolProfilerCSV.NOOP;
     this.maxBlockAggregationTimeNanos = Integer.MAX_VALUE * 1_000_000L;
+    this.maxTotalBlockAggregationTimeMillis = Integer.MAX_VALUE * 1_000_000L;
     this.earlyDropSingleAttestations = false;
     this.parallel = false;
   }
@@ -414,8 +417,8 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
     final AtomicInteger prevEpochCount = new AtomicInteger(0);
 
     final long nowNanos = System.nanoTime();
-    final long timeLimitNanos = nowNanos + maxBlockAggregationTimeNanos;
-    final long aggregationTimeLimit = nowNanos + baseAggregationTimeNanos;
+    final long totalTimeLimitNanos = nowNanos + maxTotalBlockAggregationTimeMillis;
+    final long aggregationTimeLimit = nowNanos + maxBlockAggregationTimeNanos;
 
     // Iterating ConcurrentSkipListMap is weakly consistent and safe
     var dataHashes =
@@ -457,7 +460,10 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
         .peek(
             attestation ->
                 aggregatingAttestationPoolProfiler.onPreFillUp(stateAtBlockSlot, attestation))
-        .map(validatableAttestation -> fillUpAttestation(validatableAttestation, timeLimitNanos))
+        .map(
+            validatableAttestation ->
+                fillUpAttestation(
+                    stateAtBlockSlot.getSlot(), validatableAttestation, totalTimeLimitNanos))
         .peek(
             attestation ->
                 aggregatingAttestationPoolProfiler.onPostFillUp(stateAtBlockSlot, attestation))
@@ -468,7 +474,9 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
   }
 
   private AttestationWithRewardInfo fillUpAttestation(
-      final AttestationWithRewardInfo attestationWithRewards, final long timeLimitNanos) {
+      final UInt64 slot,
+      final AttestationWithRewardInfo attestationWithRewards,
+      final long timeLimitNanos) {
     if (System.nanoTime() > timeLimitNanos) {
       LOG.info("Time limit reached, skipping fillUpAttestation");
       return attestationWithRewards;
@@ -479,7 +487,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
         .map(
             group ->
                 attestationWithRewards.withAttestation(
-                    group.fillUpAggregation(attestation, timeLimitNanos)))
+                    group.fillUpAggregation(slot, attestation, timeLimitNanos)))
         .orElse(attestationWithRewards);
   }
 

@@ -327,6 +327,17 @@ public class Eth2NetworkOptions {
           .DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_BLOCK_AGGREGATION_TIME_LIMIT_MILLIS;
 
   @Option(
+      names = {"--Xaggregating-attestation-pool-v2-total-block-aggregation-time-limit"},
+      paramLabel = "<NUMBER>",
+      description =
+          "Maximum time to spend packing and improving attestations when producing a block.",
+      arity = "0..1",
+      hidden = true)
+  private int aggregatingAttestationPoolV2TotalBlockAggregationTimeLimit =
+      Eth2NetworkConfiguration
+          .DEFAULT_AGGREGATING_ATTESTATION_POOL_V2_TOTAL_BLOCK_AGGREGATION_TIME_LIMIT_MILLIS;
+
+  @Option(
       names = {"--Xaggregating-attestation-pool-v2-early-drop-single-attestations-enabled"},
       paramLabel = "<BOOLEAN>",
       description =
@@ -444,6 +455,8 @@ public class Eth2NetworkOptions {
         .aggregatingAttestationPoolProfilingEnabled(aggregatingAttestationPoolProfilingEnabled)
         .aggregatingAttestationPoolV2BlockAggregationTimeLimit(
             aggregatingAttestationPoolV2BlockAggregationTimeLimit)
+        .aggregatingAttestationPoolV2TotalBlockAggregationTimeLimit(
+            aggregatingAttestationPoolV2TotalBlockAggregationTimeLimit)
         .aggregatingAttestationPoolV2EarlyDropSingleAttestationsEnabled(
             aggregatingAttestationPoolV2EarlyDropSingleAttestationsEnabled)
         .aggregatingAttestationPoolV2ParallelEnabled(aggregatingAttestationPoolV2ParallelEnabled)

@@ -13,6 +13,7 @@
 
 package tech.pegasys.teku.statetransition.attestation;
 
+import com.google.common.annotations.VisibleForTesting;
 import it.unimi.dsi.fastutil.ints.Int2IntMap;
 import java.util.Comparator;
 import java.util.Iterator;
@@ -29,6 +30,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.LongConsumer;
+import java.util.function.LongSupplier;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 import org.apache.logging.log4j.LogManager;
@@ -74,6 +77,8 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
   private final AttestationData attestationData;
   private final Optional<Int2IntMap> committeesSize;
 
+  private AtomicReference<UInt64> lastFillUpSlot = new AtomicReference<>(UInt64.ZERO);
+
   /**
    * Tracks which validators were included in attestations at a given slot on the canonical chain.
    * Uses ConcurrentSkipListMap for concurrent access. AttestationBitsAggregator instances managed
@@ -87,8 +92,6 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
    * lock. AttestationBitsAggregator is mutable, so needs protection.
    */
   private AttestationBitsAggregator includedValidators;
-
-  private AttestationBitsAggregator fillUpAggregationBits;
 
   // Lock for protecting mutable state (committeeShufflingSeed, includedValidators, and mutations
   // to AttestationBitsAggregator instances within includedValidatorsBySlot)
@@ -124,44 +127,29 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
 
   @Override
   public ValidatableAttestation fillUpAggregation(
-      final ValidatableAttestation attestation, final long timeLimitNanos) {
+      final UInt64 slot, final ValidatableAttestation attestation, final long timeLimitNanos) {
+    if (lastFillUpSlot.getAndSet(slot).equals(slot)) {
+      // Already filled up for this slot, return the original attestation
+      LOG.info("Already filled up for slot {}, returning original attestation", slot);
+      return attestation;
+    }
+
     final AggregateAttestationBuilder builder =
         new AggregateAttestationBuilder(spec, attestationData);
 
     builder.aggregate(attestation);
 
-    singleAttestationsByCommitteeIndex.values().stream()
-        .flatMap(Set::stream)
-        .map(
-            singleAttestation -> {
-              if (fillUpAggregationBits != null
-                  && fillUpAggregationBits.isSuperSetOf(singleAttestation.getAttestation())) {
-                return Void.TYPE;
-              }
-              if (builder.aggregate(singleAttestation) && fillUpAggregationBits != null) {
-                fillUpAggregationBits.or(singleAttestation.getAttestation());
-              }
-              return Void.TYPE;
-            })
-        .takeWhile(
-            __ -> {
-              if (System.nanoTime() > timeLimitNanos) {
-                LOG.info("Timeout while aggregating single attestations");
-                return false;
-              }
-              return true;
-            })
-        .forEach(__ -> {});
+    final Iterator<ValidatableAttestation> singleAttestationTimeLimitedIterator =
+        new TimeLimitingIterator<>(
+            timeLimitNanos,
+            singleAttestationsByCommitteeIndex.values().stream().flatMap(Set::stream).iterator(),
+            __ -> LOG.info("Time limit reached, while fillingUp single attestation"));
 
-    var aggregate = builder.buildAggregate();
-
-    if (fillUpAggregationBits == null) {
-      fillUpAggregationBits = AttestationBitsAggregator.of(aggregate);
-    } else {
-      fillUpAggregationBits.or(aggregate.getAttestation());
+    while (singleAttestationTimeLimitedIterator.hasNext()) {
+      builder.aggregate(singleAttestationTimeLimitedIterator.next());
     }
 
-    return aggregate;
+    return builder.buildAggregate();
   }
 
   /**
@@ -274,9 +262,15 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
     try {
       // Capture a copy of includedValidators under lock for the iterator's isolated use
       AttestationBitsAggregator includedValidatorsCopy = this.includedValidators.copy();
-      this.fillUpAggregationBits = null; // Reset fillup aggregation bits for the next iteration
 
-      return new AggregatingIteratorV2(committeeIndex, includedValidatorsCopy, timeLimitNanos);
+      final AggregatingIteratorV2 iterator =
+          new AggregatingIteratorV2(committeeIndex, includedValidatorsCopy);
+      if (timeLimitNanos == Long.MAX_VALUE) {
+        return iterator;
+      }
+
+      return new TimeLimitingIterator<>(
+          timeLimitNanos, iterator, __ -> LOG.info("Time limit reached, skipping aggregation"));
     } finally {
       readLock.unlock();
     }
@@ -457,25 +451,17 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
 
     private Iterator<ValidatableAttestation> remainingAttestations;
 
-    private final long timeLimitNanos;
-
     // Constructor receives the copy made under lock
     private AggregatingIteratorV2(
         final Optional<UInt64> committeeIndex,
-        final AttestationBitsAggregator includedValidatorsCopy,
-        final long timeLimitNanos) {
+        final AttestationBitsAggregator includedValidatorsCopy) {
       this.maybeCommitteeIndex = committeeIndex;
       this.iteratorSpecificIncludedValidators = includedValidatorsCopy; // Use the provided copy
       this.remainingAttestations = getRemainingAttestations();
-      this.timeLimitNanos = timeLimitNanos;
     }
 
     @Override
     public boolean hasNext() {
-      if (System.nanoTime() > timeLimitNanos) {
-        LOG.info("Timeout while aggregating attestations");
-        return false;
-      }
       // If current iterator exhausted, try fetching remaining ones again
       if (!remainingAttestations.hasNext()) {
         remainingAttestations = getRemainingAttestations();
@@ -521,6 +507,49 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
               candidate ->
                   !iteratorSpecificIncludedValidators.isSuperSetOf(candidate.getAttestation()))
           .iterator();
+    }
+  }
+
+  private static class TimeLimitingIterator<T> implements Iterator<T> {
+    private final long timeLimitNanos;
+    private final Iterator<T> delegate;
+    private final LongConsumer onTimeLimit;
+    private final LongSupplier nanosSupplier;
+
+    public TimeLimitingIterator(
+        final long timeLimitNanos, final Iterator<T> delegate, final LongConsumer onTimeLimit) {
+      this.timeLimitNanos = timeLimitNanos;
+      this.delegate = delegate;
+      this.onTimeLimit = onTimeLimit;
+      this.nanosSupplier = System::nanoTime;
+    }
+
+    @VisibleForTesting
+    public TimeLimitingIterator(
+        final LongSupplier nanosSupplier,
+        final long timeLimitNanos,
+        final Iterator<T> delegate,
+        final LongConsumer onTimeLimit) {
+      this.timeLimitNanos = timeLimitNanos;
+      this.delegate = delegate;
+      this.onTimeLimit = onTimeLimit;
+      this.nanosSupplier = nanosSupplier;
+    }
+
+    @Override
+    public boolean hasNext() {
+      if (nanosSupplier.getAsLong() <= timeLimitNanos) {
+        return delegate.hasNext();
+      }
+
+      onTimeLimit.accept(timeLimitNanos);
+
+      return false;
+    }
+
+    @Override
+    public T next() {
+      return delegate.next();
     }
   }
 }
