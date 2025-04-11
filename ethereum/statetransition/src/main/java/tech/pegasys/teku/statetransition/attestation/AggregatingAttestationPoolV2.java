@@ -454,9 +454,11 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
         "Aggregation phase took {} ms. Produced {} aggregations.",
         (System.nanoTime() - fullAggregationStart) / 1_000_000,
         aggregates.size());
-    return rewardBasedAttestationSorter
-        .sort(aggregates, Math.toIntExact(attestationsSchema.getMaxLength()))
-        .stream()
+    var sortedAggregates =
+        rewardBasedAttestationSorter.sort(
+            aggregates, Math.toIntExact(attestationsSchema.getMaxLength()));
+
+    return (parallel ? sortedAggregates.parallelStream() : sortedAggregates.stream())
         .peek(
             attestation ->
                 aggregatingAttestationPoolProfiler.onPreFillUp(stateAtBlockSlot, attestation))

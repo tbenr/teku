@@ -114,8 +114,8 @@ public class AggregatingAttestationPoolBenchmark {
             new NoOpMetricsSystem(),
             DEFAULT_MAXIMUM_ATTESTATION_COUNT,
             AggregatingAttestationPoolProfiler.NOOP,
-            0,
-            0,
+            10_000,
+            10_000,
             false,
             false);
     this.recentChainData = mock(RecentChainData.class);
