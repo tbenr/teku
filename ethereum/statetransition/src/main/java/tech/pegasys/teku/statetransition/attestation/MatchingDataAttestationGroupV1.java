@@ -150,13 +150,14 @@ public class MatchingDataAttestationGroupV1 implements MatchingDataAttestationGr
   }
 
   @Override
-  public Stream<ValidatableAttestation> stream() {
-    return StreamSupport.stream(spliterator(Optional.empty()), false);
+  public Stream<ValidatableAttestation> stream(final long timeLimitNanos) {
+    return StreamSupport.stream(spliterator(Optional.empty(), timeLimitNanos), false);
   }
 
   @Override
-  public Stream<ValidatableAttestation> stream(final Optional<UInt64> committeeIndex) {
-    return StreamSupport.stream(spliterator(committeeIndex), false);
+  public Stream<ValidatableAttestation> stream(
+      final Optional<UInt64> committeeIndex, final long timeLimitNanos) {
+    return StreamSupport.stream(spliterator(committeeIndex, timeLimitNanos), false);
   }
 
   @Override
@@ -165,11 +166,12 @@ public class MatchingDataAttestationGroupV1 implements MatchingDataAttestationGr
     if (noMatchingAttestations(committeeIndex, requiresCommitteeBits)) {
       return Stream.empty();
     }
-    return StreamSupport.stream(spliterator(committeeIndex), false);
+    return StreamSupport.stream(spliterator(committeeIndex, Long.MAX_VALUE), false);
   }
 
   @Override
-  public Spliterator<ValidatableAttestation> spliterator(final Optional<UInt64> committeeIndex) {
+  public Spliterator<ValidatableAttestation> spliterator(
+      final Optional<UInt64> committeeIndex, final long timeLimitNanos) {
     return Spliterators.spliteratorUnknownSize(iterator(committeeIndex), 0);
   }
 

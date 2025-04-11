@@ -88,6 +88,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
   private final AggregatingAttestationPoolProfiler aggregatingAttestationPoolProfiler;
 
   private final long maxBlockAggregationTimeNanos;
+  private final long baseAggregationTimeNanos = 150_000_000L; // 1ms
   private final boolean earlyDropSingleAttestations;
   private final boolean parallel;
 
@@ -412,7 +413,9 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
 
     final AtomicInteger prevEpochCount = new AtomicInteger(0);
 
-    final long timeLimitNanos = System.nanoTime() + maxBlockAggregationTimeNanos;
+    final long nowNanos = System.nanoTime();
+    final long timeLimitNanos = nowNanos + maxBlockAggregationTimeNanos;
+    final long aggregationTimeLimit = nowNanos + baseAggregationTimeNanos;
 
     // Iterating ConcurrentSkipListMap is weakly consistent and safe
     var dataHashes =
@@ -431,7 +434,8 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
                         dataHashSetForSlot, // dataHashSetForSlot is expected to be a Concurrent Set
                         stateAtBlockSlot,
                         forkChecker,
-                        blockRequiresAttestationsWithCommitteeBits))
+                        blockRequiresAttestationsWithCommitteeBits,
+                        aggregationTimeLimit))
             .filter(
                 attestation -> {
                   if (spec.computeEpochAtSlot(attestation.getData().getSlot())
@@ -484,7 +488,8 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
       final Set<Bytes> dataHashSetForSlot, // Assumed concurrent set
       final BeaconState stateAtBlockSlot,
       final AttestationForkChecker forkChecker,
-      final boolean blockRequiresAttestationsWithCommitteeBits) {
+      final boolean blockRequiresAttestationsWithCommitteeBits,
+      final long baseAggregationTimeLimitNanos) {
 
     //    var maybeSlot =
     // dataHashSetForSlot.stream().findFirst().map(attestationGroupByDataHash::get).filter(Objects::nonNull).map(validatableAttestations -> validatableAttestations.getAttestationData().getSlot());
@@ -501,7 +506,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
         // MatchingDataAttestationGroupV2 methods must be thread-safe
         .filter(group -> group.isValid(stateAtBlockSlot, spec)) // Add spec param
         .filter(forkChecker::areAttestationsFromCorrectFork) // Assumed thread-safe or stateless
-        .flatMap(MatchingDataAttestationGroup::stream) // Must return a safe stream
+        .flatMap(group -> group.stream(baseAggregationTimeLimitNanos)) // Must return a safe stream
         // .map(ValidatableAttestation::getAttestation)
         .filter(
             attestation ->
@@ -546,7 +551,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
     // ConcurrentHashMap.get is safe
     return Optional.ofNullable(attestationGroupByDataHash.get(attestationHashTreeRoot))
         // stream(committeeIndex).findFirst() must be thread-safe
-        .flatMap(attestations -> attestations.stream(committeeIndex).findFirst());
+        .flatMap(attestations -> attestations.stream(committeeIndex, Long.MAX_VALUE).findFirst());
   }
 
   // No longer synchronized

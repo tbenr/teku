@@ -54,7 +54,7 @@ public interface MatchingDataAttestationGroup extends Iterable<ValidatableAttest
    *
    * @return A stream producing aggregated ValidatableAttestations.
    */
-  Stream<ValidatableAttestation> stream();
+  Stream<ValidatableAttestation> stream(long timeLimitNanos);
 
   /**
    * Returns a stream that produces aggregated attestations covering all validators in this group,
@@ -63,7 +63,7 @@ public interface MatchingDataAttestationGroup extends Iterable<ValidatableAttest
    * @param committeeIndex Optional committee index to filter/focus aggregation (Electra).
    * @return A stream producing aggregated ValidatableAttestations.
    */
-  Stream<ValidatableAttestation> stream(Optional<UInt64> committeeIndex);
+  Stream<ValidatableAttestation> stream(Optional<UInt64> committeeIndex, long timeLimitNanos);
 
   /**
    * Returns a stream that produces aggregated attestations, potentially filtered by committee index
@@ -83,7 +83,8 @@ public interface MatchingDataAttestationGroup extends Iterable<ValidatableAttest
    * @param committeeIndex Optional committee index filter.
    * @return A spliterator producing aggregated ValidatableAttestations.
    */
-  Spliterator<ValidatableAttestation> spliterator(Optional<UInt64> committeeIndex);
+  Spliterator<ValidatableAttestation> spliterator(
+      Optional<UInt64> committeeIndex, long timeLimitNanos);
 
   /**
    * Checks if this group contains any attestations.

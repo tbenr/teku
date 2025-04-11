@@ -311,7 +311,7 @@ public class AggregatingAttestationPoolV1 implements AggregatingAttestationPool 
         .filter(Objects::nonNull)
         .filter(group -> isValid(stateAtBlockSlot, group.getAttestationData()))
         .filter(forkChecker::areAttestationsFromCorrectFork)
-        .flatMap(MatchingDataAttestationGroup::stream)
+        .flatMap(group -> group.stream(Long.MAX_VALUE))
         .map(ValidatableAttestation::getAttestation)
         .filter(
             attestation ->
@@ -354,7 +354,7 @@ public class AggregatingAttestationPoolV1 implements AggregatingAttestationPool 
   public synchronized Optional<ValidatableAttestation> createAggregateFor(
       final Bytes32 attestationHashTreeRoot, final Optional<UInt64> committeeIndex) {
     return Optional.ofNullable(attestationGroupByDataHash.get(attestationHashTreeRoot))
-        .flatMap(attestations -> attestations.stream(committeeIndex).findFirst());
+        .flatMap(attestations -> attestations.stream(committeeIndex, Long.MAX_VALUE).findFirst());
   }
 
   @Override

@@ -259,36 +259,38 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
   @Override
   public Iterator<ValidatableAttestation> iterator() {
     // Create iterator with necessary state captured under lock
-    return createAggregatingIterator(Optional.empty());
+    return createAggregatingIterator(Optional.empty(), Long.MAX_VALUE);
   }
 
-  private Iterator<ValidatableAttestation> iterator(final Optional<UInt64> committeeIndex) {
+  private Iterator<ValidatableAttestation> iterator(
+      final Optional<UInt64> committeeIndex, final long timeLimitNanos) {
     // Create iterator with necessary state captured under lock
-    return createAggregatingIterator(committeeIndex);
+    return createAggregatingIterator(committeeIndex, timeLimitNanos);
   }
 
   private Iterator<ValidatableAttestation> createAggregatingIterator(
-      final Optional<UInt64> committeeIndex) {
+      final Optional<UInt64> committeeIndex, final long timeLimitNanos) {
     readLock.lock();
     try {
       // Capture a copy of includedValidators under lock for the iterator's isolated use
       AttestationBitsAggregator includedValidatorsCopy = this.includedValidators.copy();
       this.fillUpAggregationBits = null; // Reset fillup aggregation bits for the next iteration
 
-      return new AggregatingIteratorV2(committeeIndex, includedValidatorsCopy);
+      return new AggregatingIteratorV2(committeeIndex, includedValidatorsCopy, timeLimitNanos);
     } finally {
       readLock.unlock();
     }
   }
 
   @Override
-  public Stream<ValidatableAttestation> stream() {
-    return StreamSupport.stream(spliterator(Optional.empty()), false);
+  public Stream<ValidatableAttestation> stream(final long timeLimitNanos) {
+    return StreamSupport.stream(spliterator(Optional.empty(), timeLimitNanos), false);
   }
 
   @Override
-  public Stream<ValidatableAttestation> stream(final Optional<UInt64> committeeIndex) {
-    return StreamSupport.stream(spliterator(committeeIndex), false);
+  public Stream<ValidatableAttestation> stream(
+      final Optional<UInt64> committeeIndex, final long timeLimitNanos) {
+    return StreamSupport.stream(spliterator(committeeIndex, timeLimitNanos), false);
   }
 
   @Override
@@ -305,13 +307,14 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
     if (noMatch) {
       return Stream.empty();
     }
-    return StreamSupport.stream(spliterator(committeeIndex), false);
+    return StreamSupport.stream(spliterator(committeeIndex, Long.MAX_VALUE), false);
   }
 
   @Override
-  public Spliterator<ValidatableAttestation> spliterator(final Optional<UInt64> committeeIndex) {
+  public Spliterator<ValidatableAttestation> spliterator(
+      final Optional<UInt64> committeeIndex, final long timeLimitNanos) {
     // Delegate to iterator creation which handles locking
-    return Spliterators.spliteratorUnknownSize(iterator(committeeIndex), 0);
+    return Spliterators.spliteratorUnknownSize(iterator(committeeIndex, timeLimitNanos), 0);
   }
 
   /**
@@ -454,17 +457,25 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
 
     private Iterator<ValidatableAttestation> remainingAttestations;
 
+    private final long timeLimitNanos;
+
     // Constructor receives the copy made under lock
     private AggregatingIteratorV2(
         final Optional<UInt64> committeeIndex,
-        final AttestationBitsAggregator includedValidatorsCopy) {
+        final AttestationBitsAggregator includedValidatorsCopy,
+        final long timeLimitNanos) {
       this.maybeCommitteeIndex = committeeIndex;
       this.iteratorSpecificIncludedValidators = includedValidatorsCopy; // Use the provided copy
       this.remainingAttestations = getRemainingAttestations();
+      this.timeLimitNanos = timeLimitNanos;
     }
 
     @Override
     public boolean hasNext() {
+      if (System.nanoTime() > timeLimitNanos) {
+        LOG.info("Timeout while aggregating attestations");
+        return false;
+      }
       // If current iterator exhausted, try fetching remaining ones again
       if (!remainingAttestations.hasNext()) {
         remainingAttestations = getRemainingAttestations();
