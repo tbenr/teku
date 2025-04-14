@@ -21,6 +21,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -89,12 +90,12 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
           .dividedBy(PROPOSER_WEIGHT)
           .longValue();
 
-  public AggregatingAttestationPoolProfilerCSV() {
-    final String tekuProfilerCsvBasepath = System.getenv("TEKU_PROFILER_CSV_BASEPATH");
+  public AggregatingAttestationPoolProfilerCSV(final Path outputDir) {
 
     try {
+      createDirectory(outputDir);
       CSVFormat.Builder csvFormatBuilder = CSVFormat.DEFAULT.builder();
-      File packingSummaryFile = new File(tekuProfilerCsvBasepath + "/packing_summary.csv");
+      File packingSummaryFile = outputDir.resolve("packing_summary.csv").toFile();
 
       FileWriter packingSummaryFileWriter;
       if (packingSummaryFile.exists()) {
@@ -113,8 +114,7 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
 
     try {
       CSVFormat.Builder csvFormatBuilder = CSVFormat.DEFAULT.builder();
-      File attestationsDetailsFile =
-          new File(tekuProfilerCsvBasepath + "/attestations_details.csv");
+      File attestationsDetailsFile = outputDir.resolve("attestations_details.csv").toFile();
       FileWriter attestationDetailsFileWriter;
       if (attestationsDetailsFile.exists()) {
         attestationDetailsFileWriter =
@@ -133,7 +133,7 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
 
     try {
       CSVFormat.Builder csvFormatBuilder = CSVFormat.DEFAULT.builder();
-      File packingSummaryFile = new File(tekuProfilerCsvBasepath + "/fill_up_details.csv");
+      File packingSummaryFile = outputDir.resolve("fill_up_details.csv").toFile();
 
       FileWriter attestationImprovementsFileWriter;
       if (packingSummaryFile.exists()) {
@@ -349,5 +349,13 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
         .map(maybeValue -> maybeValue.orElse(UInt64.ZERO))
         .map(UInt64::longValue)
         .toList();
+  }
+
+  private void createDirectory(final Path path) {
+    if (!path.toFile().mkdirs()) {
+      if (!path.toFile().exists()) {
+        LOG.error("Unable to create directory {}", path);
+      }
+    }
   }
 }

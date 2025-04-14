@@ -13,7 +13,10 @@
 
 package tech.pegasys.teku.statetransition.attestation.utils;
 
-import static tech.pegasys.teku.spec.logic.versions.altair.helpers.MiscHelpersAltair.PARTICIPATION_FLAG_WEIGHTS;
+import static com.google.common.base.Preconditions.checkState;
+import static tech.pegasys.teku.spec.constants.IncentivizationWeights.TIMELY_HEAD_WEIGHT;
+import static tech.pegasys.teku.spec.constants.IncentivizationWeights.TIMELY_SOURCE_WEIGHT;
+import static tech.pegasys.teku.spec.constants.IncentivizationWeights.TIMELY_TARGET_WEIGHT;
 
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import it.unimi.dsi.fastutil.ints.Int2ByteOpenHashMap;
@@ -33,6 +36,7 @@ import tech.pegasys.teku.infrastructure.ssz.primitive.SszByte;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.SpecVersion;
+import tech.pegasys.teku.spec.constants.IncentivizationWeights;
 import tech.pegasys.teku.spec.datastructures.attestation.ValidatableAttestation;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.altair.BeaconStateAltair;
@@ -49,6 +53,22 @@ public class RewardBasedAttestationSorter {
 
   private List<Byte> currentEpochParticipation;
   private List<Byte> previousEpochParticipation;
+
+  private static int TIMELY_SOURCE_INDEX =
+      MiscHelpersAltair.PARTICIPATION_FLAG_WEIGHTS.indexOf(TIMELY_SOURCE_WEIGHT);
+  private static int TIMELY_TARGET_INDEX =
+      MiscHelpersAltair.PARTICIPATION_FLAG_WEIGHTS.indexOf(
+          IncentivizationWeights.TIMELY_TARGET_WEIGHT);
+  private static int TIMELY_HEAD_INDEX =
+      MiscHelpersAltair.PARTICIPATION_FLAG_WEIGHTS.indexOf(
+          IncentivizationWeights.TIMELY_HEAD_WEIGHT);
+
+  static {
+    checkState(TIMELY_SOURCE_INDEX != -1);
+    checkState(TIMELY_TARGET_INDEX != -1);
+    checkState(TIMELY_HEAD_INDEX != -1);
+    checkState(MiscHelpersAltair.PARTICIPATION_FLAG_WEIGHTS.size() == 3);
+  }
 
   public static RewardBasedAttestationSorter create(final Spec spec, final BeaconState state) {
     final SpecVersion specVersion = spec.atSlot(state.getSlot());
@@ -159,7 +179,8 @@ public class RewardBasedAttestationSorter {
         .collect(Collectors.toCollection(ByteArrayList::new));
   }
 
-  private final Map<Integer, UInt64> validatorBaseRewardCache = new Int2ObjectOpenHashMap<>();
+  private final Int2ObjectOpenHashMap<UInt64> validatorBaseRewardCache =
+      new Int2ObjectOpenHashMap<>();
 
   private UInt64 getValidatorBaseRewards(final int index) {
     return validatorBaseRewardCache.computeIfAbsent(
@@ -172,43 +193,55 @@ public class RewardBasedAttestationSorter {
         attestation.getData().getTarget().getEpoch().equals(spec.getCurrentEpoch(state));
     final IntList attestingIndices = spec.getAttestingIndices(state, attestation.getAttestation());
 
-    return new AttestationWithRewardInfo(
-        attestation,
-        attestingIndices,
+    final List<Integer> attestationParticipationFlagIndices =
         beaconStateAccessors.getAttestationParticipationFlagIndices(
             state,
             attestation.getData(),
-            state.getSlot().minusMinZero(attestation.getData().getSlot())),
+            state.getSlot().minusMinZero(attestation.getData().getSlot()));
+
+    return new AttestationWithRewardInfo(
+        attestation,
+        attestingIndices,
+        attestationParticipationFlagIndices.contains(TIMELY_SOURCE_INDEX),
+        attestationParticipationFlagIndices.contains(TIMELY_TARGET_INDEX),
+        attestationParticipationFlagIndices.contains(TIMELY_HEAD_INDEX),
         Map.of(),
         isCurrentEpoch,
         UInt64.ZERO);
   }
 
   private void computeRewards(final AttestationWithRewardInfo attestation) {
-
-    final List<Integer> participationFlagIndices = attestation.participationFlagIndices;
-
     final List<Byte> epochParticipation = getEpochParticipation(attestation);
-    final Map<Integer, Byte> updatesEpochParticipation = new Int2ByteOpenHashMap();
+    final Int2ByteOpenHashMap updatesEpochParticipation = new Int2ByteOpenHashMap();
 
     UInt64 proposerRewardNumerator = UInt64.ZERO;
 
-    for (final Integer attestingIndex : attestation.attestingIndices) {
+    for (int i = 0; i < attestation.attestingIndices.size(); i++) {
+      final int attestingIndex = attestation.attestingIndices.getInt(i);
       final byte previousParticipationFlags = epochParticipation.get(attestingIndex);
       byte newParticipationFlags = 0;
 
       final UInt64 baseReward = getValidatorBaseRewards(attestingIndex);
 
-      for (int flagIndex = 0; flagIndex < PARTICIPATION_FLAG_WEIGHTS.size(); flagIndex++) {
+      if (attestation.timelySource
+          && !miscHelpers.hasFlag(previousParticipationFlags, TIMELY_SOURCE_INDEX)) {
+        newParticipationFlags = miscHelpers.addFlag(newParticipationFlags, TIMELY_SOURCE_INDEX);
+        proposerRewardNumerator =
+            proposerRewardNumerator.plus(baseReward.times(TIMELY_SOURCE_WEIGHT));
+      }
 
-        if (participationFlagIndices.contains(flagIndex)
-            && !miscHelpers.hasFlag(previousParticipationFlags, flagIndex)) {
+      if (attestation.timelySource
+          && !miscHelpers.hasFlag(previousParticipationFlags, TIMELY_TARGET_INDEX)) {
+        newParticipationFlags = miscHelpers.addFlag(newParticipationFlags, TIMELY_TARGET_INDEX);
+        proposerRewardNumerator =
+            proposerRewardNumerator.plus(baseReward.times(TIMELY_TARGET_WEIGHT));
+      }
 
-          final UInt64 weight = PARTICIPATION_FLAG_WEIGHTS.get(flagIndex);
-
-          newParticipationFlags = miscHelpers.addFlag(newParticipationFlags, flagIndex);
-          proposerRewardNumerator = proposerRewardNumerator.plus(baseReward.times(weight));
-        }
+      if (attestation.timelySource
+          && !miscHelpers.hasFlag(previousParticipationFlags, TIMELY_HEAD_INDEX)) {
+        newParticipationFlags = miscHelpers.addFlag(newParticipationFlags, TIMELY_HEAD_INDEX);
+        proposerRewardNumerator =
+            proposerRewardNumerator.plus(baseReward.times(TIMELY_HEAD_WEIGHT));
       }
 
       if (newParticipationFlags != 0) {
@@ -225,7 +258,9 @@ public class RewardBasedAttestationSorter {
   public static class AttestationWithRewardInfo {
     private final ValidatableAttestation attestation;
     private final IntList attestingIndices;
-    private final List<Integer> participationFlagIndices;
+    private final boolean timelySource;
+    private final boolean timelyTarget;
+    private final boolean timelyHead;
     private final boolean isCurrentEpoch;
 
     private Map<Integer, Byte> updatesEpochParticipation;
@@ -235,7 +270,9 @@ public class RewardBasedAttestationSorter {
       return new AttestationWithRewardInfo(
           attestation,
           this.attestingIndices,
-          this.participationFlagIndices,
+          this.timelySource,
+          this.timelyTarget,
+          this.timelyHead,
           this.updatesEpochParticipation,
           this.isCurrentEpoch,
           this.rewardNumerator);
@@ -244,13 +281,17 @@ public class RewardBasedAttestationSorter {
     private AttestationWithRewardInfo(
         final ValidatableAttestation attestation,
         final IntList attestingIndices,
-        final List<Integer> participationFlagIndices,
+        final boolean timelySource,
+        final boolean timelyTarget,
+        final boolean timelyHead,
         final Map<Integer, Byte> updatesEpochParticipation,
         final boolean isCurrentEpoch,
         final UInt64 rewardNumerator) {
       this.attestation = attestation;
       this.attestingIndices = attestingIndices;
-      this.participationFlagIndices = participationFlagIndices;
+      this.timelySource = timelySource;
+      this.timelyTarget = timelyTarget;
+      this.timelyHead = timelyHead;
       this.updatesEpochParticipation = updatesEpochParticipation;
       this.isCurrentEpoch = isCurrentEpoch;
       this.rewardNumerator = rewardNumerator;

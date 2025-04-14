@@ -302,6 +302,7 @@ public class BeaconChainController extends Service implements BeaconChainControl
   protected SettableLabelledGauge futureItemsMetric;
   protected IntSupplier rejectedExecutionCountSupplier;
   protected DebugDataDumper debugDataDumper;
+  protected Path debugDataDirectory;
 
   public BeaconChainController(
       final ServiceConfig serviceConfig, final BeaconChainConfiguration beaconConfig) {
@@ -346,6 +347,7 @@ public class BeaconChainController extends Service implements BeaconChainControl
             "Current number of items held for future slots, labelled by type",
             "type");
     this.ephemerySlotValidationService = new EphemerySlotValidationService();
+    this.debugDataDirectory = serviceConfig.getDataDirLayout().getDebugDataDirectory();
   }
 
   @Override
@@ -1212,7 +1214,7 @@ public class BeaconChainController extends Service implements BeaconChainControl
                 metricsSystem,
                 DEFAULT_MAXIMUM_ATTESTATION_COUNT,
                 eth2NetworkConfiguration.isAggregatingAttestationPoolProfilingEnabled()
-                    ? new AggregatingAttestationPoolProfilerCSV()
+                    ? new AggregatingAttestationPoolProfilerCSV(debugDataDirectory)
                     : AggregatingAttestationPoolProfiler.NOOP,
                 eth2NetworkConfiguration.getAggregatingAttestationPoolV2BlockAggregationTimeLimit(),
                 eth2NetworkConfiguration
@@ -1225,7 +1227,7 @@ public class BeaconChainController extends Service implements BeaconChainControl
                 recentChainData,
                 metricsSystem,
                 eth2NetworkConfiguration.isAggregatingAttestationPoolProfilingEnabled()
-                    ? new AggregatingAttestationPoolProfilerCSV()
+                    ? new AggregatingAttestationPoolProfilerCSV(debugDataDirectory)
                     : AggregatingAttestationPoolProfiler.NOOP,
                 DEFAULT_MAXIMUM_ATTESTATION_COUNT);
     eventChannels.subscribe(SlotEventsChannel.class, attestationPool);

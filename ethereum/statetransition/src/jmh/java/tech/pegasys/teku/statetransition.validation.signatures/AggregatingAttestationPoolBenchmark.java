@@ -61,6 +61,7 @@ import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPool;
 import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPoolV2;
 import tech.pegasys.teku.statetransition.attestation.AttestationForkChecker;
 import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfiler;
+import tech.pegasys.teku.statetransition.attestation.utils.RewardBasedAttestationSorter;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
 @Warmup(iterations = 5, time = 2000, timeUnit = TimeUnit.MILLISECONDS)
@@ -100,6 +101,7 @@ public class AggregatingAttestationPoolBenchmark {
   private RecentChainData recentChainData;
   private AttestationForkChecker attestationForkChecker;
   private AttestationDataRootAndCommitteeIndex mostFrequentSingleAttestationDataRootAndCI;
+  private RewardBasedAttestationSorter sorter;
 
   @Setup(Level.Trial)
   public void init() throws Exception {
@@ -141,51 +143,51 @@ public class AggregatingAttestationPoolBenchmark {
             .map(SchemaDefinitionsElectra::getSingleAttestationSchema);
     var attestationUtil =
         (AttestationUtilElectra) SPEC.forMilestone(SpecMilestone.ELECTRA).getAttestationUtil();
+
     try (final Stream<String> attestationLinesStream = Files.lines(Paths.get(POOL_DUMP_PATH))) {
-      attestationLinesStream
-          .map(
-              line -> {
-                try {
-                  aggregatedAttestationCount[0]++;
-                  return attestationSchema.sszDeserialize(Bytes.fromHexString(line));
-                } catch (Exception e) {
-                  aggregatedAttestationCount[0]--;
-                  singleAttestationCount[0]++;
-                  return singleAttestationSchema
-                      .orElseThrow()
-                      .sszDeserialize(Bytes.fromHexString(line));
-                }
-              })
-          .map(
-              attestation -> {
-                var validatableAttestation = ValidatableAttestation.from(SPEC, attestation);
+      attestations =
+          attestationLinesStream
+              .map(
+                  line -> {
+                    try {
+                      aggregatedAttestationCount[0]++;
+                      return attestationSchema.sszDeserialize(Bytes.fromHexString(line));
+                    } catch (Exception e) {
+                      aggregatedAttestationCount[0]--;
+                      singleAttestationCount[0]++;
+                      return singleAttestationSchema
+                          .orElseThrow()
+                          .sszDeserialize(Bytes.fromHexString(line));
+                    }
+                  })
+              .map(
+                  attestation -> {
+                    var validatableAttestation = ValidatableAttestation.from(SPEC, attestation);
 
-                if (attestation.isSingleAttestation()) {
-                  final SszBitlist singleAttestationAggregationBits =
-                      attestationUtil.getSingleAttestationAggregationBits(
-                          state, (SingleAttestation) attestation);
+                    if (attestation.isSingleAttestation()) {
+                      final SszBitlist singleAttestationAggregationBits =
+                          attestationUtil.getSingleAttestationAggregationBits(
+                              state, (SingleAttestation) attestation);
 
-                  final Attestation convertedAttestation =
-                      attestationUtil.convertSingleAttestationToAggregated(
-                          (SingleAttestation) attestation, singleAttestationAggregationBits);
+                      final Attestation convertedAttestation =
+                          attestationUtil.convertSingleAttestationToAggregated(
+                              (SingleAttestation) attestation, singleAttestationAggregationBits);
 
-                  validatableAttestation.convertToAggregatedFormatFromSingleAttestation(
-                      convertedAttestation);
+                      validatableAttestation.convertToAggregatedFormatFromSingleAttestation(
+                          convertedAttestation);
 
-                  singleAttCounterByDataAndCommittee.compute(
-                      new AttestationDataRootAndCommitteeIndex(
-                          attestation.getData().hashTreeRoot(),
-                          attestation.getFirstCommitteeIndex()),
-                      (k, v) -> v == null ? 1 : v + 1);
-                }
+                      singleAttCounterByDataAndCommittee.compute(
+                          new AttestationDataRootAndCommitteeIndex(
+                              attestation.getData().hashTreeRoot(),
+                              attestation.getFirstCommitteeIndex()),
+                          (k, v) -> v == null ? 1 : v + 1);
+                    }
 
-                return validatableAttestation;
-              })
-          .forEach(
-              attestation -> {
-                attestation.saveCommitteeShufflingSeedAndCommitteesSize(state);
-                pool.add(attestation);
-              });
+                    validatableAttestation.saveCommitteeShufflingSeedAndCommitteesSize(state);
+
+                    return validatableAttestation;
+                  })
+              .toList();
 
       mostFrequentSingleAttestationDataRootAndCI =
           singleAttCounterByDataAndCommittee.entrySet().stream()
@@ -197,7 +199,11 @@ public class AggregatingAttestationPoolBenchmark {
               .getKey();
     }
 
+    attestations.forEach(pool::add);
+
     this.newBlockState = SPEC.processSlots(state, SLOT);
+
+    sorter = RewardBasedAttestationSorter.create(SPEC, newBlockState);
 
     System.out.println(
         "init done. Pool size: "
@@ -223,6 +229,23 @@ public class AggregatingAttestationPoolBenchmark {
             mostFrequentSingleAttestationDataRootAndCI.attestationDataRoot,
             Optional.of(mostFrequentSingleAttestationDataRootAndCI.committeeIndex));
     bh.consume(attestationsForBlock);
+  }
+
+  @Benchmark
+  @BenchmarkMode(Mode.Throughput)
+  public void getAttestingIndices(final Blackhole bh) {
+    var result =
+        SPEC.atSlot(SLOT)
+            .getAttestationUtil()
+            .getAttestingIndices(state, attestations.getFirst().getAttestation());
+    bh.consume(result);
+  }
+
+  @Benchmark
+  @BenchmarkMode(Mode.Throughput)
+  public void sortAttestations(final Blackhole bh) {
+    var sortedAttestations = sorter.sort(attestations.subList(0, 50), 8);
+    bh.consume(sortedAttestations);
   }
 
   public void printBlockRewardData() {
@@ -278,8 +301,8 @@ public class AggregatingAttestationPoolBenchmark {
         new Blackhole(
             "Today's password is swordfish. I understand instantiating Blackholes directly is dangerous.");
 
-    for (int i = 0; i < 1; i++) {
-      benchmark.getAttestationsForBlock(bh);
+    for (int i = 0; i < 10000; i++) {
+      benchmark.sortAttestations(bh);
     }
   }
 }
