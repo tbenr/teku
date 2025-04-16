@@ -203,7 +203,7 @@ public class AggregatingAttestationPoolBenchmark {
 
     this.newBlockState = SPEC.processSlots(state, SLOT);
 
-    sorter = RewardBasedAttestationSorter.create(SPEC, newBlockState);
+    sorter = RewardBasedAttestationSorter.create(SPEC, newBlockState, System::nanoTime);
 
     System.out.println(
         "init done. Pool size: "

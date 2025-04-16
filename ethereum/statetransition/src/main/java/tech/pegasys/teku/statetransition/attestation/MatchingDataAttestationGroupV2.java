@@ -77,7 +77,7 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
   private final AttestationData attestationData;
   private final Optional<Int2IntMap> committeesSize;
 
-  private AtomicReference<UInt64> lastFillUpSlot = new AtomicReference<>(UInt64.ZERO);
+  private final AtomicReference<UInt64> lastFillUpSlot = new AtomicReference<>(UInt64.ZERO);
 
   /**
    * Tracks which validators were included in attestations at a given slot on the canonical chain.
@@ -525,6 +525,7 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
     }
 
     @VisibleForTesting
+    @SuppressWarnings("unused")
     public TimeLimitingIterator(
         final LongSupplier nanosSupplier,
         final long timeLimitNanos,

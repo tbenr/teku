@@ -28,6 +28,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
@@ -92,6 +93,8 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
   private final boolean earlyDropSingleAttestations;
   private final boolean parallel;
 
+  private final LongSupplier nanosSupplier;
+
   private final AtomicInteger size = new AtomicInteger(0);
 
   public AggregatingAttestationPoolV2(
@@ -118,6 +121,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
     this.maxTotalBlockAggregationTimeMillis = maxTotalBlockAggregationTimeMillis * 1_000_000L;
     this.earlyDropSingleAttestations = earlyDropSingleAttestations;
     this.parallel = parallel;
+    this.nanosSupplier = System::nanoTime;
   }
 
   @VisibleForTesting
@@ -125,7 +129,8 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
       final Spec spec,
       final RecentChainData recentChainData,
       final MetricsSystem metricsSystem,
-      final int maximumAttestationCount) {
+      final int maximumAttestationCount,
+      final LongSupplier nanosSupplier) {
     this.spec = spec;
     this.recentChainData = recentChainData;
     this.sizeGauge =
@@ -140,6 +145,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
     this.maxTotalBlockAggregationTimeMillis = Integer.MAX_VALUE * 1_000_000L;
     this.earlyDropSingleAttestations = false;
     this.parallel = false;
+    this.nanosSupplier = nanosSupplier;
   }
 
   // No longer synchronized
@@ -404,7 +410,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
     final int previousEpochLimit = spec.getPreviousEpochAttestationCapacity(stateAtBlockSlot);
 
     final RewardBasedAttestationSorter rewardBasedAttestationSorter =
-        RewardBasedAttestationSorter.create(spec, stateAtBlockSlot);
+        RewardBasedAttestationSorter.create(spec, stateAtBlockSlot, nanosSupplier);
     final SchemaDefinitions schemaDefinitions =
         spec.atSlot(stateAtBlockSlot.getSlot()).getSchemaDefinitions();
 
@@ -416,7 +422,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
 
     final AtomicInteger prevEpochCount = new AtomicInteger(0);
 
-    final long nowNanos = System.nanoTime();
+    final long nowNanos = nanosSupplier.getAsLong();
     final long totalTimeLimitNanos = nowNanos + maxTotalBlockAggregationTimeMillis;
     final long aggregationTimeLimit = nowNanos + maxBlockAggregationTimeNanos;
 
@@ -428,7 +434,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
             .descendingMap() // Safe view
             .values();
 
-    var fullAggregationStart = System.nanoTime();
+    var fullAggregationStart = nanosSupplier.getAsLong();
     var aggregates =
         (parallel ? dataHashes.parallelStream() : dataHashes.stream())
             .flatMap(
@@ -452,7 +458,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
 
     LOG.info(
         "Aggregation phase took {} ms. Produced {} aggregations.",
-        (System.nanoTime() - fullAggregationStart) / 1_000_000,
+        (nanosSupplier.getAsLong() - fullAggregationStart) / 1_000_000,
         aggregates.size());
     var sortedAggregates =
         rewardBasedAttestationSorter.sort(
@@ -479,7 +485,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
       final UInt64 slot,
       final AttestationWithRewardInfo attestationWithRewards,
       final long timeLimitNanos) {
-    if (System.nanoTime() > timeLimitNanos) {
+    if (nanosSupplier.getAsLong() > timeLimitNanos) {
       LOG.info("Time limit reached, skipping fillUpAttestation");
       return attestationWithRewards;
     }

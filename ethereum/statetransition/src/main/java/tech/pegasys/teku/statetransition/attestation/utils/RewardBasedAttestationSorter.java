@@ -27,6 +27,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
+import java.util.function.LongSupplier;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -51,15 +52,17 @@ public class RewardBasedAttestationSorter {
   private final BeaconStateAccessorsAltair beaconStateAccessors;
   private final MiscHelpersAltair miscHelpers;
 
+  private final LongSupplier nanosSupplier;
+
   private List<Byte> currentEpochParticipation;
   private List<Byte> previousEpochParticipation;
 
-  private static int TIMELY_SOURCE_INDEX =
+  private static final int TIMELY_SOURCE_INDEX =
       MiscHelpersAltair.PARTICIPATION_FLAG_WEIGHTS.indexOf(TIMELY_SOURCE_WEIGHT);
-  private static int TIMELY_TARGET_INDEX =
+  private static final int TIMELY_TARGET_INDEX =
       MiscHelpersAltair.PARTICIPATION_FLAG_WEIGHTS.indexOf(
           IncentivizationWeights.TIMELY_TARGET_WEIGHT);
-  private static int TIMELY_HEAD_INDEX =
+  private static final int TIMELY_HEAD_INDEX =
       MiscHelpersAltair.PARTICIPATION_FLAG_WEIGHTS.indexOf(
           IncentivizationWeights.TIMELY_HEAD_WEIGHT);
 
@@ -70,25 +73,28 @@ public class RewardBasedAttestationSorter {
     checkState(MiscHelpersAltair.PARTICIPATION_FLAG_WEIGHTS.size() == 3);
   }
 
-  public static RewardBasedAttestationSorter create(final Spec spec, final BeaconState state) {
+  public static RewardBasedAttestationSorter create(final Spec spec, final BeaconState state, final LongSupplier nanosSupplier) {
     final SpecVersion specVersion = spec.atSlot(state.getSlot());
 
     return new RewardBasedAttestationSorter(
         spec,
         BeaconStateAltair.required(state),
         BeaconStateAccessorsAltair.required(specVersion.beaconStateAccessors()),
-        specVersion.miscHelpers().toVersionAltair().orElseThrow());
+        specVersion.miscHelpers().toVersionAltair().orElseThrow(),
+            nanosSupplier);
   }
 
   private RewardBasedAttestationSorter(
       final Spec spec,
       final BeaconStateAltair state,
       final BeaconStateAccessorsAltair beaconStateAccessors,
-      final MiscHelpersAltair miscHelpers) {
+      final MiscHelpersAltair miscHelpers,
+      final LongSupplier nanosSupplier) {
     this.spec = spec;
     this.state = state;
     this.beaconStateAccessors = beaconStateAccessors;
     this.miscHelpers = miscHelpers;
+    this.nanosSupplier = nanosSupplier;
   }
 
   private List<Byte> getCurrentEpochParticipation() {
@@ -116,7 +122,7 @@ public class RewardBasedAttestationSorter {
   public List<AttestationWithRewardInfo> sort(
       final List<ValidatableAttestation> attestations, final int maxAttestations) {
 
-    var start = System.nanoTime();
+    var start = nanosSupplier.getAsLong();
     final List<AttestationWithRewardInfo> finalSortedAttestations =
         new ArrayList<>(maxAttestations);
 
@@ -132,7 +138,7 @@ public class RewardBasedAttestationSorter {
       return finalSortedAttestations;
     }
 
-    var initializationEnded = System.nanoTime();
+    var initializationEnded = nanosSupplier.getAsLong();
     LOG.info("Initialization took {} ms.", (initializationEnded - start) / 1_000_000);
 
     while (true) {
@@ -141,7 +147,7 @@ public class RewardBasedAttestationSorter {
 
       // we reached the limit or there are no more attestations to process
       if (finalSortedAttestations.size() >= maxAttestations || attestationQueue.isEmpty()) {
-        LOG.info("Sorting took: {} ms", (System.nanoTime() - initializationEnded) / 1_000_000);
+        LOG.info("Sorting took: {} ms", (nanosSupplier.getAsLong() - initializationEnded) / 1_000_000);
         return finalSortedAttestations;
       }
 

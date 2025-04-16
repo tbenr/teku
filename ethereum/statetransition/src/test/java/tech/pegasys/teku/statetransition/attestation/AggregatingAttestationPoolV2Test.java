@@ -28,6 +28,6 @@ public class AggregatingAttestationPoolV2Test extends AggregatingAttestationPool
   AggregatingAttestationPool instantiatePool(
       final Spec spec, final RecentChainData recentChainData, final int maxAttestations) {
     return new AggregatingAttestationPoolV2(
-        spec, recentChainData, new NoOpMetricsSystem(), maxAttestations);
+        spec, recentChainData, new NoOpMetricsSystem(), maxAttestations, System::nanoTime);
   }
 }

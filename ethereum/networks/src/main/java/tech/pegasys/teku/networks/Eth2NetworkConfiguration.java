@@ -600,7 +600,6 @@ public class Eth2NetworkConfiguration {
           asyncBeaconChainMaxQueue.orElse(DEFAULT_ASYNC_BEACON_CHAIN_MAX_QUEUE),
           forkChoiceLateBlockReorgEnabled,
           forkChoiceUpdatedAlwaysSendPayloadAttributes,
-          pendingAttestationsMaxQueue.orElse(DEFAULT_MAX_QUEUE_PENDING_ATTESTATIONS),
           rustKzgEnabled,
           pendingAttestationsMaxQueue.orElse(DEFAULT_MAX_QUEUE_PENDING_ATTESTATIONS),
           aggregatingAttestationPoolV2Enabled,
