@@ -11,7 +11,7 @@
  * specific language governing permissions and limitations under the License.
  */
 
-package tech.pegasys.teku.statetransition.attestation;
+package tech.pegasys.teku.statetransition.attestation.v1;
 
 import static tech.pegasys.teku.spec.SpecMilestone.ELECTRA;
 import static tech.pegasys.teku.spec.SpecMilestone.PHASE0;
@@ -19,15 +19,22 @@ import static tech.pegasys.teku.spec.SpecMilestone.PHASE0;
 import org.hyperledger.besu.metrics.noop.NoOpMetricsSystem;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecContext;
+import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPool;
+import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPoolTest;
+import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfilerCSV;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
 @TestSpecContext(milestone = {PHASE0, ELECTRA})
-public class AggregatingAttestationPoolV2Test extends AggregatingAttestationPoolTest {
+public class AggregatingAttestationPoolV1Test extends AggregatingAttestationPoolTest {
 
   @Override
-  AggregatingAttestationPool instantiatePool(
+  public AggregatingAttestationPool instantiatePool(
       final Spec spec, final RecentChainData recentChainData, final int maxAttestations) {
-    return new AggregatingAttestationPoolV2(
-        spec, recentChainData, new NoOpMetricsSystem(), maxAttestations, System::nanoTime);
+    return new AggregatingAttestationPoolV1(
+        spec,
+        recentChainData,
+        new NoOpMetricsSystem(),
+        AggregatingAttestationPoolProfilerCSV.NOOP,
+        maxAttestations);
   }
 }

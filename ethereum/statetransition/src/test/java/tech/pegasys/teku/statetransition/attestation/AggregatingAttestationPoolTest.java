@@ -55,10 +55,11 @@ import tech.pegasys.teku.spec.datastructures.operations.SingleAttestationSchema;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.logic.common.operations.validation.AttestationDataValidator.AttestationInvalidReason;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
+import tech.pegasys.teku.statetransition.attestation.v2.AggregatingAttestationPoolV2;
 import tech.pegasys.teku.storage.client.RecentChainData;
 import tech.pegasys.teku.storage.store.UpdatableStore;
 
-abstract class AggregatingAttestationPoolTest {
+public abstract class AggregatingAttestationPoolTest {
 
   public static final UInt64 SLOT = UInt64.valueOf(1234);
   private static final int COMMITTEE_SIZE = 130;
@@ -76,7 +77,7 @@ abstract class AggregatingAttestationPoolTest {
 
   private Int2IntMap committeeSizes;
 
-  abstract AggregatingAttestationPool instantiatePool(
+  public abstract AggregatingAttestationPool instantiatePool(
       final Spec spec, final RecentChainData recentChainData, final int maxAttestations);
 
   @BeforeEach

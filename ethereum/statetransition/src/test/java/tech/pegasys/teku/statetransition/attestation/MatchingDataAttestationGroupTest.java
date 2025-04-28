@@ -34,7 +34,7 @@ import tech.pegasys.teku.spec.datastructures.operations.AttestationData;
 import tech.pegasys.teku.spec.datastructures.operations.AttestationSchema;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 
-abstract class MatchingDataAttestationGroupTest {
+public abstract class MatchingDataAttestationGroupTest {
   private static final UInt64 SLOT = UInt64.valueOf(1234);
 
   private Spec spec;
@@ -46,7 +46,7 @@ abstract class MatchingDataAttestationGroupTest {
   private MatchingDataAttestationGroup group;
   private Int2IntMap committeeSizes;
 
-  abstract MatchingDataAttestationGroup instantiateGroup(
+  public abstract MatchingDataAttestationGroup instantiateGroup(
       final Spec spec,
       final AttestationData attestationData,
       final Optional<Int2IntMap> committeeSizes);

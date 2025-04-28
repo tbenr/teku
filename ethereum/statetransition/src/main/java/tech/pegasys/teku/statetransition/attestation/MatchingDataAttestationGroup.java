@@ -30,7 +30,7 @@ import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
  * aggregation and tracking of included validators.
  */
 public interface MatchingDataAttestationGroup extends Iterable<ValidatableAttestation> {
-
+ long UNLIMITED_TIME_NANOS = Integer.MAX_VALUE;
   /**
    * Gets the common AttestationData shared by all attestations in this group.
    *
@@ -56,6 +56,9 @@ public interface MatchingDataAttestationGroup extends Iterable<ValidatableAttest
    * @return A stream producing aggregated ValidatableAttestations.
    */
   Stream<ValidatableAttestation> stream(long timeLimitNanos);
+  default Stream<ValidatableAttestation> stream() {
+    return stream(UNLIMITED_TIME_NANOS);
+  }
 
   /**
    * Returns a stream that produces aggregated attestations covering all validators in this group,
@@ -65,6 +68,9 @@ public interface MatchingDataAttestationGroup extends Iterable<ValidatableAttest
    * @return A stream producing aggregated ValidatableAttestations.
    */
   Stream<ValidatableAttestation> stream(Optional<UInt64> committeeIndex, long timeLimitNanos);
+  default Stream<ValidatableAttestation> stream(Optional<UInt64> committeeIndex) {
+    return stream(committeeIndex, UNLIMITED_TIME_NANOS);
+  }
 
   /**
    * Returns a stream that produces aggregated attestations, potentially filtered by committee index

@@ -11,7 +11,7 @@
  * specific language governing permissions and limitations under the License.
  */
 
-package tech.pegasys.teku.statetransition.attestation;
+package tech.pegasys.teku.statetransition.attestation.v2;
 
 import com.google.common.annotations.VisibleForTesting;
 import it.unimi.dsi.fastutil.ints.Int2IntMap;
@@ -43,6 +43,8 @@ import tech.pegasys.teku.spec.datastructures.attestation.ValidatableAttestation;
 import tech.pegasys.teku.spec.datastructures.operations.Attestation;
 import tech.pegasys.teku.spec.datastructures.operations.AttestationData;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
+import tech.pegasys.teku.statetransition.attestation.AggregateAttestationBuilder;
+import tech.pegasys.teku.statetransition.attestation.MatchingDataAttestationGroup;
 import tech.pegasys.teku.statetransition.attestation.utils.AttestationBitsAggregator;
 
 /**
