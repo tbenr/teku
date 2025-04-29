@@ -316,4 +316,18 @@ public class RewardBasedAttestationSorter {
       Comparator.<AttestationWithRewardInfo>comparingLong(
               value -> value.rewardNumerator.longValue())
           .reversed();
+
+  public static class RewardBasedAttestationSorterFactory {
+    private final Spec spec;
+    private final LongSupplier nanosSupplier;
+
+    public RewardBasedAttestationSorterFactory(final Spec spec, final LongSupplier nanosSupplier) {
+      this.spec = spec;
+      this.nanosSupplier = nanosSupplier;
+    }
+
+    public RewardBasedAttestationSorter create(final BeaconState state) {
+      return RewardBasedAttestationSorter.create(spec, state, nanosSupplier);
+    }
+  }
 }

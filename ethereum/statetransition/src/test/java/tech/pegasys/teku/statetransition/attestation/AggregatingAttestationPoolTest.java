@@ -692,7 +692,7 @@ public abstract class AggregatingAttestationPoolTest {
     }
 
     final ValidatableAttestation validatableAttestation =
-        ValidatableAttestation.from(spec, attestationFromValidators, committeeSizes);
+        ValidatableAttestation.from(spec, attestationFromValidators, Optional.of(committeeSizes));
 
     if (attestationFromValidators.isSingleAttestation()) {
       attestation = createAttestation(data, spec, validators);

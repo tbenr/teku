@@ -17,6 +17,7 @@ import static com.google.common.base.Preconditions.checkState;
 
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
 import tech.pegasys.teku.bls.BLS;
 import tech.pegasys.teku.spec.Spec;
@@ -77,7 +78,7 @@ public class AggregateAttestationBuilder {
                         .map(Attestation::getAggregateSignature)
                         .toList()),
                 currentAggregateBits::getCommitteeBits),
-        currentAggregateBits.getCommitteesSize());
+            currentAggregateBits.requiresCommitteeBits() ? Optional.of(currentAggregateBits.getCommitteesSize()) : Optional.empty());
   }
 
   public Collection<ValidatableAttestation> getIncludedAttestations() {

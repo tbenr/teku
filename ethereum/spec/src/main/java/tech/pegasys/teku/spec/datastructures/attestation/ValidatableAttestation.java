@@ -73,9 +73,8 @@ public class ValidatableAttestation {
         spec, attestation, Optional.empty(), OptionalInt.empty(), false);
   }
 
-  @VisibleForTesting
   public static ValidatableAttestation from(
-      final Spec spec, final Attestation attestation, final Int2IntMap committeeSizes) {
+      final Spec spec, final Attestation attestation, final Optional<Int2IntMap> committeeSizes) {
     return new ValidatableAttestation(
         spec, attestation, Optional.empty(), OptionalInt.empty(), false, committeeSizes);
   }
@@ -144,7 +143,7 @@ public class ValidatableAttestation {
       final Optional<SignedAggregateAndProof> aggregateAndProof,
       final OptionalInt receivedSubnetId,
       final boolean producedLocally,
-      final Int2IntMap committeeSizes) {
+      final Optional<Int2IntMap> committeeSizes) {
     this.spec = spec;
     this.maybeAggregate = aggregateAndProof;
     this.attestation = attestation;
@@ -152,7 +151,7 @@ public class ValidatableAttestation {
     this.receivedSubnetId = receivedSubnetId;
     this.hashTreeRoot = Suppliers.memoize(attestation::hashTreeRoot);
     this.producedLocally = producedLocally;
-    this.committeesSize = Optional.of(committeeSizes);
+    this.committeesSize = committeeSizes;
   }
 
   public boolean isProducedLocally() {

@@ -498,10 +498,10 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
               committeeIndex ->
                   MatchingDataAttestationGroupV2.this
                       .singleAttestationsByCommitteeIndex
-                      .get(committeeIndex.intValue())
+                      .getOrDefault(committeeIndex.intValue(), Set.of())
                       .stream())
-          .orElse(
-              MatchingDataAttestationGroupV2.this.attestationsByValidatorCount.values().stream()
+              .orElseGet(
+                      () -> MatchingDataAttestationGroupV2.this.attestationsByValidatorCount.values().stream()
                   .flatMap(Set::stream) // streams the concurrent set safely
               )
           // Check against the iterator's local copy of included validators

@@ -55,6 +55,7 @@ import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestatio
 import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfilerCSV;
 import tech.pegasys.teku.statetransition.attestation.utils.RewardBasedAttestationSorter;
 import tech.pegasys.teku.statetransition.attestation.utils.RewardBasedAttestationSorter.AttestationWithRewardInfo;
+import tech.pegasys.teku.statetransition.attestation.utils.RewardBasedAttestationSorter.RewardBasedAttestationSorterFactory;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
 /**
@@ -100,6 +101,8 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
 
   private final AtomicInteger size = new AtomicInteger(0);
 
+  private final RewardBasedAttestationSorterFactory rewardBasedAttestationSorterFactory;
+
   public AggregatingAttestationPoolV2(
       final Spec spec,
       final RecentChainData recentChainData,
@@ -125,6 +128,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
     this.earlyDropSingleAttestations = earlyDropSingleAttestations;
     this.parallel = parallel;
     this.nanosSupplier = System::nanoTime;
+    this.rewardBasedAttestationSorterFactory =  new RewardBasedAttestationSorterFactory(spec, nanosSupplier);
   }
 
   @VisibleForTesting
@@ -133,7 +137,8 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
       final RecentChainData recentChainData,
       final MetricsSystem metricsSystem,
       final int maximumAttestationCount,
-      final LongSupplier nanosSupplier) {
+      final LongSupplier nanosSupplier,
+      final RewardBasedAttestationSorterFactory rewardBasedAttestationSorterFactory) {
     this.spec = spec;
     this.recentChainData = recentChainData;
     this.sizeGauge =
@@ -149,6 +154,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
     this.earlyDropSingleAttestations = false;
     this.parallel = false;
     this.nanosSupplier = nanosSupplier;
+    this.rewardBasedAttestationSorterFactory = rewardBasedAttestationSorterFactory;
   }
 
   // No longer synchronized
@@ -413,7 +419,7 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
     final int previousEpochLimit = spec.getPreviousEpochAttestationCapacity(stateAtBlockSlot);
 
     final RewardBasedAttestationSorter rewardBasedAttestationSorter =
-        RewardBasedAttestationSorter.create(spec, stateAtBlockSlot, nanosSupplier);
+        rewardBasedAttestationSorterFactory.create(stateAtBlockSlot);
     final SchemaDefinitions schemaDefinitions =
         spec.atSlot(stateAtBlockSlot.getSlot()).getSchemaDefinitions();
 

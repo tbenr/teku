@@ -30,7 +30,7 @@ import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
  * aggregation and tracking of included validators.
  */
 public interface MatchingDataAttestationGroup extends Iterable<ValidatableAttestation> {
- long UNLIMITED_TIME_NANOS = Integer.MAX_VALUE;
+ long UNLIMITED_TIME_NANOS = Long.MAX_VALUE;
   /**
    * Gets the common AttestationData shared by all attestations in this group.
    *
