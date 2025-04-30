@@ -128,7 +128,8 @@ public class AggregatingAttestationPoolV2 implements AggregatingAttestationPool 
     this.earlyDropSingleAttestations = earlyDropSingleAttestations;
     this.parallel = parallel;
     this.nanosSupplier = System::nanoTime;
-    this.rewardBasedAttestationSorterFactory =  new RewardBasedAttestationSorterFactory(spec, nanosSupplier);
+    this.rewardBasedAttestationSorterFactory =
+        new RewardBasedAttestationSorterFactory(spec, nanosSupplier);
   }
 
   @VisibleForTesting

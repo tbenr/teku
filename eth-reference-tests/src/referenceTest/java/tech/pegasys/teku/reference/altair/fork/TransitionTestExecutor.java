@@ -13,7 +13,6 @@
 
 package tech.pegasys.teku.reference.altair.fork;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static tech.pegasys.teku.infrastructure.ssz.SszDataAssert.assertThatSszData;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -116,24 +115,29 @@ public class TransitionTestExecutor implements TestExecutor {
     assertThatSszData(result).isEqualByGettersTo(postState);
   }
 
-  private void verifyRewardsCalculators(final Spec spec, final BeaconState preState, final SignedBeaconBlock block, final BeaconState postState) {
+  private void verifyRewardsCalculators(
+      final Spec spec,
+      final BeaconState preState,
+      final SignedBeaconBlock block,
+      final BeaconState postState) {
     // only altair and above is supported
-    if(spec.atSlot(preState.getSlot()).getMilestone().isLessThan(SpecMilestone.ALTAIR)) {
+    if (spec.atSlot(preState.getSlot()).getMilestone().isLessThan(SpecMilestone.ALTAIR)) {
       return;
     }
 
-    final BlockRewardData asd = new BlockRewardCalculatorUtil(spec).getBlockRewardData(block.getMessage(), preState);
+    final BlockRewardData asd =
+        new BlockRewardCalculatorUtil(spec).getBlockRewardData(block.getMessage(), preState);
 
-    RewardBasedAttestationSorter asd2 = RewardBasedAttestationSorter.create(spec, preState, () -> 0);
+    RewardBasedAttestationSorter asd2 =
+        RewardBasedAttestationSorter.create(spec, preState, () -> 0);
 
     final UInt64 proposerIndex = block.getProposerIndex();
 
-    //calculate difference between preState and postState
+    // calculate difference between preState and postState
     final UInt64 pre = preState.getBalances().getElement(proposerIndex.intValue());
     final UInt64 post = postState.getBalances().getElement(proposerIndex.intValue());
 
-
-    if(asd.attestations() > 0) {
+    if (asd.attestations() > 0) {
       System.out.println("asd.attestations() = " + asd.attestations());
     }
   }

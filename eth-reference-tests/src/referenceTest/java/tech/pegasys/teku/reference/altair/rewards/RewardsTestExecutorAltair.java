@@ -120,7 +120,7 @@ public class RewardsTestExecutorAltair implements TestExecutor {
     final RewardAndPenaltyDeltas actualDeltas = function.get();
     assertThat(actualDeltas)
         .describedAs(expectedResultsFileName)
-            .usingRecursiveComparison()
+        .usingRecursiveComparison()
         .isEqualTo(expectedDeltas);
   }
 }

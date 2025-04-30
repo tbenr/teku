@@ -46,6 +46,16 @@ import tech.pegasys.teku.spec.logic.versions.altair.helpers.MiscHelpersAltair;
 
 public class RewardBasedAttestationSorter {
   private static final Logger LOG = LogManager.getLogger();
+  public static RewardBasedAttestationSorter NOOP = new RewardBasedAttestationSorter(null, null, null, null, null) {
+    @Override
+    public List<AttestationWithRewardInfo> sort(
+        final List<ValidatableAttestation> attestations, final int maxAttestations) {
+      return attestations.stream()
+          .map(att -> new AttestationWithRewardInfo(att, null, false, false, false, Map.of(), false, UInt64.ZERO))
+              .limit(maxAttestations)
+              .toList();
+    }
+  };
 
   private final Spec spec;
   private final BeaconStateAltair state;
@@ -73,7 +83,8 @@ public class RewardBasedAttestationSorter {
     checkState(MiscHelpersAltair.PARTICIPATION_FLAG_WEIGHTS.size() == 3);
   }
 
-  public static RewardBasedAttestationSorter create(final Spec spec, final BeaconState state, final LongSupplier nanosSupplier) {
+  public static RewardBasedAttestationSorter create(
+      final Spec spec, final BeaconState state, final LongSupplier nanosSupplier) {
     final SpecVersion specVersion = spec.atSlot(state.getSlot());
 
     return new RewardBasedAttestationSorter(
@@ -81,7 +92,7 @@ public class RewardBasedAttestationSorter {
         BeaconStateAltair.required(state),
         BeaconStateAccessorsAltair.required(specVersion.beaconStateAccessors()),
         specVersion.miscHelpers().toVersionAltair().orElseThrow(),
-            nanosSupplier);
+        nanosSupplier);
   }
 
   private RewardBasedAttestationSorter(
@@ -147,7 +158,8 @@ public class RewardBasedAttestationSorter {
 
       // we reached the limit or there are no more attestations to process
       if (finalSortedAttestations.size() >= maxAttestations || attestationQueue.isEmpty()) {
-        LOG.info("Sorting took: {} ms", (nanosSupplier.getAsLong() - initializationEnded) / 1_000_000);
+        LOG.info(
+            "Sorting took: {} ms", (nanosSupplier.getAsLong() - initializationEnded) / 1_000_000);
         return finalSortedAttestations;
       }
 

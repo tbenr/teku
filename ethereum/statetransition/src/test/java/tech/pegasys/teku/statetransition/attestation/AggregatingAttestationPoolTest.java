@@ -34,6 +34,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
+
+import org.assertj.core.api.AbstractIntegerAssert;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.TestTemplate;
 import org.mockito.ArgumentMatchers;
@@ -66,12 +68,12 @@ public abstract class AggregatingAttestationPoolTest {
 
   private Spec spec;
   private SpecMilestone specMilestone;
-  private DataStructureUtil dataStructureUtil;
-  private Optional<UInt64> committeeIndex;
+  protected DataStructureUtil dataStructureUtil;
+  protected Optional<UInt64> committeeIndex;
   private final Spec mockSpec = mock(Spec.class);
   private final RecentChainData mockRecentChainData = mock(RecentChainData.class);
 
-  private AggregatingAttestationPool aggregatingPool;
+  protected AggregatingAttestationPool aggregatingPool;
 
   private final AttestationForkChecker forkChecker = mock(AttestationForkChecker.class);
 
@@ -183,7 +185,7 @@ public abstract class AggregatingAttestationPoolTest {
     aggregatingPool.onAttestationsIncludedInBlock(ONE, List.of(attestation));
     // Attestation isn't added because it's already redundant
     aggregatingPool.add(ValidatableAttestation.fromValidator(spec, attestation));
-    assertThat(aggregatingPool.getSize()).isZero();
+    assertSize().isZero();
 
     // But we now have a MatchingDataAttestationGroup with unknown shuffling seed present
     // It was previously assumed that wasn't possible so it threw an IllegalStateException
@@ -377,13 +379,13 @@ public abstract class AggregatingAttestationPoolTest {
 
     final BeaconState stateAtBlockSlot = dataStructureUtil.randomBeaconState();
 
-    assertThat(aggregatingPool.getSize()).isEqualTo(2);
+    assertSize().isEqualTo(2);
     aggregatingPool.onSlot(
         pruneAttestationData.getSlot().plus(ATTESTATION_RETENTION_SLOTS).plus(ONE));
 
     assertThat(aggregatingPool.getAttestationsForBlock(stateAtBlockSlot, forkChecker))
         .containsOnly(preserveAttestation);
-    assertThat(aggregatingPool.getSize()).isEqualTo(1);
+    assertSize().isEqualTo(1);
   }
 
   @TestTemplate
@@ -392,7 +394,7 @@ public abstract class AggregatingAttestationPoolTest {
 
     addAttestationFromValidators(attestationData, 1, 2, 3, 4);
     addAttestationFromValidators(attestationData, 2, 5);
-    assertThat(aggregatingPool.getSize()).isEqualTo(2);
+    assertSize().isEqualTo(2);
   }
 
   @TestTemplate
@@ -403,7 +405,7 @@ public abstract class AggregatingAttestationPoolTest {
 
     when(mockRecentChainData.getCurrentEpoch()).thenReturn(Optional.of(ZERO));
     aggregatingPool.onAttestationsIncludedInBlock(ZERO, List.of(attestationToRemove));
-    assertThat(aggregatingPool.getSize()).isEqualTo(1);
+    assertSize().isEqualTo(1);
   }
 
   @TestTemplate
@@ -412,7 +414,7 @@ public abstract class AggregatingAttestationPoolTest {
 
     final Attestation attestation = addAttestationFromValidators(attestationData, 1, 2, 3, 4);
     aggregatingPool.add(ValidatableAttestation.from(spec, attestation));
-    assertThat(aggregatingPool.getSize()).isEqualTo(1);
+    assertSize().isEqualTo(1);
   }
 
   @TestTemplate
@@ -420,13 +422,13 @@ public abstract class AggregatingAttestationPoolTest {
     final AttestationData attestationData = dataStructureUtil.randomAttestationData(ZERO);
     addAttestationFromValidators(attestationData, 1, 2, 3);
     addAttestationFromValidators(attestationData, 4, 5);
-    assertThat(aggregatingPool.getSize()).isEqualTo(2);
+    assertSize().isEqualTo(2);
     final Attestation attestationToRemove =
         addAttestationFromValidators(attestationData, 1, 2, 3, 4, 5);
 
     when(mockRecentChainData.getCurrentEpoch()).thenReturn(Optional.of(ZERO));
     aggregatingPool.onAttestationsIncludedInBlock(ZERO, List.of(attestationToRemove));
-    assertThat(aggregatingPool.getSize()).isEqualTo(0);
+    assertSize().isEqualTo(0);
   }
 
   @TestTemplate
@@ -437,7 +439,7 @@ public abstract class AggregatingAttestationPoolTest {
     addAttestationFromValidators(attestationData, 4, 5);
     addAttestationFromValidators(attestationData, 6);
     addAttestationFromValidators(attestationData, 7, 8);
-    assertThat(aggregatingPool.getSize()).isEqualTo(5);
+    assertSize().isEqualTo(5);
   }
 
   @TestTemplate
@@ -451,11 +453,11 @@ public abstract class AggregatingAttestationPoolTest {
 
     final Attestation attestationToRemove =
         addAttestationFromValidators(attestationData, 1, 2, 3, 4, 5);
-    assertThat(aggregatingPool.getSize()).isEqualTo(5);
+    assertSize().isEqualTo(5);
 
     when(mockRecentChainData.getCurrentEpoch()).thenReturn(Optional.of(ONE));
     aggregatingPool.onAttestationsIncludedInBlock(ZERO, List.of(attestationToRemove));
-    assertThat(aggregatingPool.getSize()).isEqualTo(2);
+    assertSize().isEqualTo(2);
   }
 
   @TestTemplate
@@ -471,7 +473,7 @@ public abstract class AggregatingAttestationPoolTest {
     addAttestationFromValidators(attestationData1, 4, 5);
     addAttestationFromValidators(attestationData2, 5, 6);
 
-    assertThat(aggregatingPool.getSize()).isEqualTo(5);
+    assertSize().isEqualTo(5);
 
     final BeaconState slot1State = dataStructureUtil.randomBeaconState(ONE);
     assertThat(aggregatingPool.getAttestationsForBlock(slot1State, forkChecker)).isNotEmpty();
@@ -482,7 +484,7 @@ public abstract class AggregatingAttestationPoolTest {
       // v2 don't immediately drop attestations on add
       aggregatingPool.onSlot(UInt64.valueOf(3));
     }
-    assertThat(aggregatingPool.getSize()).isEqualTo(4);
+    assertSize().isEqualTo(4);
     assertThat(aggregatingPool.getAttestationsForBlock(slot1State, forkChecker)).isEmpty();
   }
 
@@ -496,14 +498,14 @@ public abstract class AggregatingAttestationPoolTest {
     addAttestationFromValidators(attestationData, 4, 5);
     addAttestationFromValidators(attestationData, 5, 6);
 
-    assertThat(aggregatingPool.getSize()).isEqualTo(5);
+    assertSize().isEqualTo(5);
 
     final BeaconState slot1State = dataStructureUtil.randomBeaconState(ONE);
     assertThat(aggregatingPool.getAttestationsForBlock(slot1State, forkChecker)).isNotEmpty();
 
     addAttestationFromValidators(attestationData, 6, 7);
     // Can't drop anything as we only have one slot.
-    assertThat(aggregatingPool.getSize()).isEqualTo(6);
+    assertSize().isEqualTo(6);
   }
 
   @TestTemplate
@@ -599,10 +601,12 @@ public abstract class AggregatingAttestationPoolTest {
     // Post Electra the committee index filter is applied to the committee bits
     final AttestationData attestationData1 = dataStructureUtil.randomAttestationData();
     final AttestationData attestationData2 = dataStructureUtil.randomAttestationData();
-    final Attestation attestation1 = addAttestationFromValidators(attestationData1, 1, 2, 3);
+
+    // we just add single attestations here due to the pool v2 limitation
+    final Attestation attestation1 = addAttestationFromValidators(attestationData1, 1);
     final Optional<UInt64> committeeIndexFilter = committeeIndex;
     committeeIndex = Optional.of(committeeIndex.get().plus(1));
-    addAttestationFromValidators(attestationData2, 4, 5, 6);
+    addAttestationFromValidators(attestationData2, 2);
     assertThat(aggregatingPool.getAttestations(Optional.empty(), committeeIndexFilter))
         .containsExactly(attestation1);
   }
@@ -635,7 +639,7 @@ public abstract class AggregatingAttestationPoolTest {
 
     // But still shouldn't be able to add a redundant attestation later
     addAttestationFromValidators(attestationData, 2, 3);
-    assertThat(aggregatingPool.getSize()).isZero();
+    assertSize().isZero();
   }
 
   @TestTemplate
@@ -647,7 +651,7 @@ public abstract class AggregatingAttestationPoolTest {
     aggregatingPool.onAttestationsIncludedInBlock(
         ONE, List.of(createAttestation(attestationData, 1, 2, 3, 4)));
 
-    assertThat(aggregatingPool.getSize()).isZero();
+    assertSize().isZero();
   }
 
   @TestTemplate
@@ -661,14 +665,14 @@ public abstract class AggregatingAttestationPoolTest {
 
     // Should now be able to add attestations that were redundant
     addAttestationFromValidators(attestationData, 2, 3);
-    assertThat(aggregatingPool.getSize()).isEqualTo(1);
+    assertSize().isEqualTo(1);
   }
 
   private Attestation addAttestationFromValidators(final UInt64 slot, final int... validators) {
     return addAttestationFromValidators(dataStructureUtil.randomAttestationData(slot), validators);
   }
 
-  private Attestation addAttestationFromValidators(
+  protected Attestation addAttestationFromValidators(
       final AttestationData data, final int... validators) {
     return addAttestationFromValidators(data, spec, validators);
   }
@@ -750,5 +754,12 @@ public abstract class AggregatingAttestationPoolTest {
     }
     return attestationSchema.create(
         bitlist, data, dataStructureUtil.randomSignature(), committeeBits);
+  }
+
+  private AbstractIntegerAssert<?> assertSize() {
+    if(aggregatingPool instanceof AggregatingAttestationPoolV2) {
+      aggregatingPool.onSlot(ONE);
+    }
+    return assertThat(aggregatingPool.getSize());
   }
 }

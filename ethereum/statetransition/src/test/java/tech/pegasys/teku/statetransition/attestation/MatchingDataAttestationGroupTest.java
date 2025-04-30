@@ -98,12 +98,12 @@ public abstract class MatchingDataAttestationGroupTest {
   public void remove_multipleCallsToRemoveShouldAggregate() {
 
     // Create attestations that will be removed
-    final ValidatableAttestation attestation1 = createAttestation(1,2);
-    final ValidatableAttestation attestation2 = createAttestation(3,4);
+    final ValidatableAttestation attestation1 = createAttestation(1, 2);
+    final ValidatableAttestation attestation2 = createAttestation(3, 4);
 
     // Add some attestations
-    final ValidatableAttestation attestation3 = addAttestation(5,6);
-    addAttestation(1, 2,3);
+    final ValidatableAttestation attestation3 = addAttestation(5, 6);
+    addAttestation(1, 2, 3);
 
     int numRemoved = group.onAttestationIncludedInBlock(UInt64.ZERO, attestation1.getAttestation());
     assertThat(numRemoved).isEqualTo(0);
@@ -114,9 +114,9 @@ public abstract class MatchingDataAttestationGroupTest {
 
   @TestTemplate
   public void remove_shouldRemoveAttestationsThatAreAggregatedIntoRemovedAttestation() {
-    final ValidatableAttestation attestation1 = addAttestation(1,2);
-    final ValidatableAttestation attestation2 = addAttestation(3,4);
-    final ValidatableAttestation attestation3 = addAttestation(5,6);
+    final ValidatableAttestation attestation1 = addAttestation(1, 2);
+    final ValidatableAttestation attestation2 = addAttestation(3, 4);
+    final ValidatableAttestation attestation3 = addAttestation(5, 6);
 
     int numRemoved =
         group.onAttestationIncludedInBlock(
@@ -173,8 +173,8 @@ public abstract class MatchingDataAttestationGroupTest {
 
   @TestTemplate
   public void iterator_shouldAggregateAttestationsWhereValidatorsDoNotOverlap() {
-    final ValidatableAttestation attestation1 = addAttestation(1,2);
-    final ValidatableAttestation attestation2 = addAttestation(3,4);
+    final ValidatableAttestation attestation1 = addAttestation(1, 2);
+    final ValidatableAttestation attestation2 = addAttestation(3, 4);
 
     final Attestation expected =
         aggregateAttestations(attestation1.getAttestation(), attestation2.getAttestation());
@@ -229,8 +229,8 @@ public abstract class MatchingDataAttestationGroupTest {
     // First aggregate created will have validators 1,2,3,4,5 which makes the 2,4,5 attestation
     // redundant, but iteration will have already passed it before it becomes redundant
     final ValidatableAttestation useful1 = addAttestation(1, 2, 3);
-    addAttestation(2, 4,5);
-    final ValidatableAttestation useful2 = addAttestation(4,5);
+    addAttestation(2, 4, 5);
+    final ValidatableAttestation useful2 = addAttestation(4, 5);
 
     assertThat(group.stream())
         .containsExactly(
@@ -405,7 +405,8 @@ public abstract class MatchingDataAttestationGroupTest {
             aggregationBits, attestationData, dataStructureUtil.randomSignature(), committeeBits);
 
     final ValidatableAttestation validatableAttestation =
-        ValidatableAttestation.from(spec, singleAttestation.orElse(attestation), Optional.of(committeeSizes));
+        ValidatableAttestation.from(
+            spec, singleAttestation.orElse(attestation), Optional.of(committeeSizes));
 
     singleAttestation.ifPresent(
         __ -> validatableAttestation.convertToAggregatedFormatFromSingleAttestation(attestation));

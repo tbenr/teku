@@ -78,7 +78,9 @@ public class AggregateAttestationBuilder {
                         .map(Attestation::getAggregateSignature)
                         .toList()),
                 currentAggregateBits::getCommitteeBits),
-            currentAggregateBits.requiresCommitteeBits() ? Optional.of(currentAggregateBits.getCommitteesSize()) : Optional.empty());
+        currentAggregateBits.requiresCommitteeBits()
+            ? Optional.of(currentAggregateBits.getCommitteesSize())
+            : Optional.empty());
   }
 
   public Collection<ValidatableAttestation> getIncludedAttestations() {
