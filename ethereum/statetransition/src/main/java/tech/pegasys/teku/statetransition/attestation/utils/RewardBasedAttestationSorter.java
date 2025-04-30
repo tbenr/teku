@@ -46,7 +46,7 @@ import tech.pegasys.teku.spec.logic.versions.altair.helpers.MiscHelpersAltair;
 
 public class RewardBasedAttestationSorter {
   private static final Logger LOG = LogManager.getLogger();
-  public static RewardBasedAttestationSorter NOOP =
+  public static final RewardBasedAttestationSorter NOOP =
       new RewardBasedAttestationSorter(null, null, null, null, null) {
         @Override
         public List<AttestationWithRewardInfo> sort(

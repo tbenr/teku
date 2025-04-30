@@ -128,8 +128,8 @@ import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPoolV
 import tech.pegasys.teku.statetransition.attestation.AttestationManager;
 import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfiler;
 import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfilerCSV;
-import tech.pegasys.teku.statetransition.attestation.v1.AggregatingAttestationPoolV1;
-import tech.pegasys.teku.statetransition.attestation.v2.AggregatingAttestationPoolV2;
+import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPoolV1;
+import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPoolV2;
 import tech.pegasys.teku.statetransition.blobs.BlobSidecarManager;
 import tech.pegasys.teku.statetransition.blobs.BlobSidecarManager.RemoteOrigin;
 import tech.pegasys.teku.statetransition.blobs.BlobSidecarManagerImpl;

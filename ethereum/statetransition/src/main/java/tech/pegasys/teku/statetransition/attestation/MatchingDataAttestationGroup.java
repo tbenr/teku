@@ -71,7 +71,7 @@ public interface MatchingDataAttestationGroup extends Iterable<ValidatableAttest
    */
   Stream<ValidatableAttestation> stream(Optional<UInt64> committeeIndex, long timeLimitNanos);
 
-  default Stream<ValidatableAttestation> stream(Optional<UInt64> committeeIndex) {
+  default Stream<ValidatableAttestation> stream(final Optional<UInt64> committeeIndex) {
     return stream(committeeIndex, UNLIMITED_TIME_NANOS);
   }
 
