@@ -496,10 +496,10 @@ public class MatchingDataAttestationGroupV2 implements MatchingDataAttestationGr
       return maybeCommitteeIndex
           .map(
               committeeIndex ->
-                      // We only consider single attestations for the committee index
-                      // the main use case is committee aggregation.
-                      // The issue is related to getAttestation API,
-                      // so we won't return aggregates when committeeIndex is specified in the call.
+                  // We only consider single attestations for the committee index
+                  // the main use case is committee aggregation.
+                  // The issue is related to getAttestation API,
+                  // so we won't return aggregates when committeeIndex is specified in the call.
                   MatchingDataAttestationGroupV2.this
                       .singleAttestationsByCommitteeIndex
                       .getOrDefault(committeeIndex.intValue(), Set.of())

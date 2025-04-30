@@ -46,16 +46,20 @@ import tech.pegasys.teku.spec.logic.versions.altair.helpers.MiscHelpersAltair;
 
 public class RewardBasedAttestationSorter {
   private static final Logger LOG = LogManager.getLogger();
-  public static RewardBasedAttestationSorter NOOP = new RewardBasedAttestationSorter(null, null, null, null, null) {
-    @Override
-    public List<AttestationWithRewardInfo> sort(
-        final List<ValidatableAttestation> attestations, final int maxAttestations) {
-      return attestations.stream()
-          .map(att -> new AttestationWithRewardInfo(att, null, false, false, false, Map.of(), false, UInt64.ZERO))
+  public static RewardBasedAttestationSorter NOOP =
+      new RewardBasedAttestationSorter(null, null, null, null, null) {
+        @Override
+        public List<AttestationWithRewardInfo> sort(
+            final List<ValidatableAttestation> attestations, final int maxAttestations) {
+          return attestations.stream()
+              .map(
+                  att ->
+                      new AttestationWithRewardInfo(
+                          att, null, false, false, false, Map.of(), false, UInt64.ZERO))
               .limit(maxAttestations)
               .toList();
-    }
-  };
+        }
+      };
 
   private final Spec spec;
   private final BeaconStateAltair state;

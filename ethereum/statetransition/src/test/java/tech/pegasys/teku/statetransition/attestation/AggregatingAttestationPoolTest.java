@@ -34,7 +34,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
-
 import org.assertj.core.api.AbstractIntegerAssert;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.TestTemplate;
@@ -757,7 +756,7 @@ public abstract class AggregatingAttestationPoolTest {
   }
 
   private AbstractIntegerAssert<?> assertSize() {
-    if(aggregatingPool instanceof AggregatingAttestationPoolV2) {
+    if (aggregatingPool instanceof AggregatingAttestationPoolV2) {
       aggregatingPool.onSlot(ONE);
     }
     return assertThat(aggregatingPool.getSize());

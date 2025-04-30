@@ -15,34 +15,22 @@ package tech.pegasys.teku.statetransition.attestation.v2;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static tech.pegasys.teku.spec.SpecMilestone.ELECTRA;
 import static tech.pegasys.teku.statetransition.attestation.AggregatorUtil.aggregateAttestations;
 import static tech.pegasys.teku.statetransition.attestation.utils.RewardBasedAttestationSorter.NOOP;
 
-import java.util.List;
 import java.util.Optional;
-
-import org.assertj.core.api.Assumptions;
 import org.hyperledger.besu.metrics.noop.NoOpMetricsSystem;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.TestTemplate;
-import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecContext;
-import tech.pegasys.teku.spec.TestSpecInvocationContextProvider.SpecContext;
 import tech.pegasys.teku.spec.datastructures.attestation.ValidatableAttestation;
 import tech.pegasys.teku.spec.datastructures.operations.Attestation;
 import tech.pegasys.teku.spec.datastructures.operations.AttestationData;
 import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPool;
 import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPoolTest;
-import tech.pegasys.teku.statetransition.attestation.utils.RewardBasedAttestationSorter;
-import tech.pegasys.teku.statetransition.attestation.utils.RewardBasedAttestationSorter.AttestationWithRewardInfo;
 import tech.pegasys.teku.statetransition.attestation.utils.RewardBasedAttestationSorter.RewardBasedAttestationSorterFactory;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
@@ -53,7 +41,7 @@ public class AggregatingAttestationPoolV2Test extends AggregatingAttestationPool
   public AggregatingAttestationPool instantiatePool(
       final Spec spec, final RecentChainData recentChainData, final int maxAttestations) {
     final RewardBasedAttestationSorterFactory sorterFactory =
-            mock(RewardBasedAttestationSorterFactory.class);
+        mock(RewardBasedAttestationSorterFactory.class);
     when(sorterFactory.create(any())).thenReturn(NOOP);
 
     return new AggregatingAttestationPoolV2(
@@ -65,18 +53,15 @@ public class AggregatingAttestationPoolV2Test extends AggregatingAttestationPool
         sorterFactory);
   }
 
-
   @TestTemplate
   @Override
   public void createAggregateFor_shouldAggregateAttestationsWithMatchingData() {
-    //This test is replaced by the one below
+    // This test is replaced by the one below
   }
 
   @TestTemplate
   @Override
-  public void createAggregateFor_shouldReturnBestAggregateForMatchingDataWhenSomeOverlap() {
-
-  }
+  public void createAggregateFor_shouldReturnBestAggregateForMatchingDataWhenSomeOverlap() {}
 
   @TestTemplate
   public void createAggregateFor_shouldReturnAggregateSingleAttestations() {
@@ -85,8 +70,8 @@ public class AggregatingAttestationPoolV2Test extends AggregatingAttestationPool
     final Attestation attestation2 = addAttestationFromValidators(attestationData, 2);
 
     final Optional<ValidatableAttestation> result =
-            aggregatingPool.createAggregateFor(attestationData.hashTreeRoot(), committeeIndex);
+        aggregatingPool.createAggregateFor(attestationData.hashTreeRoot(), committeeIndex);
     assertThat(result.map(ValidatableAttestation::getAttestation))
-            .contains(aggregateAttestations(attestation1, attestation2));
+        .contains(aggregateAttestations(attestation1, attestation2));
   }
 }
