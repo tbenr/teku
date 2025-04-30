@@ -31,13 +31,13 @@ import tech.pegasys.teku.statetransition.attestation.utils.AttestationBitsAggreg
  * Builds an aggregate attestation, providing functions to test if an attestation can be added or is
  * made redundant by the current aggregate.
  */
-public class AggregateAttestationBuilder {
+class AggregateAttestationBuilder {
   private final Spec spec;
   private final Set<ValidatableAttestation> includedAttestations = new HashSet<>();
   private final AttestationData attestationData;
   private AttestationBitsAggregator currentAggregateBits;
 
-  public AggregateAttestationBuilder(final Spec spec, final AttestationData attestationData) {
+  AggregateAttestationBuilder(final Spec spec, final AttestationData attestationData) {
     this.spec = spec;
     this.attestationData = attestationData;
   }

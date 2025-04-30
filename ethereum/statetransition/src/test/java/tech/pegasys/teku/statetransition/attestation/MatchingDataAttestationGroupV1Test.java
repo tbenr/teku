@@ -11,30 +11,25 @@
  * specific language governing permissions and limitations under the License.
  */
 
-package tech.pegasys.teku.statetransition.attestation.v1;
+package tech.pegasys.teku.statetransition.attestation;
 
 import static tech.pegasys.teku.spec.SpecMilestone.ELECTRA;
 import static tech.pegasys.teku.spec.SpecMilestone.PHASE0;
 
-import org.hyperledger.besu.metrics.noop.NoOpMetricsSystem;
+import it.unimi.dsi.fastutil.ints.Int2IntMap;
+import java.util.Optional;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecContext;
-import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPool;
-import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPoolTest;
-import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfilerCSV;
-import tech.pegasys.teku.storage.client.RecentChainData;
+import tech.pegasys.teku.spec.datastructures.operations.AttestationData;
 
 @TestSpecContext(milestone = {PHASE0, ELECTRA})
-public class AggregatingAttestationPoolV1Test extends AggregatingAttestationPoolTest {
+public class MatchingDataAttestationGroupV1Test extends MatchingDataAttestationGroupTest {
 
   @Override
-  public AggregatingAttestationPool instantiatePool(
-      final Spec spec, final RecentChainData recentChainData, final int maxAttestations) {
-    return new AggregatingAttestationPoolV1(
-        spec,
-        recentChainData,
-        new NoOpMetricsSystem(),
-        AggregatingAttestationPoolProfilerCSV.NOOP,
-        maxAttestations);
+  MatchingDataAttestationGroup instantiateGroup(
+      final Spec spec,
+      final AttestationData attestationData,
+      final Optional<Int2IntMap> committeeSizes) {
+    return new MatchingDataAttestationGroupV1(spec, attestationData, committeeSizes);
   }
 }

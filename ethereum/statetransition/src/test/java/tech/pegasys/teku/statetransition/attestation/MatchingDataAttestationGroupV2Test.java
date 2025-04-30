@@ -11,7 +11,7 @@
  * specific language governing permissions and limitations under the License.
  */
 
-package tech.pegasys.teku.statetransition.attestation.v2;
+package tech.pegasys.teku.statetransition.attestation;
 
 import static tech.pegasys.teku.spec.SpecMilestone.ELECTRA;
 import static tech.pegasys.teku.spec.SpecMilestone.PHASE0;
@@ -21,14 +21,12 @@ import java.util.Optional;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecContext;
 import tech.pegasys.teku.spec.datastructures.operations.AttestationData;
-import tech.pegasys.teku.statetransition.attestation.MatchingDataAttestationGroup;
-import tech.pegasys.teku.statetransition.attestation.MatchingDataAttestationGroupTest;
 
 @TestSpecContext(milestone = {PHASE0, ELECTRA})
 public class MatchingDataAttestationGroupV2Test extends MatchingDataAttestationGroupTest {
 
   @Override
-  public MatchingDataAttestationGroup instantiateGroup(
+  MatchingDataAttestationGroup instantiateGroup(
       final Spec spec,
       final AttestationData attestationData,
       final Optional<Int2IntMap> committeeSizes) {
