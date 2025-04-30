@@ -33,9 +33,6 @@ import tech.pegasys.teku.spec.config.SpecConfigLoader;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.StateTransitionException;
-import tech.pegasys.teku.spec.logic.common.util.BlockRewardCalculatorUtil;
-import tech.pegasys.teku.spec.logic.common.util.BlockRewardCalculatorUtil.BlockRewardData;
-import tech.pegasys.teku.statetransition.attestation.utils.RewardBasedAttestationSorter;
 
 public class TransitionTestExecutor implements TestExecutor {
 
@@ -109,37 +106,8 @@ public class TransitionTestExecutor implements TestExecutor {
             "Failed to process block " + i + " at slot " + block.getSlot() + ": " + e.getMessage(),
             e);
       }
-
-      verifyRewardsCalculators(spec, preState, block, result);
     }
     assertThatSszData(result).isEqualByGettersTo(postState);
-  }
-
-  private void verifyRewardsCalculators(
-      final Spec spec,
-      final BeaconState preState,
-      final SignedBeaconBlock block,
-      final BeaconState postState) {
-    // only altair and above is supported
-    if (spec.atSlot(preState.getSlot()).getMilestone().isLessThan(SpecMilestone.ALTAIR)) {
-      return;
-    }
-
-    final BlockRewardData asd =
-        new BlockRewardCalculatorUtil(spec).getBlockRewardData(block.getMessage(), preState);
-
-    RewardBasedAttestationSorter asd2 =
-        RewardBasedAttestationSorter.create(spec, preState, () -> 0);
-
-    final UInt64 proposerIndex = block.getProposerIndex();
-
-    // calculate difference between preState and postState
-    final UInt64 pre = preState.getBalances().getElement(proposerIndex.intValue());
-    final UInt64 post = postState.getBalances().getElement(proposerIndex.intValue());
-
-    if (asd.attestations() > 0) {
-      System.out.println("asd.attestations() = " + asd.attestations());
-    }
   }
 
   @SuppressWarnings({"unused", "UnusedVariable"})
