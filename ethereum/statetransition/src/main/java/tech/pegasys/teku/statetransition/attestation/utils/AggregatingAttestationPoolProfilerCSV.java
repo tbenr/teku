@@ -23,13 +23,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import org.apache.commons.csv.CSVFormat;
-import org.apache.commons.csv.CSVPrinter;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import tech.pegasys.teku.bls.BLSSignatureVerifier;
@@ -81,9 +77,9 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
     "data"
   };
 
-  private final FileWriter packingSummaryCsvPrinter;
-  private final FileWriter attestationDetailsCsvPrinter;
-  private final FileWriter attestationImprovementsCsvPrinter;
+  private final FileWriter packingSummaryCsvWriter;
+  private final FileWriter attestationDetailsCsvWriter;
+  private final FileWriter attestationImprovementsCsvWriter;
 
   private static final long PROPOSER_REWARD_DENOMINATOR =
       WEIGHT_DENOMINATOR
@@ -100,11 +96,10 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
       File packingSummaryFile = outputDir.resolve("packing_summary.csv").toFile();
 
       if (packingSummaryFile.exists()) {
-        packingSummaryCsvPrinter = new FileWriter(packingSummaryFile, StandardCharsets.UTF_8, true);
+        packingSummaryCsvWriter = new FileWriter(packingSummaryFile, StandardCharsets.UTF_8, true);
       } else {
-        packingSummaryCsvPrinter =
-            new FileWriter(packingSummaryFile, StandardCharsets.UTF_8, false);
-        packingSummaryCsvPrinter.write(String.join(",", PACKING_SUMMARY_HEADERS));
+        packingSummaryCsvWriter = new FileWriter(packingSummaryFile, StandardCharsets.UTF_8, false);
+        packingSummaryCsvWriter.write(String.join(",", PACKING_SUMMARY_HEADERS));
       }
 
     } catch (final IOException e) {
@@ -114,12 +109,12 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
     try {
       File attestationsDetailsFile = outputDir.resolve("attestations_details.csv").toFile();
       if (attestationsDetailsFile.exists()) {
-        attestationDetailsCsvPrinter =
+        attestationDetailsCsvWriter =
             new FileWriter(attestationsDetailsFile, StandardCharsets.UTF_8, true);
       } else {
-        attestationDetailsCsvPrinter =
+        attestationDetailsCsvWriter =
             new FileWriter(attestationsDetailsFile, StandardCharsets.UTF_8, false);
-        attestationDetailsCsvPrinter.write(String.join(",", ATTESTATION_DETAILS_HEADERS));
+        attestationDetailsCsvWriter.write(String.join(",", ATTESTATION_DETAILS_HEADERS));
       }
     } catch (final IOException e) {
       throw new RuntimeException(e);
@@ -129,12 +124,12 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
       File packingSummaryFile = outputDir.resolve("fill_up_details.csv").toFile();
 
       if (packingSummaryFile.exists()) {
-        attestationImprovementsCsvPrinter =
+        attestationImprovementsCsvWriter =
             new FileWriter(packingSummaryFile, StandardCharsets.UTF_8, true);
       } else {
-        attestationImprovementsCsvPrinter =
+        attestationImprovementsCsvWriter =
             new FileWriter(packingSummaryFile, StandardCharsets.UTF_8, false);
-        attestationDetailsCsvPrinter.write(String.join(",",ATTESTATION_IMPROVEMENT_HEADERS));
+        attestationDetailsCsvWriter.write(String.join(",", ATTESTATION_IMPROVEMENT_HEADERS));
       }
     } catch (final IOException e) {
       throw new RuntimeException(e);
@@ -191,12 +186,14 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
           packingTotalTimeMillis);
 
       try {
-        packingSummaryCsvPrinter.write(String.join(",",
-            slot.toString(),
-            String.valueOf(aggregatingAttestationPoolSize),
+        packingSummaryCsvWriter.write(
+            String.join(
+                ",",
+                slot.toString(),
+                String.valueOf(aggregatingAttestationPoolSize),
                 String.valueOf(attestationPacking.size()),
                 String.valueOf(packingTotalTimeMillis),
-            rewards));
+                rewards));
       } catch (IOException e) {
         LOG.warn("Failed to write to CSV", e);
       }
@@ -211,21 +208,22 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
 
                 var numerator = rewardsCalculator.getRewardNumeratorForAttestation(attestation);
                 try {
-                  attestationDetailsCsvPrinter.write(String.join(
+                  attestationDetailsCsvWriter.write(
+                      String.join(
                           slot.toString(),
                           String.valueOf(i),
-                      preState.getSlot().minus(data.getSlot()).toString(),
-                      data.getBeaconBlockRoot().toHexString(),
-                      data.getSource().getEpoch().toString(),
-                      data.getTarget().getEpoch().toString(),
+                          preState.getSlot().minus(data.getSlot()).toString(),
+                          data.getBeaconBlockRoot().toHexString(),
+                          data.getSource().getEpoch().toString(),
+                          data.getTarget().getEpoch().toString(),
                           String.valueOf(attestation.getAggregationBits().getBitCount()),
-                      attestation
-                          .getCommitteeBits()
-                          .map(sszBits -> String.valueOf(sszBits.getBitCount()))
-                          .orElse("N/A"),
-                      getEthRewardFromNumerator(UInt64.valueOf(numerator)),
-                      gweiToEth(UInt64.valueOf(attestationRewards.get(i))),
-                      data.toString()));
+                          attestation
+                              .getCommitteeBits()
+                              .map(sszBits -> String.valueOf(sszBits.getBitCount()))
+                              .orElse("N/A"),
+                          getEthRewardFromNumerator(UInt64.valueOf(numerator)),
+                          gweiToEth(UInt64.valueOf(attestationRewards.get(i))),
+                          data.toString()));
                 } catch (IOException e) {
                   LOG.error("Failed to write to CSV", e);
                 }
@@ -235,19 +233,19 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
       LOG.error("Error occurred while profiling AggregatingAttestationPool", e);
     } finally {
       try {
-        packingSummaryCsvPrinter.flush();
+        packingSummaryCsvWriter.flush();
       } catch (IOException e) {
         LOG.error("Failed to flush CSV printer", e);
       }
 
       try {
-        attestationDetailsCsvPrinter.flush();
+        attestationDetailsCsvWriter.flush();
       } catch (IOException e) {
         LOG.error("Failed to flush CSV printer", e);
       }
 
       try {
-        attestationImprovementsCsvPrinter.flush();
+        attestationImprovementsCsvWriter.flush();
       } catch (IOException e) {
         LOG.error("Failed to flush CSV printer", e);
       }
@@ -275,16 +273,17 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
     var sortingRewardNumerator = validatableAttestationWithSortingReward.getRewardNumerator();
 
     try {
-      attestationImprovementsCsvPrinter.write(String.join(
-          stateAtBlockSlot.getSlot().toString(),
-          String.valueOf(lastAttestationIndex),
+      attestationImprovementsCsvWriter.write(
+          String.join(
+              stateAtBlockSlot.getSlot().toString(),
+              String.valueOf(lastAttestationIndex),
               String.valueOf(attestation.getAggregationBits().getBitCount()),
-          "0", // not filled up
-          getEthRewardFromNumerator(sortingRewardNumerator),
-          attestation.getData().getBeaconBlockRoot().toString(),
-          attestation.getData().getSource().getEpoch().toString(),
-          attestation.getData().getTarget().getEpoch().toString(),
-          attestation.getData().toString()));
+              "0", // not filled up
+              getEthRewardFromNumerator(sortingRewardNumerator),
+              attestation.getData().getBeaconBlockRoot().toString(),
+              attestation.getData().getSource().getEpoch().toString(),
+              attestation.getData().getTarget().getEpoch().toString(),
+              attestation.getData().toString()));
     } catch (final IOException e) {
       LOG.error("Error printing CSV record", e);
     }
@@ -299,16 +298,17 @@ public class AggregatingAttestationPoolProfilerCSV implements AggregatingAttesta
     var sortingRewardNumerator = validatableAttestationWithSortingReward.getRewardNumerator();
 
     try {
-      attestationImprovementsCsvPrinter.write(String.join(
-          stateAtBlockSlot.getSlot().toString(),
+      attestationImprovementsCsvWriter.write(
+          String.join(
+              stateAtBlockSlot.getSlot().toString(),
               String.valueOf(lastAttestationIndex),
               String.valueOf(attestation.getAggregationBits().getBitCount()),
-          "1", // filled up
-          getEthRewardFromNumerator(sortingRewardNumerator),
-          attestation.getData().getBeaconBlockRoot().toString(),
-          attestation.getData().getSource().getEpoch().toString(),
-          attestation.getData().getTarget().getEpoch().toString(),
-          attestation.getData().toString()));
+              "1", // filled up
+              getEthRewardFromNumerator(sortingRewardNumerator),
+              attestation.getData().getBeaconBlockRoot().toString(),
+              attestation.getData().getSource().getEpoch().toString(),
+              attestation.getData().getTarget().getEpoch().toString(),
+              attestation.getData().toString()));
     } catch (final IOException e) {
       LOG.error("Error printing CSV record", e);
     }
