@@ -43,7 +43,7 @@ class AttestationBitsAggregatorElectra implements AttestationBitsAggregator {
   private Int2IntMap committeeBitsStartingPositions;
   private final Int2IntMap committeesSize; // Assume effectively immutable
 
-  // Cache for lazy SSZ conversion. Marked transient as they are derived state.
+  // Cache for lazy SSZ conversion.
   private SszBitlist cachedAggregationBits = null;
   private SszBitvector cachedCommitteeBits = null;
   private int cachedAggregationBitlistSize = -1; // Cache the calculated size too
@@ -144,7 +144,7 @@ class AttestationBitsAggregatorElectra implements AttestationBitsAggregator {
     // Basic comparison using BitSet.equals() is efficient
     if (otherCommitteeBits.equals(this.internalCommitteeBits)) {
       // Faster path: Committee bits are the same
-      BitSet currentAggBitsClone = (BitSet) this.internalAggregationBits.clone();
+      final BitSet currentAggBitsClone = (BitSet) this.internalAggregationBits.clone();
       currentAggBitsClone.or(otherAggregationBits); // Modify the clone
 
       if (isAggregation) {
@@ -161,14 +161,14 @@ class AttestationBitsAggregatorElectra implements AttestationBitsAggregator {
 
     // --- Full merge required ---
     // Clone current state to attempt merge; only update if successful
-    BitSet potentialCommitteeBits = (BitSet) this.internalCommitteeBits.clone();
+    final BitSet potentialCommitteeBits = (BitSet) this.internalCommitteeBits.clone();
     potentialCommitteeBits.or(otherCommitteeBits);
 
     // Recalculate starting positions based on the potential combined committee bits
     // Note: This recalculation happens *before* we know if aggregation is valid.
-    Int2IntMap otherCommitteeBitsStartingPositions =
+    final Int2IntMap otherCommitteeBitsStartingPositions =
         calculateCommitteeStartingPositions(otherCommitteeBits, this.committeesSize);
-    Int2IntMap aggregatedCommitteeBitsStartingPositions =
+    final Int2IntMap aggregatedCommitteeBitsStartingPositions =
         calculateCommitteeStartingPositions(potentialCommitteeBits, this.committeesSize);
 
     // Determine the required size for the new combined aggregation bits
@@ -184,11 +184,11 @@ class AttestationBitsAggregatorElectra implements AttestationBitsAggregator {
     }
 
     // Use BitSet for efficient construction
-    BitSet potentialAggregationBits = new BitSet(combinedAggregationBitsSize);
+    final BitSet potentialAggregationBits = new BitSet(combinedAggregationBitsSize);
 
     // Calculate current starting positions based on *current* internal state
     // Needed for accessing *this* aggregator's bits correctly.
-    Int2IntMap currentCommitteeBitsStartingPositions = this.committeeBitsStartingPositions;
+    final Int2IntMap currentCommitteeBitsStartingPositions = this.committeeBitsStartingPositions;
 
     // Iterate over committees in the potential combined result
     for (int committeeIndex = potentialCommitteeBits.nextSetBit(0);
@@ -271,12 +271,6 @@ class AttestationBitsAggregatorElectra implements AttestationBitsAggregator {
         combinedCommitteeBits.length() - 1; // BitSet.length() gives index of highest set bit + 1
     if (lastCommitteeIndex < 0) { // Handle empty BitSet
       return -1;
-    }
-    // Need to find the actual highest *set* bit index if length() is misleading due to internal
-    // longs
-    lastCommitteeIndex = combinedCommitteeBits.previousSetBit(lastCommitteeIndex);
-    if (lastCommitteeIndex < 0) {
-      return -1; // Still empty
     }
 
     final int lastCommitteeStartingPosition = startingPositions.get(lastCommitteeIndex);
