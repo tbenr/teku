@@ -24,6 +24,7 @@ import static tech.pegasys.teku.spec.SpecMilestone.PHASE0;
 
 import it.unimi.dsi.fastutil.ints.Int2IntMap;
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
+import java.util.Optional;
 import org.apache.tuweni.bytes.Bytes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.TestTemplate;
@@ -212,7 +213,7 @@ public class AttestationGossipManagerTest {
     }
 
     final ValidatableAttestation validatableAttestation =
-        ValidatableAttestation.from(spec, attestationFromValidators, committeeSizes);
+        ValidatableAttestation.from(spec, attestationFromValidators, Optional.of(committeeSizes));
 
     if (attestationFromValidators.isSingleAttestation()) {
       validatableAttestation.convertToAggregatedFormatFromSingleAttestation(

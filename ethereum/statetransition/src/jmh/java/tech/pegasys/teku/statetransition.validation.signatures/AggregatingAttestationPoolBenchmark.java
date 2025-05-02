@@ -58,10 +58,10 @@ import tech.pegasys.teku.spec.logic.versions.electra.util.AttestationUtilElectra
 import tech.pegasys.teku.spec.schemas.SchemaDefinitionsElectra;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPool;
+import tech.pegasys.teku.statetransition.attestation.AggregatingAttestationPoolV2;
 import tech.pegasys.teku.statetransition.attestation.AttestationForkChecker;
 import tech.pegasys.teku.statetransition.attestation.utils.AggregatingAttestationPoolProfiler;
 import tech.pegasys.teku.statetransition.attestation.utils.RewardBasedAttestationSorter;
-import tech.pegasys.teku.statetransition.attestation.v2.AggregatingAttestationPoolV2;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
 @Warmup(iterations = 5, time = 2000, timeUnit = TimeUnit.MILLISECONDS)
