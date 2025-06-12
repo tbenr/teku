@@ -13,15 +13,20 @@
 
 package tech.pegasys.teku.infrastructure.async.stream;
 
+import java.util.ConcurrentModificationException;
 import java.util.Iterator;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 
 class SyncToAsyncIteratorImpl<T> extends AsyncIterator<T> {
-
+  private static final Logger LOG = LogManager.getLogger();
   private final Iterator<T> iterator;
   private AsyncStreamHandler<T> callback;
 
   SyncToAsyncIteratorImpl(final Iterator<T> iterator) {
+    LOG.info("SyncToAsyncIteratorImpl: {}", this);
+    Thread.dumpStack();
     this.iterator = iterator;
   }
 
@@ -57,6 +62,9 @@ class SyncToAsyncIteratorImpl<T> extends AsyncIterator<T> {
         }
       }
     } catch (Throwable e) {
+      if (e instanceof ConcurrentModificationException) {
+        LOG.info("ConcurrentModificationException SyncToAsyncIteratorImpl: {}", this);
+      }
       callback.onError(e);
     }
   }
