@@ -343,6 +343,11 @@ public class RemoteValidatorApiHandler implements RemoteValidatorApiChannel {
   }
 
   private <T> SafeFuture<T> sendRequest(final ExceptionThrowingSupplier<T> requestExecutor) {
+    // print caller method from the stack trace for debugging purposes
+    LOG.info(
+        "Sending request to remote validator API at {}. Caller: {}",
+        endpoint,
+        Thread.currentThread().getStackTrace()[3]);
     return asyncRunner.runAsync(() -> sendRequest(asyncRunner, requestExecutor, 0));
   }
 
