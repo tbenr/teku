@@ -36,10 +36,10 @@ class PendingRecoveryRequest {
       final DataColumnSlotAndIdentifier columnId,
       final SafeFuture<DataColumnSidecar> downloadFuture,
       final UInt64 timestamp,
-      final Duration timeout,
+      final Duration recoverTimeout,
       final Duration downloadTimeout) {
     this.downloadTimeoutMillis = timestamp.plus(downloadTimeout.toMillis());
-    this.taskTimeoutMillis = timestamp.plus(timeout.toMillis());
+    this.taskTimeoutMillis = timestamp.plus(recoverTimeout.toMillis());
     this.columnnId = columnId;
     this.downloadFuture = downloadFuture;
 

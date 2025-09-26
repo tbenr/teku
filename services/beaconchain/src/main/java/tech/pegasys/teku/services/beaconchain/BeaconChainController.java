@@ -193,6 +193,7 @@ import tech.pegasys.teku.statetransition.datacolumns.retriever.DataColumnReqResp
 import tech.pegasys.teku.statetransition.datacolumns.retriever.DataColumnSidecarRetriever;
 import tech.pegasys.teku.statetransition.datacolumns.retriever.RecoveringSidecarRetriever;
 import tech.pegasys.teku.statetransition.datacolumns.retriever.SimpleSidecarRetriever;
+import tech.pegasys.teku.statetransition.datacolumns.retriever.recovering.RefactoredRecoveringRetriever;
 import tech.pegasys.teku.statetransition.datacolumns.retriever.recovering.SidecarRetriever;
 import tech.pegasys.teku.statetransition.forkchoice.ForkChoice;
 import tech.pegasys.teku.statetransition.forkchoice.ForkChoiceNotifier;
@@ -906,15 +907,15 @@ public class BeaconChainController extends Service implements BeaconChainControl
               specConfigFulu.getNumberOfColumns());
     } else {
       recoveringSidecarRetriever =
-          new RecoveringSidecarRetriever(
+          new RefactoredRecoveringRetriever(
               sidecarRetriever,
               kzg,
               miscHelpersFulu,
               canonicalBlockResolver,
               dbAccessor,
               dasAsyncRunner,
-              Duration.ofMinutes(5),
               Duration.ofSeconds(30),
+              Duration.ofSeconds(40),
               timeProvider,
               specConfigFulu.getNumberOfColumns());
     }

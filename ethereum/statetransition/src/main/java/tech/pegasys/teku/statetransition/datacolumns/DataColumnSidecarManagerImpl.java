@@ -14,6 +14,8 @@
 package tech.pegasys.teku.statetransition.datacolumns;
 
 import java.util.Optional;
+import java.util.Random;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
@@ -70,12 +72,17 @@ public class DataColumnSidecarManagerImpl implements DataColumnSidecarManager {
         res -> {
           dasGossipLogger.onReceive(dataColumnSidecar, res);
           if (res.isAccept()) {
+            if(random.nextInt(4) == 0) {
+              LOG.info("Dropping DAS published from gossip for testing");
+              return;
+            }
             validDataColumnSidecarsSubscribers.forEach(
                 listener -> listener.onNewValidSidecar(dataColumnSidecar, RemoteOrigin.GOSSIP));
           }
         });
   }
 
+  static private Random random = new Random();
   @Override
   public void onDataColumnSidecarPublish(
       final DataColumnSidecar sidecar, final RemoteOrigin origin) {

@@ -65,7 +65,7 @@ public class SidecarRetriever implements DataColumnSidecarRetriever {
       final Duration recoveryCheckInterval,
       final TimeProvider timeProvider,
       final int numberOfColumns) {
-    downloader = delegate;
+    this.downloader = delegate;
     this.kzg = kzg;
     this.miscHelpersFulu = miscHelpersFulu;
     this.blockResolver = blockResolver;

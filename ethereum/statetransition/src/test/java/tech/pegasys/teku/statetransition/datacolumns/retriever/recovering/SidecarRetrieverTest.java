@@ -171,11 +171,11 @@ public class SidecarRetrieverTest {
     final DataColumnSlotAndIdentifier id = createId(block, 0);
     final SafeFuture<DataColumnSidecar> response = retriever.retrieve(id);
     timeProvider.advanceTimeBy(CHECK_INTERVAL);
-    stubAsyncRunner.executeQueuedActions();
+    stubAsyncRunner.executeDueActions();
     assertThat(retriever.pendingRequestCount()).isEqualTo(1);
 
     timeProvider.advanceTimeBy(RECOVERY_TIMEOUT.multipliedBy(2));
-    stubAsyncRunner.executeQueuedActions();
+    stubAsyncRunner.executeDueActions();
     assertThat(retriever.pendingRequestCount()).isZero();
     assertThat(response).isCompletedExceptionally();
   }

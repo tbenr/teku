@@ -20,11 +20,13 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Random;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -35,6 +37,7 @@ import tech.pegasys.teku.infrastructure.async.AsyncRunner;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.collections.cache.Cache;
 import tech.pegasys.teku.infrastructure.collections.cache.LRUCache;
+import tech.pegasys.teku.infrastructure.exceptions.ExceptionUtil;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.SpecMilestone;
@@ -108,9 +111,11 @@ public class SimpleSidecarRetriever
     final DataColumnSlotAndIdentifier dataColumnSlotAndIdentifier =
         DataColumnSlotAndIdentifier.fromDataColumn(sidecar);
 
+    LOG.trace("New validated sidecar: {}", dataColumnSlotAndIdentifier);
+
     Optional.ofNullable(pendingRequests.get(dataColumnSlotAndIdentifier))
         .filter(request -> !request.result.isDone())
-        .ifPresent(request -> reqRespCompleted(request, sidecar));
+        .ifPresent(request -> completePendingRequest(request, sidecar));
   }
 
   private Stream<RequestMatch> matchRequestsAndPeers() {
@@ -138,7 +143,13 @@ public class SimpleSidecarRetriever
     match.request.onPeerRequest(match.peer().nodeId);
     match.request.activeRpcRequest =
         new ActiveRequest(
-            reqRespPromise.whenComplete((sidecar, err) -> reqRespCompleted(match.request, sidecar)),
+            reqRespPromise.whenComplete((sidecar, err) -> {
+              if (err != null) {
+                deactivatePendingRequest(match.request, err);
+                return;
+              }
+              completePendingRequest(match.request, sidecar);
+            }),
             match.peer);
     return true;
   }
@@ -205,14 +216,20 @@ public class SimpleSidecarRetriever
     reqResp.flush();
   }
 
-  private void reqRespCompleted(
-      final RetrieveRequest request, final DataColumnSidecar maybeResult) {
-    if (maybeResult != null && pendingRequests.remove(request.columnId) != null) {
-      request.result.completeAsync(maybeResult, asyncRunner);
+  private void completePendingRequest(
+      final RetrieveRequest request, final DataColumnSidecar result) {
+    if (pendingRequests.remove(request.columnId) != null) {
+      request.result.completeAsync(result, asyncRunner);
       retrieveCounter.incrementAndGet();
-    } else if (request.activeRpcRequestSet.compareAndSet(true, false)) {
+    }
+  }
+
+  private void deactivatePendingRequest(
+          final RetrieveRequest request, final Throwable error) {
+    if (request.activeRpcRequestSet.compareAndSet(true, false)) {
       request.activeRpcRequest = null;
       errorCounter.incrementAndGet();
+      LOG.trace("Request {} deactivated due to {}",() -> request.columnId, () -> ExceptionUtil.getMessageOrSimpleName(error));
     }
   }
 
@@ -244,15 +261,15 @@ public class SimpleSidecarRetriever
   @Override
   public void peerConnected(final UInt256 nodeId) {
     LOG.trace(
-        "SimpleSidecarRetriever.peerConnected: {}", "0x..." + nodeId.toHexString().substring(58));
+        "SimpleSidecarRetriever.peerConnected: 0x...{}", () -> nodeId.toHexString().substring(58));
     connectedPeers.computeIfAbsent(nodeId, __ -> new ConnectedPeer(nodeId));
   }
 
   @Override
   public void peerDisconnected(final UInt256 nodeId) {
     LOG.trace(
-        "SimpleSidecarRetriever.peerDisconnected: {}",
-        "0x..." + nodeId.toHexString().substring(58));
+        "SimpleSidecarRetriever.peerDisconnected: 0x...{}",
+            () -> nodeId.toHexString().substring(58));
     connectedPeers.remove(nodeId);
   }
 

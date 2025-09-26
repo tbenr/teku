@@ -43,6 +43,7 @@ import tech.pegasys.teku.statetransition.datacolumns.CanonicalBlockResolverStub;
 import tech.pegasys.teku.statetransition.datacolumns.DataColumnSidecarDBStub;
 import tech.pegasys.teku.statetransition.datacolumns.db.DataColumnSidecarDB;
 import tech.pegasys.teku.statetransition.datacolumns.db.DataColumnSidecarDbAccessor;
+import tech.pegasys.teku.statetransition.datacolumns.retriever.recovering.RefactoredRecoveringRetriever;
 
 @SuppressWarnings({"JavaCase"})
 public class RecoveringSidecarRetrieverTest {
@@ -50,7 +51,7 @@ public class RecoveringSidecarRetrieverTest {
   static final Duration RECOVERY_INITIATION_TIMEOUT = Duration.ofSeconds(10);
   static final Duration RECOVERY_INITIATION_CHECK_INTERVAL = Duration.ofSeconds(1);
 
-  final StubTimeProvider stubTimeProvider = StubTimeProvider.withTimeInMillis(0);
+  final StubTimeProvider stubTimeProvider = StubTimeProvider.withTimeInSeconds(10_000);
   final StubAsyncRunner stubAsyncRunner = new StubAsyncRunner(stubTimeProvider);
   final Spec spec = TestSpecFactory.createMinimalFulu();
   final DataColumnSidecarDB db = new DataColumnSidecarDBStub();
@@ -68,7 +69,7 @@ public class RecoveringSidecarRetrieverTest {
   private final DataStructureUtil dataStructureUtil = new DataStructureUtil(0, spec);
 
   private DataColumnSidecarRetrieverStub delegateRetriever;
-  private RecoveringSidecarRetriever recoverRetriever;
+  private RefactoredRecoveringRetriever recoverRetriever;
 
   public RecoveringSidecarRetrieverTest() {
     TrustedSetupLoader.loadTrustedSetupForTests(kzg);
@@ -87,7 +88,7 @@ public class RecoveringSidecarRetrieverTest {
   void setUp() {
     delegateRetriever = new DataColumnSidecarRetrieverStub();
     recoverRetriever =
-        new RecoveringSidecarRetriever(
+        new RefactoredRecoveringRetriever(
             delegateRetriever,
             kzg,
             miscHelpers,
