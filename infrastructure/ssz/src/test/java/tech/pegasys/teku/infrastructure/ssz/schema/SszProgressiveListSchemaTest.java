@@ -68,12 +68,13 @@ public class SszProgressiveListSchemaTest {
   @Test
   void fixedSizeCompositeListRoundtrip() {
     // Fixed-size composite elements (all fields fixed) — exercises sszSerializeFixed composite path
-    final SszProgressiveContainerSchema<? extends SszContainer> elementSchema =
-        new SszProgressiveContainerSchema<>(
+    final SszContainerSchema<? extends SszContainer> elementSchema =
+        SszContainerSchema.createProgressive(
             "FixedElement",
             new boolean[] {true, true},
-            NamedSchema.of("a", SszPrimitiveSchemas.UINT64_SCHEMA),
-            NamedSchema.of("b", SszPrimitiveSchemas.BYTE_SCHEMA));
+            List.of(
+                NamedSchema.of("a", SszPrimitiveSchemas.UINT64_SCHEMA),
+                NamedSchema.of("b", SszPrimitiveSchemas.BYTE_SCHEMA)));
 
     final SszProgressiveListSchema<? extends SszData> listSchema =
         SszProgressiveListSchema.create(elementSchema);
@@ -105,12 +106,13 @@ public class SszProgressiveListSchemaTest {
   @Test
   void variableSizeCompositeListRoundtrip() {
     // Variable-size composite elements — exercises sszSerializeVariable path
-    final SszProgressiveContainerSchema<? extends SszContainer> elementSchema =
-        new SszProgressiveContainerSchema<>(
+    final SszContainerSchema<? extends SszContainer> elementSchema =
+        SszContainerSchema.createProgressive(
             "VarElement",
             new boolean[] {true, true},
-            NamedSchema.of("a", SszPrimitiveSchemas.UINT64_SCHEMA),
-            NamedSchema.of("b", new SszProgressiveBitlistSchema()));
+            List.of(
+                NamedSchema.of("a", SszPrimitiveSchemas.UINT64_SCHEMA),
+                NamedSchema.of("b", new SszProgressiveBitlistSchema())));
 
     final SszProgressiveListSchema<? extends SszData> listSchema =
         SszProgressiveListSchema.create(elementSchema);
@@ -302,12 +304,13 @@ public class SszProgressiveListSchemaTest {
   @Test
   void progressiveContainerWithProgressiveListField_nestedPropagation() {
     // Progressive container with a progressive list field, nested in a standard container
-    final SszProgressiveContainerSchema<SszContainer> innerSchema =
-        new SszProgressiveContainerSchema<>(
+    final SszContainerSchema<SszContainer> innerSchema =
+        SszContainerSchema.createProgressive(
             "Inner",
             new boolean[] {true, true},
-            NamedSchema.of("value", SszPrimitiveSchemas.UINT64_SCHEMA),
-            NamedSchema.of("items", UINT64_LIST_SCHEMA));
+            List.of(
+                NamedSchema.of("value", SszPrimitiveSchemas.UINT64_SCHEMA),
+                NamedSchema.of("items", UINT64_LIST_SCHEMA)));
 
     final SszLengthBounds innerBounds = innerSchema.getSszLengthBounds();
     assertThat(innerBounds.getMaxBytes()).isPositive();

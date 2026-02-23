@@ -18,6 +18,7 @@ import static tech.pegasys.teku.reference.phase0.ssz_generic.containers.UInt16Pr
 
 import java.io.IOException;
 import java.nio.ByteOrder;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
@@ -31,10 +32,10 @@ import tech.pegasys.teku.infrastructure.ssz.collections.SszBitvector;
 import tech.pegasys.teku.infrastructure.ssz.collections.SszByteList;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszByte;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes4;
+import tech.pegasys.teku.infrastructure.ssz.schema.SszContainerSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveBitlistSchema;
-import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveContainerSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.impl.AbstractSszContainerSchema.NamedSchema;
@@ -69,16 +70,16 @@ public class SszGenericProgressiveContainerTestExecutor extends AbstractSszGener
     return switch (type) {
       case "ProgressiveSingleFieldContainerTestStruct" ->
           // active_fields=[1], A: byte
-          new SszProgressiveContainerSchema<>(
+          SszContainerSchema.createProgressive(
               "ProgressiveSingleFieldContainerTestStruct",
               new boolean[] {true},
-              NamedSchema.of("A", SszPrimitiveSchemas.BYTE_SCHEMA));
+              List.of(NamedSchema.of("A", SszPrimitiveSchemas.BYTE_SCHEMA)));
       case "ProgressiveSingleListContainerTestStruct" ->
           // active_fields=[0, 0, 0, 0, 1], C: ProgressiveBitlist
-          new SszProgressiveContainerSchema<>(
+          SszContainerSchema.createProgressive(
               "ProgressiveSingleListContainerTestStruct",
               new boolean[] {false, false, false, false, true},
-              NamedSchema.of("C", new SszProgressiveBitlistSchema()));
+              List.of(NamedSchema.of("C", new SszProgressiveBitlistSchema())));
       case "ProgressiveVarTestStruct" -> createProgressiveVarTestStructSchema();
       case "ProgressiveComplexTestStruct" -> createProgressiveComplexTestStructSchema();
       default ->
@@ -93,13 +94,14 @@ public class SszGenericProgressiveContainerTestExecutor extends AbstractSszGener
   }
 
   // active_fields=[1, 0, 1, 0, 1], A: byte, B: List[uint16, 123], C: ProgressiveBitlist
-  private static SszProgressiveContainerSchema<?> createProgressiveVarTestStructSchema() {
-    return new SszProgressiveContainerSchema<>(
+  private static SszContainerSchema<?> createProgressiveVarTestStructSchema() {
+    return SszContainerSchema.createProgressive(
         "ProgressiveVarTestStruct",
         new boolean[] {true, false, true, false, true},
-        NamedSchema.of("A", SszPrimitiveSchemas.BYTE_SCHEMA),
-        NamedSchema.of("B", SszListSchema.create(UINT16_SCHEMA, 123)),
-        NamedSchema.of("C", new SszProgressiveBitlistSchema()));
+        List.of(
+            NamedSchema.of("A", SszPrimitiveSchemas.BYTE_SCHEMA),
+            NamedSchema.of("B", SszListSchema.create(UINT16_SCHEMA, 123)),
+            NamedSchema.of("C", new SszProgressiveBitlistSchema())));
   }
 
   /**
@@ -111,31 +113,32 @@ public class SszGenericProgressiveContainerTestExecutor extends AbstractSszGener
    * List[ProgressiveSingleFieldContainerTestStruct, 10], pos 21: H:
    * ProgressiveList[ProgressiveVarTestStruct]
    */
-  private static SszProgressiveContainerSchema<?> createProgressiveComplexTestStructSchema() {
-    final SszProgressiveContainerSchema<?> singleFieldSchema =
-        new SszProgressiveContainerSchema<>(
+  private static SszContainerSchema<?> createProgressiveComplexTestStructSchema() {
+    final SszContainerSchema<?> singleFieldSchema =
+        SszContainerSchema.createProgressive(
             "ProgressiveSingleFieldContainerTestStruct",
             new boolean[] {true},
-            NamedSchema.of("A", SszPrimitiveSchemas.BYTE_SCHEMA));
+            List.of(NamedSchema.of("A", SszPrimitiveSchemas.BYTE_SCHEMA)));
 
-    return new SszProgressiveContainerSchema<>(
+    return SszContainerSchema.createProgressive(
         "ProgressiveComplexTestStruct",
         new boolean[] {
           true, false, true, false, true, false, false, false, true, false, false, false, true,
           true, false, false, false, false, false, false, true, true
         },
-        NamedSchema.of("A", SszPrimitiveSchemas.BYTE_SCHEMA),
-        NamedSchema.of("B", SszListSchema.create(UINT16_SCHEMA, 123)),
-        NamedSchema.of("C", new SszProgressiveBitlistSchema()),
-        NamedSchema.of("D", SszProgressiveListSchema.create(SszPrimitiveSchemas.UINT64_SCHEMA)),
-        NamedSchema.of("E", SszProgressiveListSchema.create(new SmallTestStructSchema())),
-        NamedSchema.of(
-            "F",
-            SszProgressiveListSchema.create(
-                SszProgressiveListSchema.create(new VarTestStructSchema()))),
-        NamedSchema.of("G", SszListSchema.create(singleFieldSchema, 10)),
-        NamedSchema.of(
-            "H", SszProgressiveListSchema.create(createProgressiveVarTestStructSchema())));
+        List.of(
+            NamedSchema.of("A", SszPrimitiveSchemas.BYTE_SCHEMA),
+            NamedSchema.of("B", SszListSchema.create(UINT16_SCHEMA, 123)),
+            NamedSchema.of("C", new SszProgressiveBitlistSchema()),
+            NamedSchema.of("D", SszProgressiveListSchema.create(SszPrimitiveSchemas.UINT64_SCHEMA)),
+            NamedSchema.of("E", SszProgressiveListSchema.create(new SmallTestStructSchema())),
+            NamedSchema.of(
+                "F",
+                SszProgressiveListSchema.create(
+                    SszProgressiveListSchema.create(new VarTestStructSchema()))),
+            NamedSchema.of("G", SszListSchema.create(singleFieldSchema, 10)),
+            NamedSchema.of(
+                "H", SszProgressiveListSchema.create(createProgressiveVarTestStructSchema()))));
   }
 
   private Map<String, String> formatSszContainer(final SszContainer container) {

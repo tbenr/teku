@@ -24,6 +24,7 @@ import tech.pegasys.teku.infrastructure.ssz.SszData;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszByte;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszBitlistSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.AbstractSszContainerSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.impl.AbstractSszContainerSchema.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.sos.SszLengthBounds;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
@@ -31,26 +32,29 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
 public class SszProgressiveContainerSchemaTest {
 
-  private static final SszProgressiveContainerSchema<SszContainer> SINGLE_FIELD_SCHEMA =
-      new SszProgressiveContainerSchema<>(
+  private static final SszContainerSchema<SszContainer> SINGLE_FIELD_SCHEMA =
+      SszContainerSchema.createProgressive(
           "SingleField",
           new boolean[] {true},
-          NamedSchema.of("field0", SszPrimitiveSchemas.UINT64_SCHEMA));
+          List.of(NamedSchema.of("field0", SszPrimitiveSchemas.UINT64_SCHEMA)));
 
-  private static final SszProgressiveContainerSchema<SszContainer> MULTI_FIELD_SCHEMA =
-      new SszProgressiveContainerSchema<>(
+  private static final SszContainerSchema<SszContainer> MULTI_FIELD_SCHEMA =
+      SszContainerSchema.createProgressive(
           "MultiField",
           new boolean[] {true, true, true},
-          NamedSchema.of("a", SszPrimitiveSchemas.UINT64_SCHEMA),
-          NamedSchema.of("b", SszPrimitiveSchemas.BYTE_SCHEMA),
-          NamedSchema.of("c", SszPrimitiveSchemas.UINT64_SCHEMA));
+          List.of(
+              NamedSchema.of("a", SszPrimitiveSchemas.UINT64_SCHEMA),
+              NamedSchema.of("b", SszPrimitiveSchemas.BYTE_SCHEMA),
+              NamedSchema.of("c", SszPrimitiveSchemas.UINT64_SCHEMA)));
 
-  private static final SszProgressiveContainerSchema<SszContainer> GAPPED_SCHEMA =
-      new SszProgressiveContainerSchema<>(
-          "GappedContainer",
-          new boolean[] {true, false, true},
-          NamedSchema.of("first", SszPrimitiveSchemas.UINT64_SCHEMA),
-          NamedSchema.of("third", SszPrimitiveSchemas.BYTE_SCHEMA));
+  private static final AbstractSszContainerSchema<SszContainer> GAPPED_SCHEMA =
+      (AbstractSszContainerSchema<SszContainer>)
+          SszContainerSchema.createProgressive(
+              "GappedContainer",
+              new boolean[] {true, false, true},
+              List.of(
+                  NamedSchema.of("first", SszPrimitiveSchemas.UINT64_SCHEMA),
+                  NamedSchema.of("third", SszPrimitiveSchemas.BYTE_SCHEMA)));
 
   @Test
   void singleFieldContainer_sszRoundtrip() {
@@ -104,12 +108,13 @@ public class SszProgressiveContainerSchemaTest {
 
   @Test
   void variableSizeFields_sszRoundtrip() {
-    final SszProgressiveContainerSchema<SszContainer> varSchema =
-        new SszProgressiveContainerSchema<>(
+    final SszContainerSchema<SszContainer> varSchema =
+        SszContainerSchema.createProgressive(
             "VarContainer",
             new boolean[] {true, true},
-            NamedSchema.of("fixed", SszPrimitiveSchemas.UINT64_SCHEMA),
-            NamedSchema.of("varField", SszBitlistSchema.create(100)));
+            List.of(
+                NamedSchema.of("fixed", SszPrimitiveSchemas.UINT64_SCHEMA),
+                NamedSchema.of("varField", SszBitlistSchema.create(100))));
 
     final TreeNode tree =
         varSchema.createTreeFromFieldValues(
@@ -172,12 +177,13 @@ public class SszProgressiveContainerSchemaTest {
 
   @Test
   void isFixedSize_withVariable_shouldReturnFalse() {
-    final SszProgressiveContainerSchema<SszContainer> varSchema =
-        new SszProgressiveContainerSchema<>(
+    final SszContainerSchema<SszContainer> varSchema =
+        SszContainerSchema.createProgressive(
             "VarTest",
             new boolean[] {true, true},
-            NamedSchema.of("fixed", SszPrimitiveSchemas.UINT64_SCHEMA),
-            NamedSchema.of("var", SszBitlistSchema.create(100)));
+            List.of(
+                NamedSchema.of("fixed", SszPrimitiveSchemas.UINT64_SCHEMA),
+                NamedSchema.of("var", SszBitlistSchema.create(100))));
     assertThat(varSchema.isFixedSize()).isFalse();
   }
 
@@ -202,26 +208,28 @@ public class SszProgressiveContainerSchemaTest {
 
   @Test
   void equals_sameSchemas_shouldBeEqual() {
-    final SszProgressiveContainerSchema<SszContainer> other =
-        new SszProgressiveContainerSchema<>(
+    final SszContainerSchema<SszContainer> other =
+        SszContainerSchema.createProgressive(
             "MultiField",
             new boolean[] {true, true, true},
-            NamedSchema.of("a", SszPrimitiveSchemas.UINT64_SCHEMA),
-            NamedSchema.of("b", SszPrimitiveSchemas.BYTE_SCHEMA),
-            NamedSchema.of("c", SszPrimitiveSchemas.UINT64_SCHEMA));
+            List.of(
+                NamedSchema.of("a", SszPrimitiveSchemas.UINT64_SCHEMA),
+                NamedSchema.of("b", SszPrimitiveSchemas.BYTE_SCHEMA),
+                NamedSchema.of("c", SszPrimitiveSchemas.UINT64_SCHEMA)));
     assertThat(MULTI_FIELD_SCHEMA).isEqualTo(other);
     assertThat(MULTI_FIELD_SCHEMA.hashCode()).isEqualTo(other.hashCode());
   }
 
   @Test
   void equals_differentActiveFields_shouldNotBeEqual() {
-    final SszProgressiveContainerSchema<SszContainer> other =
-        new SszProgressiveContainerSchema<>(
+    final SszContainerSchema<SszContainer> other =
+        SszContainerSchema.createProgressive(
             "MultiField",
             new boolean[] {true, false, true, true},
-            NamedSchema.of("a", SszPrimitiveSchemas.UINT64_SCHEMA),
-            NamedSchema.of("b", SszPrimitiveSchemas.BYTE_SCHEMA),
-            NamedSchema.of("c", SszPrimitiveSchemas.UINT64_SCHEMA));
+            List.of(
+                NamedSchema.of("a", SszPrimitiveSchemas.UINT64_SCHEMA),
+                NamedSchema.of("b", SszPrimitiveSchemas.BYTE_SCHEMA),
+                NamedSchema.of("c", SszPrimitiveSchemas.UINT64_SCHEMA)));
     assertThat(MULTI_FIELD_SCHEMA).isNotEqualTo(other);
   }
 
@@ -248,7 +256,8 @@ public class SszProgressiveContainerSchemaTest {
 
   @Test
   void constructor_emptyActiveFields_shouldThrow() {
-    assertThatThrownBy(() -> new SszProgressiveContainerSchema<>("Empty", new boolean[] {}))
+    assertThatThrownBy(
+            () -> SszContainerSchema.createProgressive("Empty", new boolean[] {}, List.of()))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -256,10 +265,10 @@ public class SszProgressiveContainerSchemaTest {
   void constructor_lastElementFalse_shouldThrow() {
     assertThatThrownBy(
             () ->
-                new SszProgressiveContainerSchema<>(
+                SszContainerSchema.createProgressive(
                     "Bad",
                     new boolean[] {true, false},
-                    NamedSchema.of("a", SszPrimitiveSchemas.UINT64_SCHEMA)))
+                    List.of(NamedSchema.of("a", SszPrimitiveSchemas.UINT64_SCHEMA))))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -267,10 +276,10 @@ public class SszProgressiveContainerSchemaTest {
   void constructor_mismatchedSchemaCount_shouldThrow() {
     assertThatThrownBy(
             () ->
-                new SszProgressiveContainerSchema<>(
+                SszContainerSchema.createProgressive(
                     "Mismatch",
                     new boolean[] {true, true},
-                    NamedSchema.of("a", SszPrimitiveSchemas.UINT64_SCHEMA)))
+                    List.of(NamedSchema.of("a", SszPrimitiveSchemas.UINT64_SCHEMA))))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

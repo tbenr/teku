@@ -24,7 +24,7 @@ import tech.pegasys.teku.infrastructure.ssz.SszMutableContainer;
 import tech.pegasys.teku.infrastructure.ssz.SszMutableData;
 import tech.pegasys.teku.infrastructure.ssz.SszMutableRefContainer;
 import tech.pegasys.teku.infrastructure.ssz.cache.IntCache;
-import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveContainerSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.AbstractSszContainerSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.BranchNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.GIndexUtil;
 import tech.pegasys.teku.infrastructure.ssz.tree.ProgressiveTreeUtil;
@@ -43,8 +43,7 @@ public class SszMutableProgressiveContainerImpl
 
   private List<Map.Entry<Integer, SszData>> pendingChanges;
 
-  public SszMutableProgressiveContainerImpl(
-      final SszProgressiveContainerImpl backingImmutableView) {
+  public SszMutableProgressiveContainerImpl(final SszContainerImpl backingImmutableView) {
     super(backingImmutableView);
   }
 
@@ -61,7 +60,7 @@ public class SszMutableProgressiveContainerImpl
       return tree;
     }
 
-    final SszProgressiveContainerSchema<?> schema = getSchema();
+    final AbstractSszContainerSchema<?> schema = getSchema();
     final TreeNode dataTree = tree.get(GIndexUtil.LEFT_CHILD_G_INDEX);
     final TreeNode activeFieldsNode = tree.get(GIndexUtil.RIGHT_CHILD_G_INDEX);
 
@@ -83,14 +82,14 @@ public class SszMutableProgressiveContainerImpl
   }
 
   @Override
-  protected SszProgressiveContainerImpl createImmutableSszComposite(
+  protected SszContainerImpl createImmutableSszComposite(
       final TreeNode backingNode, final IntCache<SszData> viewCache) {
-    return new SszProgressiveContainerImpl(getSchema(), backingNode, viewCache);
+    return new SszContainerImpl(getSchema(), backingNode, viewCache);
   }
 
   @Override
-  public SszProgressiveContainerSchema<?> getSchema() {
-    return (SszProgressiveContainerSchema<?>) super.getSchema();
+  public AbstractSszContainerSchema<?> getSchema() {
+    return (AbstractSszContainerSchema<?>) super.getSchema();
   }
 
   @Override
