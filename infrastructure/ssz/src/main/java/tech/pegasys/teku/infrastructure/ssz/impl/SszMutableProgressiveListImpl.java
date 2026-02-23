@@ -30,15 +30,14 @@ import tech.pegasys.teku.infrastructure.ssz.tree.BranchNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.GIndexUtil;
 import tech.pegasys.teku.infrastructure.ssz.tree.ProgressiveTreeUtil;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
-import tech.pegasys.teku.infrastructure.ssz.tree.TreeUpdates;
 
 /**
  * Mutable implementation of SszList backed by a progressive merkle tree. Handles both composite and
  * packed primitive element types.
  *
- * <p>Overrides the standard change-to-tree-update flow because progressive trees have mixed-depth
- * generalized indices. Changes are stored during {@link #changesToNewNodes} and applied level-by-
- * level in {@link #doFinalTreeUpdates} via {@link ProgressiveTreeUtil#updateProgressiveTree}.
+ * <p>Overrides {@link #applyTreeChanges} because progressive trees have mixed-depth generalized
+ * indices that cannot go through the standard {@code changesToNewNodes → updated} pipeline. Changes
+ * are applied via {@link ProgressiveTreeUtil#updateProgressiveTree}.
  */
 public class SszMutableProgressiveListImpl<
         SszElementT extends SszData, SszMutableElementT extends SszElementT>
@@ -46,7 +45,6 @@ public class SszMutableProgressiveListImpl<
     implements SszMutableRefList<SszElementT, SszMutableElementT> {
 
   private int cachedSize;
-  private List<Map.Entry<Integer, SszElementT>> pendingChanges;
 
   public SszMutableProgressiveListImpl(
       final SszProgressiveListImpl<SszElementT> backingImmutableList) {
@@ -55,25 +53,20 @@ public class SszMutableProgressiveListImpl<
   }
 
   @Override
-  protected TreeUpdates changesToNewNodes(
-      final Stream<Map.Entry<Integer, SszElementT>> newChildValues, final TreeNode original) {
-    // Consume and store changes; return empty TreeUpdates to bypass mixed-depth issue
-    pendingChanges = newChildValues.toList();
-    return new TreeUpdates(List.of(), List.of());
-  }
-
-  @Override
-  protected TreeNode doFinalTreeUpdates(final TreeNode tree) {
-    if (pendingChanges == null || pendingChanges.isEmpty()) {
-      return PackedChunkUpdateUtil.updateSize(tree, size());
+  protected TreeNode applyTreeChanges(
+      final Stream<Map.Entry<Integer, SszElementT>> newChildValues,
+      final TreeNode originalBackingTree) {
+    final List<Map.Entry<Integer, SszElementT>> changes = newChildValues.toList();
+    if (changes.isEmpty()) {
+      return PackedChunkUpdateUtil.updateSize(originalBackingTree, size());
     }
 
-    final TreeNode dataTree = tree.get(GIndexUtil.LEFT_CHILD_G_INDEX);
+    final TreeNode dataTree = originalBackingTree.get(GIndexUtil.LEFT_CHILD_G_INDEX);
     final int elementsPerChunk = getSchema().getElementsPerChunk();
     final int previousSize = backingImmutableData.size();
 
     final Int2ObjectMap<TreeNode> chunkUpdates =
-        buildChunkUpdates(dataTree, elementsPerChunk, previousSize);
+        buildChunkUpdates(changes, dataTree, elementsPerChunk, previousSize);
 
     final int totalChunks =
         elementsPerChunk > 1 ? (size() + elementsPerChunk - 1) / elementsPerChunk : size();
@@ -81,18 +74,19 @@ public class SszMutableProgressiveListImpl<
     final TreeNode updatedDataTree =
         ProgressiveTreeUtil.updateProgressiveTree(dataTree, chunkUpdates, totalChunks);
 
-    pendingChanges = null;
     return BranchNode.create(updatedDataTree, PackedChunkUpdateUtil.createSizeNode(size()));
   }
 
   private Int2ObjectMap<TreeNode> buildChunkUpdates(
-      final TreeNode dataTree, final int elementsPerChunk, final int previousSize) {
+      final List<Map.Entry<Integer, SszElementT>> changes,
+      final TreeNode dataTree,
+      final int elementsPerChunk,
+      final int previousSize) {
     if (elementsPerChunk > 1) {
-      return buildPackedUpdates(dataTree, elementsPerChunk, previousSize);
+      return buildPackedUpdates(changes, dataTree, elementsPerChunk, previousSize);
     } else {
-      // Composite elements: 1:1 chunk mapping
       final Int2ObjectMap<TreeNode> chunkUpdates = new Int2ObjectOpenHashMap<>();
-      for (Map.Entry<Integer, SszElementT> entry : pendingChanges) {
+      for (Map.Entry<Integer, SszElementT> entry : changes) {
         chunkUpdates.put((int) entry.getKey(), entry.getValue().getBackingNode());
       }
       return chunkUpdates;
@@ -101,11 +95,14 @@ public class SszMutableProgressiveListImpl<
 
   @SuppressWarnings("unchecked")
   private <DataT, SszDataT extends SszPrimitive<DataT>> Int2ObjectMap<TreeNode> buildPackedUpdates(
-      final TreeNode dataTree, final int elementsPerChunk, final int previousSize) {
+      final List<Map.Entry<Integer, SszElementT>> changes,
+      final TreeNode dataTree,
+      final int elementsPerChunk,
+      final int previousSize) {
     final SszPrimitiveSchema<DataT, SszDataT> primitiveSchema =
         (SszPrimitiveSchema<DataT, SszDataT>) getSchema().getElementSchema();
     final List<Map.Entry<Integer, SszDataT>> typedChanges =
-        (List<Map.Entry<Integer, SszDataT>>) (List<?>) pendingChanges;
+        (List<Map.Entry<Integer, SszDataT>>) (List<?>) changes;
     return PackedChunkUpdateUtil.buildPackedChunkUpdates(
         typedChanges, dataTree, elementsPerChunk, previousSize, primitiveSchema);
   }

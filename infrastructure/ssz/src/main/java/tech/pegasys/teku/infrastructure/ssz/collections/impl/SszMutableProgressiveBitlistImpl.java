@@ -14,7 +14,6 @@
 package tech.pegasys.teku.infrastructure.ssz.collections.impl;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
-import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 import tech.pegasys.teku.infrastructure.ssz.cache.IntCache;
@@ -29,14 +28,14 @@ import tech.pegasys.teku.infrastructure.ssz.tree.BranchNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.GIndexUtil;
 import tech.pegasys.teku.infrastructure.ssz.tree.ProgressiveTreeUtil;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
-import tech.pegasys.teku.infrastructure.ssz.tree.TreeUpdates;
 
 /**
  * Mutable implementation of SszBitlist backed by a progressive merkle tree.
  *
- * <p>Groups bit changes by 256-bit chunk, applies packed bit updates per chunk, and uses {@link
- * ProgressiveTreeUtil#updateProgressiveTree} to apply chunk-level changes to the progressive data
- * tree.
+ * <p>Overrides {@link #applyTreeChanges} because progressive trees have mixed-depth generalized
+ * indices. Groups bit changes by 256-bit chunk, applies packed bit updates per chunk, and uses
+ * {@link ProgressiveTreeUtil#updateProgressiveTree} to apply chunk-level changes to the progressive
+ * data tree.
  */
 public class SszMutableProgressiveBitlistImpl
     extends AbstractSszMutablePrimitiveCollection<Boolean, SszBit>
@@ -45,7 +44,6 @@ public class SszMutableProgressiveBitlistImpl
   private static final int BITS_PER_CHUNK = 256;
 
   private int cachedSize;
-  private Int2ObjectMap<TreeNode> pendingChunkUpdates;
 
   public SszMutableProgressiveBitlistImpl(final SszProgressiveBitlistImpl backingImmutableBitlist) {
     super(backingImmutableBitlist);
@@ -53,32 +51,25 @@ public class SszMutableProgressiveBitlistImpl
   }
 
   @Override
-  protected TreeUpdates changesToNewNodes(
-      final Stream<Map.Entry<Integer, SszBit>> newChildValues, final TreeNode original) {
+  protected TreeNode applyTreeChanges(
+      final Stream<Map.Entry<Integer, SszBit>> newChildValues, final TreeNode originalBackingTree) {
     final SszPrimitiveSchema<Boolean, SszBit> primitiveSchema = getPrimitiveElementSchema();
-    final TreeNode dataTree = original.get(GIndexUtil.LEFT_CHILD_G_INDEX);
+    final TreeNode dataTree = originalBackingTree.get(GIndexUtil.LEFT_CHILD_G_INDEX);
     final int previousSize = backingImmutableData.size();
 
-    pendingChunkUpdates =
+    final Int2ObjectMap<TreeNode> chunkUpdates =
         PackedChunkUpdateUtil.buildPackedChunkUpdates(
             newChildValues.toList(), dataTree, BITS_PER_CHUNK, previousSize, primitiveSchema);
 
-    return new TreeUpdates(List.of(), List.of());
-  }
-
-  @Override
-  protected TreeNode doFinalTreeUpdates(final TreeNode tree) {
-    if (pendingChunkUpdates == null || pendingChunkUpdates.isEmpty()) {
-      return PackedChunkUpdateUtil.updateSize(tree, size());
+    if (chunkUpdates.isEmpty()) {
+      return PackedChunkUpdateUtil.updateSize(originalBackingTree, size());
     }
 
-    final TreeNode dataTree = tree.get(GIndexUtil.LEFT_CHILD_G_INDEX);
     final int totalChunks = (size() + BITS_PER_CHUNK - 1) / BITS_PER_CHUNK;
 
     final TreeNode updatedDataTree =
-        ProgressiveTreeUtil.updateProgressiveTree(dataTree, pendingChunkUpdates, totalChunks);
+        ProgressiveTreeUtil.updateProgressiveTree(dataTree, chunkUpdates, totalChunks);
 
-    pendingChunkUpdates = null;
     return BranchNode.create(updatedDataTree, PackedChunkUpdateUtil.createSizeNode(size()));
   }
 
