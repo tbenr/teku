@@ -54,7 +54,15 @@ public class SszContainerImpl extends AbstractSszComposite<SszData> implements S
 
   @Override
   public SszMutableContainer createWritableCopy() {
+    if (getSchema().isProgressiveMode()) {
+      return new SszMutableProgressiveContainerImpl(this);
+    }
     return new SszMutableContainerImpl(this);
+  }
+
+  @Override
+  public boolean isWritableSupported() {
+    return true;
   }
 
   @Override
