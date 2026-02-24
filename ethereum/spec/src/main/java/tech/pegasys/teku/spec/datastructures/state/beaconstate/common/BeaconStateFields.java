@@ -132,7 +132,7 @@ public enum BeaconStateFields implements SszFieldName {
     state.setFinalizedCheckpoint(source.getFinalizedCheckpoint());
   }
 
-  static List<SszField> getCommonFields(final SpecConfig specConfig) {
+  public static List<SszField> getCommonFields(final SpecConfig specConfig) {
     SszField forkField = new SszField(3, BeaconStateFields.FORK, Fork.SSZ_SCHEMA);
     final BeaconBlockHeader.BeaconBlockHeaderSchema blockHeaderSchema =
         BeaconBlockHeader.SSZ_SCHEMA;

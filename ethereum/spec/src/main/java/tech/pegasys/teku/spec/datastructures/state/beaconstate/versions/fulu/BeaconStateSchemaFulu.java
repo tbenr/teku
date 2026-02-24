@@ -17,7 +17,6 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.PROPOSER_LOOKAHEAD_SCHEMA;
 
 import com.google.common.annotations.VisibleForTesting;
-import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszByte;
@@ -41,21 +40,9 @@ public class BeaconStateSchemaFulu
     extends AbstractBeaconStateSchema<BeaconStateFulu, MutableBeaconStateFulu> {
   public static final int PROPOSER_LOOKAHEAD_FIELD_INDEX = 37;
 
-  private static final int FIELD_COUNT = PROPOSER_LOOKAHEAD_FIELD_INDEX + 1;
-
   @VisibleForTesting
   BeaconStateSchemaFulu(final SpecConfig specConfig, final SchemaRegistry schemaRegistry) {
-    super(
-        "BeaconStateFulu",
-        allActiveFields(FIELD_COUNT),
-        getUniqueFields(specConfig, schemaRegistry),
-        specConfig);
-  }
-
-  private static boolean[] allActiveFields(final int count) {
-    final boolean[] active = new boolean[count];
-    Arrays.fill(active, true);
-    return active;
+    super("BeaconStateFulu", getUniqueFields(specConfig, schemaRegistry), specConfig);
   }
 
   public static List<SszField> getUniqueFields(

@@ -21,6 +21,7 @@ import tech.pegasys.teku.bls.BLSSignature;
 import tech.pegasys.teku.infrastructure.ssz.collections.SszBitlist;
 import tech.pegasys.teku.infrastructure.ssz.collections.SszBitvector;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema4;
+import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveBitlistSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszBitlistSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszBitvectorSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
@@ -39,7 +40,7 @@ public class AttestationElectraSchema
       final long maxValidatorsPerAttestation, final long maxCommitteesPerSlot) {
     super(
         "AttestationElectra",
-        namedSchema("aggregation_bits", SszBitlistSchema.create(maxValidatorsPerAttestation)),
+        namedSchema("aggregation_bits", new SszProgressiveBitlistSchema()),
         namedSchema("data", AttestationData.SSZ_SCHEMA),
         namedSchema("signature", SszSignatureSchema.INSTANCE),
         namedSchema("committee_bits", SszBitvectorSchema.create(maxCommitteesPerSlot)));
