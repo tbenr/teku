@@ -14,11 +14,13 @@
 package tech.pegasys.teku.infrastructure.ssz.schema;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
 import static tech.pegasys.teku.infrastructure.ssz.schema.ListSchemaUtil.getLength;
 import static tech.pegasys.teku.infrastructure.ssz.schema.ListSchemaUtil.getVectorNode;
 import static tech.pegasys.teku.infrastructure.ssz.schema.ListSchemaUtil.toLengthNode;
 import static tech.pegasys.teku.infrastructure.ssz.tree.TreeUtil.bitsCeilToBytes;
 
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
@@ -32,6 +34,8 @@ import tech.pegasys.teku.infrastructure.ssz.collections.SszBitlist;
 import tech.pegasys.teku.infrastructure.ssz.collections.impl.SszProgressiveBitlistImpl;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBit;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszBitlistSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.LoadingUtil;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.StoringUtil;
 import tech.pegasys.teku.infrastructure.ssz.schema.json.SszPrimitiveTypeDefinitions;
 import tech.pegasys.teku.infrastructure.ssz.sos.SszDeserializeException;
 import tech.pegasys.teku.infrastructure.ssz.sos.SszLengthBounds;
@@ -43,7 +47,9 @@ import tech.pegasys.teku.infrastructure.ssz.tree.LeafNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.ProgressiveTreeUtil;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNodeSource;
+import tech.pegasys.teku.infrastructure.ssz.tree.TreeNodeSource.CompressedBranchInfo;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNodeStore;
+import tech.pegasys.teku.infrastructure.ssz.tree.TreeUtil;
 
 /**
  * Schema for ProgressiveBitlist (EIP-7916) — a variable-length bit collection with no max capacity
@@ -269,15 +275,134 @@ public class SszProgressiveBitlistSchema implements SszBitlistSchema<SszBitlist>
       final int maxBranchLevelsSkipped,
       final long rootGIndex,
       final TreeNode node) {
-    throw new UnsupportedOperationException(
-        "Store/load backing nodes not yet supported for progressive bitlists");
+    final TreeNode dataTree = getVectorNode(node);
+    final TreeNode lengthNode = node.get(GIndexUtil.RIGHT_CHILD_G_INDEX);
+    final int length = getLength(node);
+    final int totalChunks = chunksForBitCount(length);
+
+    storeProgressiveDataTree(
+        nodeStore,
+        maxBranchLevelsSkipped,
+        GIndexUtil.gIdxLeftGIndex(rootGIndex),
+        dataTree,
+        totalChunks);
+
+    nodeStore.storeLeafNode(lengthNode, GIndexUtil.gIdxRightGIndex(rootGIndex));
+
+    nodeStore.storeBranchNode(
+        node.hashTreeRoot(),
+        rootGIndex,
+        1,
+        new Bytes32[] {dataTree.hashTreeRoot(), lengthNode.hashTreeRoot()});
   }
 
   @Override
   public TreeNode loadBackingNodes(
       final TreeNodeSource nodeSource, final Bytes32 rootHash, final long rootGIndex) {
-    throw new UnsupportedOperationException(
-        "Store/load backing nodes not yet supported for progressive bitlists");
+    if (TreeUtil.ZERO_TREES_BY_ROOT.containsKey(rootHash) || rootHash.equals(Bytes32.ZERO)) {
+      return getDefaultTree();
+    }
+
+    final CompressedBranchInfo branchData = nodeSource.loadBranchNode(rootHash, rootGIndex);
+    checkState(
+        branchData.getChildren().length == 2, "List root node must have exactly two children");
+    checkState(branchData.getDepth() == 1, "List root node must have depth of 1");
+
+    final Bytes32 dataHash = branchData.getChildren()[0];
+    final Bytes32 lengthHash = branchData.getChildren()[1];
+    final int length =
+        nodeSource
+            .loadLeafNode(lengthHash, GIndexUtil.gIdxRightGIndex(rootGIndex))
+            .getInt(0, ByteOrder.LITTLE_ENDIAN);
+
+    final int totalChunks = chunksForBitCount(length);
+    final long dataRootGIndex = GIndexUtil.gIdxLeftGIndex(rootGIndex);
+
+    final TreeNode dataTree =
+        loadProgressiveDataTree(nodeSource, dataHash, dataRootGIndex, totalChunks);
+
+    return BranchNode.create(dataTree, toLengthNode(length));
+  }
+
+  private void storeProgressiveDataTree(
+      final TreeNodeStore nodeStore,
+      final int maxBranchLevelsSkipped,
+      final long dataRootGIndex,
+      final TreeNode dataTree,
+      final int totalChunks) {
+    ProgressiveTreeUtil.storeProgressiveSpine(
+        nodeStore,
+        dataRootGIndex,
+        dataTree,
+        totalChunks,
+        (levelGIndex, levelSubtree, chunksInLevel, depth) -> {
+          if (chunksInLevel > 0) {
+            if (depth == 0) {
+              nodeStore.storeLeafNode(levelSubtree, levelGIndex);
+            } else {
+              final int lastUsefulChunkIndex = chunksInLevel - 1;
+              final long lastUsefulGIndex =
+                  GIndexUtil.gIdxChildGIndex(levelGIndex, lastUsefulChunkIndex, depth);
+              StoringUtil.storeNodesToDepth(
+                  nodeStore,
+                  maxBranchLevelsSkipped,
+                  levelSubtree,
+                  levelGIndex,
+                  depth,
+                  lastUsefulGIndex,
+                  nodeStore::storeLeafNode);
+            }
+          }
+        });
+  }
+
+  private TreeNode loadProgressiveDataTree(
+      final TreeNodeSource nodeSource,
+      final Bytes32 dataHash,
+      final long dataRootGIndex,
+      final int totalChunks) {
+    return ProgressiveTreeUtil.loadProgressiveSpine(
+        nodeSource,
+        dataHash,
+        dataRootGIndex,
+        totalChunks,
+        (levelHash, levelGIndex, chunksInLevel, depth) ->
+            loadLevelSubtree(nodeSource, levelHash, levelGIndex, chunksInLevel, depth));
+  }
+
+  private TreeNode loadLevelSubtree(
+      final TreeNodeSource nodeSource,
+      final Bytes32 levelHash,
+      final long levelGIndex,
+      final int chunksInLevel,
+      final int depth) {
+    if (depth == 0) {
+      if (TreeUtil.ZERO_TREES_BY_ROOT.containsKey(levelHash)) {
+        return LeafNode.ZERO_LEAVES[LeafNode.MAX_BYTE_SIZE];
+      }
+      return LeafNode.create(nodeSource.loadLeafNode(levelHash, levelGIndex));
+    }
+
+    final int lastUsefulChunkIndex = chunksInLevel - 1;
+    final long lastUsefulGIndex =
+        GIndexUtil.gIdxChildGIndex(levelGIndex, lastUsefulChunkIndex, depth);
+
+    final LoadingUtil.ChildLoader leafLoader =
+        (childNodeSource, childHash, childGIndex) -> {
+          if (TreeUtil.ZERO_TREES_BY_ROOT.containsKey(childHash)) {
+            return LeafNode.ZERO_LEAVES[LeafNode.MAX_BYTE_SIZE];
+          }
+          return LeafNode.create(childNodeSource.loadLeafNode(childHash, childGIndex));
+        };
+
+    return LoadingUtil.loadNodesToDepth(
+        nodeSource,
+        levelHash,
+        levelGIndex,
+        depth,
+        TreeUtil.ZERO_TREES[depth],
+        lastUsefulGIndex,
+        leafLoader);
   }
 
   // ===== Internal helpers =====

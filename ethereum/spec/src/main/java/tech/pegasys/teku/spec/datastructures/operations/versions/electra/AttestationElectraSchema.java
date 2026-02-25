@@ -21,6 +21,7 @@ import tech.pegasys.teku.bls.BLSSignature;
 import tech.pegasys.teku.infrastructure.ssz.collections.SszBitlist;
 import tech.pegasys.teku.infrastructure.ssz.collections.SszBitvector;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema4;
+import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveBitlistSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszBitlistSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszBitvectorSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
@@ -30,6 +31,11 @@ import tech.pegasys.teku.spec.datastructures.operations.AttestationSchema;
 import tech.pegasys.teku.spec.datastructures.type.SszSignature;
 import tech.pegasys.teku.spec.datastructures.type.SszSignatureSchema;
 
+/**
+ * Electra attestation schema using a progressive (unbounded) bitlist for aggregation bits.
+ * Overrides {@link AttestationSchema#createEmptyAggregationBits()} to avoid the {@code
+ * Math.toIntExact(Long.MAX_VALUE)} overflow that occurs with progressive schemas.
+ */
 public class AttestationElectraSchema
     extends ContainerSchema4<
         AttestationElectra, SszBitlist, AttestationData, SszSignature, SszBitvector>
@@ -39,7 +45,7 @@ public class AttestationElectraSchema
       final long maxValidatorsPerAttestation, final long maxCommitteesPerSlot) {
     super(
         "AttestationElectra",
-        namedSchema("aggregation_bits", SszBitlistSchema.create(maxValidatorsPerAttestation)),
+        namedSchema("aggregation_bits", new SszProgressiveBitlistSchema()),
         namedSchema("data", AttestationData.SSZ_SCHEMA),
         namedSchema("signature", SszSignatureSchema.INSTANCE),
         namedSchema("committee_bits", SszBitvectorSchema.create(maxCommitteesPerSlot)));
@@ -77,6 +83,11 @@ public class AttestationElectraSchema
       final BLSSignature signature,
       final SszBitvector committeeBits) {
     return new AttestationElectra(this, aggregationBits, data, signature, committeeBits);
+  }
+
+  @Override
+  public SszBitlist createEmptyAggregationBits() {
+    return getAggregationBitsSchema().empty();
   }
 
   @Override

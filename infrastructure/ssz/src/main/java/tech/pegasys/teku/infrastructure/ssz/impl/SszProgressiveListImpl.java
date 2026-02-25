@@ -19,21 +19,32 @@ import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.infrastructure.ssz.SszMutableList;
 import tech.pegasys.teku.infrastructure.ssz.cache.IntCache;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszListSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveListSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.SszSchema;
+import tech.pegasys.teku.infrastructure.ssz.tree.CachingTreeAccessor;
 import tech.pegasys.teku.infrastructure.ssz.tree.GIndexUtil;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 
 /**
  * Immutable implementation of SszList backed by a progressive merkle tree. The backing tree has the
  * structure: BranchNode(progressiveDataTree, lengthNode)
+ *
+ * <p>Uses {@link CachingTreeAccessor} to optimize sequential element access. For primitive types,
+ * consecutive elements within the same 32-byte chunk hit the cache, avoiding redundant tree
+ * traversals through the progressive tree's right spine.
  */
 public class SszProgressiveListImpl<SszElementT extends SszData>
     extends AbstractSszCollection<SszElementT> implements SszList<SszElementT> {
 
+  private final CachingTreeAccessor cachingTreeAccessor;
+
   public SszProgressiveListImpl(
       final SszProgressiveListSchema<SszElementT> schema, final TreeNode backingNode) {
     super(schema, backingNode);
+    this.cachingTreeAccessor =
+        new CachingTreeAccessor(backingNode, schema::getChildGeneralizedIndex);
   }
 
   public SszProgressiveListImpl(
@@ -41,12 +52,30 @@ public class SszProgressiveListImpl<SszElementT extends SszData>
       final TreeNode backingNode,
       final IntCache<SszElementT> cache) {
     super(schema, backingNode, cache);
+    this.cachingTreeAccessor =
+        new CachingTreeAccessor(backingNode, schema::getChildGeneralizedIndex);
   }
 
   @Override
   @SuppressWarnings("unchecked")
   public SszListSchema<SszElementT, ?> getSchema() {
     return (SszListSchema<SszElementT, ?>) super.getSchema();
+  }
+
+  @SuppressWarnings("unchecked")
+  @Override
+  protected SszElementT getImpl(final int index) {
+    final SszSchema<?> elementType = getSchema().getElementSchema();
+    if (elementType.isPrimitive()) {
+      final int elementsPerChunk = getSchema().getElementsPerChunk();
+      final TreeNode node = cachingTreeAccessor.getNodeByVectorIndex(index / elementsPerChunk);
+      return (SszElementT)
+          ((SszPrimitiveSchema<?, ?>) elementType)
+              .createFromPackedNode(node, index % elementsPerChunk);
+    } else {
+      final TreeNode node = cachingTreeAccessor.getNodeByVectorIndex(index);
+      return (SszElementT) elementType.createFromBackingNode(node);
+    }
   }
 
   @Override

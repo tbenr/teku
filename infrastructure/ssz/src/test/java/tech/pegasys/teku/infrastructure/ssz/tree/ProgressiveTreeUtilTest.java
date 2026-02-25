@@ -17,10 +17,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.Test;
+import tech.pegasys.teku.infrastructure.ssz.schema.InMemoryStoringTreeNodeStore;
 
 class ProgressiveTreeUtilTest {
 
@@ -199,5 +202,114 @@ class ProgressiveTreeUtilTest {
   void hashTreeRoot_emptyTree_isZero() {
     final TreeNode tree = ProgressiveTreeUtil.createProgressiveTree(List.of());
     assertThat(tree.hashTreeRoot()).isEqualTo(Bytes32.ZERO);
+  }
+
+  // ===== storeProgressiveSpine / loadProgressiveSpine tests =====
+
+  private static LeafNode leaf32(final int value) {
+    final byte[] data = new byte[32];
+    data[0] = (byte) value;
+    return LeafNode.create(Bytes32.wrap(data));
+  }
+
+  @Test
+  void storeAndLoadSpine_emptyTree_returnsEmptyLeaf() {
+    final InMemoryStoringTreeNodeStore nodeStore = new InMemoryStoringTreeNodeStore();
+    final long dataRootGIndex = GIndexUtil.LEFT_CHILD_G_INDEX;
+
+    // Store empty tree
+    ProgressiveTreeUtil.storeProgressiveSpine(
+        nodeStore, dataRootGIndex, LeafNode.EMPTY_LEAF, 0, (g, n, c, d) -> {});
+
+    // Load empty tree
+    final TreeNode result =
+        ProgressiveTreeUtil.loadProgressiveSpine(
+            nodeStore, Bytes32.ZERO, dataRootGIndex, 0, (h, g, c, d) -> LeafNode.EMPTY_LEAF);
+
+    assertThat(result).isEqualTo(LeafNode.EMPTY_LEAF);
+  }
+
+  @Test
+  void storeAndLoadSpine_singleChunk_roundtrips() {
+    final LeafNode chunk = leaf32(42);
+    final TreeNode tree = ProgressiveTreeUtil.createProgressiveTree(List.of(chunk));
+
+    assertSpineRoundtrip(tree, 1);
+  }
+
+  @Test
+  void storeAndLoadSpine_multipleChunks_roundtrips() {
+    final List<LeafNode> chunks = new ArrayList<>();
+    for (int i = 0; i < 6; i++) {
+      chunks.add(leaf32(i + 1));
+    }
+    final TreeNode tree = ProgressiveTreeUtil.createProgressiveTree(chunks);
+
+    assertSpineRoundtrip(tree, 6);
+  }
+
+  @Test
+  void storeAndLoadSpine_fullLevel1_roundtrips() {
+    // 5 chunks: level 0 (1) + level 1 (4) — fills both levels exactly
+    final List<LeafNode> chunks = new ArrayList<>();
+    for (int i = 0; i < 5; i++) {
+      chunks.add(leaf32(i + 1));
+    }
+    final TreeNode tree = ProgressiveTreeUtil.createProgressiveTree(chunks);
+
+    assertSpineRoundtrip(tree, 5);
+  }
+
+  @Test
+  void storeAndLoadSpine_levelStorerReceivesCorrectParameters() {
+    final List<LeafNode> chunks = new ArrayList<>();
+    for (int i = 0; i < 6; i++) {
+      chunks.add(leaf32(i + 1));
+    }
+    final TreeNode tree = ProgressiveTreeUtil.createProgressiveTree(chunks);
+
+    final InMemoryStoringTreeNodeStore nodeStore = new InMemoryStoringTreeNodeStore();
+    final long dataRootGIndex = GIndexUtil.LEFT_CHILD_G_INDEX;
+
+    final List<int[]> storedLevels = new ArrayList<>();
+    ProgressiveTreeUtil.storeProgressiveSpine(
+        nodeStore,
+        dataRootGIndex,
+        tree,
+        6,
+        (levelGIndex, levelSubtree, chunksInLevel, depth) ->
+            storedLevels.add(new int[] {chunksInLevel, depth}));
+
+    // 6 chunks: level 0 (1 chunk, depth 0), level 1 (4 chunks, depth 2), level 2 (1 chunk, depth 4)
+    assertThat(storedLevels).hasSize(3);
+    assertThat(storedLevels.get(0)).containsExactly(1, 0);
+    assertThat(storedLevels.get(1)).containsExactly(4, 2);
+    assertThat(storedLevels.get(2)).containsExactly(1, 4);
+  }
+
+  private void assertSpineRoundtrip(final TreeNode tree, final int totalChunks) {
+    final InMemoryStoringTreeNodeStore nodeStore = new InMemoryStoringTreeNodeStore();
+    final long dataRootGIndex = GIndexUtil.LEFT_CHILD_G_INDEX;
+
+    // Store level subtrees by hash (level subtrees can be BranchNodes, not just LeafNodes)
+    final Map<Bytes32, TreeNode> subtreeByHash = new HashMap<>();
+    ProgressiveTreeUtil.storeProgressiveSpine(
+        nodeStore,
+        dataRootGIndex,
+        tree,
+        totalChunks,
+        (levelGIndex, levelSubtree, chunksInLevel, depth) ->
+            subtreeByHash.put(levelSubtree.hashTreeRoot(), levelSubtree));
+
+    // Load: retrieve level subtrees by hash
+    final TreeNode result =
+        ProgressiveTreeUtil.loadProgressiveSpine(
+            nodeStore,
+            tree.hashTreeRoot(),
+            dataRootGIndex,
+            totalChunks,
+            (levelHash, levelGIndex, chunksInLevel, depth) -> subtreeByHash.get(levelHash));
+
+    assertThat(result.hashTreeRoot()).isEqualTo(tree.hashTreeRoot());
   }
 }
