@@ -14,12 +14,14 @@
 package tech.pegasys.teku.infrastructure.ssz.tree;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import org.apache.tuweni.bytes.Bytes32;
 
 /**
  * Utility for constructing and navigating progressive merkle trees as defined in EIP-7916.
@@ -235,5 +237,149 @@ public class ProgressiveTreeUtil {
     final long posInLevel = elementIndex - (level > 0 ? cumulativeCapacity(level - 1) : 0);
     final long subtreeGIdx = GIndexUtil.gIdxChildGIndex(GIndexUtil.SELF_G_INDEX, posInLevel, depth);
     return GIndexUtil.gIdxCompose(gIdx, subtreeGIdx);
+  }
+
+  // ===== Spine store/load =====
+
+  /** Callback to store a single level's balanced subtree within the progressive spine. */
+  @FunctionalInterface
+  public interface LevelStorer {
+    void storeLevel(long levelGIndex, TreeNode levelSubtree, int chunksInLevel, int depth);
+  }
+
+  /** Callback to load a single level's balanced subtree within the progressive spine. */
+  @FunctionalInterface
+  public interface LevelLoader {
+    TreeNode loadLevel(Bytes32 levelHash, long levelGIndex, int chunksInLevel, int depth);
+  }
+
+  /**
+   * Walks the progressive data tree's right spine level-by-level, storing each level's balanced
+   * subtree via the provided {@link LevelStorer} and the spine branch nodes connecting them.
+   *
+   * @param nodeStore the store to persist spine branch nodes
+   * @param dataRootGIndex generalized index of the progressive data tree root
+   * @param dataTree the progressive data tree node
+   * @param totalChunks total number of chunks in the tree
+   * @param levelStorer callback to store each level's subtree
+   */
+  public static void storeProgressiveSpine(
+      final TreeNodeStore nodeStore,
+      final long dataRootGIndex,
+      final TreeNode dataTree,
+      final int totalChunks,
+      final LevelStorer levelStorer) {
+    if (totalChunks == 0) {
+      return;
+    }
+
+    final int maxLevel = levelForIndex(totalChunks - 1);
+
+    TreeNode currentSpine = dataTree;
+    long currentSpineGIndex = dataRootGIndex;
+
+    for (int level = 0; level <= maxLevel; level++) {
+      if (!(currentSpine instanceof BranchNode branch)) {
+        break;
+      }
+      final TreeNode levelSubtree = branch.left();
+      final TreeNode nextSpine = branch.right();
+
+      final long cumulativeBefore = level > 0 ? cumulativeCapacity(level - 1) : 0;
+      final int chunksInLevel =
+          Math.toIntExact(Math.min(totalChunks - cumulativeBefore, levelCapacity(level)));
+
+      final long levelGIndex = GIndexUtil.gIdxLeftGIndex(currentSpineGIndex);
+      final int depth = levelDepth(level);
+
+      levelStorer.storeLevel(levelGIndex, levelSubtree, chunksInLevel, depth);
+
+      final long nextSpineGIndex = GIndexUtil.gIdxRightGIndex(currentSpineGIndex);
+      nodeStore.storeBranchNode(
+          currentSpine.hashTreeRoot(),
+          currentSpineGIndex,
+          1,
+          new Bytes32[] {levelSubtree.hashTreeRoot(), nextSpine.hashTreeRoot()});
+
+      currentSpine = nextSpine;
+      currentSpineGIndex = nextSpineGIndex;
+    }
+  }
+
+  /**
+   * Loads the progressive data tree by walking the spine level-by-level and loading each level's
+   * balanced subtree via the provided {@link LevelLoader}.
+   *
+   * @param nodeSource the source to load spine branch nodes from
+   * @param dataHash hash of the progressive data tree root
+   * @param dataRootGIndex generalized index of the progressive data tree root
+   * @param totalChunks total number of chunks in the tree
+   * @param levelLoader callback to load each level's subtree
+   * @return the reconstructed progressive data tree
+   */
+  public static TreeNode loadProgressiveSpine(
+      final TreeNodeSource nodeSource,
+      final Bytes32 dataHash,
+      final long dataRootGIndex,
+      final int totalChunks,
+      final LevelLoader levelLoader) {
+    if (totalChunks == 0) {
+      return LeafNode.EMPTY_LEAF;
+    }
+    if (TreeUtil.ZERO_TREES_BY_ROOT.containsKey(dataHash)) {
+      return LeafNode.EMPTY_LEAF;
+    }
+
+    final int maxLevel = levelForIndex(totalChunks - 1);
+    return loadSpineLevelRecursive(
+        nodeSource, dataHash, dataRootGIndex, 0, maxLevel, totalChunks, levelLoader);
+  }
+
+  private static TreeNode loadSpineLevelRecursive(
+      final TreeNodeSource nodeSource,
+      final Bytes32 spineHash,
+      final long spineGIndex,
+      final int level,
+      final int maxLevel,
+      final int totalChunks,
+      final LevelLoader levelLoader) {
+    if (level > maxLevel) {
+      return LeafNode.EMPTY_LEAF;
+    }
+    if (TreeUtil.ZERO_TREES_BY_ROOT.containsKey(spineHash)) {
+      return LeafNode.EMPTY_LEAF;
+    }
+
+    final TreeNodeSource.CompressedBranchInfo spineInfo =
+        nodeSource.loadBranchNode(spineHash, spineGIndex);
+    checkState(spineInfo.getDepth() == 1, "Spine node must have depth 1");
+    checkState(spineInfo.getChildren().length == 2, "Spine node must have 2 children");
+
+    final Bytes32 levelSubtreeHash = spineInfo.getChildren()[0];
+    final Bytes32 nextSpineHash = spineInfo.getChildren()[1];
+
+    final long levelGIndex = GIndexUtil.gIdxLeftGIndex(spineGIndex);
+    final long nextSpineGIndex = GIndexUtil.gIdxRightGIndex(spineGIndex);
+
+    final long cumulativeBefore = level > 0 ? cumulativeCapacity(level - 1) : 0;
+    final int chunksInLevel =
+        Math.toIntExact(Math.min(totalChunks - cumulativeBefore, levelCapacity(level)));
+
+    final int depth = levelDepth(level);
+
+    final TreeNode levelSubtree =
+        levelLoader.loadLevel(levelSubtreeHash, levelGIndex, chunksInLevel, depth);
+
+    final TreeNode nextSpine =
+        loadSpineLevelRecursive(
+            nodeSource,
+            nextSpineHash,
+            nextSpineGIndex,
+            level + 1,
+            maxLevel,
+            totalChunks,
+            levelLoader);
+
+    return BranchNode.create(levelSubtree, nextSpine);
   }
 }

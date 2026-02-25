@@ -15,6 +15,7 @@ package tech.pegasys.teku.infrastructure.ssz.schema;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static tech.pegasys.teku.infrastructure.ssz.schema.TreeNodeAssert.assertThatTreeNode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,11 +24,15 @@ import java.util.stream.IntStream;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import tech.pegasys.teku.infrastructure.crypto.Hash;
+import tech.pegasys.teku.infrastructure.ssz.RandomSszDataGenerator;
 import tech.pegasys.teku.infrastructure.ssz.SszContainer;
 import tech.pegasys.teku.infrastructure.ssz.SszData;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
+import tech.pegasys.teku.infrastructure.ssz.impl.SszContainerImpl;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.impl.AbstractSszContainerSchema.NamedSchema;
 import tech.pegasys.teku.infrastructure.ssz.sos.SszDeserializeException;
@@ -315,5 +320,71 @@ public class SszProgressiveListSchemaTest {
     final SszLengthBounds innerBounds = innerSchema.getSszLengthBounds();
     assertThat(innerBounds.getMaxBytes()).isPositive();
     assertThat(innerBounds.isWithinBounds(1000)).isTrue();
+  }
+
+  // ===== Store/Load backing nodes roundtrip tests =====
+
+  @ParameterizedTest
+  @ValueSource(ints = {1, 5, 15})
+  void storeAndLoadBackingNodes_primitiveList(final int maxBranchLevelsSkipped) {
+    assertStoreLoadRoundtrip(UINT64_LIST_SCHEMA, maxBranchLevelsSkipped);
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {1, 5, 15})
+  void storeAndLoadBackingNodes_compositeList(final int maxBranchLevelsSkipped) {
+    // Use a standard (non-progressive) container as element schema since progressive containers
+    // don't support store/load yet
+    final ContainerSchema2<SszContainer, SszUInt64, SszUInt64> elementSchema =
+        ContainerSchema2.create(
+            SszPrimitiveSchemas.UINT64_SCHEMA,
+            SszPrimitiveSchemas.UINT64_SCHEMA,
+            (schema, node) -> new SszContainerImpl(schema, node));
+
+    @SuppressWarnings("unchecked")
+    final SszProgressiveListSchema<SszData> listSchema =
+        (SszProgressiveListSchema<SszData>)
+            (SszProgressiveListSchema<?>) SszProgressiveListSchema.create(elementSchema);
+
+    assertStoreLoadRoundtrip(listSchema, maxBranchLevelsSkipped);
+  }
+
+  @Test
+  void storeAndLoadBackingNodes_emptyList() {
+    final InMemoryStoringTreeNodeStore nodeStore = new InMemoryStoringTreeNodeStore();
+    final SszList<SszUInt64> emptyList = UINT64_LIST_SCHEMA.getDefault();
+    final TreeNode node = emptyList.getBackingNode();
+    final long rootGIndex = 34;
+
+    UINT64_LIST_SCHEMA.storeBackingNodes(nodeStore, 15, rootGIndex, node);
+    final TreeNode result =
+        UINT64_LIST_SCHEMA.loadBackingNodes(nodeStore, node.hashTreeRoot(), rootGIndex);
+
+    assertThatTreeNode(result).isTreeEqual(node);
+    assertThat(UINT64_LIST_SCHEMA.createFromBackingNode(result).size()).isZero();
+  }
+
+  @SuppressWarnings("unchecked")
+  private <T extends SszData> void assertStoreLoadRoundtrip(
+      final SszProgressiveListSchema<T> schema, final int maxBranchLevelsSkipped) {
+    final RandomSszDataGenerator generator = new RandomSszDataGenerator().withMaxListSize(50);
+    final SszData data =
+        generator
+            .randomDataStream((SszSchema<SszData>) (SszSchema<?>) schema)
+            .filter(item -> !item.getBackingNode().hashTreeRoot().isZero())
+            .findFirst()
+            .orElseThrow();
+
+    final InMemoryStoringTreeNodeStore nodeStore = new InMemoryStoringTreeNodeStore();
+    final TreeNode node = data.getBackingNode();
+    final long rootGIndex = 34;
+
+    schema.storeBackingNodes(nodeStore, maxBranchLevelsSkipped, rootGIndex, node);
+    final TreeNode result = schema.loadBackingNodes(nodeStore, data.hashTreeRoot(), rootGIndex);
+
+    // Hash equality (leaf nodes may have different byte lengths after store/load zero-padding)
+    assertThat(result.hashTreeRoot()).isEqualTo(node.hashTreeRoot());
+    final SszData rebuiltData = schema.createFromBackingNode(result);
+    assertThat(rebuiltData).isEqualTo(data);
   }
 }

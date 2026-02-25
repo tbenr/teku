@@ -16,6 +16,7 @@ package tech.pegasys.teku.infrastructure.ssz.schema;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static tech.pegasys.teku.infrastructure.collections.PrimitiveCollectionAssert.assertThatIntCollection;
+import static tech.pegasys.teku.infrastructure.ssz.schema.TreeNodeAssert.assertThatTreeNode;
 
 import java.util.BitSet;
 import java.util.List;
@@ -26,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import tech.pegasys.teku.infrastructure.ssz.SszContainer;
 import tech.pegasys.teku.infrastructure.ssz.collections.SszBitlist;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema2;
@@ -190,5 +192,73 @@ public class SszProgressiveBitlistSchemaTest {
     final SszLengthBounds bounds = containerSchema.getSszLengthBounds();
     assertThat(bounds.getMaxBytes()).isPositive();
     assertThat(bounds.isWithinBounds(1000)).isTrue();
+  }
+
+  // ===== Store/Load backing nodes roundtrip tests =====
+
+  @ParameterizedTest
+  @ValueSource(ints = {1, 5, 15})
+  void storeAndLoadBackingNodes_smallBitlist(final int maxBranchLevelsSkipped) {
+    final SszBitlist bitlist = SCHEMA.ofBits(10, 0, 3, 9);
+    assertStoreLoadRoundtrip(bitlist, maxBranchLevelsSkipped);
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {1, 5, 15})
+  void storeAndLoadBackingNodes_largeBitlist(final int maxBranchLevelsSkipped) {
+    // 500 bits spans multiple levels in the progressive tree
+    final int[] setBits = IntStream.range(0, 500).filter(i -> i % 3 == 0).toArray();
+    final SszBitlist bitlist = SCHEMA.ofBits(500, setBits);
+    assertStoreLoadRoundtrip(bitlist, maxBranchLevelsSkipped);
+  }
+
+  @Test
+  void storeAndLoadBackingNodes_emptyBitlist() {
+    final InMemoryStoringTreeNodeStore nodeStore = new InMemoryStoringTreeNodeStore();
+    final SszBitlist emptyBitlist = SCHEMA.ofBits(0);
+    final TreeNode node = emptyBitlist.getBackingNode();
+    final long rootGIndex = 34;
+
+    SCHEMA.storeBackingNodes(nodeStore, 15, rootGIndex, node);
+    final TreeNode result = SCHEMA.loadBackingNodes(nodeStore, node.hashTreeRoot(), rootGIndex);
+
+    assertThatTreeNode(result).isTreeEqual(node);
+    assertThat(SCHEMA.createFromBackingNode(result).size()).isZero();
+  }
+
+  @Test
+  void storeAndLoadBackingNodes_singleBit() {
+    final SszBitlist bitlist = SCHEMA.ofBits(1, 0);
+    assertStoreLoadRoundtrip(bitlist, 15);
+  }
+
+  @Test
+  void storeAndLoadBackingNodes_exactlyOneChunk() {
+    // 256 bits = exactly 1 chunk (level 0 only)
+    final int[] setBits = {0, 127, 255};
+    final SszBitlist bitlist = SCHEMA.ofBits(256, setBits);
+    assertStoreLoadRoundtrip(bitlist, 15);
+  }
+
+  @Test
+  void storeAndLoadBackingNodes_multipleChunks() {
+    // 257 bits = 2 chunks (levels 0 and 1)
+    final SszBitlist bitlist = SCHEMA.ofBits(257, 0, 256);
+    assertStoreLoadRoundtrip(bitlist, 15);
+  }
+
+  private void assertStoreLoadRoundtrip(
+      final SszBitlist bitlist, final int maxBranchLevelsSkipped) {
+    final InMemoryStoringTreeNodeStore nodeStore = new InMemoryStoringTreeNodeStore();
+    final TreeNode node = bitlist.getBackingNode();
+    final long rootGIndex = 34;
+
+    SCHEMA.storeBackingNodes(nodeStore, maxBranchLevelsSkipped, rootGIndex, node);
+    final TreeNode result = SCHEMA.loadBackingNodes(nodeStore, bitlist.hashTreeRoot(), rootGIndex);
+
+    // Hash equality (leaf nodes may have different byte lengths after store/load zero-padding)
+    assertThat(result.hashTreeRoot()).isEqualTo(node.hashTreeRoot());
+    final SszBitlist rebuiltBitlist = SCHEMA.createFromBackingNode(result);
+    assertThat(rebuiltBitlist).isEqualTo(bitlist);
   }
 }
