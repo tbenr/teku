@@ -19,16 +19,21 @@ import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.PENDING_DEPOSI
 import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.PENDING_PARTIAL_WITHDRAWALS_SCHEMA;
 
 import com.google.common.annotations.VisibleForTesting;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszByte;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveListSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveUInt64ListSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.SszSchemaHints;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszPrimitiveListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszUInt64ListSchema;
 import tech.pegasys.teku.infrastructure.ssz.sos.SszField;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.config.SpecConfig;
+import tech.pegasys.teku.spec.datastructures.state.Validator;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconStateSchema;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.common.AbstractBeaconStateSchema;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.common.BeaconStateFields;
@@ -50,9 +55,41 @@ public class BeaconStateSchemaElectra
   public static final int PENDING_PARTIAL_WITHDRAWALS_FIELD_INDEX = 35;
   public static final int PENDING_CONSOLIDATIONS_FIELD_INDEX = 36;
 
+  private static final int FIELD_COUNT = PENDING_CONSOLIDATIONS_FIELD_INDEX + 1;
+
   @VisibleForTesting
   BeaconStateSchemaElectra(final SpecConfig specConfig, final SchemaRegistry schemaRegistry) {
-    super("BeaconStateElectra", getUniqueFields(specConfig, schemaRegistry), specConfig);
+    super(
+        "BeaconStateElectra",
+        allActiveFields(FIELD_COUNT),
+        combineFields(commonFields(specConfig), getUniqueFields(specConfig, schemaRegistry)));
+  }
+
+  private static boolean[] allActiveFields(final int count) {
+    final boolean[] active = new boolean[count];
+    Arrays.fill(active, true);
+    return active;
+  }
+
+  public static List<SszField> commonFields(final SpecConfig specConfig) {
+    return BeaconStateFields.getCommonFields(specConfig).stream()
+        .map(
+            field -> {
+              if (field.getIndex() == 11) {
+                return new SszField(
+                    11,
+                    BeaconStateFields.VALIDATORS,
+                    () -> SszProgressiveListSchema.create(Validator.SSZ_SCHEMA));
+              } else if (field.getIndex() == 12) {
+                return new SszField(
+                    12,
+                    BeaconStateFields.BALANCES,
+                    () -> SszProgressiveUInt64ListSchema.create(SszSchemaHints.sszSuperNode(8)));
+              }
+
+              return field;
+            })
+        .toList();
   }
 
   public static List<SszField> getUniqueFields(

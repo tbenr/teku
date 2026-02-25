@@ -19,6 +19,8 @@ import static tech.pegasys.teku.spec.datastructures.state.beaconstate.common.Bea
 
 import java.util.List;
 import java.util.Locale;
+
+import tech.pegasys.teku.infrastructure.ssz.collections.SszUInt64List;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszFieldName;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
@@ -34,6 +36,7 @@ import tech.pegasys.teku.spec.datastructures.state.Fork;
 import tech.pegasys.teku.spec.datastructures.state.Validator;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.MutableBeaconState;
+import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.electra.MutableBeaconStateElectra;
 
 public enum BeaconStateFields implements SszFieldName {
   GENESIS_TIME,
@@ -119,8 +122,13 @@ public enum BeaconStateFields implements SszFieldName {
     state.setEth1DataVotes(source.getEth1DataVotes());
     state.setEth1DepositIndex(source.getEth1DepositIndex());
     // Registry
-    state.setValidators(source.getValidators());
-    state.setBalances(source.getBalances());
+    if(state instanceof MutableBeaconStateElectra) {
+      state.setValidators(state.getValidators().getSchema().createFromElements(source.getValidators().stream().toList()));
+      state.setBalances((SszUInt64List) state.getBalances().getSchema().createFromElements(source.getBalances().stream().toList()));
+    } else {
+      state.setValidators(source.getValidators());
+      state.setBalances(source.getBalances());
+    }
     // Randomness
     state.setRandaoMixes(source.getRandaoMixes());
     // Slashings
@@ -132,7 +140,7 @@ public enum BeaconStateFields implements SszFieldName {
     state.setFinalizedCheckpoint(source.getFinalizedCheckpoint());
   }
 
-  static List<SszField> getCommonFields(final SpecConfig specConfig) {
+  public static List<SszField> getCommonFields(final SpecConfig specConfig) {
     SszField forkField = new SszField(3, BeaconStateFields.FORK, Fork.SSZ_SCHEMA);
     final BeaconBlockHeader.BeaconBlockHeaderSchema blockHeaderSchema =
         BeaconBlockHeader.SSZ_SCHEMA;
