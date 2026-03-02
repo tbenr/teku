@@ -143,6 +143,8 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
     try {
       final UInt64 attestationSlot = attestation.getData().getSlot();
       final boolean payloadPresent = attestation.getData().getIndex().equals(UInt64.ONE);
+      final boolean isGloas =
+          spec.atSlot(attestationSlot).getMilestone().isGreaterThanOrEqualTo(SpecMilestone.GLOAS);
       attestation
           .getAttestingIndices()
           .streamUnboxed()
@@ -154,7 +156,8 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
                       attestation.getData().getBeaconBlockRoot(),
                       attestation.getData().getTarget().getEpoch(),
                       attestationSlot,
-                      payloadPresent));
+                      payloadPresent,
+                      isGloas));
     } finally {
       votesLock.writeLock().unlock();
     }
@@ -163,12 +166,20 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
   public void applyDeferredAttestations(final VoteUpdater voteUpdater, final DeferredVotes votes) {
     final UInt64 targetEpoch = spec.computeEpochAtSlot(votes.getSlot());
     final UInt64 slot = votes.getSlot();
+    final boolean isGloas =
+        spec.atSlot(slot).getMilestone().isGreaterThanOrEqualTo(SpecMilestone.GLOAS);
     votesLock.writeLock().lock();
     try {
       votes.forEachDeferredVote(
           (blockRoot, validatorIndex, payloadPresent) ->
               processAttestation(
-                  voteUpdater, validatorIndex, blockRoot, targetEpoch, slot, payloadPresent));
+                  voteUpdater,
+                  validatorIndex,
+                  blockRoot,
+                  targetEpoch,
+                  slot,
+                  payloadPresent,
+                  isGloas));
     } finally {
       votesLock.writeLock().unlock();
     }
@@ -241,7 +252,8 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       final UInt64 validatorIndex,
       final Bytes32 blockRoot,
       final UInt64 targetEpoch) {
-    processAttestation(voteUpdater, validatorIndex, blockRoot, targetEpoch, UInt64.ZERO, false);
+    processAttestation(
+        voteUpdater, validatorIndex, blockRoot, targetEpoch, UInt64.ZERO, false, false);
   }
 
   void processAttestation(
@@ -250,7 +262,8 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       final Bytes32 blockRoot,
       final UInt64 targetEpoch,
       final UInt64 slot,
-      final boolean payloadPresent) {
+      final boolean payloadPresent,
+      final boolean isGloas) {
     VoteTracker vote = voteUpdater.getVote(validatorIndex);
     // Not updating anything for equivocated validators
     if (vote.isEquivocating()) {
@@ -259,7 +272,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
 
     // Gloas uses slot-based comparison; pre-Gloas uses epoch-based
     final boolean shouldUpdate;
-    if (spec.atSlot(slot).getMilestone().isGreaterThanOrEqualTo(SpecMilestone.GLOAS)) {
+    if (isGloas) {
       shouldUpdate = slot.isGreaterThan(vote.getNextSlot()) || vote.equals(VoteTracker.DEFAULT);
     } else {
       shouldUpdate =

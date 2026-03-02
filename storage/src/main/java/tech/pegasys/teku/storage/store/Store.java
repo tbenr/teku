@@ -648,25 +648,26 @@ class Store extends CacheableStore {
   public boolean isHeadWeak(final Bytes32 root) {
     readLock.lock();
     try {
-      final ForkChoiceUtil forkChoiceUtil = getForkChoiceUtilForRoot(root);
       final boolean result;
-      if (forkChoiceUtil instanceof ForkChoiceUtilGloas gloasUtil && cachedJustifiedState != null) {
-        final VoteAccessor voteAccessor = createVoteAccessor();
+      final Optional<GloasContext> gloas = getGloasContext(root);
+      if (gloas.isPresent()) {
+        final GloasContext ctx = gloas.get();
         final Optional<BeaconState> headState = getBlockStateIfAvailable(root);
         if (headState.isPresent()) {
           result =
-              gloasUtil.isHeadWeak(
+              ctx.forkChoiceUtil.isHeadWeak(
                   forkChoiceStrategy,
                   root,
                   reorgThreshold,
-                  voteAccessor,
+                  ctx.voteAccessor,
                   headState.get(),
-                  cachedJustifiedState);
+                  ctx.justifiedState);
         } else {
-          result = gloasUtil.isHeadWeak(forkChoiceStrategy, root, reorgThreshold);
+          result = ctx.forkChoiceUtil.isHeadWeak(forkChoiceStrategy, root, reorgThreshold);
         }
       } else {
-        result = forkChoiceUtil.isHeadWeak(forkChoiceStrategy, root, reorgThreshold);
+        result =
+            getForkChoiceUtilForRoot(root).isHeadWeak(forkChoiceStrategy, root, reorgThreshold);
       }
       LOG.trace("isHeadWeak {}: reorgThreshold: {}, result: {}", root, reorgThreshold, result);
       return result;
@@ -679,28 +680,30 @@ class Store extends CacheableStore {
   public boolean isParentStrong(final Bytes32 parentRoot) {
     readLock.lock();
     try {
-      final ForkChoiceUtil forkChoiceUtil = getForkChoiceUtilForRoot(parentRoot);
       final boolean result;
+      final Optional<GloasContext> gloas = getGloasContext(parentRoot);
       // For Gloas, use the extended isParentStrong with payload-status-aware scoring
       // when the justified state is cached. The payload status determination requires block
       // body access which is async, so we use PENDING as a fallback (counts all votes).
-      if (forkChoiceUtil instanceof ForkChoiceUtilGloas gloasUtil && cachedJustifiedState != null) {
-        final VoteAccessor voteAccessor = createVoteAccessor();
+      if (gloas.isPresent()) {
+        final GloasContext ctx = gloas.get();
         // Use the parent's stored payload status (resolved during onBlock of the child block)
         final PayloadStatus parentPayloadStatus =
             forkChoiceStrategy
                 .payloadStatus(parentRoot)
                 .orElse(PayloadStatus.PAYLOAD_STATUS_PENDING);
         result =
-            gloasUtil.isParentStrong(
+            ctx.forkChoiceUtil.isParentStrong(
                 forkChoiceStrategy,
                 parentRoot,
                 parentThreshold,
                 parentPayloadStatus,
-                voteAccessor,
-                cachedJustifiedState);
+                ctx.voteAccessor,
+                ctx.justifiedState);
       } else {
-        result = forkChoiceUtil.isParentStrong(forkChoiceStrategy, parentRoot, parentThreshold);
+        result =
+            getForkChoiceUtilForRoot(parentRoot)
+                .isParentStrong(forkChoiceStrategy, parentRoot, parentThreshold);
       }
       LOG.debug(
           "isParentStrong {}: parentThreshold: {}, result: {}",
@@ -711,6 +714,17 @@ class Store extends CacheableStore {
     } finally {
       readLock.unlock();
     }
+  }
+
+  private record GloasContext(
+      ForkChoiceUtilGloas forkChoiceUtil, VoteAccessor voteAccessor, BeaconState justifiedState) {}
+
+  private Optional<GloasContext> getGloasContext(final Bytes32 root) {
+    final ForkChoiceUtil forkChoiceUtil = getForkChoiceUtilForRoot(root);
+    if (forkChoiceUtil instanceof ForkChoiceUtilGloas gloasUtil && cachedJustifiedState != null) {
+      return Optional.of(new GloasContext(gloasUtil, createVoteAccessor(), cachedJustifiedState));
+    }
+    return Optional.empty();
   }
 
   private VoteAccessor createVoteAccessor() {
