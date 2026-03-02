@@ -28,6 +28,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.gloas.Bea
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.MutableStore;
 import tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.logic.common.statetransition.availability.AvailabilityChecker;
@@ -152,6 +153,68 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
   @Override
   public Optional<ForkChoiceUtilGloas> toVersionGloas() {
     return Optional.of(this);
+  }
+
+  /**
+   * Computes the attestation score for a block root.
+   *
+   * <p>Spec reference: get_attestation_score
+   *
+   * <p>TODO-GLOAS: The full implementation requires is_supporting_vote with payload-status-aware
+   * vote checking (VoteTracker needs slot and payload_present fields). Currently uses protoarray
+   * weight as an approximation, which already accounts for vote propagation and equivocating
+   * validators.
+   *
+   * @param forkChoiceStrategy the fork choice strategy for accessing block weights
+   * @param root the root of the block to score
+   * @return the attestation weight supporting this block
+   */
+  // get_attestation_score
+  UInt64 getAttestationScore(
+      final ReadOnlyForkChoiceStrategy forkChoiceStrategy, final Bytes32 root) {
+    return forkChoiceStrategy.getWeight(root).orElse(UInt64.ZERO);
+  }
+
+  /**
+   * Determines if the head block is weak. In Gloas, this uses getAttestationScore instead of raw
+   * protoarray weight.
+   *
+   * <p>Spec reference: is_head_weak (Gloas override)
+   *
+   * <p>TODO-GLOAS: Add weight from equivocating validators in the head slot's committees (prevents
+   * equivocation-based reorgs). This requires access to the equivocating indices set and committee
+   * assignments from the justified state.
+   */
+  @Override
+  public boolean isHeadWeak(
+      final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
+      final Bytes32 root,
+      final UInt64 reorgThreshold) {
+    final UInt64 attestationScore = getAttestationScore(forkChoiceStrategy, root);
+    // TODO-GLOAS: Add weight of equivocating validators in head slot committees to
+    // attestationScore.
+    // In the spec, equivocating validators' weight is ADDED to the head score (making it harder
+    // to reorg), as a safety measure to prevent equivocation-based reorgs.
+    return attestationScore.isLessThan(reorgThreshold);
+  }
+
+  /**
+   * Determines if the parent block is strong. In Gloas, this uses getAttestationScore instead of
+   * raw protoarray weight.
+   *
+   * <p>Spec reference: is_parent_strong (Gloas override)
+   *
+   * <p>TODO-GLOAS: The spec also considers the parent's payload_status when computing the
+   * attestation score via get_parent_payload_status. This requires is_supporting_vote
+   * implementation.
+   */
+  @Override
+  public boolean isParentStrong(
+      final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
+      final Bytes32 parentRoot,
+      final UInt64 parentThreshold) {
+    final UInt64 attestationScore = getAttestationScore(forkChoiceStrategy, parentRoot);
+    return attestationScore.isGreaterThan(parentThreshold);
   }
 
   /**
