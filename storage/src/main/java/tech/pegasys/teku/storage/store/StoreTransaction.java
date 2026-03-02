@@ -522,6 +522,11 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
   }
 
   @Override
+  public UInt64 getReorgThreshold() {
+    return store.getReorgThreshold();
+  }
+
+  @Override
   public void computeBalanceThresholds(final BeaconState justifiedState) {
     store.computeBalanceThresholds(justifiedState);
   }

@@ -224,87 +224,60 @@ class ForkChoiceUtilGloasTest {
     final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.empty(),
-                dataStructureUtil.randomBytes32(),
-                strategy,
-                UInt64.valueOf(100),
-                new boolean[] {true, true}))
+                Optional.empty(), strategy, UInt64.valueOf(100)))
         .isFalse();
   }
 
   @Test
   void shouldApplyProposerBoost_returnsTrue_whenParentNotFromPreviousSlot() {
-    final Bytes32 headRoot = dataStructureUtil.randomBytes32();
-    final Bytes32 parentRoot = dataStructureUtil.randomBytes32();
     final Bytes32 boostRoot = dataStructureUtil.randomBytes32();
+    final Bytes32 parentRoot = dataStructureUtil.randomBytes32();
     final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
-    when(strategy.blockParentRoot(headRoot)).thenReturn(Optional.of(parentRoot));
-    when(strategy.blockSlot(headRoot)).thenReturn(Optional.of(UInt64.valueOf(5)));
+    when(strategy.blockParentRoot(boostRoot)).thenReturn(Optional.of(parentRoot));
+    when(strategy.blockSlot(boostRoot)).thenReturn(Optional.of(UInt64.valueOf(5)));
     when(strategy.blockSlot(parentRoot)).thenReturn(Optional.of(UInt64.valueOf(3))); // gap > 1
 
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.of(boostRoot),
-                headRoot,
-                strategy,
-                UInt64.valueOf(100),
-                new boolean[] {true, true}))
+                Optional.of(boostRoot), strategy, UInt64.valueOf(100)))
         .isTrue();
   }
 
   @Test
   void shouldApplyProposerBoost_returnsTrue_whenParentIsNotWeak() {
-    final Bytes32 headRoot = dataStructureUtil.randomBytes32();
-    final Bytes32 parentRoot = dataStructureUtil.randomBytes32();
     final Bytes32 boostRoot = dataStructureUtil.randomBytes32();
+    final Bytes32 parentRoot = dataStructureUtil.randomBytes32();
     final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
-    when(strategy.blockParentRoot(headRoot)).thenReturn(Optional.of(parentRoot));
-    when(strategy.blockSlot(headRoot)).thenReturn(Optional.of(UInt64.valueOf(5)));
+    when(strategy.blockParentRoot(boostRoot)).thenReturn(Optional.of(parentRoot));
+    when(strategy.blockSlot(boostRoot)).thenReturn(Optional.of(UInt64.valueOf(5)));
     when(strategy.blockSlot(parentRoot)).thenReturn(Optional.of(UInt64.valueOf(4))); // consecutive
     // Parent weight > reorgThreshold → parent is NOT weak (isHeadWeak returns false)
     when(strategy.getWeight(parentRoot)).thenReturn(Optional.of(UInt64.valueOf(200)));
 
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.of(boostRoot),
-                headRoot,
-                strategy,
-                UInt64.valueOf(100), // reorgThreshold
-                new boolean[] {true, false}))
+                Optional.of(boostRoot), strategy, UInt64.valueOf(100)))
         .isTrue();
   }
 
   @Test
-  void shouldApplyProposerBoost_returnsPtcTimeliness_whenParentIsWeakAndConsecutive() {
-    final Bytes32 headRoot = dataStructureUtil.randomBytes32();
-    final Bytes32 parentRoot = dataStructureUtil.randomBytes32();
+  void shouldApplyProposerBoost_returnsTrue_whenParentIsWeakAndConsecutive() {
+    // When parent is weak and from the previous slot, the spec checks for equivocating blocks.
+    // Since equivocating blocks are dropped at gossip, this always returns true for now.
     final Bytes32 boostRoot = dataStructureUtil.randomBytes32();
+    final Bytes32 parentRoot = dataStructureUtil.randomBytes32();
     final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
-    when(strategy.blockParentRoot(headRoot)).thenReturn(Optional.of(parentRoot));
-    when(strategy.blockSlot(headRoot)).thenReturn(Optional.of(UInt64.valueOf(5)));
+    when(strategy.blockParentRoot(boostRoot)).thenReturn(Optional.of(parentRoot));
+    when(strategy.blockSlot(boostRoot)).thenReturn(Optional.of(UInt64.valueOf(5)));
     when(strategy.blockSlot(parentRoot)).thenReturn(Optional.of(UInt64.valueOf(4))); // consecutive
     // Parent weight < reorgThreshold → parent IS weak
     when(strategy.getWeight(parentRoot)).thenReturn(Optional.of(UInt64.valueOf(50)));
 
-    // PTC says timely → boost applies
+    // Returns true because equivocation check is deferred (gossip drops equivocating blocks)
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.of(boostRoot),
-                headRoot,
-                strategy,
-                UInt64.valueOf(100),
-                new boolean[] {true, true}))
+                Optional.of(boostRoot), strategy, UInt64.valueOf(100)))
         .isTrue();
-
-    // PTC says NOT timely → boost does NOT apply
-    assertThat(
-            forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.of(boostRoot),
-                headRoot,
-                strategy,
-                UInt64.valueOf(100),
-                new boolean[] {true, false}))
-        .isFalse();
   }
 
   // Helper methods to create blocks with specific properties

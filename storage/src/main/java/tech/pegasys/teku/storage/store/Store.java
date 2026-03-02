@@ -678,6 +678,11 @@ class Store extends CacheableStore {
   }
 
   @Override
+  public UInt64 getReorgThreshold() {
+    return reorgThreshold;
+  }
+
+  @Override
   public void computeBalanceThresholds(final BeaconState justifiedState) {
     final SpecVersion specVersion = spec.atSlot(justifiedState.getSlot());
     final BeaconStateAccessors beaconStateAccessors = specVersion.beaconStateAccessors();

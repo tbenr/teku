@@ -307,6 +307,11 @@ public class TestStoreImpl implements MutableStore, VoteUpdater {
   }
 
   @Override
+  public UInt64 getReorgThreshold() {
+    return UInt64.ZERO;
+  }
+
+  @Override
   public void computeBalanceThresholds(final BeaconState justifiedState) {}
 
   @Override

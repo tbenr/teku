@@ -74,6 +74,7 @@ import tech.pegasys.teku.spec.logic.common.statetransition.results.BlockImportRe
 import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult;
 import tech.pegasys.teku.spec.logic.common.util.AsyncBLSSignatureVerifier;
 import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil;
+import tech.pegasys.teku.spec.logic.versions.gloas.util.ForkChoiceUtilGloas;
 import tech.pegasys.teku.statetransition.attestation.DeferredAttestations;
 import tech.pegasys.teku.statetransition.block.BlockImportPerformance;
 import tech.pegasys.teku.statetransition.util.DebugDataDumper;
@@ -392,6 +393,23 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
         spec.getBeaconStateUtil(justifiedState.getSlot())
             .getEffectiveActiveUnslashedBalances(justifiedState);
 
+    // For Gloas, conditionally suppress proposer boost via should_apply_proposer_boost
+    Optional<Bytes32> effectiveProposerBoostRoot =
+        recentChainData.getStore().getProposerBoostRoot();
+    if (forkChoiceLateBlockReorgEnabled && effectiveProposerBoostRoot.isPresent()) {
+      final ForkChoiceUtil currentForkChoiceUtil =
+          spec.atSlot(recentChainData.getCurrentSlot().orElse(justifiedState.getSlot()))
+              .getForkChoiceUtil();
+      if (currentForkChoiceUtil instanceof ForkChoiceUtilGloas gloasUtil) {
+        if (!gloasUtil.shouldApplyProposerBoost(
+            effectiveProposerBoostRoot,
+            forkChoiceStrategy,
+            recentChainData.getStore().getReorgThreshold())) {
+          effectiveProposerBoostRoot = Optional.empty();
+        }
+      }
+    }
+
     // If a runtime exception occurs while updating protoarray, we could skip the transaction
     // commit.
     // There is no clean way to solve it unless we move to a fully transactional protoarray update.
@@ -403,7 +421,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
             finalizedCheckpoint,
             justifiedCheckpoint,
             justifiedEffectiveBalances,
-            recentChainData.getStore().getProposerBoostRoot(),
+            effectiveProposerBoostRoot,
             spec.getProposerBoostAmount(justifiedState));
 
     try {
