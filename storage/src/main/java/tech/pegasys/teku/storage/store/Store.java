@@ -73,6 +73,7 @@ import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.CheckpointState;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.logic.common.helpers.BeaconStateAccessors;
+import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil;
 import tech.pegasys.teku.storage.api.StorageUpdateChannel;
 import tech.pegasys.teku.storage.api.StoredBlockMetadata;
 import tech.pegasys.teku.storage.api.VoteUpdateChannel;
@@ -638,43 +639,42 @@ class Store extends CacheableStore {
 
   @Override
   public boolean isHeadWeak(final Bytes32 root) {
-    final Optional<ProtoNodeData> maybeBlockData = getBlockDataFromForkChoiceStrategy(root);
-    return maybeBlockData
-        .map(
-            blockData -> {
-              final UInt64 headWeight = blockData.getWeight();
-
-              final boolean result = headWeight.isLessThan(reorgThreshold);
-
-              LOG.trace(
-                  "isHeadWeak {}: headWeight: {}, reorgThreshold: {}, result: {}",
-                  root,
-                  headWeight,
-                  reorgThreshold,
-                  result);
-              return result;
-            })
-        .orElse(false);
+    readLock.lock();
+    try {
+      final boolean result =
+          getForkChoiceUtilForRoot(root).isHeadWeak(forkChoiceStrategy, root, reorgThreshold);
+      LOG.trace("isHeadWeak {}: reorgThreshold: {}, result: {}", root, reorgThreshold, result);
+      return result;
+    } finally {
+      readLock.unlock();
+    }
   }
 
   @Override
   public boolean isParentStrong(final Bytes32 parentRoot) {
-    final Optional<ProtoNodeData> maybeBlockData = getBlockDataFromForkChoiceStrategy(parentRoot);
-    return maybeBlockData
-        .map(
-            blockData -> {
-              final UInt64 parentWeight = blockData.getWeight();
-              final boolean result = parentWeight.isGreaterThan(parentThreshold);
+    readLock.lock();
+    try {
+      final boolean result =
+          getForkChoiceUtilForRoot(parentRoot)
+              .isParentStrong(forkChoiceStrategy, parentRoot, parentThreshold);
+      LOG.debug(
+          "isParentStrong {}: parentThreshold: {}, result: {}",
+          parentRoot,
+          parentThreshold,
+          result);
+      return result;
+    } finally {
+      readLock.unlock();
+    }
+  }
 
-              LOG.debug(
-                  "isParentStrong {}: parentWeight: {}, parentThreshold: {}, result: {}",
-                  parentRoot,
-                  parentWeight,
-                  parentThreshold,
-                  result);
-              return result;
-            })
-        .orElse(true);
+  private ForkChoiceUtil getForkChoiceUtilForRoot(final Bytes32 root) {
+    final UInt64 slot =
+        forkChoiceStrategy
+            .blockSlot(root)
+            .orElseGet(
+                () -> spec.getCurrentSlotFromTimeMillis(timeMillis, secondsToMillis(genesisTime)));
+    return spec.atSlot(slot).getForkChoiceUtil();
   }
 
   @Override

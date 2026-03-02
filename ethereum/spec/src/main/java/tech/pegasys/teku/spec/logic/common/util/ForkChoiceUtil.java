@@ -594,6 +594,46 @@ public class ForkChoiceUtil {
     return parentExecutionRoot.isPresent() && !parentExecutionRoot.get().isZero();
   }
 
+  /**
+   * Determines if the head block is weak (its weight is below the reorg threshold).
+   *
+   * <p>Spec reference: is_head_weak
+   *
+   * @param forkChoiceStrategy the fork choice strategy for accessing block weights
+   * @param root the root of the head block
+   * @param reorgThreshold the threshold below which a head is considered weak
+   * @return true if the head weight is less than the reorg threshold
+   */
+  public boolean isHeadWeak(
+      final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
+      final Bytes32 root,
+      final UInt64 reorgThreshold) {
+    return forkChoiceStrategy
+        .getBlockData(root)
+        .map(blockData -> blockData.getWeight().isLessThan(reorgThreshold))
+        .orElse(false);
+  }
+
+  /**
+   * Determines if the parent block is strong (its weight exceeds the parent threshold).
+   *
+   * <p>Spec reference: is_parent_strong
+   *
+   * @param forkChoiceStrategy the fork choice strategy for accessing block weights
+   * @param parentRoot the root of the parent block
+   * @param parentThreshold the threshold above which a parent is considered strong
+   * @return true if the parent weight is greater than the parent threshold
+   */
+  public boolean isParentStrong(
+      final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
+      final Bytes32 parentRoot,
+      final UInt64 parentThreshold) {
+    return forkChoiceStrategy
+        .getBlockData(parentRoot)
+        .map(blockData -> blockData.getWeight().isGreaterThan(parentThreshold))
+        .orElse(true);
+  }
+
   public AvailabilityChecker<?> createAvailabilityChecker(final SignedBeaconBlock block) {
     return AvailabilityChecker.NOOP;
   }
