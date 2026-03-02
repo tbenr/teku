@@ -27,6 +27,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.BeaconBlockBody;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.bellatrix.BeaconBlockBodyBellatrix;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
+import tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeValidationStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
@@ -111,7 +112,8 @@ public class RandomChainBuilderForkChoiceStrategy implements ReadOnlyForkChoiceS
             blockAndState.getState().getFinalizedCheckpoint(),
             blockAndState.getState().getCurrentJustifiedCheckpoint(),
             blockAndState.getState().getFinalizedCheckpoint()),
-        UInt64.ZERO);
+        UInt64.ZERO,
+        PayloadStatus.PAYLOAD_STATUS_PENDING);
   }
 
   @Override
@@ -152,6 +154,11 @@ public class RandomChainBuilderForkChoiceStrategy implements ReadOnlyForkChoiceS
   public Optional<UInt64> getWeight(final Bytes32 blockRoot) {
     // We don't track weight so return 0 for all known blocks.
     return getBlock(blockRoot).map(block -> UInt64.ZERO);
+  }
+
+  @Override
+  public Optional<PayloadStatus> payloadStatus(final Bytes32 blockRoot) {
+    return getBlock(blockRoot).map(block -> PayloadStatus.PAYLOAD_STATUS_PENDING);
   }
 
   private Optional<SignedBeaconBlock> getBlock(final Bytes32 root) {

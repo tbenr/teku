@@ -240,7 +240,9 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
                     head.getExecutionBlockHash().orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH),
                     ProtoNodeValidationStatus.VALID,
                     spec.calculateBlockCheckpoints(head.getState()),
-                    ZERO)));
+                    ZERO,
+                    tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus
+                        .PAYLOAD_STATUS_PENDING)));
   }
 
   @Test

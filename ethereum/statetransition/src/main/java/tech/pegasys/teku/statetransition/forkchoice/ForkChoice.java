@@ -701,6 +701,14 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     blockImportPerformance.ifPresent(BlockImportPerformance::transactionCommitted);
     forkChoiceStrategy.onExecutionPayloadResult(block.getRoot(), payloadResult, true);
 
+    // For Gloas blocks, determine and store the parent's payload status on the ProtoNode.
+    // This must happen before processHead() which calls isParentStrong().
+    if (forkChoiceUtil instanceof ForkChoiceUtilGloas gloasUtil) {
+      final tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus parentPayloadStatus =
+          gloasUtil.getParentPayloadStatus(recentChainData.getStore(), block.getMessage()).join();
+      forkChoiceStrategy.updatePayloadStatus(block.getParentRoot(), parentPayloadStatus);
+    }
+
     final UInt64 currentEpoch = spec.computeEpochAtSlot(spec.getCurrentSlot(transaction));
 
     // We only need to apply attestations from the current or previous epoch. If the block is from

@@ -24,6 +24,7 @@ import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.logging.LogFormatter;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
+import tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeValidationStatus;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
@@ -66,6 +67,13 @@ public class ProtoNode {
 
   private ProtoNodeValidationStatus validationStatus;
 
+  /**
+   * The payload status of this node in the Gloas three-state fork choice tree. New blocks start as
+   * PENDING and are resolved to FULL or EMPTY when a child block is processed. Pre-Gloas blocks
+   * default to PENDING.
+   */
+  private PayloadStatus payloadStatus;
+
   ProtoNode(
       final UInt64 blockSlot,
       final Bytes32 stateRoot,
@@ -91,6 +99,7 @@ public class ProtoNode {
     this.bestChildIndex = bestChildIndex;
     this.bestDescendantIndex = bestDescendantIndex;
     this.validationStatus = validationStatus;
+    this.payloadStatus = PayloadStatus.PAYLOAD_STATUS_PENDING;
   }
 
   public void adjustWeight(final long delta) {
@@ -217,6 +226,14 @@ public class ProtoNode {
     this.validationStatus = validationStatus;
   }
 
+  public PayloadStatus getPayloadStatus() {
+    return payloadStatus;
+  }
+
+  public void setPayloadStatus(final PayloadStatus payloadStatus) {
+    this.payloadStatus = payloadStatus;
+  }
+
   public ProtoNodeData getBlockData() {
     return new ProtoNodeData(
         blockSlot,
@@ -227,7 +244,8 @@ public class ProtoNode {
         executionBlockHash,
         validationStatus,
         checkpoints,
-        weight);
+        weight,
+        payloadStatus);
   }
 
   @Override
@@ -250,7 +268,8 @@ public class ProtoNode {
         && Objects.equals(parentIndex, protoNode.parentIndex)
         && Objects.equals(bestChildIndex, protoNode.bestChildIndex)
         && Objects.equals(bestDescendantIndex, protoNode.bestDescendantIndex)
-        && validationStatus == protoNode.validationStatus;
+        && validationStatus == protoNode.validationStatus
+        && payloadStatus == protoNode.payloadStatus;
   }
 
   @Override
@@ -267,7 +286,8 @@ public class ProtoNode {
         parentIndex,
         bestChildIndex,
         bestDescendantIndex,
-        validationStatus);
+        validationStatus,
+        payloadStatus);
   }
 
   @Override
@@ -288,6 +308,7 @@ public class ProtoNode {
         .add("bestChildIndex", bestChildIndex)
         .add("bestDescendantIndex", bestDescendantIndex)
         .add("validationStatus", validationStatus)
+        .add("payloadStatus", payloadStatus)
         .toString();
   }
 

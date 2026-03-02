@@ -41,6 +41,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
 import tech.pegasys.teku.spec.datastructures.forkchoice.InvalidCheckpointException;
+import tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeValidationStatus;
 import tech.pegasys.teku.spec.datastructures.state.AnchorPoint;
@@ -422,7 +423,8 @@ class StoreTest extends AbstractStoreTest {
             Bytes32.random(),
             ProtoNodeValidationStatus.VALID,
             headCheckpoint,
-            UInt64.ZERO);
+            UInt64.ZERO,
+            PayloadStatus.PAYLOAD_STATUS_PENDING);
     final ProtoNodeData parentNodeData =
         new ProtoNodeData(
             UInt64.ZERO,
@@ -433,7 +435,8 @@ class StoreTest extends AbstractStoreTest {
             Bytes32.random(),
             ProtoNodeValidationStatus.VALID,
             parentCheckpoint,
-            UInt64.ZERO);
+            UInt64.ZERO,
+            PayloadStatus.PAYLOAD_STATUS_PENDING);
     when(dummyForkChoiceStrategy.getBlockData(root)).thenReturn(Optional.of(protoNodeData));
     when(dummyForkChoiceStrategy.getBlockData(parentRoot)).thenReturn(Optional.of(parentNodeData));
   }
@@ -452,7 +455,8 @@ class StoreTest extends AbstractStoreTest {
             Bytes32.random(),
             ProtoNodeValidationStatus.VALID,
             null,
-            headValue);
+            headValue,
+            PayloadStatus.PAYLOAD_STATUS_PENDING);
     final ProtoNodeData parentNodeData =
         new ProtoNodeData(
             UInt64.ZERO,
@@ -463,7 +467,8 @@ class StoreTest extends AbstractStoreTest {
             Bytes32.random(),
             ProtoNodeValidationStatus.VALID,
             null,
-            parentValue);
+            parentValue,
+            PayloadStatus.PAYLOAD_STATUS_PENDING);
     when(dummyForkChoiceStrategy.getBlockData(root)).thenReturn(Optional.of(protoNodeData));
     when(dummyForkChoiceStrategy.getBlockData(parentRoot)).thenReturn(Optional.of(parentNodeData));
   }

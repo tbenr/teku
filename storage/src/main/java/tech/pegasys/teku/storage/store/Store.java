@@ -378,6 +378,9 @@ class Store extends CacheableStore {
             .justifiedCheckpoint(justifiedCheckpoint)
             .finalizedCheckpoint(finalizedAnchor.getCheckpoint())
             .build();
+    // Payload status (Gloas) cannot be determined during DB recovery because block bodies are
+    // not available from StoredBlockMetadata. All nodes default to PENDING, which is acceptable:
+    // the first new block processed after restart will resolve its parent's payload status.
     for (StoredBlockMetadata block : blocks) {
       if (block.getCheckpointEpochs().isEmpty()) {
         throw new IllegalStateException(
@@ -683,14 +686,17 @@ class Store extends CacheableStore {
       // body access which is async, so we use PENDING as a fallback (counts all votes).
       if (forkChoiceUtil instanceof ForkChoiceUtilGloas gloasUtil && cachedJustifiedState != null) {
         final VoteAccessor voteAccessor = createVoteAccessor();
-        // Use PENDING payload status which counts all votes (no payload filtering).
-        // TODO-GLOAS: Determine actual parent payload status for more accurate scoring.
+        // Use the parent's stored payload status (resolved during onBlock of the child block)
+        final PayloadStatus parentPayloadStatus =
+            forkChoiceStrategy
+                .payloadStatus(parentRoot)
+                .orElse(PayloadStatus.PAYLOAD_STATUS_PENDING);
         result =
             gloasUtil.isParentStrong(
                 forkChoiceStrategy,
                 parentRoot,
                 parentThreshold,
-                PayloadStatus.PAYLOAD_STATUS_PENDING,
+                parentPayloadStatus,
                 voteAccessor,
                 cachedJustifiedState);
       } else {

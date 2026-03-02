@@ -257,14 +257,14 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
       if (ancestorRoot.isEmpty() || !nodeRoot.equals(ancestorRoot.get())) {
         return false;
       }
-      // For PENDING, any payload status matches
-      // For non-PENDING, we would need the ancestor's payload status to match.
-      // Since protoarray doesn't track payload status per node, we accept any match here.
-      // This is correct for PENDING (isHeadWeak), and approximate for EMPTY/FULL
-      // (isParentStrong).
-      // TODO-GLOAS: When the three-state fork choice tree is in protoarray, use the
-      // ancestor's actual payload status for EMPTY/FULL node checks.
-      return nodePayloadStatus == PAYLOAD_STATUS_PENDING;
+      // For PENDING, any payload status matches (the node hasn't been resolved yet)
+      if (nodePayloadStatus == PAYLOAD_STATUS_PENDING) {
+        return true;
+      }
+      // For FULL/EMPTY queries, check if the ancestor's resolved payload status matches
+      final PayloadStatus ancestorStatus =
+          forkChoiceStrategy.payloadStatus(nodeRoot).orElse(PAYLOAD_STATUS_PENDING);
+      return nodePayloadStatus == ancestorStatus;
     }
   }
 
@@ -451,7 +451,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
    * @return PAYLOAD_STATUS_FULL if parent has full payload, PAYLOAD_STATUS_EMPTY otherwise
    */
   // get_parent_payload_status
-  SafeFuture<PayloadStatus> getParentPayloadStatus(
+  public SafeFuture<PayloadStatus> getParentPayloadStatus(
       final ReadOnlyStore store, final BeaconBlock block) {
     return store
         .retrieveBlock(block.getParentRoot())

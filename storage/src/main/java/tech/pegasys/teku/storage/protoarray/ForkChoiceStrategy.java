@@ -34,6 +34,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.BlockAndCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
@@ -42,7 +43,6 @@ import tech.pegasys.teku.spec.datastructures.operations.IndexedAttestation;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.executionlayer.ExecutionPayloadStatus;
 import tech.pegasys.teku.spec.executionlayer.ForkChoiceState;
-import tech.pegasys.teku.spec.executionlayer.PayloadStatus;
 
 public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoiceStrategy {
   private static final Logger LOG = LogManager.getLogger();
@@ -380,6 +380,25 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
   }
 
   @Override
+  public Optional<PayloadStatus> payloadStatus(final Bytes32 blockRoot) {
+    protoArrayLock.readLock().lock();
+    try {
+      return getProtoNode(blockRoot).map(ProtoNode::getPayloadStatus);
+    } finally {
+      protoArrayLock.readLock().unlock();
+    }
+  }
+
+  public void updatePayloadStatus(final Bytes32 blockRoot, final PayloadStatus status) {
+    protoArrayLock.writeLock().lock();
+    try {
+      getProtoNode(blockRoot).ifPresent(node -> node.setPayloadStatus(status));
+    } finally {
+      protoArrayLock.writeLock().unlock();
+    }
+  }
+
+  @Override
   public Optional<Boolean> isOptimistic(final Bytes32 blockRoot) {
     protoArrayLock.readLock().lock();
     try {
@@ -613,7 +632,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
 
   public void onExecutionPayloadResult(
       final Bytes32 blockRoot,
-      final PayloadStatus result,
+      final tech.pegasys.teku.spec.executionlayer.PayloadStatus result,
       final boolean verifiedInvalidTransition) {
     if (result.hasFailedExecution()) {
       LOG.warn(
