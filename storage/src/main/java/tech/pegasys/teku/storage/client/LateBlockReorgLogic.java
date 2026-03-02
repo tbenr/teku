@@ -33,7 +33,7 @@ import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil;
 
 public class LateBlockReorgLogic {
   private static final Logger LOG = LogManager.getLogger();
-  protected final Map<Bytes32, Boolean> blockTimeliness;
+  protected final Map<Bytes32, boolean[]> blockTimeliness;
   private final Supplier<TimeProvider> timeProviderSupplier;
   private final Spec spec;
   private final RecentChainData recentChainData;
@@ -72,7 +72,7 @@ public class LateBlockReorgLogic {
           root,
           block.getSlot(),
           computedSlot);
-      blockTimeliness.put(root, false);
+      blockTimeliness.put(root, new boolean[] {false});
       return;
     }
     recentChainData
@@ -83,24 +83,24 @@ public class LateBlockReorgLogic {
                   spec.computeTimeMillisAtSlot(slot, recentChainData.getGenesisTimeMillis());
               final int millisIntoSlot =
                   arrivalTimeMillis.minusMinZero(slotStartTimeMillis).intValue();
-              final int timelinessLimit = spec.getAttestationDueMillis(slot);
 
-              final boolean isTimely =
-                  block.getMessage().getSlot().equals(slot) && timelinessLimit > millisIntoSlot;
+              final ForkChoiceUtil forkChoiceUtil = spec.atSlot(slot).getForkChoiceUtil();
+              final boolean[] timeliness =
+                  forkChoiceUtil.computeBlockTimeliness(
+                      block.getMessage().getSlot(), slot, millisIntoSlot);
               LOG.debug(
-                  "Block {}:{} arrived at {} ms into slot {}, timeliness limit is {} ms. result: {}",
+                  "Block {}:{} arrived at {} ms into slot {}, timeliness: {}",
                   root,
                   block.getSlot(),
                   millisIntoSlot,
                   computedSlot,
-                  timelinessLimit,
-                  isTimely);
-              blockTimeliness.put(root, isTimely);
+                  timeliness);
+              blockTimeliness.put(root, timeliness);
             });
   }
 
   // implements is_timely from Consensus Spec
-  Optional<Boolean> isBlockTimely(final Bytes32 root) {
+  Optional<boolean[]> isBlockTimely(final Bytes32 root) {
     return Optional.ofNullable(blockTimeliness.get(root));
   }
 
@@ -124,11 +124,11 @@ public class LateBlockReorgLogic {
     return isTimely;
   }
 
-  // Implements is_head_late form consensus-spec
+  // Implements is_head_late from consensus-spec
   // caveat: if the root was not found, will default to it being timely,
   // on the basis that it's not safe to make choices about blocks we don't know about
   public boolean isBlockLate(final Bytes32 root) {
-    return !isBlockTimely(root).orElse(true);
+    return ForkChoiceUtil.isHeadLate(blockTimeliness.get(root));
   }
 
   // implements get_proposer_head from Consensus Spec

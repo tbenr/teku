@@ -19,6 +19,7 @@ import static tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus.PAY
 import java.util.Optional;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
+import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.config.SpecConfigGloas;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
@@ -54,6 +55,8 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
         forkChoiceUtil.getClass());
     return (ForkChoiceUtilGloas) forkChoiceUtil;
   }
+
+  public static final int PTC_TIMELINESS_INDEX = 1;
 
   // From Gloas, there are 3 states available in a given slot
   // pre-state: State at the slot before block applied
@@ -104,6 +107,23 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
   public Optional<Integer> getPayloadAttestationDueMillis() {
     final SpecConfigGloas configGloas = SpecConfigGloas.required(specConfig);
     return Optional.of(getSlotComponentDurationMillis(configGloas.getPayloadAttestationDueBps()));
+  }
+
+  /**
+   * Computes dual block timeliness for Gloas: attestation deadline and PTC deadline.
+   *
+   * <p>Spec reference: record_block_timeliness (Gloas override)
+   */
+  @Override
+  public boolean[] computeBlockTimeliness(
+      final UInt64 blockSlot, final UInt64 currentSlot, final int millisIntoSlot) {
+    final int attestationTimelinessLimit = getAttestationDueMillis();
+    final int ptcTimelinessLimit = getPayloadAttestationDueMillis().orElseThrow();
+    final boolean isTimelyAttestation =
+        blockSlot.equals(currentSlot) && attestationTimelinessLimit > millisIntoSlot;
+    final boolean isTimelyPtc =
+        blockSlot.equals(currentSlot) && ptcTimelinessLimit > millisIntoSlot;
+    return new boolean[] {isTimelyAttestation, isTimelyPtc};
   }
 
   // Checking of blob data availability is delayed until the processing of the execution payload

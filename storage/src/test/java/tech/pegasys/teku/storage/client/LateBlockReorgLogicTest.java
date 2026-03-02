@@ -80,7 +80,9 @@ class LateBlockReorgLogicTest {
 
     reorgLogicInstrumented.setBlockTimelinessFromArrivalTime(
         signedBlockAndState.getBlock(), computedTime);
-    assertThat(reorgLogicInstrumented.isBlockTimely(blockRoot)).contains(true);
+    assertThat(reorgLogicInstrumented.isBlockTimely(blockRoot))
+        .isPresent()
+        .hasValueSatisfying(t -> assertThat(t[0]).isTrue());
     assertThat(reorgLogicInstrumented.isBlockLate(blockRoot)).isFalse();
   }
 
@@ -94,7 +96,9 @@ class LateBlockReorgLogicTest {
     // because its already been set
     reorgLogicInstrumented.setBlockTimelinessFromArrivalTime(
         signedBlockAndState.getBlock(), computedTime.plus(3000));
-    assertThat(reorgLogicInstrumented.isBlockTimely(blockRoot)).contains(true);
+    assertThat(reorgLogicInstrumented.isBlockTimely(blockRoot))
+        .isPresent()
+        .hasValueSatisfying(t -> assertThat(t[0]).isTrue());
     assertThat(reorgLogicInstrumented.isBlockLate(blockRoot)).isFalse();
   }
 
@@ -104,7 +108,9 @@ class LateBlockReorgLogicTest {
 
     reorgLogicInstrumented.setBlockTimelinessFromArrivalTime(
         signedBlockAndState.getBlock(), computedTime);
-    assertThat(reorgLogicInstrumented.isBlockTimely(blockRoot)).contains(false);
+    assertThat(reorgLogicInstrumented.isBlockTimely(blockRoot))
+        .isPresent()
+        .hasValueSatisfying(t -> assertThat(t[0]).isFalse());
     assertThat(reorgLogicInstrumented.isBlockLate(blockRoot)).isTrue();
   }
 
@@ -114,7 +120,9 @@ class LateBlockReorgLogicTest {
 
     reorgLogicInstrumented.setBlockTimelinessFromArrivalTime(
         signedBlockAndState.getBlock(), computedTime);
-    assertThat(reorgLogicInstrumented.isBlockTimely(blockRoot)).contains(false);
+    assertThat(reorgLogicInstrumented.isBlockTimely(blockRoot))
+        .isPresent()
+        .hasValueSatisfying(t -> assertThat(t[0]).isFalse());
     assertThat(reorgLogicInstrumented.isBlockLate(blockRoot)).isTrue();
   }
 
@@ -533,7 +541,7 @@ class LateBlockReorgLogicTest {
     }
 
     public void setBlockTimeliness(final Bytes32 root, final boolean isTimely) {
-      blockTimeliness.put(root, isTimely);
+      blockTimeliness.put(root, new boolean[] {isTimely});
     }
   }
 }

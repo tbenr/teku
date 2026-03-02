@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.TreeMap;
+import com.google.common.annotations.VisibleForTesting;
 import javax.annotation.CheckReturnValue;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
@@ -514,6 +515,42 @@ public class ForkChoiceUtil {
         .isLessThanOrEqualTo(getCurrentSlot(store));
   }
 
+  public static final int ATTESTATION_TIMELINESS_INDEX = 0;
+
+  /**
+   * Computes block timeliness based on the arrival time relative to the slot start.
+   *
+   * <p>Spec reference: record_block_timeliness
+   *
+   * @param blockSlot the slot of the block
+   * @param currentSlot the current slot
+   * @param millisIntoSlot milliseconds elapsed since the slot start
+   * @return boolean array of timeliness values. Pre-Gloas: single element (attestation deadline).
+   *     Gloas: two elements (attestation deadline, PTC deadline).
+   */
+  public boolean[] computeBlockTimeliness(
+      final UInt64 blockSlot, final UInt64 currentSlot, final int millisIntoSlot) {
+    final int timelinessLimit = getAttestationDueMillis();
+    final boolean isTimely = blockSlot.equals(currentSlot) && timelinessLimit > millisIntoSlot;
+    return new boolean[] {isTimely};
+  }
+
+  /**
+   * Determines if the head block arrived late (after the attestation deadline).
+   *
+   * <p>Spec reference: is_head_late
+   *
+   * @param blockTimeliness the timeliness array for the block, or null if unknown
+   * @return true if the block is late, false if timely or unknown (conservative default)
+   */
+  public static boolean isHeadLate(final boolean[] blockTimeliness) {
+    if (blockTimeliness == null) {
+      return false;
+    }
+    return !blockTimeliness[ATTESTATION_TIMELINESS_INDEX];
+  }
+
+  @VisibleForTesting
   // get_slot_component_duration_ms
   protected int getSlotComponentDurationMillis(final int basisPoints) {
     return (basisPoints * specConfig.getSlotDurationMillis()) / 10_000;
