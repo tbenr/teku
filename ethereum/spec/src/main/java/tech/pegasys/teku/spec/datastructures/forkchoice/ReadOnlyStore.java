@@ -158,6 +158,9 @@ public interface ReadOnlyStore extends TimeProvider {
   boolean isHeadWeak(Bytes32 root);
 
   // implements is_parent_strong from fork-choice Consensus Spec
+  // Note: The spec signature takes the block root (not parent root) and internally looks up the
+  // parent. Teku achieves the same behavior because callers explicitly pass head.getParentRoot().
+  // See: https://github.com/ethereum/consensus-specs/pull/4807
   boolean isParentStrong(Bytes32 parentRoot);
 
   void computeBalanceThresholds(BeaconState justifiedState);
