@@ -33,6 +33,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.gloas.Bea
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
 import tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 
@@ -216,6 +217,94 @@ class ForkChoiceUtilGloasTest {
     final ReadOnlyStore store = mock(ReadOnlyStore.class);
     when(store.getExecutionPayloadIfAvailable(currentBlock.getRoot())).thenReturn(Optional.empty());
     assertThat(forkChoiceUtil.isBlockStatusFull(store, currentBlock.getMessage())).isFalse();
+  }
+
+  @Test
+  void shouldApplyProposerBoost_returnsFalse_whenNoProposerBoostRoot() {
+    final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
+    assertThat(
+            forkChoiceUtil.shouldApplyProposerBoost(
+                Optional.empty(),
+                dataStructureUtil.randomBytes32(),
+                strategy,
+                UInt64.valueOf(100),
+                new boolean[] {true, true}))
+        .isFalse();
+  }
+
+  @Test
+  void shouldApplyProposerBoost_returnsTrue_whenParentNotFromPreviousSlot() {
+    final Bytes32 headRoot = dataStructureUtil.randomBytes32();
+    final Bytes32 parentRoot = dataStructureUtil.randomBytes32();
+    final Bytes32 boostRoot = dataStructureUtil.randomBytes32();
+    final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
+    when(strategy.blockParentRoot(headRoot)).thenReturn(Optional.of(parentRoot));
+    when(strategy.blockSlot(headRoot)).thenReturn(Optional.of(UInt64.valueOf(5)));
+    when(strategy.blockSlot(parentRoot)).thenReturn(Optional.of(UInt64.valueOf(3))); // gap > 1
+
+    assertThat(
+            forkChoiceUtil.shouldApplyProposerBoost(
+                Optional.of(boostRoot),
+                headRoot,
+                strategy,
+                UInt64.valueOf(100),
+                new boolean[] {true, true}))
+        .isTrue();
+  }
+
+  @Test
+  void shouldApplyProposerBoost_returnsTrue_whenParentIsNotWeak() {
+    final Bytes32 headRoot = dataStructureUtil.randomBytes32();
+    final Bytes32 parentRoot = dataStructureUtil.randomBytes32();
+    final Bytes32 boostRoot = dataStructureUtil.randomBytes32();
+    final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
+    when(strategy.blockParentRoot(headRoot)).thenReturn(Optional.of(parentRoot));
+    when(strategy.blockSlot(headRoot)).thenReturn(Optional.of(UInt64.valueOf(5)));
+    when(strategy.blockSlot(parentRoot)).thenReturn(Optional.of(UInt64.valueOf(4))); // consecutive
+    // Parent weight > reorgThreshold → parent is NOT weak (isHeadWeak returns false)
+    when(strategy.getWeight(parentRoot)).thenReturn(Optional.of(UInt64.valueOf(200)));
+
+    assertThat(
+            forkChoiceUtil.shouldApplyProposerBoost(
+                Optional.of(boostRoot),
+                headRoot,
+                strategy,
+                UInt64.valueOf(100), // reorgThreshold
+                new boolean[] {true, false}))
+        .isTrue();
+  }
+
+  @Test
+  void shouldApplyProposerBoost_returnsPtcTimeliness_whenParentIsWeakAndConsecutive() {
+    final Bytes32 headRoot = dataStructureUtil.randomBytes32();
+    final Bytes32 parentRoot = dataStructureUtil.randomBytes32();
+    final Bytes32 boostRoot = dataStructureUtil.randomBytes32();
+    final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
+    when(strategy.blockParentRoot(headRoot)).thenReturn(Optional.of(parentRoot));
+    when(strategy.blockSlot(headRoot)).thenReturn(Optional.of(UInt64.valueOf(5)));
+    when(strategy.blockSlot(parentRoot)).thenReturn(Optional.of(UInt64.valueOf(4))); // consecutive
+    // Parent weight < reorgThreshold → parent IS weak
+    when(strategy.getWeight(parentRoot)).thenReturn(Optional.of(UInt64.valueOf(50)));
+
+    // PTC says timely → boost applies
+    assertThat(
+            forkChoiceUtil.shouldApplyProposerBoost(
+                Optional.of(boostRoot),
+                headRoot,
+                strategy,
+                UInt64.valueOf(100),
+                new boolean[] {true, true}))
+        .isTrue();
+
+    // PTC says NOT timely → boost does NOT apply
+    assertThat(
+            forkChoiceUtil.shouldApplyProposerBoost(
+                Optional.of(boostRoot),
+                headRoot,
+                strategy,
+                UInt64.valueOf(100),
+                new boolean[] {true, false}))
+        .isFalse();
   }
 
   // Helper methods to create blocks with specific properties

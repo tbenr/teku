@@ -156,6 +156,59 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
   }
 
   /**
+   * Determines whether proposer boost should be applied during weight computation.
+   *
+   * <p>In Gloas, proposer boost is conditionally suppressed to prevent equivocation-based reorgs.
+   * If the head's parent was weak and from the previous slot, boost only applies if the head block
+   * arrived before the PTC deadline (no timely equivocations detected).
+   *
+   * <p>Spec reference: should_apply_proposer_boost
+   *
+   * @param proposerBoostRoot the current proposer boost root, empty if none
+   * @param headRoot the current head root
+   * @param forkChoiceStrategy the fork choice strategy for looking up block data
+   * @param reorgThreshold the threshold for the head weakness check
+   * @param blockTimeliness the timeliness array for the head block, or null if unknown
+   * @return true if proposer boost should be applied
+   */
+  // should_apply_proposer_boost
+  public boolean shouldApplyProposerBoost(
+      final Optional<Bytes32> proposerBoostRoot,
+      final Bytes32 headRoot,
+      final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
+      final UInt64 reorgThreshold,
+      final boolean[] blockTimeliness) {
+    if (proposerBoostRoot.isEmpty()) {
+      return false;
+    }
+    final Optional<Bytes32> maybeParentRoot = forkChoiceStrategy.blockParentRoot(headRoot);
+    final Optional<UInt64> maybeHeadSlot = forkChoiceStrategy.blockSlot(headRoot);
+    if (maybeParentRoot.isEmpty() || maybeHeadSlot.isEmpty()) {
+      return true;
+    }
+    final Bytes32 parentRoot = maybeParentRoot.get();
+    final UInt64 headSlot = maybeHeadSlot.get();
+    final Optional<UInt64> maybeParentSlot = forkChoiceStrategy.blockSlot(parentRoot);
+    if (maybeParentSlot.isEmpty()) {
+      return true;
+    }
+    final UInt64 parentSlot = maybeParentSlot.get();
+    // If parent is not from the previous slot, boost applies
+    if (!parentSlot.increment().equals(headSlot)) {
+      return true;
+    }
+    // If parent is not weak, boost applies
+    if (!isHeadWeak(forkChoiceStrategy, parentRoot, reorgThreshold)) {
+      return true;
+    }
+    // Parent is weak and from previous slot: only boost if PTC timeliness indicates no equivocation
+    if (blockTimeliness == null || blockTimeliness.length <= PTC_TIMELINESS_INDEX) {
+      return true;
+    }
+    return blockTimeliness[PTC_TIMELINESS_INDEX];
+  }
+
+  /**
    * Computes the attestation score for a block root.
    *
    * <p>Spec reference: get_attestation_score
