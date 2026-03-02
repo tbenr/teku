@@ -29,6 +29,7 @@ import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
+import tech.pegasys.teku.spec.SpecMilestone;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockAndCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
@@ -140,6 +141,8 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
   public void onAttestation(final VoteUpdater voteUpdater, final IndexedAttestation attestation) {
     votesLock.writeLock().lock();
     try {
+      final UInt64 attestationSlot = attestation.getData().getSlot();
+      final boolean payloadPresent = attestation.getData().getIndex().equals(UInt64.ONE);
       attestation
           .getAttestingIndices()
           .streamUnboxed()
@@ -149,7 +152,9 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
                       voteUpdater,
                       validatorIndex,
                       attestation.getData().getBeaconBlockRoot(),
-                      attestation.getData().getTarget().getEpoch()));
+                      attestation.getData().getTarget().getEpoch(),
+                      attestationSlot,
+                      payloadPresent));
     } finally {
       votesLock.writeLock().unlock();
     }
@@ -157,11 +162,13 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
 
   public void applyDeferredAttestations(final VoteUpdater voteUpdater, final DeferredVotes votes) {
     final UInt64 targetEpoch = spec.computeEpochAtSlot(votes.getSlot());
+    final UInt64 slot = votes.getSlot();
     votesLock.writeLock().lock();
     try {
       votes.forEachDeferredVote(
-          (blockRoot, validatorIndex) ->
-              processAttestation(voteUpdater, validatorIndex, blockRoot, targetEpoch));
+          (blockRoot, validatorIndex, payloadPresent) ->
+              processAttestation(
+                  voteUpdater, validatorIndex, blockRoot, targetEpoch, slot, payloadPresent));
     } finally {
       votesLock.writeLock().unlock();
     }
@@ -228,19 +235,48 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
     }
   }
 
+  @VisibleForTesting
   void processAttestation(
       final VoteUpdater voteUpdater,
       final UInt64 validatorIndex,
       final Bytes32 blockRoot,
       final UInt64 targetEpoch) {
+    processAttestation(voteUpdater, validatorIndex, blockRoot, targetEpoch, UInt64.ZERO, false);
+  }
+
+  void processAttestation(
+      final VoteUpdater voteUpdater,
+      final UInt64 validatorIndex,
+      final Bytes32 blockRoot,
+      final UInt64 targetEpoch,
+      final UInt64 slot,
+      final boolean payloadPresent) {
     VoteTracker vote = voteUpdater.getVote(validatorIndex);
     // Not updating anything for equivocated validators
     if (vote.isEquivocating()) {
       return;
     }
 
-    if (targetEpoch.isGreaterThan(vote.getNextEpoch()) || vote.equals(VoteTracker.DEFAULT)) {
-      VoteTracker newVote = new VoteTracker(vote.getCurrentRoot(), blockRoot, targetEpoch);
+    // Gloas uses slot-based comparison; pre-Gloas uses epoch-based
+    final boolean shouldUpdate;
+    if (spec.atSlot(slot).getMilestone().isGreaterThanOrEqualTo(SpecMilestone.GLOAS)) {
+      shouldUpdate = slot.isGreaterThan(vote.getNextSlot()) || vote.equals(VoteTracker.DEFAULT);
+    } else {
+      shouldUpdate =
+          targetEpoch.isGreaterThan(vote.getNextEpoch()) || vote.equals(VoteTracker.DEFAULT);
+    }
+    if (shouldUpdate) {
+      VoteTracker newVote =
+          new VoteTracker(
+              vote.getCurrentRoot(),
+              blockRoot,
+              targetEpoch,
+              false,
+              false,
+              slot,
+              payloadPresent,
+              vote.getCurrentSlot(),
+              vote.isCurrentPayloadPresent());
       voteUpdater.putVote(validatorIndex, newVote);
     }
   }

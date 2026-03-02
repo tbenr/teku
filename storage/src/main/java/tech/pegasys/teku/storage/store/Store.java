@@ -63,7 +63,9 @@ import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
 import tech.pegasys.teku.spec.datastructures.epbs.SignedExecutionPayloadAndState;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.SlotAndExecutionPayloadSummary;
+import tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
+import tech.pegasys.teku.spec.datastructures.forkchoice.VoteAccessor;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteUpdater;
 import tech.pegasys.teku.spec.datastructures.hashtree.HashTree;
@@ -74,6 +76,7 @@ import tech.pegasys.teku.spec.datastructures.state.CheckpointState;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.logic.common.helpers.BeaconStateAccessors;
 import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil;
+import tech.pegasys.teku.spec.logic.versions.gloas.util.ForkChoiceUtilGloas;
 import tech.pegasys.teku.storage.api.StorageUpdateChannel;
 import tech.pegasys.teku.storage.api.StoredBlockMetadata;
 import tech.pegasys.teku.storage.api.VoteUpdateChannel;
@@ -126,6 +129,7 @@ class Store extends CacheableStore {
 
   private UInt64 reorgThreshold = UInt64.ZERO;
   private UInt64 parentThreshold = UInt64.ZERO;
+  private volatile BeaconState cachedJustifiedState;
 
   private Store(
       final MetricsSystem metricsSystem,
@@ -641,8 +645,26 @@ class Store extends CacheableStore {
   public boolean isHeadWeak(final Bytes32 root) {
     readLock.lock();
     try {
-      final boolean result =
-          getForkChoiceUtilForRoot(root).isHeadWeak(forkChoiceStrategy, root, reorgThreshold);
+      final ForkChoiceUtil forkChoiceUtil = getForkChoiceUtilForRoot(root);
+      final boolean result;
+      if (forkChoiceUtil instanceof ForkChoiceUtilGloas gloasUtil && cachedJustifiedState != null) {
+        final VoteAccessor voteAccessor = createVoteAccessor();
+        final Optional<BeaconState> headState = getBlockStateIfAvailable(root);
+        if (headState.isPresent()) {
+          result =
+              gloasUtil.isHeadWeak(
+                  forkChoiceStrategy,
+                  root,
+                  reorgThreshold,
+                  voteAccessor,
+                  headState.get(),
+                  cachedJustifiedState);
+        } else {
+          result = gloasUtil.isHeadWeak(forkChoiceStrategy, root, reorgThreshold);
+        }
+      } else {
+        result = forkChoiceUtil.isHeadWeak(forkChoiceStrategy, root, reorgThreshold);
+      }
       LOG.trace("isHeadWeak {}: reorgThreshold: {}, result: {}", root, reorgThreshold, result);
       return result;
     } finally {
@@ -654,9 +676,26 @@ class Store extends CacheableStore {
   public boolean isParentStrong(final Bytes32 parentRoot) {
     readLock.lock();
     try {
-      final boolean result =
-          getForkChoiceUtilForRoot(parentRoot)
-              .isParentStrong(forkChoiceStrategy, parentRoot, parentThreshold);
+      final ForkChoiceUtil forkChoiceUtil = getForkChoiceUtilForRoot(parentRoot);
+      final boolean result;
+      // For Gloas, use the extended isParentStrong with payload-status-aware scoring
+      // when the justified state is cached. The payload status determination requires block
+      // body access which is async, so we use PENDING as a fallback (counts all votes).
+      if (forkChoiceUtil instanceof ForkChoiceUtilGloas gloasUtil && cachedJustifiedState != null) {
+        final VoteAccessor voteAccessor = createVoteAccessor();
+        // Use PENDING payload status which counts all votes (no payload filtering).
+        // TODO-GLOAS: Determine actual parent payload status for more accurate scoring.
+        result =
+            gloasUtil.isParentStrong(
+                forkChoiceStrategy,
+                parentRoot,
+                parentThreshold,
+                PayloadStatus.PAYLOAD_STATUS_PENDING,
+                voteAccessor,
+                cachedJustifiedState);
+      } else {
+        result = forkChoiceUtil.isParentStrong(forkChoiceStrategy, parentRoot, parentThreshold);
+      }
       LOG.debug(
           "isParentStrong {}: parentThreshold: {}, result: {}",
           parentRoot,
@@ -666,6 +705,21 @@ class Store extends CacheableStore {
     } finally {
       readLock.unlock();
     }
+  }
+
+  private VoteAccessor createVoteAccessor() {
+    return new VoteAccessor() {
+      @Override
+      public VoteTracker getVote(final UInt64 validatorIndex) {
+        final VoteTracker vote = Store.this.getVote(validatorIndex);
+        return vote != null ? vote : VoteTracker.DEFAULT;
+      }
+
+      @Override
+      public UInt64 getHighestVotedValidatorIndex() {
+        return highestVotedValidatorIndex;
+      }
+    };
   }
 
   private ForkChoiceUtil getForkChoiceUtilForRoot(final Bytes32 root) {
@@ -692,6 +746,7 @@ class Store extends CacheableStore {
     parentThreshold =
         beaconStateAccessors.calculateCommitteeFraction(
             justifiedState, specVersion.getConfig().getReorgParentWeightThreshold());
+    cachedJustifiedState = justifiedState;
   }
 
   @Override

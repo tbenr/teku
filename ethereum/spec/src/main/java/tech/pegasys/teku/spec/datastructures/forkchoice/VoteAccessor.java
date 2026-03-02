@@ -11,19 +11,14 @@
  * specific language governing permissions and limitations under the License.
  */
 
-package tech.pegasys.teku.storage.protoarray;
+package tech.pegasys.teku.spec.datastructures.forkchoice;
 
-import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
-public interface DeferredVotes {
-  UInt64 getSlot();
+/** Read-only access to the fork choice vote store (store.latest_messages equivalent). */
+public interface VoteAccessor {
 
-  /** Consumer for deferred votes: (blockRoot, validatorIndex, payloadPresent). */
-  @FunctionalInterface
-  interface DeferredVoteConsumer {
-    void accept(Bytes32 blockRoot, UInt64 validatorIndex, boolean payloadPresent);
-  }
+  VoteTracker getVote(UInt64 validatorIndex);
 
-  void forEachDeferredVote(DeferredVoteConsumer consumer);
+  UInt64 getHighestVotedValidatorIndex();
 }

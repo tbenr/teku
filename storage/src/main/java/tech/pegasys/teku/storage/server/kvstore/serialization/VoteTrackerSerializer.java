@@ -38,8 +38,32 @@ class VoteTrackerSerializer implements KvStoreSerializer<VoteTracker> {
             nextEquivocating = reader.readBoolean();
             currentEquivocating = reader.readBoolean();
           }
+          // Gloas fields: slot and payloadPresent
+          final UInt64 nextSlot;
+          final boolean nextPayloadPresent;
+          final UInt64 currentSlot;
+          final boolean currentPayloadPresent;
+          if (reader.isComplete()) {
+            nextSlot = UInt64.ZERO;
+            nextPayloadPresent = false;
+            currentSlot = UInt64.ZERO;
+            currentPayloadPresent = false;
+          } else {
+            nextSlot = UInt64.fromLongBits(reader.readUInt64());
+            nextPayloadPresent = reader.readBoolean();
+            currentSlot = UInt64.fromLongBits(reader.readUInt64());
+            currentPayloadPresent = reader.readBoolean();
+          }
           return new VoteTracker(
-              currentRoot, nextRoot, nextEpoch, nextEquivocating, currentEquivocating);
+              currentRoot,
+              nextRoot,
+              nextEpoch,
+              nextEquivocating,
+              currentEquivocating,
+              nextSlot,
+              nextPayloadPresent,
+              currentSlot,
+              currentPayloadPresent);
         });
   }
 
@@ -53,6 +77,10 @@ class VoteTrackerSerializer implements KvStoreSerializer<VoteTracker> {
               writer.writeUInt64(value.getNextEpoch().longValue());
               writer.writeBoolean(value.isNextEquivocating());
               writer.writeBoolean(value.isCurrentEquivocating());
+              writer.writeUInt64(value.getNextSlot().longValue());
+              writer.writeBoolean(value.isNextPayloadPresent());
+              writer.writeUInt64(value.getCurrentSlot().longValue());
+              writer.writeBoolean(value.isCurrentPayloadPresent());
             });
     return bytes.toArrayUnsafe();
   }
