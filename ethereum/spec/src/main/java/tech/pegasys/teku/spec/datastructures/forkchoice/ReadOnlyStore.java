@@ -154,13 +154,30 @@ public interface ReadOnlyStore extends TimeProvider {
   SafeFuture<Optional<BeaconState>> retrieveCheckpointState(
       Checkpoint checkpoint, BeaconState latestStateAtEpoch);
 
+  Optional<BeaconState> getJustifiedStateIfAvailable();
+
+  Optional<BeaconState> getCheckpointStateIfAvailable(Checkpoint checkpoint);
+
+  VoteTracker getVote(UInt64 validatorIndex);
+
+  default Optional<ForkChoicePayloadStatus> getPayloadStatus(final Bytes32 root) {
+    return Optional.empty();
+  }
+
   // implements is_head_weak from fork-choice Consensus Spec
   boolean isHeadWeak(Bytes32 root);
 
   // implements is_parent_strong from fork-choice Consensus Spec
+  // Note: The spec signature takes the block root (not parent root) and internally looks up the
+  // parent. Teku achieves the same behavior because callers explicitly pass head.getParentRoot().
+  // See: https://github.com/ethereum/consensus-specs/pull/4807
   boolean isParentStrong(Bytes32 parentRoot);
 
   void computeBalanceThresholds(BeaconState justifiedState);
+
+  UInt64 getReorgThreshold();
+
+  UInt64 getParentThreshold();
 
   // implements is_ffg_competitive from Consensus Spec
   Optional<Boolean> isFfgCompetitive(Bytes32 headRoot, Bytes32 parentRoot);

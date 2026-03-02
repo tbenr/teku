@@ -50,7 +50,9 @@ import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationMessage;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.InvalidCheckpointException;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
@@ -75,6 +77,7 @@ import tech.pegasys.teku.spec.logic.common.statetransition.results.BlockImportRe
 import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult;
 import tech.pegasys.teku.spec.logic.common.util.AsyncBLSSignatureVerifier;
 import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil;
+import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil.BlockTimeliness;
 import tech.pegasys.teku.statetransition.attestation.DeferredAttestations;
 import tech.pegasys.teku.statetransition.block.BlockImportPerformance;
 import tech.pegasys.teku.statetransition.util.DebugDataDumper;
@@ -218,7 +221,6 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
       final Optional<BlockImportPerformance> blockImportPerformance,
       final BlockBroadcastValidator blockBroadcastValidator,
       final ExecutionLayerChannel executionLayer) {
-    recentChainData.setBlockTimelinessIfEmpty(block);
     final ForkChoiceUtil forkChoiceUtil = spec.atSlot(block.getSlot()).getForkChoiceUtil();
     return forkChoiceUtil
         .retrievePreStateRequiredOnBlock(recentChainData.getStore(), block)
@@ -314,6 +316,24 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
         .finishStackTrace();
   }
 
+  public void onPayloadAttestationMessage(
+      final PayloadAttestationMessage message,
+      final InternalValidationResult result,
+      final boolean fromNetwork) {
+    if (!result.isAccept()) {
+      return;
+    }
+    recentChainData
+        .getUpdatableForkChoiceStrategy()
+        .ifPresent(
+            strategy ->
+                strategy.onPtcVote(
+                    message.getData().getBeaconBlockRoot(),
+                    message.getValidatorIndex(),
+                    message.getData().isPayloadPresent(),
+                    message.getData().isBlobDataAvailable()));
+  }
+
   public void subscribeToOptimisticHeadChangesAndUpdate(final OptimisticHeadSubscriber subscriber) {
     optimisticSyncSubscribers.subscribe(subscriber);
     getOptimisticSyncing().ifPresent(subscriber::onOptimisticHeadChanged);
@@ -395,31 +415,47 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
         spec.getBeaconStateUtil(justifiedState.getSlot())
             .getEffectiveActiveUnslashedBalances(justifiedState);
 
+    Optional<Bytes32> effectiveProposerBoostRoot =
+        recentChainData.getStore().getProposerBoostRoot();
+    if (forkChoiceLateBlockReorgEnabled && effectiveProposerBoostRoot.isPresent()) {
+      final ForkChoiceUtil currentForkChoiceUtil =
+          spec.atSlot(recentChainData.getCurrentSlot().orElse(justifiedState.getSlot()))
+              .getForkChoiceUtil();
+      if (!currentForkChoiceUtil.shouldApplyProposerBoost(
+          effectiveProposerBoostRoot.get(),
+          forkChoiceStrategy,
+          recentChainData.getStore().getReorgThreshold(),
+          justifiedState)) {
+        effectiveProposerBoostRoot = Optional.empty();
+      }
+    }
+
     // If a runtime exception occurs while updating protoarray, we could skip the transaction
     // commit.
     // There is no clean way to solve it unless we move to a fully transactional protoarray update.
     // Currently, the assumption is that any exception thrown by design is happening before any
     // update to protoarray, so it is correct to skip the transaction commit.
-    final Bytes32 headBlockRoot =
+    final ForkChoiceNode headNode =
         transaction.applyForkChoiceScoreChanges(
+            recentChainData.getCurrentSlot().orElseThrow(),
             recentChainData.getCurrentEpoch().orElseThrow(),
             finalizedCheckpoint,
             justifiedCheckpoint,
             justifiedEffectiveBalances,
-            recentChainData.getStore().getProposerBoostRoot(),
+            effectiveProposerBoostRoot,
             spec.getProposerBoostAmount(justifiedState));
 
     try {
       recentChainData.updateHead(
-          headBlockRoot,
+          headNode,
           nodeSlot.orElse(
               forkChoiceStrategy
-                  .blockSlot(headBlockRoot)
+                  .blockSlot(headNode.blockRoot())
                   .orElseThrow(
                       () ->
                           new IllegalStateException(
                               "Unable to retrieve the slot of fork choice head: "
-                                  + headBlockRoot))));
+                                  + headNode.blockRoot()))));
     } finally {
       // here we just make sure to commit, because protoarray has been updated. We just had an
       // exception while updating recentChainData which will become consistent again on the next
@@ -676,7 +712,16 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
         blobSidecars,
         earliestBlobSidecarsSlot);
 
-    final boolean shouldUpdateProposerBoostRoot = shouldUpdateProposerBoostRoot(block, transaction);
+    final BlockTimeliness blockTimeliness =
+        recentChainData
+            .getBlockTimeliness(block.getRoot())
+            .orElseGet(
+                () ->
+                    recentChainData.computeBlockTimelinessFromArrivalTime(
+                        block, recentChainData.getStore().getTimeInMillis()));
+
+    final boolean shouldUpdateProposerBoostRoot =
+        shouldUpdateProposerBoostRoot(block, transaction, blockTimeliness);
     if (shouldUpdateProposerBoostRoot) {
       transaction.setProposerBoostRoot(block.getRoot());
     }
@@ -684,6 +729,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     blockImportPerformance.ifPresent(BlockImportPerformance::transactionReady);
     // Note: not using thenRun here because we want to ensure each step is on the event thread
     transaction.commit().join();
+    recentChainData.setBlockTimelinessIfEmpty(block);
     blockImportPerformance.ifPresent(BlockImportPerformance::transactionCommitted);
     forkChoiceStrategy.onExecutionPayloadResult(block.getRoot(), payloadResult, true);
 
@@ -764,26 +810,36 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     transaction.commit().join();
 
     final ForkChoiceStrategy forkChoiceStrategy = getForkChoiceStrategy();
+    // Create the FULL node in the fork choice tree. Per spec on_execution_payload, this makes
+    // the FULL child visible in get_node_children, allowing get_head to see the FULL path
+    // immediately after execution payload arrival.
+    forkChoiceStrategy.onExecutionPayload(
+        signedEnvelope.getBeaconBlockRoot(),
+        signedEnvelope.getSlot(),
+        signedEnvelope.getMessage().getPayload().getBlockNumber(),
+        signedEnvelope.getMessage().getPayload().getBlockHash());
 
-    // TODO-GLOAS: https://github.com/Consensys/teku/issues/9878 this is just a workaround for
-    // devnet-0, we need a proper fork choice implementation
-    forkChoiceStrategy.processExecutionPayload(signedEnvelope);
-
-    updateForkChoiceForImportedExecutionPayload(signedEnvelope, forkChoiceStrategy);
-    notifyForkChoiceUpdatedAndOptimisticSyncingChanged(Optional.empty());
+    processHead().finishError(LOG);
 
     return ExecutionPayloadImportResult.successful(signedEnvelope);
   }
 
-  // from consensus-specs/fork-choice:
+  /**
+   * Local implementation of Gloas {@code update_proposer_boost_root(store, root)}.
+   *
+   * <p>Spec reference:
+   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#modified-update_proposer_boost_root
+   */
   private boolean shouldUpdateProposerBoostRoot(
-      final SignedBeaconBlock block, final StoreTransaction transaction) {
+      final SignedBeaconBlock block,
+      final StoreTransaction transaction,
+      final BlockTimeliness blockTimeliness) {
     // is_first_block
     if (transaction.getProposerBoostRoot().isPresent()) {
       return false;
     }
     // is_timely
-    if (recentChainData.isBlockLate(block.getRoot())) {
+    if (ForkChoiceUtil.isHeadLate(blockTimeliness)) {
       return false;
     }
 
@@ -909,10 +965,12 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
 
     final ChainHead currentHead = recentChainData.getChainHead().orElseThrow();
 
-    final SlotAndBlockRoot bestHeadBlock = findNewChainHead(forkChoiceStrategy);
-    if (!bestHeadBlock.getBlockRoot().equals(currentHead.getRoot())) {
-      recentChainData.updateHead(bestHeadBlock.getBlockRoot(), bestHeadBlock.getSlot());
-      if (bestHeadBlock.getBlockRoot().equals(block.getRoot())) {
+    final ForkChoiceNode bestHeadBlock = findNewChainHead(forkChoiceStrategy);
+    if (!bestHeadBlock.blockRoot().equals(currentHead.getRoot())) {
+      recentChainData.updateHead(
+          bestHeadBlock,
+          forkChoiceStrategy.blockSlot(bestHeadBlock.blockRoot()).orElse(block.getSlot()));
+      if (bestHeadBlock.blockRoot().equals(block.getRoot())) {
         result.markAsCanonical();
       }
     }
@@ -933,21 +991,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     }
   }
 
-  // TODO-GLOAS: https://github.com/Consensys/teku/issues/9878 this is just a workaround for
-  // devnet-0, we need a proper fork choice implementation
-  private void updateForkChoiceForImportedExecutionPayload(
-      final SignedExecutionPayloadEnvelope signedEnvelope,
-      final ForkChoiceStrategy forkChoiceStrategy) {
-    recentChainData.updateHead(signedEnvelope.getBeaconBlockRoot(), signedEnvelope.getSlot());
-    final SlotAndBlockRoot bestHeadBlock = findNewChainHead(forkChoiceStrategy);
-    if (!bestHeadBlock.getBlockRoot().equals(signedEnvelope.getBeaconBlockRoot())) {
-      processHead().finish(error -> LOG.error("Fork choice updating head failed", error));
-      return;
-    }
-    recentChainData.updateHead(bestHeadBlock.getBlockRoot(), bestHeadBlock.getSlot());
-  }
-
-  private SlotAndBlockRoot findNewChainHead(final ForkChoiceStrategy forkChoiceStrategy) {
+  private ForkChoiceNode findNewChainHead(final ForkChoiceStrategy forkChoiceStrategy) {
     // use fork choice to find the new chain head as if this block is on time the proposer weighting
     // may cause us to reorg.
     final Checkpoint justifiedCheckpoint = recentChainData.getJustifiedCheckpoint().orElseThrow();

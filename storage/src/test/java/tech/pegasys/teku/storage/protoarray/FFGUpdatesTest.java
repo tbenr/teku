@@ -316,13 +316,16 @@ public class FFGUpdatesTest {
       final Checkpoint finalizedCheckpoint,
       final Checkpoint justifiedCheckpoint,
       final List<UInt64> justifiedStateEffectiveBalances) {
-    return forkChoice.applyPendingVotes(
-        store,
-        Optional.empty(),
-        UInt64.valueOf(1000),
-        finalizedCheckpoint,
-        justifiedCheckpoint,
-        justifiedStateEffectiveBalances,
-        ZERO);
+    return forkChoice
+        .applyPendingVotes(
+            store,
+            Optional.empty(),
+            UInt64.valueOf(1000),
+            UInt64.valueOf(1000),
+            finalizedCheckpoint,
+            justifiedCheckpoint,
+            justifiedStateEffectiveBalances,
+            ZERO)
+        .blockRoot();
   }
 }

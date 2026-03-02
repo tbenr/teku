@@ -46,6 +46,7 @@ import tech.pegasys.teku.spec.datastructures.epbs.SignedExecutionPayloadAndState
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.SlotAndExecutionPayloadSummary;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
+import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.state.AnchorPoint;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.CheckpointState;
@@ -291,6 +292,11 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
   }
 
   @Override
+  public VoteTracker getVote(final UInt64 validatorIndex) {
+    return store.getVote(validatorIndex);
+  }
+
+  @Override
   public AnchorPoint getLatestFinalized() {
     if (finalizedCheckpoint.isPresent()) {
       // Ideally we wouldn't join here - but seems not worth making this API async since we're
@@ -360,7 +366,7 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
       final NavigableMap<UInt64, Bytes32> blockRootsBySlot = new TreeMap<>();
       store
           .getForkChoiceStrategy()
-          .processAllInOrder((root, slot, parent) -> blockRootsBySlot.put(slot, root));
+          .processAllBeaconBlocksInOrder((root, slot, parent) -> blockRootsBySlot.put(slot, root));
       this.blockData
           .values()
           .forEach(
@@ -522,6 +528,16 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
   }
 
   @Override
+  public UInt64 getReorgThreshold() {
+    return store.getReorgThreshold();
+  }
+
+  @Override
+  public UInt64 getParentThreshold() {
+    return store.getParentThreshold();
+  }
+
+  @Override
   public void computeBalanceThresholds(final BeaconState justifiedState) {
     store.computeBalanceThresholds(justifiedState);
   }
@@ -536,6 +552,19 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
     return Optional.ofNullable(blockData.get(blockRoot))
         .map(SignedBlockAndState::getBlock)
         .or(() -> store.getBlockIfAvailable(blockRoot));
+  }
+
+  @Override
+  public Optional<BeaconState> getJustifiedStateIfAvailable() {
+    if (justifiedCheckpoint.isEmpty()) {
+      return store.getJustifiedStateIfAvailable();
+    }
+    return store.getCheckpointStateIfAvailable(justifiedCheckpoint.get());
+  }
+
+  @Override
+  public Optional<BeaconState> getCheckpointStateIfAvailable(final Checkpoint checkpoint) {
+    return store.getCheckpointStateIfAvailable(checkpoint);
   }
 
   @Override

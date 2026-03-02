@@ -14,8 +14,11 @@
 package tech.pegasys.teku.spec.logic.versions.gloas.util;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import static tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus.PAYLOAD_STATUS_EMPTY;
+import static tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY;
+import static tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL;
+import static tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING;
 
+import it.unimi.dsi.fastutil.ints.IntList;
 import java.util.Optional;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
@@ -27,18 +30,31 @@ import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.gloas.BeaconBlockBodyGloas;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.MutableStore;
-import tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
+import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
+import tech.pegasys.teku.spec.logic.common.statetransition.availability.AvailabilityChecker;
 import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil;
 import tech.pegasys.teku.spec.logic.versions.fulu.util.ForkChoiceUtilFulu;
 import tech.pegasys.teku.spec.logic.versions.gloas.helpers.BeaconStateAccessorsGloas;
 import tech.pegasys.teku.spec.logic.versions.gloas.helpers.MiscHelpersGloas;
 import tech.pegasys.teku.spec.logic.versions.gloas.statetransition.epoch.EpochProcessorGloas;
 
+/**
+ * Gloas fork-choice utility layer.
+ *
+ * <p>This class groups the spec-facing helpers that Teku uses to implement the Gloas fork-choice
+ * document: https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md
+ *
+ * <p>Where Teku collapses several Python helpers into one Java method, the method comment calls out
+ * the exact spec functions involved.
+ */
 public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
-
   public ForkChoiceUtilGloas(
       final SpecConfigGloas specConfig,
       final BeaconStateAccessorsGloas beaconStateAccessors,
@@ -46,6 +62,13 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
       final AttestationUtilGloas attestationUtil,
       final MiscHelpersGloas miscHelpers) {
     super(specConfig, beaconStateAccessors, epochProcessor, attestationUtil, miscHelpers);
+  }
+
+  @Override
+  public boolean shouldUpdateVote(
+      final VoteTracker vote, final UInt64 targetEpoch, final UInt64 slot) {
+    // Spec mapping: modified update_latest_messages(store, attesting_indices, attestation)
+    return slot.isGreaterThan(vote.getNextSlot()) || vote.equals(VoteTracker.DEFAULT);
   }
 
   public static ForkChoiceUtilGloas required(final ForkChoiceUtil forkChoiceUtil) {
@@ -62,6 +85,10 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
   // execution-state: State at slot after consensus and execution has been applied
   // The state to build on for the next slot is the best available of this list
   // (execution-state > block-state > pre-state)
+  //
+  // Spec mapping: modified on_block(store, signed_block), together with
+  // get_parent_payload_status(store, block) / is_parent_node_full(store, block), determines whether
+  // the child builds on the parent's block state or execution state.
   @Override
   public SafeFuture<Optional<BeaconState>> retrievePreStateRequiredOnBlock(
       final ReadOnlyStore store, final SignedBeaconBlock block) {
@@ -97,16 +124,53 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
       final MutableStore store,
       final SignedExecutionPayloadEnvelope signedEnvelope,
       final BeaconState postState) {
+    // Spec mapping: on_execution_payload(store, signed_execution_payload_envelope)
     // Add new execution payload to store
     store.putExecutionPayloadAndState(signedEnvelope, postState);
   }
 
   @Override
   public Optional<Integer> getPayloadAttestationDueMillis() {
+    // Spec mapping: get_payload_attestation_due_ms()
     final SpecConfigGloas configGloas = SpecConfigGloas.required(specConfig);
     return Optional.of(getSlotComponentDurationMillis(configGloas.getPayloadAttestationDueBps()));
   }
 
+  /**
+   * Computes dual block timeliness for Gloas: attestation deadline and PTC deadline.
+   *
+   * <p>Spec reference: modified {@code record_block_timeliness(store, root)} plus new {@code
+   * get_payload_attestation_due_ms()}.
+   */
+  @Override
+  public BlockTimeliness computeBlockTimeliness(
+      final UInt64 blockSlot, final UInt64 currentSlot, final int millisIntoSlot) {
+    final int attestationTimelinessLimit = getAttestationDueMillis();
+    final int ptcTimelinessLimit = getPayloadAttestationDueMillis().orElseThrow();
+    final boolean isTimelyAttestation =
+        blockSlot.equals(currentSlot) && attestationTimelinessLimit > millisIntoSlot;
+    final boolean isTimelyPtc =
+        blockSlot.equals(currentSlot) && ptcTimelinessLimit > millisIntoSlot;
+    return new BlockTimeliness(isTimelyAttestation, isTimelyPtc);
+  }
+
+  // Checking of blob data availability is delayed until the processing of the execution payload
+  @Override
+  public AvailabilityChecker<?> createAvailabilityChecker(final SignedBeaconBlock block) {
+    // Spec mapping: the Gloas block path does not finalize data availability until the matching
+    // execution payload path is processed.
+    return AvailabilityChecker.NOOP_DATACOLUMN_SIDECAR;
+  }
+
+  // TODO-GLOAS: https://github.com/Consensys/teku/issues/10311 add a real data availability check
+  // (not required for devnet-0)
+  @Override
+  public AvailabilityChecker<?> createAvailabilityChecker(
+      final SignedExecutionPayloadEnvelope executionPayload) {
+    // Spec mapping: this hook exists for the data-availability checks used by
+    // is_payload_data_available(store, root), but the current branch intentionally keeps a no-op.
+    return AvailabilityChecker.NOOP_DATACOLUMN_SIDECAR;
+  }
   @Override
   public boolean shouldNotifyForkChoiceUpdatedOnBlock() {
     return false;
@@ -114,7 +178,13 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
 
   @Override
   public SafeFuture<StateAndBlockSummary> retrieveNewChainHeadStateAndBlockSummary(
-      final Bytes32 root, final UInt64 chainHeadSlot, final ReadOnlyStore store) {
+      final Bytes32 root,
+      final ForkChoicePayloadStatus payloadStatus,
+      final UInt64 chainHeadSlot,
+      final ReadOnlyStore store) {
+    // Local projection of modified get_head(store): once fork choice selects a node identity, Teku
+    // resolves the best available state view for that node (block state for PENDING/EMPTY,
+    // execution state for FULL).
     return store
         .retrieveStateAndBlockSummary(root)
         .thenApply(
@@ -125,18 +195,24 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
                             String.format(
                                 "Unable to update head block as of slot %s.  Block is unavailable: %s.",
                                 chainHeadSlot, root))))
-        // TODO-GLOAS: https://github.com/Consensys/teku/issues/9878 this is just a workaround
-        // for devnet-0, we may require a more proper implementation, when the complete fork
-        // choice is implemented
         .thenApply(
-            stateAndBlockSummary ->
-                store
+            stateAndBlockSummary -> {
+              if (payloadStatus.equals(PAYLOAD_STATUS_FULL)) {
+                return store
                     .getExecutionPayloadStateIfAvailable(root)
                     .map(
                         executionPayloadState ->
                             StateAndBlockSummary.create(
                                 stateAndBlockSummary.getBlockSummary(), executionPayloadState))
-                    .orElse(stateAndBlockSummary));
+                    .orElseThrow(
+                        () ->
+                            new IllegalStateException(
+                                String.format(
+                                    "Unable get getExecutionPayloadState at %s for block root %s.",
+                                    chainHeadSlot, root)));
+              }
+              return stateAndBlockSummary;
+            });
   }
 
   public boolean isBlockStatusFull(final ReadOnlyStore store, final BeaconBlock block) {
@@ -146,6 +222,264 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
   @Override
   public Optional<ForkChoiceUtilGloas> toVersionGloas() {
     return Optional.of(this);
+  }
+
+  /**
+   * Determines whether proposer boost should be applied during weight computation.
+   *
+   * <p>In Gloas, proposer boost is conditionally suppressed to prevent equivocation-based reorgs.
+   * If the boosted block's parent was weak and from the previous slot, boost only applies if there
+   * are no timely equivocations from the same proposer.
+   *
+   * <p>Spec reference: should_apply_proposer_boost
+   *
+   * <p>Implementation note: the proposer-equivocation branch is intentionally not implemented yet.
+   * The current code records both block timeliness flags, but it does not yet consume the PTC
+   * timeliness bit here to suppress proposer boost on same-proposer equivocations. Because that
+   * branch is still deferred, the weak-parent check has no effect on the return value and is
+   * intentionally skipped here.
+   *
+   * @param proposerBoostRoot the current proposer boost root, empty if none
+   * @param forkChoiceStrategy the fork choice strategy for looking up block data
+   * @param reorgThreshold the threshold for the head weakness check
+   * @param justifiedState unused until the proposer-equivocation branch is implemented
+   * @return true if proposer boost should be applied
+   */
+  // should_apply_proposer_boost
+  @Override
+  public boolean shouldApplyProposerBoost(
+      final Bytes32 proposerBoostRoot,
+      final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
+      final UInt64 reorgThreshold,
+      final BeaconState justifiedState) {
+    final Optional<Bytes32> maybeParentRoot = forkChoiceStrategy.blockParentRoot(proposerBoostRoot);
+    final Optional<UInt64> maybeBlockSlot = forkChoiceStrategy.blockSlot(proposerBoostRoot);
+    if (maybeParentRoot.isEmpty() || maybeBlockSlot.isEmpty()) {
+      return true;
+    }
+    final Bytes32 parentRoot = maybeParentRoot.get();
+    final UInt64 blockSlot = maybeBlockSlot.get();
+    final Optional<UInt64> maybeParentSlot = forkChoiceStrategy.blockSlot(parentRoot);
+    if (maybeParentSlot.isEmpty()) {
+      return true;
+    }
+    // Apply proposer boost if parent is not from the previous slot
+    if (maybeParentSlot.get().increment().isLessThan(blockSlot)) {
+      return true;
+    }
+    // TODO: implement the Gloas equivocation suppression branch from should_apply_proposer_boost
+    // using recorded PTC timeliness instead of routing a predicate through ForkChoice.
+    // The complication is that we need to have a good interaction with gossip datastructures to
+    // detect equivocations. Spec should probably be updated.
+    // NOTE: there is no point in implementing the following check without implementing
+    // equivocation.
+    // # Apply proposer boost if `parent` is not weak
+    //    if not is_head_weak(store, parent_root):
+    //        return True
+    return true;
+  }
+
+  @Override
+  public Optional<ForkChoiceNode> getAncestorNode(
+      final ReadOnlyForkChoiceStrategy forkChoiceStrategy, final Bytes32 root, final UInt64 slot) {
+    return forkChoiceStrategy.getAncestorNode(root, slot);
+  }
+
+  /**
+   * Returns the node's attestation weight for the Gloas late-reorg checks.
+   *
+   * <p>This helper is used by {@code isHeadWeak(...)} and {@code isParentStrong(...)}. Those spec
+   * helpers are defined in terms of unboosted attestation score, while protoarray stores the
+   * boosted fork-choice weight used for head selection.
+   *
+   * <p>To avoid rescanning all validator votes on each query, we start from the node weight already
+   * maintained in protoarray and, when the queried node is on the boosted chain, subtract the
+   * proposer-boost component back out. The result is the effective attestation-only weight for the
+   * specific node identity.
+   */
+  private UInt64 getNodeAttestationWeight(
+      final ReadOnlyStore store,
+      final Bytes32 nodeRoot,
+      final ForkChoicePayloadStatus nodePayloadStatus,
+      final BeaconState justifiedState) {
+    final ReadOnlyForkChoiceStrategy forkChoiceStrategy = store.getForkChoiceStrategy();
+    final UInt64 nodeWeight =
+        forkChoiceStrategy
+            .getBlockData(nodeRoot, nodePayloadStatus)
+            .map(ProtoNodeData::getWeight)
+            .orElse(UInt64.ZERO);
+    final Optional<Bytes32> maybeBoostRoot = store.getProposerBoostRoot();
+    if (maybeBoostRoot.isEmpty()) {
+      return nodeWeight;
+    }
+
+    final boolean receivesProposerBoost =
+        protoArrayWeightIncludesProposerBoost(
+            forkChoiceStrategy, nodeRoot, nodePayloadStatus, maybeBoostRoot.get());
+    if (!receivesProposerBoost) {
+      return nodeWeight;
+    }
+
+    final UInt64 proposerBoostAmount = beaconStateAccessors.getProposerBoostAmount(justifiedState);
+    return nodeWeight.minusMinZero(proposerBoostAmount);
+  }
+
+  private boolean protoArrayWeightIncludesProposerBoost(
+      final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
+      final Bytes32 nodeRoot,
+      final ForkChoicePayloadStatus nodePayloadStatus,
+      final Bytes32 proposerBoostRoot) {
+    return forkChoiceStrategy
+        .blockSlot(nodeRoot)
+        .flatMap(nodeSlot -> getAncestorNode(forkChoiceStrategy, proposerBoostRoot, nodeSlot))
+        .filter(
+            ancestorNode -> ancestorNode.equals(new ForkChoiceNode(nodeRoot, nodePayloadStatus)))
+        .isPresent();
+  }
+
+  /**
+   * Computes the weight of equivocating validators in the head block's committees.
+   *
+   * <p>In Gloas, equivocating validators' effective balance is ADDED to the head weight, making it
+   * harder to reorg. This ensures is_head_weak is monotonic: more attestations can only change the
+   * output from true to false.
+   *
+   * <p>This helper is the local extraction of the extra equivocating-committee term used by the
+   * Gloas `is_head_weak(...)` override.
+   *
+   * @param headSlot the slot of the head block
+   * @param store the fork choice store for reading validator votes
+   * @param headState the head block's state (for committee computation)
+   * @param justifiedState for effective balances
+   * @return the total equivocating weight in head slot committees
+   */
+  UInt64 computeEquivocatingCommitteeWeight(
+      final UInt64 headSlot,
+      final ReadOnlyStore store,
+      final BeaconState headState,
+      final BeaconState justifiedState) {
+    final UInt64 epoch = miscHelpers.computeEpochAtSlot(headSlot);
+    final UInt64 committeesPerSlot =
+        beaconStateAccessors.getCommitteeCountPerSlot(headState, epoch);
+
+    // TODO: we could optimize this by tracking a cumulative equivocating weight per slot,
+    //  so we can lookup this fast without recompute the sum all the time.
+
+    long equivocatingWeight = 0;
+    for (UInt64 index = UInt64.ZERO;
+        index.isLessThan(committeesPerSlot);
+        index = index.increment()) {
+      final IntList committee = beaconStateAccessors.getBeaconCommittee(headState, headSlot, index);
+      for (final int validatorIndex : committee) {
+        final VoteTracker vote = store.getVote(UInt64.valueOf(validatorIndex));
+        if (vote.isEquivocating()) {
+          equivocatingWeight +=
+              justifiedState.getValidators().get(validatorIndex).getEffectiveBalance().longValue();
+        }
+      }
+    }
+    return UInt64.valueOf(equivocatingWeight);
+  }
+
+  /**
+   * Extended isHeadWeak for Gloas with full attestation score and equivocating committee weight.
+   *
+   * <p>Spec reference: is_head_weak (Gloas override)
+   *
+   * <p>Implementation note: the equivocating-committee term is computed by {@link
+   * #computeEquivocatingCommitteeWeight(UInt64, ReadOnlyStore, BeaconState, BeaconState)} so the
+   * spec function is split across two Java helpers.
+   *
+   * @param root the head block root
+   * @param reorgThreshold the threshold for weak head detection
+   * @param headState the head block's state (for committee computation)
+   * @param justifiedState for effective balances and attestation score
+   * @return true if the head is weak
+   */
+  private boolean isHeadWeak(
+      final ReadOnlyStore store,
+      final Bytes32 root,
+      final UInt64 reorgThreshold,
+      final BeaconState headState,
+      final BeaconState justifiedState) {
+    UInt64 headWeight =
+        getNodeAttestationWeight(store, root, PAYLOAD_STATUS_PENDING, justifiedState);
+
+    // Add weight from equivocating validators in head slot committees
+    final ReadOnlyForkChoiceStrategy forkChoiceStrategy = store.getForkChoiceStrategy();
+    final Optional<UInt64> maybeHeadSlot = forkChoiceStrategy.blockSlot(root);
+    if (maybeHeadSlot.isPresent()) {
+      final UInt64 equivocatingWeight =
+          computeEquivocatingCommitteeWeight(maybeHeadSlot.get(), store, headState, justifiedState);
+      headWeight = headWeight.plus(equivocatingWeight);
+    }
+
+    return headWeight.isLessThan(reorgThreshold);
+  }
+
+  /**
+   * Fallback isHeadWeak without extended data. Uses protoarray weight as approximation.
+   *
+   * <p>Called from shouldApplyProposerBoost where vote data may not be available.
+   *
+   * <p>This is an implementation fallback, not a direct Python function from the Gloas spec.
+   */
+  @Override
+  public boolean isHeadWeak(
+      final ReadOnlyStore store, final Bytes32 root, final UInt64 reorgThreshold) {
+    final Optional<BeaconState> maybeJustifiedState = store.getJustifiedStateIfAvailable();
+    final Optional<BeaconState> maybeHeadState = store.getBlockStateIfAvailable(root);
+    if (maybeJustifiedState.isPresent() && maybeHeadState.isPresent()) {
+      return isHeadWeak(
+          store, root, reorgThreshold, maybeHeadState.get(), maybeJustifiedState.get());
+    }
+    // Fallback: use protoarray weight (may still include proposer boost and misses equivocating
+    // weight)
+    final UInt64 attestationScore =
+        store.getForkChoiceStrategy().getWeight(root).orElse(UInt64.ZERO);
+    return attestationScore.isLessThan(reorgThreshold);
+  }
+
+  /**
+   * Extended isParentStrong for Gloas with full attestation score using payload status.
+   *
+   * <p>Spec reference: is_parent_strong (Gloas override)
+   *
+   * <p>The Java signature carries `parentPayloadStatus` explicitly because the protoarray stores
+   * the EMPTY/FULL/PENDING split as node identity rather than recomputing it inside the helper.
+   */
+  private boolean isParentStrong(
+      final ReadOnlyStore store,
+      final Bytes32 parentRoot,
+      final UInt64 parentThreshold,
+      final ForkChoicePayloadStatus parentPayloadStatus,
+      final BeaconState justifiedState) {
+    final UInt64 attestationScore =
+        getNodeAttestationWeight(store, parentRoot, parentPayloadStatus, justifiedState);
+    return attestationScore.isGreaterThan(parentThreshold);
+  }
+
+  /**
+   * Fallback isParentStrong without extended data. Uses protoarray weight as approximation.
+   *
+   * <p>Called when vote data or payload status is not available.
+   *
+   * <p>This is an implementation fallback, not a direct Python function from the Gloas spec.
+   */
+  @Override
+  public boolean isParentStrong(
+      final ReadOnlyStore store, final Bytes32 parentRoot, final UInt64 parentThreshold) {
+    final Optional<BeaconState> maybeJustifiedState = store.getJustifiedStateIfAvailable();
+    if (maybeJustifiedState.isPresent()) {
+      final ForkChoicePayloadStatus parentPayloadStatus =
+          store.getPayloadStatus(parentRoot).orElse(PAYLOAD_STATUS_PENDING);
+      return isParentStrong(
+          store, parentRoot, parentThreshold, parentPayloadStatus, maybeJustifiedState.get());
+    }
+    // fallback with no equivocation
+    final UInt64 attestationScore =
+        store.getForkChoiceStrategy().getWeight(parentRoot).orElse(UInt64.ZERO);
+    return attestationScore.isGreaterThan(parentThreshold);
   }
 
   /**
@@ -159,7 +493,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
    * @return PAYLOAD_STATUS_FULL if parent has full payload, PAYLOAD_STATUS_EMPTY otherwise
    */
   // get_parent_payload_status
-  SafeFuture<PayloadStatus> getParentPayloadStatus(
+  public SafeFuture<ForkChoicePayloadStatus> getParentPayloadStatus(
       final ReadOnlyStore store, final BeaconBlock block) {
     return store
         .retrieveBlock(block.getParentRoot())
@@ -187,7 +521,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
                       .getMessage()
                       .getParentBlockHash();
               return parentBlockHash.equals(messageBlockHash.get())
-                  ? PayloadStatus.PAYLOAD_STATUS_FULL
+                  ? PAYLOAD_STATUS_FULL
                   : PAYLOAD_STATUS_EMPTY;
             });
   }
@@ -205,6 +539,6 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
   // is_parent_node_full
   SafeFuture<Boolean> isParentNodeFull(final ReadOnlyStore store, final BeaconBlock block) {
     return getParentPayloadStatus(store, block)
-        .thenApply(parentPayloadStatus -> parentPayloadStatus == PayloadStatus.PAYLOAD_STATUS_FULL);
+        .thenApply(parentPayloadStatus -> parentPayloadStatus == PAYLOAD_STATUS_FULL);
   }
 }

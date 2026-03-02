@@ -40,6 +40,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
 import tech.pegasys.teku.spec.datastructures.genesis.GenesisData;
@@ -307,9 +308,14 @@ public class CombinedChainDataClient {
       return getStateAtSlotExact(slot);
     }
     final Bytes32 headRoot = chainHead.get().getRoot();
+    final ForkChoicePayloadStatus payloadStatus = chainHead.get().getPayloadStatus();
 
     final Bytes32 proposerHeadRoot = recentChainData.getProposerHead(headRoot, slot);
     if (proposerHeadRoot.equals(headRoot)) {
+      if (ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL.equals(payloadStatus)) {
+        return getStore()
+            .retrieveExecutionPayloadState(new SlotAndBlockRoot(slot, proposerHeadRoot));
+      }
       return getStateAtSlotExact(slot);
     }
     // otherwise we're looking for the parent slot

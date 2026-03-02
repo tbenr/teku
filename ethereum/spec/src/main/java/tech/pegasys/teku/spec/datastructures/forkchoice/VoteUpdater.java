@@ -27,7 +27,8 @@ public interface VoteUpdater {
 
   void putVote(UInt64 validatorIndex, VoteTracker vote);
 
-  Bytes32 applyForkChoiceScoreChanges(
+  ForkChoiceNode applyForkChoiceScoreChanges(
+      UInt64 currentSlot,
       UInt64 currentEpoch,
       Checkpoint finalizedCheckpoint,
       Checkpoint justifiedCheckpoint,

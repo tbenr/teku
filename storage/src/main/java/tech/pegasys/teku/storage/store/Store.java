@@ -64,6 +64,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
 import tech.pegasys.teku.spec.datastructures.epbs.SignedExecutionPayloadAndState;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.SlotAndExecutionPayloadSummary;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteUpdater;
@@ -74,12 +75,14 @@ import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.CheckpointState;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.logic.common.helpers.BeaconStateAccessors;
+import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil;
 import tech.pegasys.teku.storage.api.StorageUpdateChannel;
 import tech.pegasys.teku.storage.api.StoredBlockMetadata;
 import tech.pegasys.teku.storage.api.VoteUpdateChannel;
+import tech.pegasys.teku.storage.protoarray.BlockNodeVariantsIndex;
+import tech.pegasys.teku.storage.protoarray.ForkChoiceModelFactory;
 import tech.pegasys.teku.storage.protoarray.ForkChoiceStrategy;
 import tech.pegasys.teku.storage.protoarray.ProtoArray;
-import tech.pegasys.teku.storage.protoarray.ProtoNode;
 
 class Store extends CacheableStore {
   private static final Logger LOG = LogManager.getLogger();
@@ -125,8 +128,8 @@ class Store extends CacheableStore {
   private final CachingTaskQueue<Bytes32, BeaconState> executionPayloadStates;
   private final Map<Bytes32, SignedExecutionPayloadEnvelope> executionPayloads;
 
-  private UInt64 reorgThreshold = UInt64.ZERO;
-  private UInt64 parentThreshold = UInt64.ZERO;
+  private volatile UInt64 reorgThreshold = UInt64.ZERO;
+  private volatile UInt64 parentThreshold = UInt64.ZERO;
 
   private Store(
       final MetricsSystem metricsSystem,
@@ -274,7 +277,7 @@ class Store extends CacheableStore {
             config.getCheckpointStateCacheSize());
     final CachingTaskQueue<Bytes32, StateAndBlockSummary> blockStateTaskQueue =
         CachingTaskQueue.create(
-            asyncRunner, metricsSystem, "memory_states", config.getStateCacheSize());
+            asyncRunner, metricsSystem, "memory_states", 265); // config.getStateCacheSize());
     final Optional<Map<Bytes32, StateAndBlockSummary>> maybeEpochStates =
         config.getEpochStateCacheSize() > 0
             ? Optional.of(LimitedMap.createSynchronizedLRU(config.getEpochStateCacheSize()))
@@ -380,7 +383,6 @@ class Store extends CacheableStore {
     return initialCanonicalBlockRoot;
   }
 
-  @SuppressWarnings("UnusedVariable")
   private static ProtoArray buildProtoArray(
       final Spec spec,
       final Map<Bytes32, StoredBlockMetadata> blockInfoByRoot,
@@ -391,6 +393,8 @@ class Store extends CacheableStore {
       final Optional<Bytes32> initialCanonicalBlockRoot) {
     final List<StoredBlockMetadata> blocks = new ArrayList<>(blockInfoByRoot.values());
     blocks.sort(Comparator.comparing(StoredBlockMetadata::getBlockSlot));
+    final ForkChoiceModelFactory forkChoiceModelFactory = new ForkChoiceModelFactory(spec);
+    final BlockNodeVariantsIndex blockNodeIndex = new BlockNodeVariantsIndex();
     final ProtoArray protoArray =
         ProtoArray.builder()
             .spec(spec)
@@ -404,19 +408,16 @@ class Store extends CacheableStore {
         throw new IllegalStateException(
             "Incompatible database version detected. The data in this database is too old to be read by Teku. A re-sync will be required.");
       }
-
-      protoArray.onBlock(
-          block.getBlockSlot(),
-          block.getBlockRoot(),
-          block.getParentRoot(),
-          block.getStateRoot(),
-          block.getCheckpointEpochs().get(),
-          block.getExecutionBlockNumber().orElse(ProtoNode.NO_EXECUTION_BLOCK_NUMBER),
-          block.getExecutionBlockHash().orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH),
-          spec.isBlockProcessorOptimistic(block.getBlockSlot()));
+      forkChoiceModelFactory.rebuildBlockNodesFromMetadata(
+          protoArray, blockNodeIndex, block, spec.isBlockProcessorOptimistic(block.getBlockSlot()));
     }
 
-    initialCanonicalBlockRoot.ifPresent(protoArray::setInitialCanonicalBlockRoot);
+    initialCanonicalBlockRoot.ifPresent(
+        blockRoot ->
+            protoArray.setInitialCanonicalBlockRoot(
+                blockRoot,
+                forkChoiceModelFactory.createHeadSelectionContext(
+                    spec.computeStartSlotAtEpoch(currentEpoch), blockNodeIndex, Optional.empty())));
 
     return protoArray;
   }
@@ -624,7 +625,8 @@ class Store extends CacheableStore {
     readLock.lock();
     try {
       final List<Bytes32> blockRoots = new ArrayList<>();
-      forkChoiceStrategy.processAllInOrder((root, slot, parent) -> blockRoots.add(root));
+      forkChoiceStrategy.processAllBeaconBlocksInOrder(
+          (root, slot, parent) -> blockRoots.add(root));
       return blockRoots;
     } finally {
       readLock.unlock();
@@ -664,43 +666,50 @@ class Store extends CacheableStore {
 
   @Override
   public boolean isHeadWeak(final Bytes32 root) {
-    final Optional<ProtoNodeData> maybeBlockData = getBlockDataFromForkChoiceStrategy(root);
-    return maybeBlockData
-        .map(
-            blockData -> {
-              final UInt64 headWeight = blockData.getWeight();
-
-              final boolean result = headWeight.isLessThan(reorgThreshold);
-
-              LOG.trace(
-                  "isHeadWeak {}: headWeight: {}, reorgThreshold: {}, result: {}",
-                  root,
-                  headWeight,
-                  reorgThreshold,
-                  result);
-              return result;
-            })
-        .orElse(false);
+    readLock.lock();
+    try {
+      final boolean result = getForkChoiceUtilForRoot(root).isHeadWeak(this, root, reorgThreshold);
+      LOG.trace("isHeadWeak {}: reorgThreshold: {}, result: {}", root, reorgThreshold, result);
+      return result;
+    } finally {
+      readLock.unlock();
+    }
   }
 
   @Override
   public boolean isParentStrong(final Bytes32 parentRoot) {
-    final Optional<ProtoNodeData> maybeBlockData = getBlockDataFromForkChoiceStrategy(parentRoot);
-    return maybeBlockData
-        .map(
-            blockData -> {
-              final UInt64 parentWeight = blockData.getWeight();
-              final boolean result = parentWeight.isGreaterThan(parentThreshold);
+    readLock.lock();
+    try {
+      final boolean result =
+          getForkChoiceUtilForRoot(parentRoot).isParentStrong(this, parentRoot, parentThreshold);
+      LOG.debug(
+          "isParentStrong {}: parentThreshold: {}, result: {}",
+          parentRoot,
+          parentThreshold,
+          result);
+      return result;
+    } finally {
+      readLock.unlock();
+    }
+  }
 
-              LOG.debug(
-                  "isParentStrong {}: parentWeight: {}, parentThreshold: {}, result: {}",
-                  parentRoot,
-                  parentWeight,
-                  parentThreshold,
-                  result);
-              return result;
-            })
-        .orElse(true);
+  private ForkChoiceUtil getForkChoiceUtilForRoot(final Bytes32 root) {
+    final UInt64 slot =
+        forkChoiceStrategy
+            .blockSlot(root)
+            .orElseGet(
+                () -> spec.getCurrentSlotFromTimeMillis(timeMillis, secondsToMillis(genesisTime)));
+    return spec.atSlot(slot).getForkChoiceUtil();
+  }
+
+  @Override
+  public UInt64 getReorgThreshold() {
+    return reorgThreshold;
+  }
+
+  @Override
+  public UInt64 getParentThreshold() {
+    return parentThreshold;
   }
 
   @Override
@@ -713,6 +722,21 @@ class Store extends CacheableStore {
     parentThreshold =
         beaconStateAccessors.calculateCommitteeFraction(
             justifiedState, specVersion.getConfig().getReorgParentWeightThreshold());
+  }
+
+  @Override
+  public Optional<BeaconState> getJustifiedStateIfAvailable() {
+    return getCheckpointStateIfAvailable(justifiedCheckpoint);
+  }
+
+  @Override
+  public Optional<BeaconState> getCheckpointStateIfAvailable(final Checkpoint checkpoint) {
+    return checkpointStates.getIfAvailable(checkpoint.toSlotAndBlockRoot(spec));
+  }
+
+  @Override
+  public Optional<ForkChoicePayloadStatus> getPayloadStatus(final Bytes32 root) {
+    return forkChoiceStrategy.payloadStatus(root);
   }
 
   @Override
@@ -956,13 +980,15 @@ class Store extends CacheableStore {
     }
   }
 
-  VoteTracker getVote(final UInt64 validatorIndex) {
+  @Override
+  public VoteTracker getVote(final UInt64 validatorIndex) {
     readVotesLock.lock();
     try {
       if (validatorIndex.intValue() >= votes.length) {
-        return null;
+        return VoteTracker.DEFAULT;
       }
-      return votes[validatorIndex.intValue()];
+      final VoteTracker vote = votes[validatorIndex.intValue()];
+      return vote != null ? vote : VoteTracker.DEFAULT;
     } finally {
       readVotesLock.unlock();
     }
@@ -1075,7 +1101,7 @@ class Store extends CacheableStore {
     final AtomicReference<SlotAndBlockRoot> latestEpochBoundary = new AtomicReference<>();
     readLock.lock();
     try {
-      forkChoiceStrategy.processHashesInChain(
+      forkChoiceStrategy.processBeaconBlockChain(
           blockRoot,
           (root, slot, parent) -> {
             treeBuilder.childAndParentRoots(root, parent);
@@ -1118,9 +1144,9 @@ class Store extends CacheableStore {
     final AtomicReference<BeaconState> baseState = new AtomicReference<>();
     readLock.lock();
     try {
-      forkChoiceStrategy.processHashesInChainWhile(
+      forkChoiceStrategy.processBeaconBlockChainWhile(
           blockRoot,
-          (root, slot, parent, executionHash) -> {
+          (root, slot, parent) -> {
             treeBuilder.childAndParentRoots(root, parent);
             final Optional<BeaconState> blockState = getBlockStateIfAvailable(root);
             blockState.ifPresent(

@@ -49,7 +49,7 @@ public class ManualReferenceTestRunner extends Eth2ReferenceTestCase {
    *
    * <p>May be overridden by the ENV_SPEC environment variable.
    */
-  private static final String SPEC = "";
+  private static final String SPEC = "minimal";
 
   /**
    * Filter test to run only those for a specific milestone. Use values from TestFork.
@@ -63,7 +63,7 @@ public class ManualReferenceTestRunner extends Eth2ReferenceTestCase {
    *
    * <p>May be overridden by the ENV_DISPLAY_NAME environment variable.
    */
-  private static final String DISPLAY_NAME = "";
+  private static final String DISPLAY_NAME = "fork_choice";
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("loadReferenceTests")

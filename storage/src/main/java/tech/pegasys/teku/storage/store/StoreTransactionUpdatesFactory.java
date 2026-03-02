@@ -203,7 +203,7 @@ class StoreTransactionUpdatesFactory {
     if (baseStore.getForkChoiceStrategy().contains(finalizedChainHeadRoot)) {
       baseStore
           .getForkChoiceStrategy()
-          .processHashesInChain(
+          .processBeaconBlockChain(
               finalizedChainHeadRoot,
               (blockRoot, slot, parentRoot) -> childToParent.put(blockRoot, parentRoot));
     }
@@ -242,7 +242,7 @@ class StoreTransactionUpdatesFactory {
     final BeaconBlockSummary finalizedBlock = tx.getLatestFinalized().getBlockSummary();
     baseStore
         .getForkChoiceStrategy()
-        .processAllInOrder(
+        .processAllBeaconBlocksInOrder(
             (blockRoot, slot, parentRoot) -> {
               if (shouldPrune(finalizedBlock, blockRoot, slot, parentRoot)) {
                 prunedHotBlockRoots.put(blockRoot, slot);

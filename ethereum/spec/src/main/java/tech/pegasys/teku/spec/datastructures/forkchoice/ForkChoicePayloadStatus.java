@@ -19,14 +19,14 @@ package tech.pegasys.teku.spec.datastructures.forkchoice;
  * <p>Spec reference:
  * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md
  */
-public enum PayloadStatus {
+public enum ForkChoicePayloadStatus {
+  PAYLOAD_STATUS_PENDING(2),
   PAYLOAD_STATUS_EMPTY(0),
-  PAYLOAD_STATUS_FULL(1),
-  PAYLOAD_STATUS_PENDING(2);
+  PAYLOAD_STATUS_FULL(1);
 
   private final int value;
 
-  PayloadStatus(final int value) {
+  ForkChoicePayloadStatus(final int value) {
     this.value = value;
   }
 

@@ -832,6 +832,30 @@ public class BlockManagerTest {
   }
 
   @Test
+  void validateAndImportBlock_shouldRecordTimelinessAfterGossipValidationForDeferredImport() {
+    final SignedBeaconBlock parentBlock =
+        localChain.chainBuilder().generateBlockAtSlot(incrementSlot()).getBlock();
+    final SignedBeaconBlock childBlock =
+        localChain.chainBuilder().generateBlockAtSlot(incrementSlot()).getBlock();
+
+    when(blockValidator.validateGossip(any()))
+        .thenReturn(SafeFuture.completedFuture(InternalValidationResult.ACCEPT));
+
+    final Optional<UInt64> arrivalTime = Optional.of(timeProvider.getTimeInMillis());
+    assertThat(blockManager.validateAndImportBlock(childBlock, arrivalTime))
+        .isCompletedWithValueMatching(InternalValidationResult::isAccept);
+    assertThat(localRecentChainData.getBlockTimeliness(childBlock.getRoot())).isPresent();
+    final boolean wasLateAtFirstReceipt = localRecentChainData.isBlockLate(childBlock.getRoot());
+
+    timeProvider.advanceTimeByMillis(5_000);
+    assertImportBlockSuccessfully(parentBlock);
+
+    assertThat(localRecentChainData.getBlockTimeliness(childBlock.getRoot())).isPresent();
+    assertThat(localRecentChainData.isBlockLate(childBlock.getRoot()))
+        .isEqualTo(wasLateAtFirstReceipt);
+  }
+
+  @Test
   void onDeneb_shouldStoreBlobSidecarsAlongWithBlock() {
     // If we start genesis with Deneb, 0 will be earliestBlobSidecarSlot, so started on epoch 1
     setupWithSpec(

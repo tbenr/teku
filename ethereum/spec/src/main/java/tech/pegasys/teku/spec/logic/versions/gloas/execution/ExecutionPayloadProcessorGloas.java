@@ -81,6 +81,11 @@ public class ExecutionPayloadProcessorGloas extends AbstractExecutionPayloadProc
   }
 
   @Override
+  protected BLSSignatureVerifier getSignatureVerifier() {
+    return specConfig.getBLSSignatureVerifier();
+  }
+
+  @Override
   protected ExecutionPayloadValidationResult validateExecutionPayloadPreProcessing(
       final BeaconState preState,
       final SignedExecutionPayloadEnvelope signedEnvelope,

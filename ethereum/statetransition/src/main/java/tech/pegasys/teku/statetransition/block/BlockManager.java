@@ -127,9 +127,6 @@ public class BlockManager extends Service
 
     final Optional<BlockImportPerformance> blockImportPerformance;
 
-    arrivalTimestamp.ifPresent(
-        arrivalTime -> recentChainData.setBlockTimelinessFromArrivalTime(block, arrivalTime));
-
     if (blockImportMetrics.isPresent()) {
       final BlockImportPerformance performance =
           new BlockImportPerformance(timeProvider, blockImportMetrics.get());
@@ -153,13 +150,16 @@ public class BlockManager extends Service
     validationResult.thenAccept(
         result -> {
           switch (result.code()) {
-            case ACCEPT, SAVE_FOR_FUTURE ->
-                doImportBlock(
-                        block,
-                        blockImportPerformance,
-                        BlockBroadcastValidator.NOOP,
-                        Optional.of(RemoteOrigin.GOSSIP))
-                    .finish(err -> LOG.error("Failed to process received block.", err));
+            case ACCEPT, SAVE_FOR_FUTURE -> {
+              arrivalTimestamp.ifPresent(
+                  timestamp -> recentChainData.setBlockTimelinessFromArrivalTime(block, timestamp));
+              doImportBlock(
+                      block,
+                      blockImportPerformance,
+                      BlockBroadcastValidator.NOOP,
+                      Optional.of(RemoteOrigin.GOSSIP))
+                  .finish(err -> LOG.error("Failed to process received block.", err));
+            }
 
             // block failed gossip validation, let's drop it from the pool, so it won't be served
             // via RPC anymore. This should not be done on ignore result (i.e. duplicate blocks

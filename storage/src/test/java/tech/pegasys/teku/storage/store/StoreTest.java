@@ -40,6 +40,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.InvalidCheckpointException;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeValidationStatus;
@@ -57,6 +58,14 @@ import tech.pegasys.teku.storage.storageSystem.StorageSystem;
 import tech.pegasys.teku.storage.store.UpdatableStore.StoreTransaction;
 
 class StoreTest extends AbstractStoreTest {
+  @Test
+  public void create_shouldRebuildPreGloasStoreWithoutRecoveringBlocks() {
+    final UpdatableStore store =
+        createStoreBuilder(defaultStoreConfig).blockProvider(roots -> null).build();
+
+    assertThat(store.getOrderedBlockRoots()).hasSize(1);
+  }
+
   @Test
   public void create_timeLessThanGenesisTime() {
     final UInt64 genesisTime = UInt64.valueOf(100);
@@ -422,7 +431,8 @@ class StoreTest extends AbstractStoreTest {
             Bytes32.random(),
             ProtoNodeValidationStatus.VALID,
             headCheckpoint,
-            UInt64.ZERO);
+            UInt64.ZERO,
+            ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING);
     final ProtoNodeData parentNodeData =
         new ProtoNodeData(
             UInt64.ZERO,
@@ -433,7 +443,8 @@ class StoreTest extends AbstractStoreTest {
             Bytes32.random(),
             ProtoNodeValidationStatus.VALID,
             parentCheckpoint,
-            UInt64.ZERO);
+            UInt64.ZERO,
+            ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING);
     when(dummyForkChoiceStrategy.getBlockData(root)).thenReturn(Optional.of(protoNodeData));
     when(dummyForkChoiceStrategy.getBlockData(parentRoot)).thenReturn(Optional.of(parentNodeData));
   }
@@ -452,7 +463,8 @@ class StoreTest extends AbstractStoreTest {
             Bytes32.random(),
             ProtoNodeValidationStatus.VALID,
             null,
-            headValue);
+            headValue,
+            ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING);
     final ProtoNodeData parentNodeData =
         new ProtoNodeData(
             UInt64.ZERO,
@@ -463,7 +475,8 @@ class StoreTest extends AbstractStoreTest {
             Bytes32.random(),
             ProtoNodeValidationStatus.VALID,
             null,
-            parentValue);
+            parentValue,
+            ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING);
     when(dummyForkChoiceStrategy.getBlockData(root)).thenReturn(Optional.of(protoNodeData));
     when(dummyForkChoiceStrategy.getBlockData(parentRoot)).thenReturn(Optional.of(parentNodeData));
   }

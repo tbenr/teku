@@ -69,6 +69,7 @@ import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.util.DataColumnSlotAndIdentifier;
 import tech.pegasys.teku.spec.datastructures.util.SlotAndBlockRootAndBlobIndex;
+import tech.pegasys.teku.storage.api.GloasForkChoiceRebuildData;
 import tech.pegasys.teku.storage.api.OnDiskStoreData;
 import tech.pegasys.teku.storage.api.StorageUpdate;
 import tech.pegasys.teku.storage.api.StoredBlockMetadata;
@@ -307,6 +308,18 @@ public class KvStoreDatabase implements Database {
                 dao.getHotBlockCheckpointEpochs(b.getRoot());
             final Optional<ExecutionPayload> executionPayload =
                 b.getMessage().getBody().getOptionalExecutionPayload();
+            // TODO-GLOAS: persist SignedExecutionPayloadEnvelope alongside hot blocks so
+            // GloasForkChoiceRebuildData can include payloadBlockNumber and restart can recreate
+            // FULL nodes exactly from StoredBlockMetadata.
+            final Optional<GloasForkChoiceRebuildData> gloasForkChoiceRebuildData =
+                b.getMessage()
+                    .getBody()
+                    .getOptionalSignedExecutionPayloadBid()
+                    .map(SignedExecutionPayloadBid::getMessage)
+                    .map(
+                        bid ->
+                            new GloasForkChoiceRebuildData(
+                                bid.getParentBlockHash(), bid.getBlockHash(), Optional.empty()));
             blockInformation.put(
                 b.getRoot(),
                 new StoredBlockMetadata(
@@ -316,7 +329,8 @@ public class KvStoreDatabase implements Database {
                     b.getStateRoot(),
                     executionPayload.map(ExecutionPayload::getBlockNumber),
                     executionPayload.map(ExecutionPayload::getBlockHash),
-                    checkpointEpochs));
+                    checkpointEpochs,
+                    gloasForkChoiceRebuildData));
           });
     }
     return blockInformation;
