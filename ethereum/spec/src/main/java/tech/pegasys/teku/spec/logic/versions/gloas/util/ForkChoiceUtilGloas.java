@@ -56,6 +56,12 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
     super(specConfig, beaconStateAccessors, epochProcessor, attestationUtil, miscHelpers);
   }
 
+  @Override
+  public boolean shouldUpdateVote(
+      final VoteTracker vote, final UInt64 targetEpoch, final UInt64 slot) {
+    return slot.isGreaterThan(vote.getNextSlot()) || vote.equals(VoteTracker.DEFAULT);
+  }
+
   public static ForkChoiceUtilGloas required(final ForkChoiceUtil forkChoiceUtil) {
     checkArgument(
         forkChoiceUtil instanceof ForkChoiceUtilGloas,

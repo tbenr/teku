@@ -29,7 +29,6 @@ import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
-import tech.pegasys.teku.spec.SpecMilestone;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockAndCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
@@ -43,6 +42,7 @@ import tech.pegasys.teku.spec.datastructures.operations.IndexedAttestation;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.executionlayer.ExecutionPayloadStatus;
 import tech.pegasys.teku.spec.executionlayer.ForkChoiceState;
+import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil;
 
 public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoiceStrategy {
   private static final Logger LOG = LogManager.getLogger();
@@ -143,8 +143,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
     try {
       final UInt64 attestationSlot = attestation.getData().getSlot();
       final boolean payloadPresent = attestation.getData().getIndex().equals(UInt64.ONE);
-      final boolean isGloas =
-          spec.atSlot(attestationSlot).getMilestone().isGreaterThanOrEqualTo(SpecMilestone.GLOAS);
+      final ForkChoiceUtil forkChoiceUtil = spec.atSlot(attestationSlot).getForkChoiceUtil();
       attestation
           .getAttestingIndices()
           .streamUnboxed()
@@ -157,7 +156,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
                       attestation.getData().getTarget().getEpoch(),
                       attestationSlot,
                       payloadPresent,
-                      isGloas));
+                      forkChoiceUtil));
     } finally {
       votesLock.writeLock().unlock();
     }
@@ -166,8 +165,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
   public void applyDeferredAttestations(final VoteUpdater voteUpdater, final DeferredVotes votes) {
     final UInt64 targetEpoch = spec.computeEpochAtSlot(votes.getSlot());
     final UInt64 slot = votes.getSlot();
-    final boolean isGloas =
-        spec.atSlot(slot).getMilestone().isGreaterThanOrEqualTo(SpecMilestone.GLOAS);
+    final ForkChoiceUtil forkChoiceUtil = spec.atSlot(slot).getForkChoiceUtil();
     votesLock.writeLock().lock();
     try {
       votes.forEachDeferredVote(
@@ -179,7 +177,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
                   targetEpoch,
                   slot,
                   payloadPresent,
-                  isGloas));
+                  forkChoiceUtil));
     } finally {
       votesLock.writeLock().unlock();
     }
@@ -253,7 +251,13 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       final Bytes32 blockRoot,
       final UInt64 targetEpoch) {
     processAttestation(
-        voteUpdater, validatorIndex, blockRoot, targetEpoch, UInt64.ZERO, false, false);
+        voteUpdater,
+        validatorIndex,
+        blockRoot,
+        targetEpoch,
+        UInt64.ZERO,
+        false,
+        spec.atSlot(UInt64.ZERO).getForkChoiceUtil());
   }
 
   void processAttestation(
@@ -263,21 +267,14 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       final UInt64 targetEpoch,
       final UInt64 slot,
       final boolean payloadPresent,
-      final boolean isGloas) {
+      final ForkChoiceUtil forkChoiceUtil) {
     VoteTracker vote = voteUpdater.getVote(validatorIndex);
     // Not updating anything for equivocated validators
     if (vote.isEquivocating()) {
       return;
     }
 
-    // Gloas uses slot-based comparison; pre-Gloas uses epoch-based
-    final boolean shouldUpdate;
-    if (isGloas) {
-      shouldUpdate = slot.isGreaterThan(vote.getNextSlot()) || vote.equals(VoteTracker.DEFAULT);
-    } else {
-      shouldUpdate =
-          targetEpoch.isGreaterThan(vote.getNextEpoch()) || vote.equals(VoteTracker.DEFAULT);
-    }
+    final boolean shouldUpdate = forkChoiceUtil.shouldUpdateVote(vote, targetEpoch, slot);
     if (shouldUpdate) {
       VoteTracker newVote =
           new VoteTracker(
