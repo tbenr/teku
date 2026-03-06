@@ -34,6 +34,7 @@ import tech.pegasys.teku.infrastructure.version.VersionProvider;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.networks.Eth2Network;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreConfiguration;
+import tech.pegasys.teku.storage.server.kvstore.schema.V6SchemaCombinedDiffState;
 import tech.pegasys.teku.storage.server.kvstore.schema.V6SchemaCombinedSnapshot;
 import tech.pegasys.teku.storage.server.leveldb.LevelDbDatabaseFactory;
 import tech.pegasys.teku.storage.server.metadata.V5DatabaseMetadata;
@@ -165,6 +166,13 @@ public class VersionedDatabaseFactory implements DatabaseFactory {
             dbVersion.getValue(),
             dbDirectory.getAbsolutePath());
       }
+      case V6_DIFF -> {
+        database = createV6DiffDatabase();
+        LOG.info(
+            "Created RocksDB V6 Diff-based state database ({}) at {}",
+            dbVersion.getValue(),
+            dbDirectory.getAbsolutePath());
+      }
       default -> throw new UnsupportedOperationException("Unhandled database version " + dbVersion);
     }
     initDatabaseVersionMetrics(metricsSystem, dbVersion, stateStorageMode);
@@ -281,6 +289,22 @@ public class VersionedDatabaseFactory implements DatabaseFactory {
           dbConfiguration.withDatabaseDir(dbDirectory.toPath()),
           stateStorageMode,
           stateStorageFrequency,
+          storeNonCanonicalBlocks,
+          spec);
+    } catch (final IOException e) {
+      throw DatabaseStorageException.unrecoverable("Failed to read metadata", e);
+    }
+  }
+
+  private Database createV6DiffDatabase() {
+    try {
+      final KvStoreConfiguration dbConfiguration = initV6Configuration();
+      final V6SchemaCombinedDiffState schema = new V6SchemaCombinedDiffState(spec);
+      return RocksDbDatabaseFactory.createV6Diff(
+          metricsSystem,
+          dbConfiguration.withDatabaseDir(dbDirectory.toPath()),
+          schema,
+          stateStorageMode,
           storeNonCanonicalBlocks,
           spec);
     } catch (final IOException e) {

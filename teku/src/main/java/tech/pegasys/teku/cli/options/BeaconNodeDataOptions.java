@@ -95,6 +95,16 @@ public class BeaconNodeDataOptions extends ValidatorClientDataOptions {
   private String createDbVersion = null;
 
   @CommandLine.Option(
+      names = {"--Xdata-storage-diff-mode"},
+      paramLabel = "<BOOLEAN>",
+      showDefaultValue = Visibility.ALWAYS,
+      description = "Enable hierarchical diff-based state storage",
+      fallbackValue = "true",
+      hidden = true,
+      arity = "0..1")
+  private boolean diffModeEnabled = false;
+
+  @CommandLine.Option(
       names = {"--data-storage-non-canonical-blocks-enabled"},
       paramLabel = "<BOOLEAN>",
       showDefaultValue = Visibility.ALWAYS,
@@ -271,6 +281,9 @@ public class BeaconNodeDataOptions extends ValidatorClientDataOptions {
   }
 
   public DatabaseVersion parseDatabaseVersion() {
+    if (diffModeEnabled) {
+      return DatabaseVersion.V6_DIFF;
+    }
     if (createDbVersion == null) {
       if (dataStorageFrequency == 1 && !DatabaseVersion.tryLoadLeveldbNativeLibrary()) {
         throw new InvalidConfigurationException(

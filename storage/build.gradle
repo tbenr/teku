@@ -16,6 +16,7 @@ dependencies {
   implementation project(':infrastructure:metrics')
   implementation project(':infrastructure:serviceutils')
   implementation project(':infrastructure:ssz')
+  implementation project(':infrastructure:state-diff')
   implementation project(':infrastructure:time')
   implementation project(':infrastructure:version')
   implementation project(':storage:api')
