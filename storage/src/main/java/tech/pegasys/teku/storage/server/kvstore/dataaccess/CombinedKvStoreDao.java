@@ -28,6 +28,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.ethereum.pow.api.DepositTreeSnapshot;
@@ -56,6 +58,8 @@ import tech.pegasys.teku.storage.server.kvstore.schema.SchemaCombined;
 
 public class CombinedKvStoreDao<S extends SchemaCombined>
     implements KvStoreCombinedDao, V4MigratableSourceDao {
+  private static final Logger LOG = LogManager.getLogger();
+
   // Persistent data
   private final KvStoreAccessor db;
   private final S schema;
@@ -129,9 +133,20 @@ public class CombinedKvStoreDao<S extends SchemaCombined>
 
   @Override
   public Optional<BeaconState> getLatestFinalizedState() {
-    return stateStorageLogic
-        .getLatestFinalizedState(db, schema)
-        .or(() -> db.get(schema.getVariableLatestFinalizedState()));
+    final Optional<BeaconState> reconstructed =
+        stateStorageLogic.getLatestFinalizedState(db, schema);
+    if (reconstructed.isPresent()) {
+      LOG.debug(
+          "getLatestFinalizedState: reconstructed from diffs, slot={}",
+          reconstructed.get().getSlot());
+      return reconstructed;
+    }
+    final Optional<BeaconState> fromVariable = db.get(schema.getVariableLatestFinalizedState());
+    LOG.debug(
+        "getLatestFinalizedState: from variable, present={}, slot={}",
+        fromVariable.isPresent(),
+        fromVariable.map(s -> s.getSlot().toString()).orElse("N/A"));
+    return fromVariable;
   }
 
   @Override

@@ -1333,8 +1333,11 @@ public class KvStoreDatabase implements Database {
       update.getJustifiedCheckpoint().ifPresent(updater::setJustifiedCheckpoint);
       update.getBestJustifiedCheckpoint().ifPresent(updater::setBestJustifiedCheckpoint);
       latestFinalizedStateUpdateStartTime = System.currentTimeMillis();
-      if (!dao.canReconstructLatestFinalizedState() || !stateStorageMode.storesFinalizedStates()) {
+      if (!dao.canReconstructLatestFinalizedState()) {
         update.getLatestFinalizedState().ifPresent(updater::setLatestFinalizedState);
+        LOG.debug("doUpdate: writing LATEST_FINALIZED_STATE variable");
+      } else if (update.getLatestFinalizedState().isPresent()) {
+        LOG.debug("doUpdate: skipping LATEST_FINALIZED_STATE write (reconstructable from diffs)");
       }
       latestFinalizedStateUpdateEndTime = System.currentTimeMillis();
 
@@ -1402,7 +1405,7 @@ public class KvStoreDatabase implements Database {
     final Optional<SlotAndExecutionPayloadSummary> optimisticTransitionPayload =
         updateFinalizedOptimisticTransitionBlock(
             isFinalizedOptimisticBlockRootSet, finalizedOptimisticTransitionBlockRoot);
-    if (stateStorageMode.storesFinalizedStates()) {
+    if (stateStorageMode.storesFinalizedStates() || dao.canReconstructLatestFinalizedState()) {
       updateFinalizedDataArchiveMode(finalizedChildToParentMap, finalizedBlocks, finalizedStates);
     } else {
       updateFinalizedDataPruneMode(finalizedChildToParentMap, finalizedBlocks);
@@ -1554,7 +1557,12 @@ public class KvStoreDatabase implements Database {
       final int start = i;
       try (final FinalizedUpdater updater = finalizedUpdater()) {
         final StateRootRecorder recorder =
-            new StateRootRecorder(lastSlot, updater::addFinalizedStateRoot, spec);
+            new StateRootRecorder(
+                lastSlot,
+                stateStorageMode.storesFinalizedStates()
+                    ? updater::addFinalizedStateRoot
+                    : (stateRoot, slot) -> {},
+                spec);
 
         while (i < finalizedRoots.size() && (i - start) < TX_BATCH_SIZE) {
           final Bytes32 blockRoot = finalizedRoots.get(i);
@@ -1650,9 +1658,11 @@ public class KvStoreDatabase implements Database {
 
   private void putFinalizedState(
       final FinalizedUpdater updater, final Bytes32 blockRoot, final BeaconState state) {
-    if (stateStorageMode.storesFinalizedStates()) {
+    if (stateStorageMode.storesFinalizedStates() || dao.canReconstructLatestFinalizedState()) {
       updater.addFinalizedState(blockRoot, state);
-      updater.addFinalizedStateRoot(state.hashTreeRoot(), state.getSlot());
+      if (stateStorageMode.storesFinalizedStates()) {
+        updater.addFinalizedStateRoot(state.hashTreeRoot(), state.getSlot());
+      }
     }
   }
 }
