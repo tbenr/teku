@@ -33,6 +33,14 @@ public interface V4FinalizedStateStorageLogic<S> {
   Stream<UInt64> streamFinalizedStateSlots(
       KvStoreAccessor db, final S schema, UInt64 startSlot, UInt64 endSlot);
 
+  default Optional<BeaconState> getLatestFinalizedState(final KvStoreAccessor db, final S schema) {
+    return Optional.empty();
+  }
+
+  default boolean canReconstructLatestFinalizedState() {
+    return false;
+  }
+
   interface FinalizedStateUpdater<S> {
     void addFinalizedState(
         KvStoreAccessor db, KvStoreTransaction transaction, S schema, BeaconState state);

@@ -1333,7 +1333,9 @@ public class KvStoreDatabase implements Database {
       update.getJustifiedCheckpoint().ifPresent(updater::setJustifiedCheckpoint);
       update.getBestJustifiedCheckpoint().ifPresent(updater::setBestJustifiedCheckpoint);
       latestFinalizedStateUpdateStartTime = System.currentTimeMillis();
-      update.getLatestFinalizedState().ifPresent(updater::setLatestFinalizedState);
+      if (!dao.canReconstructLatestFinalizedState() || !stateStorageMode.storesFinalizedStates()) {
+        update.getLatestFinalizedState().ifPresent(updater::setLatestFinalizedState);
+      }
       latestFinalizedStateUpdateEndTime = System.currentTimeMillis();
 
       updateHotBlocks(updater, update.getHotBlocks(), update.getDeletedHotBlocks().keySet());

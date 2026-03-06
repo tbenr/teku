@@ -104,6 +104,10 @@ public interface KvStoreCombinedDao extends AutoCloseable {
   // In hot dao because it must be in sync with the finalized checkpoint
   Optional<BeaconState> getLatestFinalizedState();
 
+  default boolean canReconstructLatestFinalizedState() {
+    return false;
+  }
+
   Optional<Checkpoint> getWeakSubjectivityCheckpoint();
 
   Optional<BlockCheckpoints> getHotBlockCheckpointEpochs(Bytes32 root);

@@ -129,7 +129,14 @@ public class CombinedKvStoreDao<S extends SchemaCombined>
 
   @Override
   public Optional<BeaconState> getLatestFinalizedState() {
-    return db.get(schema.getVariableLatestFinalizedState());
+    return stateStorageLogic
+        .getLatestFinalizedState(db, schema)
+        .or(() -> db.get(schema.getVariableLatestFinalizedState()));
+  }
+
+  @Override
+  public boolean canReconstructLatestFinalizedState() {
+    return stateStorageLogic.canReconstructLatestFinalizedState();
   }
 
   @Override

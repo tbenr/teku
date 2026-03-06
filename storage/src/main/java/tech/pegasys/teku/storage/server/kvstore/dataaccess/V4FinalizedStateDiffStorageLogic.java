@@ -77,6 +77,18 @@ public class V4FinalizedStateDiffStorageLogic
   }
 
   @Override
+  public Optional<BeaconState> getLatestFinalizedState(
+      final KvStoreAccessor db, final SchemaCombinedDiffState schema) {
+    return findLatestStoredEpoch(db, schema, UInt64.MAX_VALUE)
+        .flatMap(targetEpoch -> reconstructState(db, schema, targetEpoch));
+  }
+
+  @Override
+  public boolean canReconstructLatestFinalizedState() {
+    return true;
+  }
+
+  @Override
   @MustBeClosed
   public Stream<UInt64> streamFinalizedStateSlots(
       final KvStoreAccessor db,
