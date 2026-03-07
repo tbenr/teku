@@ -15,17 +15,19 @@ package tech.pegasys.teku.infrastructure.statediff;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.ArrayList;
 import java.util.List;
 import org.apache.tuweni.bytes.Bytes;
-import org.apache.tuweni.bytes.MutableBytes;
 
 /**
- * Composite diff strategy: applies UInt64DeltaDiff to specified byte regions (balances,
- * inactivity_scores) and SimpleSszDiff to the remainder of the state.
+ * Per-field diff strategy: extracts ALL variable-length fields individually from both states, diffs
+ * each independently (UInt64DeltaDiff for uint64 lists, SimpleSszDiff for others), and diffs the
+ * fixed part (always same size for same fork) with SimpleSszDiff. This eliminates cross-field
+ * misalignment when earlier variable fields grow.
  */
 public class CompositeDiffSchema implements StateDiffSchema {
 
-  private static final byte FORMAT_VERSION = 1;
+  private static final byte FORMAT_VERSION = 3;
   static final Bytes COMPOSITE_MAGIC = Bytes.of(0x43, 0x44, 0x49, 0x46); // "CDIF"
 
   private final SszFieldLocator fieldLocator;
@@ -40,26 +42,43 @@ public class CompositeDiffSchema implements StateDiffSchema {
 
   @Override
   public StateDiff computeDiff(final Bytes baseSsz, final Bytes targetSsz) {
-    final List<SszFieldLocator.FieldRegion> baseRegions = fieldLocator.locateUInt64Fields(baseSsz);
-    final List<SszFieldLocator.FieldRegion> targetRegions =
-        fieldLocator.locateUInt64Fields(targetSsz);
+    final List<SszFieldLocator.VariableFieldRegion> baseFields =
+        fieldLocator.locateAllVariableFields(baseSsz);
+    final List<SszFieldLocator.VariableFieldRegion> targetFields =
+        fieldLocator.locateAllVariableFields(targetSsz);
 
-    // Build "rest" SSZ by zeroing out the UInt64 regions, then diff the rest
-    final Bytes baseRest = zeroOutRegions(baseSsz, baseRegions);
-    final Bytes targetRest = zeroOutRegions(targetSsz, targetRegions);
-    final StateDiff restDiff = simpleDiffSchema.computeDiff(baseRest, targetRest);
-
-    // Diff each UInt64 region
-    final StateDiff[] uint64Diffs = new StateDiff[baseRegions.size()];
-    for (int i = 0; i < baseRegions.size(); i++) {
-      final SszFieldLocator.FieldRegion baseRegion = baseRegions.get(i);
-      final SszFieldLocator.FieldRegion targetRegion = targetRegions.get(i);
-      final Bytes baseField = baseSsz.slice(baseRegion.offset(), baseRegion.length());
-      final Bytes targetField = targetSsz.slice(targetRegion.offset(), targetRegion.length());
-      uint64Diffs[i] = uint64DiffSchema.computeDiff(baseField, targetField);
+    if (baseFields.size() != targetFields.size()) {
+      throw new IllegalArgumentException(
+          "Base and target must have the same number of variable fields: "
+              + baseFields.size()
+              + " vs "
+              + targetFields.size());
     }
 
-    return new CompositeDiff(restDiff, uint64Diffs, baseRegions, targetRegions);
+    final int fieldCount = baseFields.size();
+
+    // Fixed part: everything before the first variable field
+    final int baseFixedSize = fieldCount > 0 ? baseFields.get(0).offset() : baseSsz.size();
+    final int targetFixedSize = fieldCount > 0 ? targetFields.get(0).offset() : targetSsz.size();
+    final StateDiff fixedPartDiff =
+        simpleDiffSchema.computeDiff(
+            baseSsz.slice(0, baseFixedSize), targetSsz.slice(0, targetFixedSize));
+
+    // Diff each variable field independently
+    final StateDiff[] fieldDiffs = new StateDiff[fieldCount];
+    for (int i = 0; i < fieldCount; i++) {
+      final SszFieldLocator.VariableFieldRegion bf = baseFields.get(i);
+      final SszFieldLocator.VariableFieldRegion tf = targetFields.get(i);
+      final Bytes baseField = baseSsz.slice(bf.offset(), bf.length());
+      final Bytes targetField = targetSsz.slice(tf.offset(), tf.length());
+      if (bf.isUInt64()) {
+        fieldDiffs[i] = uint64DiffSchema.computeDiff(baseField, targetField);
+      } else {
+        fieldDiffs[i] = simpleDiffSchema.computeDiff(baseField, targetField);
+      }
+    }
+
+    return new CompositeDiff(fixedPartDiff, fieldDiffs, baseFields, targetFields);
   }
 
   @Override
@@ -78,116 +97,122 @@ public class CompositeDiffSchema implements StateDiffSchema {
       throw new IllegalArgumentException("Unsupported CompositeDiff format version: " + version);
     }
 
-    // Read rest diff
-    final int restDiffLen = buf.getInt();
-    final byte[] restDiffBytes = new byte[restDiffLen];
-    buf.get(restDiffBytes);
-    final StateDiff restDiff = simpleDiffSchema.deserialize(Bytes.wrap(restDiffBytes));
+    // Read fixed part diff
+    final int fixedPartDiffLen = buf.getInt();
+    final byte[] fixedPartDiffBytes = new byte[fixedPartDiffLen];
+    buf.get(fixedPartDiffBytes);
+    final StateDiff fixedPartDiff = simpleDiffSchema.deserialize(Bytes.wrap(fixedPartDiffBytes));
 
-    // Read region count and diffs
-    final int regionCount = buf.getInt();
-    final StateDiff[] uint64Diffs = new StateDiff[regionCount];
-    final SszFieldLocator.FieldRegion[] baseRegionsArr =
-        new SszFieldLocator.FieldRegion[regionCount];
-    final SszFieldLocator.FieldRegion[] targetRegionsArr =
-        new SszFieldLocator.FieldRegion[regionCount];
+    // Read field count and per-field diffs
+    final int fieldCount = buf.getInt();
+    final StateDiff[] fieldDiffs = new StateDiff[fieldCount];
+    final List<SszFieldLocator.VariableFieldRegion> baseFields = new ArrayList<>(fieldCount);
+    final List<SszFieldLocator.VariableFieldRegion> targetFields = new ArrayList<>(fieldCount);
 
-    for (int i = 0; i < regionCount; i++) {
+    for (int i = 0; i < fieldCount; i++) {
       final int baseOffset = buf.getInt();
       final int baseLength = buf.getInt();
-      baseRegionsArr[i] = new SszFieldLocator.FieldRegion(baseOffset, baseLength);
-
       final int targetOffset = buf.getInt();
       final int targetLength = buf.getInt();
-      targetRegionsArr[i] = new SszFieldLocator.FieldRegion(targetOffset, targetLength);
+      final boolean isUInt64 = buf.get() != 0;
+
+      baseFields.add(new SszFieldLocator.VariableFieldRegion(baseOffset, baseLength, isUInt64));
+      targetFields.add(
+          new SszFieldLocator.VariableFieldRegion(targetOffset, targetLength, isUInt64));
 
       final int diffLen = buf.getInt();
       final byte[] diffBytes = new byte[diffLen];
       buf.get(diffBytes);
-      uint64Diffs[i] = uint64DiffSchema.deserialize(Bytes.wrap(diffBytes));
-    }
-
-    return new CompositeDiff(
-        restDiff, uint64Diffs, List.of(baseRegionsArr), List.of(targetRegionsArr));
-  }
-
-  private static Bytes zeroOutRegions(
-      final Bytes ssz, final List<SszFieldLocator.FieldRegion> regions) {
-    final MutableBytes copy = ssz.mutableCopy();
-    for (final SszFieldLocator.FieldRegion region : regions) {
-      final int end = Math.min(region.offset() + region.length(), copy.size());
-      for (int i = region.offset(); i < end; i++) {
-        copy.set(i, (byte) 0);
+      if (isUInt64) {
+        fieldDiffs[i] = uint64DiffSchema.deserialize(Bytes.wrap(diffBytes));
+      } else {
+        fieldDiffs[i] = simpleDiffSchema.deserialize(Bytes.wrap(diffBytes));
       }
     }
-    return copy;
+
+    return new CompositeDiff(fixedPartDiff, fieldDiffs, baseFields, targetFields);
   }
 
   private static class CompositeDiff implements StateDiff {
 
-    private final StateDiff restDiff;
-    private final StateDiff[] uint64Diffs;
-    private final List<SszFieldLocator.FieldRegion> baseRegions;
-    private final List<SszFieldLocator.FieldRegion> targetRegions;
+    private final StateDiff fixedPartDiff;
+    private final StateDiff[] fieldDiffs;
+    private final List<SszFieldLocator.VariableFieldRegion> baseFields;
+    private final List<SszFieldLocator.VariableFieldRegion> targetFields;
 
     CompositeDiff(
-        final StateDiff restDiff,
-        final StateDiff[] uint64Diffs,
-        final List<SszFieldLocator.FieldRegion> baseRegions,
-        final List<SszFieldLocator.FieldRegion> targetRegions) {
-      this.restDiff = restDiff;
-      this.uint64Diffs = uint64Diffs;
-      this.baseRegions = baseRegions;
-      this.targetRegions = targetRegions;
+        final StateDiff fixedPartDiff,
+        final StateDiff[] fieldDiffs,
+        final List<SszFieldLocator.VariableFieldRegion> baseFields,
+        final List<SszFieldLocator.VariableFieldRegion> targetFields) {
+      this.fixedPartDiff = fixedPartDiff;
+      this.fieldDiffs = fieldDiffs;
+      this.baseFields = baseFields;
+      this.targetFields = targetFields;
     }
 
     @Override
     public Bytes apply(final Bytes baseSsz) {
-      // Apply the rest diff (with zeroed-out regions) to get the skeleton
-      final MutableBytes result = restDiff.apply(baseSsz).mutableCopy();
+      // Extract and apply fixed part diff
+      final int baseFixedPartSize =
+          baseFields.isEmpty() ? baseSsz.size() : baseFields.get(0).offset();
+      final Bytes baseFixedPart = baseSsz.slice(0, baseFixedPartSize);
+      final Bytes targetFixedPart = fixedPartDiff.apply(baseFixedPart);
 
-      // Apply each UInt64 region diff using base regions for input, target regions for output
-      for (int i = 0; i < uint64Diffs.length; i++) {
-        final SszFieldLocator.FieldRegion baseRegion = baseRegions.get(i);
-        final SszFieldLocator.FieldRegion targetRegion = targetRegions.get(i);
-        final Bytes baseField = baseSsz.slice(baseRegion.offset(), baseRegion.length());
-        final Bytes reconstructed = uint64Diffs[i].apply(baseField);
-        reconstructed.copyTo(result, targetRegion.offset());
+      // Reconstruct each variable field from its diff
+      int totalSize = targetFixedPart.size();
+      final Bytes[] reconstructedFields = new Bytes[fieldDiffs.length];
+      for (int i = 0; i < fieldDiffs.length; i++) {
+        final SszFieldLocator.VariableFieldRegion bf = baseFields.get(i);
+        final Bytes baseField = baseSsz.slice(bf.offset(), bf.length());
+        reconstructedFields[i] = fieldDiffs[i].apply(baseField);
+        totalSize += reconstructedFields[i].size();
       }
 
-      return result;
+      // Concatenate: targetFixedPart + field_0 + field_1 + ...
+      final byte[] result = new byte[totalSize];
+      int pos = 0;
+      System.arraycopy(targetFixedPart.toArrayUnsafe(), 0, result, pos, targetFixedPart.size());
+      pos += targetFixedPart.size();
+      for (final Bytes field : reconstructedFields) {
+        System.arraycopy(field.toArrayUnsafe(), 0, result, pos, field.size());
+        pos += field.size();
+      }
+      return Bytes.wrap(result);
     }
 
     @Override
     public Bytes serialize() {
-      final Bytes restDiffSerialized = restDiff.serialize();
+      final Bytes fixedPartDiffSerialized = fixedPartDiff.serialize();
 
-      // magic(4) + version(1) + restLen(4) + rest + regionCount(4)
-      // Per region: baseOffset(4) + baseLen(4) + targetOffset(4) + targetLen(4) + diffLen(4) + diff
-      int totalSize = 4 + 1 + 4 + restDiffSerialized.size() + 4;
-      final Bytes[] uint64DiffsSerialized = new Bytes[uint64Diffs.length];
-      for (int i = 0; i < uint64Diffs.length; i++) {
-        uint64DiffsSerialized[i] = uint64Diffs[i].serialize();
-        totalSize += 4 + 4 + 4 + 4 + 4 + uint64DiffsSerialized[i].size();
+      // magic(4) + version(1) + fixedPartDiffLen(4) + fixedPartDiff + fieldCount(4)
+      // Per field: baseOffset(4) + baseLen(4) + targetOffset(4) + targetLen(4) + isUInt64(1)
+      //            + diffLen(4) + diff
+      int totalSize = 4 + 1 + 4 + fixedPartDiffSerialized.size() + 4;
+      final Bytes[] fieldDiffsSerialized = new Bytes[fieldDiffs.length];
+      for (int i = 0; i < fieldDiffs.length; i++) {
+        fieldDiffsSerialized[i] = fieldDiffs[i].serialize();
+        totalSize += 4 + 4 + 4 + 4 + 1 + 4 + fieldDiffsSerialized[i].size();
       }
 
       final ByteBuffer buf = ByteBuffer.allocate(totalSize).order(ByteOrder.LITTLE_ENDIAN);
       buf.put(COMPOSITE_MAGIC.toArrayUnsafe());
       buf.put(FORMAT_VERSION);
 
-      buf.putInt(restDiffSerialized.size());
-      buf.put(restDiffSerialized.toArrayUnsafe());
+      buf.putInt(fixedPartDiffSerialized.size());
+      buf.put(fixedPartDiffSerialized.toArrayUnsafe());
 
-      buf.putInt(uint64Diffs.length);
-      for (int i = 0; i < uint64Diffs.length; i++) {
-        final SszFieldLocator.FieldRegion base = baseRegions.get(i);
+      buf.putInt(fieldDiffs.length);
+      for (int i = 0; i < fieldDiffs.length; i++) {
+        final SszFieldLocator.VariableFieldRegion base = baseFields.get(i);
         buf.putInt(base.offset());
         buf.putInt(base.length());
-        final SszFieldLocator.FieldRegion target = targetRegions.get(i);
+        final SszFieldLocator.VariableFieldRegion target = targetFields.get(i);
         buf.putInt(target.offset());
         buf.putInt(target.length());
-        buf.putInt(uint64DiffsSerialized[i].size());
-        buf.put(uint64DiffsSerialized[i].toArrayUnsafe());
+        buf.put((byte) (base.isUInt64() ? 1 : 0));
+        buf.putInt(fieldDiffsSerialized[i].size());
+        buf.put(fieldDiffsSerialized[i].toArrayUnsafe());
       }
 
       buf.flip();

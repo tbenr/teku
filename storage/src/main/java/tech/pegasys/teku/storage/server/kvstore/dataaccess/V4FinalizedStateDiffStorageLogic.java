@@ -46,6 +46,12 @@ public class V4FinalizedStateDiffStorageLogic
   private final DiffHierarchy hierarchy;
   private final Spec spec;
 
+  // Persisted across updater instances so the next updater can cache-hit.
+  // Single volatile reference ensures both fields are read/written atomically.
+  private volatile CachedState cachedState;
+
+  private record CachedState(Bytes sszBytes, UInt64 epoch) {}
+
   static {
     LoggingConfigurator.setAllLevels("tech.pegasys.teku.storage.server.kvstore", Level.DEBUG);
   }
@@ -80,7 +86,7 @@ public class V4FinalizedStateDiffStorageLogic
 
   @Override
   public FinalizedStateUpdater<SchemaCombinedDiffState> updater() {
-    return new DiffStateUpdater(hierarchy, spec);
+    return new DiffStateUpdater(hierarchy, spec, this);
   }
 
   @Override
@@ -146,8 +152,17 @@ public class V4FinalizedStateDiffStorageLogic
 
   private Optional<BeaconState> reconstructState(
       final KvStoreAccessor db, final SchemaCombinedDiffState schema, final UInt64 targetEpoch) {
+    final CachedState cached = cachedState;
+    if (cached != null && cached.epoch().equals(targetEpoch)) {
+      LOG.debug("reconstructState: cache hit for epoch {}", targetEpoch);
+      return Optional.of(spec.deserializeBeaconState(cached.sszBytes()));
+    }
     return reconstructSszBytes(db, schema, hierarchy, targetEpoch)
-        .map(spec::deserializeBeaconState);
+        .map(
+            sszBytes -> {
+              cachedState = new CachedState(sszBytes, targetEpoch);
+              return spec.deserializeBeaconState(sszBytes);
+            });
   }
 
   private static Optional<Bytes> reconstructSszBytes(
@@ -204,13 +219,24 @@ public class V4FinalizedStateDiffStorageLogic
 
     private final DiffHierarchy hierarchy;
     private final Spec spec;
+    private final V4FinalizedStateDiffStorageLogic parent;
     // Cache the last SSZ bytes to use as base for the next diff
     private Bytes lastSszBytes;
     private UInt64 lastEpoch;
 
-    DiffStateUpdater(final DiffHierarchy hierarchy, final Spec spec) {
+    DiffStateUpdater(
+        final DiffHierarchy hierarchy,
+        final Spec spec,
+        final V4FinalizedStateDiffStorageLogic parent) {
       this.hierarchy = hierarchy;
       this.spec = spec;
+      this.parent = parent;
+      // Seed from parent cache (single volatile read ensures atomic pair)
+      final CachedState cached = parent.cachedState;
+      if (cached != null) {
+        this.lastSszBytes = cached.sszBytes();
+        this.lastEpoch = cached.epoch();
+      }
     }
 
     @Override
@@ -220,8 +246,30 @@ public class V4FinalizedStateDiffStorageLogic
         final SchemaCombinedDiffState schema,
         final BeaconState state) {
       final UInt64 epoch = spec.computeEpochAtSlot(state.getSlot());
-      final List<Integer> levels = hierarchy.getLevelsToWrite(epoch);
       final Bytes stateSsz = state.sszSerialize();
+
+      // Bootstrap: if no level-0 snapshot exists yet, seed the entire reconstruction chain
+      final boolean needsBootstrap = db.getLastKey(schema.getColumnStateDiffLevel0()).isEmpty();
+      if (needsBootstrap) {
+        final List<DiffHierarchy.LevelAndEpoch> chain = hierarchy.getReconstructionChain(epoch);
+        LOG.info(
+            "addFinalizedState: bootstrapping diff store at epoch {}, chain size={}",
+            epoch,
+            chain.size());
+        for (final DiffHierarchy.LevelAndEpoch entry : chain) {
+          final StateDiffSchema diffSchema = hierarchy.getSchema(entry.level());
+          // Level 0: snapshot (base=EMPTY). Other levels: zero diff (base=target=stateSsz).
+          final Bytes base = entry.level() == 0 ? Bytes.EMPTY : stateSsz;
+          final StateDiff diff = diffSchema.computeDiff(base, stateSsz);
+          transaction.put(
+              schema.getColumnStateDiffLevel(entry.level()), entry.epoch(), diff.serialize());
+        }
+        lastSszBytes = stateSsz;
+        lastEpoch = epoch;
+        return;
+      }
+
+      final List<Integer> levels = hierarchy.getLevelsToWrite(epoch);
       LOG.debug(
           "addFinalizedState: slot={}, epoch={}, sszSize={} bytes, levels={}",
           state.getSlot(),
@@ -293,6 +341,10 @@ public class V4FinalizedStateDiffStorageLogic
 
     @Override
     public void commit() {
+      // Push cache to parent for next updater instance (single volatile write)
+      if (lastSszBytes != null && lastEpoch != null) {
+        parent.cachedState = new CachedState(lastSszBytes, lastEpoch);
+      }
       lastSszBytes = null;
       lastEpoch = null;
     }

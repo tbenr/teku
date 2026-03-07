@@ -84,6 +84,11 @@ public class BeaconStateSszFieldLocator implements SszFieldLocator {
     return delegate.locateUInt64Fields(ssz);
   }
 
+  @Override
+  public List<VariableFieldRegion> locateAllVariableFields(final Bytes ssz) {
+    return delegate.locateAllVariableFields(ssz);
+  }
+
   public static Set<UInt64> getForkEpochs(final Spec spec) {
     final Set<UInt64> forkEpochs = new HashSet<>();
     for (final var fork : spec.getForkSchedule().getForks()) {

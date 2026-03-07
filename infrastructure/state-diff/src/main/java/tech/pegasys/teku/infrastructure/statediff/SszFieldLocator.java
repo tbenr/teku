@@ -20,15 +20,20 @@ import java.util.List;
 import org.apache.tuweni.bytes.Bytes;
 
 /**
- * Locates UInt64 list fields (balances, inactivity_scores) within serialized SSZ beacon state bytes
- * by parsing the SSZ offset table.
+ * Locates variable-length fields within serialized SSZ beacon state bytes by parsing the SSZ offset
+ * table.
  */
 public interface SszFieldLocator {
 
   /** Returns the byte regions of UInt64 list fields in the given SSZ bytes. */
   List<FieldRegion> locateUInt64Fields(Bytes ssz);
 
+  /** Returns the byte regions of ALL variable-length fields in the given SSZ bytes. */
+  List<VariableFieldRegion> locateAllVariableFields(Bytes ssz);
+
   record FieldRegion(int offset, int length) {}
+
+  record VariableFieldRegion(int offset, int length, boolean isUInt64) {}
 
   /**
    * Field locator that uses known SSZ field indices to parse the offset table. The field indices
@@ -79,6 +84,35 @@ public interface SszFieldLocator {
 
       return regions;
     }
+
+    @Override
+    public List<VariableFieldRegion> locateAllVariableFields(final Bytes ssz) {
+      final ByteBuffer buf = ByteBuffer.wrap(ssz.toArrayUnsafe()).order(ByteOrder.LITTLE_ENDIAN);
+      final int sszSize = ssz.size();
+
+      final int[] offsets = new int[totalVariableFields];
+      for (int i = 0; i < totalVariableFields; i++) {
+        buf.position(variableFieldOffsetPositions[i]);
+        offsets[i] = buf.getInt();
+      }
+
+      final List<VariableFieldRegion> regions = new ArrayList<>(totalVariableFields);
+      for (int i = 0; i < totalVariableFields; i++) {
+        final int fieldOffset = offsets[i];
+        final int fieldEnd = (i + 1 < totalVariableFields) ? offsets[i + 1] : sszSize;
+        regions.add(new VariableFieldRegion(fieldOffset, fieldEnd - fieldOffset, isUInt64Field(i)));
+      }
+      return regions;
+    }
+
+    private boolean isUInt64Field(final int variableIndex) {
+      for (final int idx : uint64FieldVariableIndices) {
+        if (idx == variableIndex) {
+          return true;
+        }
+      }
+      return false;
+    }
   }
 
   /**
@@ -95,6 +129,12 @@ public interface SszFieldLocator {
     @Override
     public List<FieldRegion> locateUInt64Fields(final Bytes ssz) {
       return regions;
+    }
+
+    @Override
+    public List<VariableFieldRegion> locateAllVariableFields(final Bytes ssz) {
+      throw new UnsupportedOperationException(
+          "FixedFieldLocator does not support locateAllVariableFields");
     }
   }
 }
