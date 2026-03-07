@@ -1643,10 +1643,20 @@ public class KvStoreDatabase implements Database {
   }
 
   private BeaconBlockSummary getLatestFinalizedBlockOrSummary() {
-    final Bytes32 baseBlockRoot = dao.getFinalizedCheckpoint().orElseThrow().getRoot();
-    return getFinalizedBlock(baseBlockRoot)
-        .<BeaconBlockSummary>map(a -> a)
-        .orElseGet(this::getLatestFinalizedBlockSummary);
+    final Checkpoint checkpoint = dao.getFinalizedCheckpoint().orElseThrow();
+    final Bytes32 baseBlockRoot = checkpoint.getRoot();
+    // Try hot store first (block may still be there)
+    final Optional<SignedBeaconBlock> hotBlock = getFinalizedBlock(baseBlockRoot);
+    if (hotBlock.isPresent()) {
+      return hotBlock.get();
+    }
+    // Try lightweight slot lookup from finalized index (avoids full state reconstruction)
+    final Optional<UInt64> finalizedSlot = dao.getSlotForFinalizedBlockRoot(baseBlockRoot);
+    if (finalizedSlot.isPresent()) {
+      return new MinimalBlockSummary(finalizedSlot.get(), baseBlockRoot);
+    }
+    // Last resort: reconstruct full state to extract block header
+    return getLatestFinalizedBlockSummary();
   }
 
   private BeaconBlockSummary getLatestFinalizedBlockSummary() {
@@ -1654,6 +1664,42 @@ public class KvStoreDatabase implements Database {
         dao.getLatestFinalizedState().map(BeaconBlockHeader::fromState);
     return finalizedBlock.orElseThrow(
         () -> new IllegalStateException("Unable to reconstruct latest finalized block summary"));
+  }
+
+  /**
+   * Minimal implementation of BeaconBlockSummary providing only root and slot. Used to avoid
+   * expensive state reconstruction when only these fields are needed.
+   */
+  private record MinimalBlockSummary(UInt64 slot, Bytes32 root) implements BeaconBlockSummary {
+    @Override
+    public UInt64 getSlot() {
+      return slot;
+    }
+
+    @Override
+    public Bytes32 getRoot() {
+      return root;
+    }
+
+    @Override
+    public Bytes32 getParentRoot() {
+      throw new UnsupportedOperationException("MinimalBlockSummary does not have parentRoot");
+    }
+
+    @Override
+    public Bytes32 getStateRoot() {
+      throw new UnsupportedOperationException("MinimalBlockSummary does not have stateRoot");
+    }
+
+    @Override
+    public UInt64 getProposerIndex() {
+      throw new UnsupportedOperationException("MinimalBlockSummary does not have proposerIndex");
+    }
+
+    @Override
+    public Bytes32 getBodyRoot() {
+      throw new UnsupportedOperationException("MinimalBlockSummary does not have bodyRoot");
+    }
   }
 
   private void putFinalizedState(
