@@ -54,42 +54,42 @@ class DiffHierarchyTest {
   }
 
   @Test
-  void getLevelsToWrite_level0AtAlignedEpoch() {
+  void getLevelToWrite_level0AtAlignedEpoch() {
     final DiffHierarchy hierarchy = createTestHierarchy();
-    assertThat(hierarchy.getLevelsToWrite(UInt64.valueOf(0))).containsExactly(0);
-    assertThat(hierarchy.getLevelsToWrite(UInt64.valueOf(64))).containsExactly(0);
-    assertThat(hierarchy.getLevelsToWrite(UInt64.valueOf(128))).containsExactly(0);
+    assertThat(hierarchy.getLevelToWrite(UInt64.valueOf(0))).isEqualTo(0);
+    assertThat(hierarchy.getLevelToWrite(UInt64.valueOf(64))).isEqualTo(0);
+    assertThat(hierarchy.getLevelToWrite(UInt64.valueOf(128))).isEqualTo(0);
   }
 
   @Test
-  void getLevelsToWrite_level1AtAlignedEpoch() {
+  void getLevelToWrite_level1AtAlignedEpoch() {
     final DiffHierarchy hierarchy = createTestHierarchy();
-    assertThat(hierarchy.getLevelsToWrite(UInt64.valueOf(16))).containsExactly(1);
-    assertThat(hierarchy.getLevelsToWrite(UInt64.valueOf(32))).containsExactly(1);
-    assertThat(hierarchy.getLevelsToWrite(UInt64.valueOf(48))).containsExactly(1);
+    assertThat(hierarchy.getLevelToWrite(UInt64.valueOf(16))).isEqualTo(1);
+    assertThat(hierarchy.getLevelToWrite(UInt64.valueOf(32))).isEqualTo(1);
+    assertThat(hierarchy.getLevelToWrite(UInt64.valueOf(48))).isEqualTo(1);
   }
 
   @Test
-  void getLevelsToWrite_level2AtAlignedEpoch() {
+  void getLevelToWrite_level2AtAlignedEpoch() {
     final DiffHierarchy hierarchy = createTestHierarchy();
-    assertThat(hierarchy.getLevelsToWrite(UInt64.valueOf(4))).containsExactly(2);
-    assertThat(hierarchy.getLevelsToWrite(UInt64.valueOf(8))).containsExactly(2);
-    assertThat(hierarchy.getLevelsToWrite(UInt64.valueOf(12))).containsExactly(2);
+    assertThat(hierarchy.getLevelToWrite(UInt64.valueOf(4))).isEqualTo(2);
+    assertThat(hierarchy.getLevelToWrite(UInt64.valueOf(8))).isEqualTo(2);
+    assertThat(hierarchy.getLevelToWrite(UInt64.valueOf(12))).isEqualTo(2);
   }
 
   @Test
-  void getLevelsToWrite_level3ForEveryEpoch() {
+  void getLevelToWrite_level3ForEveryEpoch() {
     final DiffHierarchy hierarchy = createTestHierarchy();
-    assertThat(hierarchy.getLevelsToWrite(UInt64.valueOf(1))).containsExactly(3);
-    assertThat(hierarchy.getLevelsToWrite(UInt64.valueOf(5))).containsExactly(3);
-    assertThat(hierarchy.getLevelsToWrite(UInt64.valueOf(7))).containsExactly(3);
+    assertThat(hierarchy.getLevelToWrite(UInt64.valueOf(1))).isEqualTo(3);
+    assertThat(hierarchy.getLevelToWrite(UInt64.valueOf(5))).isEqualTo(3);
+    assertThat(hierarchy.getLevelToWrite(UInt64.valueOf(7))).isEqualTo(3);
   }
 
   @Test
-  void getLevelsToWrite_forkEpochForcesSnapshot() {
+  void getLevelToWrite_forkEpochForcesSnapshot() {
     final DiffHierarchy hierarchy = createTestHierarchy(Set.of(UInt64.valueOf(10)));
     // Epoch 10 normally gets level 3, but fork forces level 0
-    assertThat(hierarchy.getLevelsToWrite(UInt64.valueOf(10))).containsExactly(0);
+    assertThat(hierarchy.getLevelToWrite(UInt64.valueOf(10))).isEqualTo(0);
   }
 
   @Test

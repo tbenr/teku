@@ -56,13 +56,13 @@ public class DiffHierarchy {
   }
 
   /**
-   * Given an epoch, determine which levels to write. Returns a list of level indices, with the
-   * lowest-indexed (most infrequent) level first. Fork epochs always get a level-0 snapshot.
+   * Given an epoch, determine which level to write. Returns the level index of the lowest (most
+   * infrequent) level where the epoch is aligned. Fork epochs always get a level-0 snapshot.
    */
-  public List<Integer> getLevelsToWrite(final UInt64 epoch) {
+  public int getLevelToWrite(final UInt64 epoch) {
     // Fork epochs always force a full snapshot
     if (forkEpochs.contains(epoch)) {
-      return List.of(0);
+      return 0;
     }
 
     final long epochVal = epoch.longValue();
@@ -70,12 +70,12 @@ public class DiffHierarchy {
     // Find the lowest level (most infrequent) where epoch is aligned
     for (int i = 0; i < levels.size(); i++) {
       if (epochVal % levels.get(i).periodInEpochs() == 0) {
-        return List.of(i);
+        return i;
       }
     }
 
     // Should always match the last level (period=1)
-    return List.of(levels.size() - 1);
+    return levels.size() - 1;
   }
 
   /**

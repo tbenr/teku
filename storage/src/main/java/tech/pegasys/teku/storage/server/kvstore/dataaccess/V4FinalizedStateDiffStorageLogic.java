@@ -271,47 +271,45 @@ public class V4FinalizedStateDiffStorageLogic
         return;
       }
 
-      final List<Integer> levels = hierarchy.getLevelsToWrite(epoch);
+      final int level = hierarchy.getLevelToWrite(epoch);
       LOG.debug(
-          "addFinalizedState: slot={}, epoch={}, sszSize={} bytes, levels={}",
+          "addFinalizedState: slot={}, epoch={}, sszSize={} bytes, level={}",
           state.getSlot(),
           epoch,
           stateSsz.size(),
-          levels);
+          level);
 
-      for (final int level : levels) {
-        final StateDiffSchema diffSchema = hierarchy.getSchema(level);
+      final StateDiffSchema diffSchema = hierarchy.getSchema(level);
 
-        if (level == 0) {
-          // Snapshot - no base needed
-          final StateDiff diff = diffSchema.computeDiff(Bytes.EMPTY, stateSsz);
+      if (level == 0) {
+        // Snapshot - no base needed
+        final StateDiff diff = diffSchema.computeDiff(Bytes.EMPTY, stateSsz);
+        final Bytes serialized = diff.serialize();
+        LOG.debug(
+            "addFinalizedState: level=0 (snapshot), epoch={}, diffSize={} bytes",
+            epoch,
+            serialized.size());
+        transaction.put(schema.getColumnStateDiffLevel(level), epoch, serialized);
+      } else {
+        // Need base state SSZ from parent epoch
+        final UInt64 parentEpoch = hierarchy.getParentEpoch(epoch, level);
+        final Bytes baseSsz = getOrReconstructSsz(db, schema, parentEpoch);
+        if (baseSsz != null) {
+          final StateDiff diff = diffSchema.computeDiff(baseSsz, stateSsz);
           final Bytes serialized = diff.serialize();
           LOG.debug(
-              "addFinalizedState: level=0 (snapshot), epoch={}, diffSize={} bytes",
+              "addFinalizedState: level={}, epoch={}, parentEpoch={}, diffSize={} bytes",
+              level,
               epoch,
+              parentEpoch,
               serialized.size());
           transaction.put(schema.getColumnStateDiffLevel(level), epoch, serialized);
         } else {
-          // Need base state SSZ from parent epoch
-          final UInt64 parentEpoch = hierarchy.getParentEpoch(epoch, level);
-          final Bytes baseSsz = getOrReconstructSsz(db, schema, parentEpoch);
-          if (baseSsz != null) {
-            final StateDiff diff = diffSchema.computeDiff(baseSsz, stateSsz);
-            final Bytes serialized = diff.serialize();
-            LOG.debug(
-                "addFinalizedState: level={}, epoch={}, parentEpoch={}, diffSize={} bytes",
-                level,
-                epoch,
-                parentEpoch,
-                serialized.size());
-            transaction.put(schema.getColumnStateDiffLevel(level), epoch, serialized);
-          } else {
-            LOG.warn(
-                "Cannot compute diff for level {} epoch {}: missing base at epoch {}",
-                level,
-                epoch,
-                parentEpoch);
-          }
+          LOG.warn(
+              "Cannot compute diff for level {} epoch {}: missing base at epoch {}",
+              level,
+              epoch,
+              parentEpoch);
         }
       }
 
