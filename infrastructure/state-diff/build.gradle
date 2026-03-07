@@ -1,0 +1,5 @@
+dependencies {
+  implementation project(':infrastructure:unsigned')
+
+  implementation 'io.consensys.tuweni:tuweni-bytes'
+}
