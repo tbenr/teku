@@ -23,7 +23,6 @@ import org.junit.jupiter.api.Test;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszByte;
 import tech.pegasys.teku.infrastructure.statediff.CompositeDiffSchema;
 import tech.pegasys.teku.infrastructure.statediff.CompressedDiffSchema;
-import tech.pegasys.teku.infrastructure.statediff.DiffHierarchy;
 import tech.pegasys.teku.infrastructure.statediff.SimpleSszDiff;
 import tech.pegasys.teku.infrastructure.statediff.StateDiff;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
@@ -147,23 +146,19 @@ class BeaconStateDiffFuzzTest {
       }
     }
 
-    // Reconstruct and verify every stored state via the reconstruction chain directly.
-    // We bypass findLatestStoredEpoch (which searches level-6 first and may miss states
-    // stored only at coarser levels) and instead reconstruct each epoch explicitly.
-    final BeaconStateSszFieldLocator fieldLocator = BeaconStateSszFieldLocator.create(spec);
-    final DiffHierarchy hierarchy =
-        DiffHierarchy.createDefault(fieldLocator, BeaconStateSszFieldLocator.getForkEpochs(spec));
-
+    // Reconstruct and verify every stored state
     for (int i = 0; i < states.size(); i++) {
       final BeaconState expected = states.get(i);
-      final UInt64 targetEpoch = spec.computeEpochAtSlot(expected.getSlot());
-      final Bytes reconstructedSsz = reconstructFromChain(db, schema, hierarchy, targetEpoch);
-      final BeaconState reconstructed = spec.deserializeBeaconState(reconstructedSsz);
+      final BeaconState reconstructed =
+          logic
+              .getLatestAvailableFinalizedState(db, schema, expected.getSlot())
+              .orElseThrow(
+                  () -> new AssertionError("State at slot " + expected.getSlot() + " not found"));
       assertThat(reconstructed.hashTreeRoot())
-          .as("Chain state %d (epoch %s): hashTreeRoot", i, targetEpoch)
+          .as("Chain state %d (slot %s): hashTreeRoot", i, expected.getSlot())
           .isEqualTo(expected.hashTreeRoot());
-      assertThat(reconstructedSsz)
-          .as("Chain state %d (epoch %s): SSZ bytes", i, targetEpoch)
+      assertThat(reconstructed.sszSerialize())
+          .as("Chain state %d (slot %s): SSZ bytes", i, expected.getSlot())
           .isEqualTo(expected.sszSerialize());
     }
   }
@@ -339,40 +334,5 @@ class BeaconStateDiffFuzzTest {
 
   private BeaconState mutateEth1Data(final BeaconState state) {
     return state.updated(s -> s.setEth1Data(dataStructureUtil.randomEth1Data()));
-  }
-
-  private static Bytes reconstructFromChain(
-      final KvStoreAccessor db,
-      final SchemaCombinedDiffState schema,
-      final DiffHierarchy hierarchy,
-      final UInt64 targetEpoch) {
-    final List<DiffHierarchy.LevelAndEpoch> chain = hierarchy.getReconstructionChain(targetEpoch);
-    assertThat(chain).as("Reconstruction chain for epoch %s", targetEpoch).isNotEmpty();
-
-    final DiffHierarchy.LevelAndEpoch snapshotEntry = chain.getFirst();
-    final Bytes snapshotBytes =
-        db.get(schema.getColumnStateDiffLevel(snapshotEntry.level()), snapshotEntry.epoch())
-            .orElseThrow(
-                () ->
-                    new AssertionError(
-                        "Missing snapshot at level "
-                            + snapshotEntry.level()
-                            + " epoch "
-                            + snapshotEntry.epoch()));
-
-    Bytes currentSsz =
-        hierarchy.getSchema(snapshotEntry.level()).deserialize(snapshotBytes).apply(Bytes.EMPTY);
-
-    for (int i = 1; i < chain.size(); i++) {
-      final DiffHierarchy.LevelAndEpoch entry = chain.get(i);
-      final Bytes diffBytes =
-          db.get(schema.getColumnStateDiffLevel(entry.level()), entry.epoch())
-              .orElseThrow(
-                  () ->
-                      new AssertionError(
-                          "Missing diff at level " + entry.level() + " epoch " + entry.epoch()));
-      currentSsz = hierarchy.getSchema(entry.level()).deserialize(diffBytes).apply(currentSsz);
-    }
-    return currentSsz;
   }
 }

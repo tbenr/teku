@@ -193,6 +193,23 @@ class V4FinalizedStateDiffStorageLogicTest {
         .contains(spec.computeStartSlotAtEpoch(UInt64.ZERO));
   }
 
+  @Test
+  void shouldFindStateStoredAtCoarserHierarchyLevel() {
+    // Epoch 16 is aligned to level 5 (period 16), so it is stored only at level 5,
+    // not level 6. Verify it can still be found by getLatestAvailableFinalizedState.
+    BeaconState epoch16State = null;
+    for (long epoch = 1; epoch <= 16; epoch++) {
+      final BeaconState state = stateAtEpoch(epoch);
+      storeState(state);
+      if (epoch == 16) {
+        epoch16State = state;
+      }
+    }
+
+    assertThat(logic.getLatestAvailableFinalizedState(db, schema, epoch16State.getSlot()))
+        .contains(epoch16State);
+  }
+
   private BeaconState stateAtEpoch(final long epoch) {
     return dataStructureUtil.randomBeaconState(spec.computeStartSlotAtEpoch(UInt64.valueOf(epoch)));
   }

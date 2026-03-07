@@ -140,14 +140,16 @@ public class V4FinalizedStateDiffStorageLogic
 
   private Optional<UInt64> findLatestStoredEpoch(
       final KvStoreAccessor db, final SchemaCombinedDiffState schema, final UInt64 maxEpoch) {
-    for (int level = hierarchy.getLevelCount() - 1; level >= 0; level--) {
-      final Optional<ColumnEntry<UInt64, Bytes>> entry =
-          db.getFloorEntry(schema.getColumnStateDiffLevel(level), maxEpoch);
-      if (entry.isPresent()) {
-        return Optional.of(entry.get().getKey());
+    Optional<UInt64> best = Optional.empty();
+    for (int level = 0; level < hierarchy.getLevelCount(); level++) {
+      final Optional<UInt64> candidate =
+          db.getFloorEntry(schema.getColumnStateDiffLevel(level), maxEpoch)
+              .map(ColumnEntry::getKey);
+      if (candidate.isPresent() && (best.isEmpty() || candidate.get().isGreaterThan(best.get()))) {
+        best = candidate;
       }
     }
-    return Optional.empty();
+    return best;
   }
 
   private Optional<BeaconState> reconstructState(
