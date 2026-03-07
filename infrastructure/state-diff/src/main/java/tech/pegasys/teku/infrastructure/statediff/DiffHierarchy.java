@@ -117,20 +117,22 @@ public class DiffHierarchy {
       return chain;
     }
 
-    // For each subsequent level (1..N), find the latest aligned epoch after currentEpoch
-    // that doesn't exceed target
+    // For each subsequent level, add ALL aligned epochs between currentEpoch and target
     for (int level = 1; level < levels.size(); level++) {
       final long period = levels.get(level).periodInEpochs();
 
-      // Find the last aligned epoch at this level that's <= target and > currentEpoch
-      final long latestAligned = targetVal - (targetVal % period);
-      if (latestAligned <= currentEpoch) {
-        // No aligned epoch at this level between current and target
-        continue;
+      // First aligned epoch strictly after currentEpoch
+      final long firstAligned = ((currentEpoch / period) + 1) * period;
+      // Last aligned epoch at or before target
+      final long lastAligned = targetVal - (targetVal % period);
+
+      for (long e = firstAligned; e <= lastAligned; e += period) {
+        chain.add(new LevelAndEpoch(level, UInt64.valueOf(e)));
       }
 
-      chain.add(new LevelAndEpoch(level, UInt64.valueOf(latestAligned)));
-      currentEpoch = latestAligned;
+      if (lastAligned > currentEpoch) {
+        currentEpoch = lastAligned;
+      }
 
       if (currentEpoch == targetVal) {
         return chain;

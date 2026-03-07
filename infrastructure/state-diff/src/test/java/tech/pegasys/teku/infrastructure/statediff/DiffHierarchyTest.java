@@ -164,6 +164,38 @@ class DiffHierarchyTest {
   }
 
   @Test
+  void getReconstructionChain_multipleEntriesAtSameLevel() {
+    final DiffHierarchy hierarchy = createTestHierarchy();
+    // Epoch 87: snapshot@64, level1@80, level2@84, then level3@85,86,87
+    final List<DiffHierarchy.LevelAndEpoch> chain =
+        hierarchy.getReconstructionChain(UInt64.valueOf(87));
+
+    assertThat(chain)
+        .containsExactly(
+            new DiffHierarchy.LevelAndEpoch(0, UInt64.valueOf(64)),
+            new DiffHierarchy.LevelAndEpoch(1, UInt64.valueOf(80)),
+            new DiffHierarchy.LevelAndEpoch(2, UInt64.valueOf(84)),
+            new DiffHierarchy.LevelAndEpoch(3, UInt64.valueOf(85)),
+            new DiffHierarchy.LevelAndEpoch(3, UInt64.valueOf(86)),
+            new DiffHierarchy.LevelAndEpoch(3, UInt64.valueOf(87)));
+  }
+
+  @Test
+  void getReconstructionChain_multipleLevel1Entries() {
+    final DiffHierarchy hierarchy = createTestHierarchy();
+    // Epoch 100: snapshot@64, level1@80, level1@96, level2@100
+    final List<DiffHierarchy.LevelAndEpoch> chain =
+        hierarchy.getReconstructionChain(UInt64.valueOf(100));
+
+    assertThat(chain)
+        .containsExactly(
+            new DiffHierarchy.LevelAndEpoch(0, UInt64.valueOf(64)),
+            new DiffHierarchy.LevelAndEpoch(1, UInt64.valueOf(80)),
+            new DiffHierarchy.LevelAndEpoch(1, UInt64.valueOf(96)),
+            new DiffHierarchy.LevelAndEpoch(2, UInt64.valueOf(100)));
+  }
+
+  @Test
   void getReconstructionChain_epochZero() {
     final DiffHierarchy hierarchy = createTestHierarchy();
     final List<DiffHierarchy.LevelAndEpoch> chain =
