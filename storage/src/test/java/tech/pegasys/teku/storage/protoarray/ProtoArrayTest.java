@@ -32,6 +32,7 @@ import tech.pegasys.teku.infrastructure.logging.StatusLogger;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
+import tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.StubVoteUpdater;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteUpdater;
@@ -550,6 +551,136 @@ class ProtoArrayTest {
 
     // block2a is now the head due to weight
     assertHead(block2a);
+  }
+
+  // --- Three-state fork choice (Gloas FULL node) tests ---
+
+  @Test
+  void onExecutionPayload_shouldCreateFullNode() {
+    addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+
+    assertThat(protoArray.getFullNodeIndices().containsKey(block1a)).isFalse();
+    protoArray.onExecutionPayload(block1a);
+
+    assertThat(protoArray.getFullNodeIndices().containsKey(block1a)).isTrue();
+    final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
+    final ProtoNode fullNode = protoArray.getNodeByIndex(fullNodeIndex);
+    assertThat(fullNode.getBlockRoot()).isEqualTo(block1a);
+    assertThat(fullNode.getPayloadStatus()).isEqualTo(PayloadStatus.PAYLOAD_STATUS_FULL);
+    // FULL node parent should be the block node
+    final int blockNodeIndex = protoArray.getIndexByRoot(block1a).orElseThrow();
+    assertThat(fullNode.getParentIndex()).isEqualTo(Optional.of(blockNodeIndex));
+  }
+
+  @Test
+  void onExecutionPayload_shouldBeIdempotent() {
+    addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.onExecutionPayload(block1a);
+    final int totalBefore = protoArray.getTotalTrackedNodeCount();
+
+    protoArray.onExecutionPayload(block1a);
+    assertThat(protoArray.getTotalTrackedNodeCount()).isEqualTo(totalBefore);
+  }
+
+  @Test
+  void onExecutionPayload_shouldDoNothingForUnknownRoot() {
+    final int totalBefore = protoArray.getTotalTrackedNodeCount();
+    protoArray.onExecutionPayload(dataStructureUtil.randomBytes32());
+    assertThat(protoArray.getTotalTrackedNodeCount()).isEqualTo(totalBefore);
+  }
+
+  @Test
+  void rerouteBlockToFullParent_shouldChangeParentIndex() {
+    addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.onExecutionPayload(block1a);
+    addOptimisticBlock(2, block2a, block1a);
+
+    // Before reroute: block2a's parent is the block node for block1a
+    final int blockNodeIndex = protoArray.getIndexByRoot(block1a).orElseThrow();
+    assertThat(protoArray.getProtoNode(block2a).orElseThrow().getParentIndex())
+        .isEqualTo(Optional.of(blockNodeIndex));
+
+    // Reroute to FULL parent
+    protoArray.rerouteBlockToFullParent(block2a, block1a);
+
+    // After reroute: block2a's parent is the FULL node for block1a
+    final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
+    assertThat(protoArray.getProtoNode(block2a).orElseThrow().getParentIndex())
+        .isEqualTo(Optional.of(fullNodeIndex));
+  }
+
+  @Test
+  void rerouteBlockToFullParent_shouldDoNothingIfNoFullNode() {
+    addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+    addOptimisticBlock(2, block2a, block1a);
+
+    final int blockNodeIndex = protoArray.getIndexByRoot(block1a).orElseThrow();
+    protoArray.rerouteBlockToFullParent(block2a, block1a);
+
+    // Parent unchanged (no FULL node exists)
+    assertThat(protoArray.getProtoNode(block2a).orElseThrow().getParentIndex())
+        .isEqualTo(Optional.of(blockNodeIndex));
+  }
+
+  @Test
+  void threeStateTree_fullPathChildAndEmptyPathChild_shouldCompeteByWeight() {
+    // Build tree: genesis -> block1a
+    addValidBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.onExecutionPayload(block1a);
+    protoArray.markNodeValid(block1a);
+
+    // block2a builds on FULL path (rerouted)
+    addValidBlock(2, block2a, block1a);
+    protoArray.rerouteBlockToFullParent(block2a, block1a);
+
+    // block2b builds on EMPTY path (stays on block node)
+    addValidBlock(2, block2b, block1a);
+
+    // Vote for block2a (FULL path child)
+    voteUpdater.putVote(
+        UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block2a, UInt64.ONE, false, false));
+
+    // Apply deltas and check head
+    protoArray.applyScoreChanges(
+        computeDeltas(), UInt64.valueOf(5), GENESIS_CHECKPOINT, GENESIS_CHECKPOINT);
+
+    // block2a should be head (it has a vote, block2b doesn't)
+    final ProtoNode head =
+        protoArray.findOptimisticHead(UInt64.valueOf(5), GENESIS_CHECKPOINT, GENESIS_CHECKPOINT);
+    assertThat(head.getBlockRoot()).isEqualTo(block2a);
+  }
+
+  @Test
+  void markNodeValid_shouldAlsoMarkFullNodeValid() {
+    addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.onExecutionPayload(block1a);
+
+    final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
+    assertThat(protoArray.getNodeByIndex(fullNodeIndex).isOptimistic()).isTrue();
+
+    protoArray.markNodeValid(block1a);
+
+    assertThat(protoArray.getNodeByIndex(fullNodeIndex).isFullyValidated()).isTrue();
+  }
+
+  @Test
+  void maybePrune_shouldRemoveFullNodesFromIndices() {
+    addValidBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.onExecutionPayload(block1a);
+    protoArray.markNodeValid(block1a);
+
+    addValidBlock(2, block2a, block1a);
+    addValidBlock(3, block3a, block2a);
+
+    // Finalize at block2a
+    final Checkpoint finalized = new Checkpoint(UInt64.ONE, block2a);
+    protoArray.applyScoreChanges(computeDeltas(), UInt64.valueOf(5), finalized, finalized);
+    protoArray.setPruneThreshold(0);
+    protoArray.maybePrune(block2a);
+
+    // block1a's FULL node should have been removed from indices
+    assertThat(protoArray.getFullNodeIndices().containsKey(block1a)).isFalse();
+    assertThat(protoArray.contains(block1a)).isFalse();
   }
 
   private void assertHead(final Bytes32 expectedBlockHash) {

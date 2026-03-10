@@ -16,6 +16,7 @@ package tech.pegasys.teku.storage.protoarray;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
+import static tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus.PAYLOAD_STATUS_FULL;
 import static tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeValidationStatus.INVALID;
 import static tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeValidationStatus.OPTIMISTIC;
 import static tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeValidationStatus.VALID;
@@ -161,34 +162,76 @@ public class ProtoArray {
     updateBestDescendantOfParent(node, nodeIndex);
   }
 
-  // TODO-GLOAS: https://github.com/Consensys/teku/issues/9878 this is just a workaround for
-  // devnet-0, we need a proper fork choice implementation
-  public void onExecutionPayload(
-      final Bytes32 blockRoot,
-      final UInt64 executionBlockNumber,
-      final Bytes32 executionBlockHash) {
-    if (!indices.contains(blockRoot)) {
+  /**
+   * Creates a FULL node for a block when its execution payload arrives. The FULL node is a child of
+   * the block node in the three-state fork choice tree.
+   *
+   * <p>Spec reference: on_execution_payload — stores payload_states[root], making the FULL child
+   * visible in get_node_children.
+   */
+  public void onExecutionPayload(final Bytes32 blockRoot) {
+    if (indices.hasFullNode(blockRoot)) {
       return;
     }
-    final int trackedIndex = indices.get(blockRoot).orElseThrow();
-    final ProtoNode trackedNode = nodes.get(trackedIndex);
+    final Optional<Integer> maybeBlockIndex = indices.get(blockRoot);
+    if (maybeBlockIndex.isEmpty()) {
+      return;
+    }
+    final int blockIndex = maybeBlockIndex.get();
+    final ProtoNode blockNode = getNodeByIndex(blockIndex);
+    final int fullNodeIndex = getTotalTrackedNodeCount();
 
-    final ProtoNode node =
+    final ProtoNode fullNode =
         new ProtoNode(
-            trackedNode.getBlockSlot(),
-            trackedNode.getStateRoot(),
-            blockRoot,
-            trackedNode.getParentRoot(),
-            trackedNode.getParentIndex(),
-            trackedNode.getBlockData().getCheckpoints(),
-            executionBlockNumber,
-            executionBlockHash,
-            trackedNode.getWeight(),
-            trackedNode.getBestChildIndex(),
-            trackedNode.getBestDescendantIndex(),
-            trackedNode.getBlockData().getValidationStatus());
+            blockNode.getBlockSlot(),
+            blockNode.getStateRoot(),
+            blockNode.getBlockRoot(),
+            blockNode.getParentRoot(),
+            Optional.of(blockIndex),
+            blockNode.getBlockCheckpoints(),
+            blockNode.getExecutionBlockNumber(),
+            blockNode.getExecutionBlockHash(),
+            UInt64.ZERO,
+            Optional.empty(),
+            Optional.empty(),
+            blockNode.isFullyValidated() ? VALID : blockNode.isInvalid() ? INVALID : OPTIMISTIC);
+    fullNode.setPayloadStatus(PAYLOAD_STATUS_FULL);
 
-    nodes.set(trackedIndex, node);
+    indices.addFullNodeIndex(blockRoot, fullNodeIndex);
+    nodes.add(fullNode);
+
+    updateBestDescendantOfParent(fullNode, fullNodeIndex);
+  }
+
+  /**
+   * Re-routes a child block from the block node parent to the FULL node parent. Called when a child
+   * block was built on the parent's execution payload (FULL path).
+   */
+  public void rerouteBlockToFullParent(final Bytes32 blockRoot, final Bytes32 parentRoot) {
+    final Optional<Integer> blockNodeIndex = indices.get(blockRoot);
+    final Optional<Integer> fullNodeIndex = indices.getFullNodeIndex(parentRoot);
+    if (blockNodeIndex.isEmpty() || fullNodeIndex.isEmpty()) {
+      return;
+    }
+    final ProtoNode blockNode = getNodeByIndex(blockNodeIndex.get());
+    final Optional<Integer> oldParentIndex = blockNode.getParentIndex();
+
+    blockNode.setParentIndex(Optional.of(fullNodeIndex.get()));
+
+    // Clear stale bestChild on old parent if it pointed to this block.
+    // The correct bestChild will be recalculated during next applyDeltas.
+    oldParentIndex.ifPresent(
+        idx -> {
+          final ProtoNode oldParent = getNodeByIndex(idx);
+          if (oldParent
+              .getBestChildIndex()
+              .map(ci -> ci.equals(blockNodeIndex.get()))
+              .orElse(false)) {
+            changeToNone(oldParent);
+          }
+        });
+
+    updateBestDescendantOfParent(blockNode, blockNodeIndex.get());
   }
 
   public void setInitialCanonicalBlockRoot(final Bytes32 initialCanonicalBlockRoot) {
@@ -330,6 +373,12 @@ public class ProtoArray {
     }
     final ProtoNode node = maybeNode.get();
     node.setValidationStatus(VALID);
+
+    // Also mark the FULL node valid if it exists
+    indices
+        .getFullNodeIndex(blockRoot)
+        .ifPresent(fullIndex -> getNodeByIndex(fullIndex).setValidationStatus(VALID));
+
     Optional<Integer> parentIndex = node.getParentIndex();
     while (parentIndex.isPresent()) {
       final ProtoNode parentNode = getNodeByIndex(parentIndex.get());
@@ -446,6 +495,7 @@ public class ProtoArray {
       if (invalidParents.contains((int) possibleDescendant.getParentIndex().get())) {
         possibleDescendant.setValidationStatus(INVALID);
         removeBlockRoot(possibleDescendant.getBlockRoot());
+        indices.removeFullNode(possibleDescendant.getBlockRoot());
         invalidParents.add(i);
       }
     }
@@ -522,6 +572,7 @@ public class ProtoArray {
     for (int nodeIndex = 0; nodeIndex < finalizedIndex; nodeIndex++) {
       Bytes32 root = getNodeByIndex(nodeIndex).getBlockRoot();
       indices.remove(root);
+      indices.removeFullNode(root);
     }
 
     // Drop all the nodes prior to finalization.
@@ -768,6 +819,7 @@ public class ProtoArray {
    */
   public void removeBlockRoot(final Bytes32 blockRoot) {
     indices.remove(blockRoot);
+    indices.removeFullNode(blockRoot);
   }
 
   public void pullUpBlockCheckpoints(final Bytes32 blockRoot) {
@@ -809,6 +861,10 @@ public class ProtoArray {
 
   public Object2IntMap<Bytes32> getRootIndices() {
     return indices.getRootIndices();
+  }
+
+  public Object2IntMap<Bytes32> getFullNodeIndices() {
+    return indices.getFullNodeIndices();
   }
 
   ProtoNode getNodeByIndex(final int index) {

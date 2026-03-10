@@ -701,12 +701,15 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     blockImportPerformance.ifPresent(BlockImportPerformance::transactionCommitted);
     forkChoiceStrategy.onExecutionPayloadResult(block.getRoot(), payloadResult, true);
 
-    // For Gloas blocks, determine and store the parent's payload status on the ProtoNode.
-    // This must happen before processHead() which calls isParentStrong().
+    // For Gloas blocks, route the child block to the correct parent node (FULL or EMPTY path)
+    // based on whether this block was built on the parent's execution payload.
     if (forkChoiceUtil instanceof ForkChoiceUtilGloas gloasUtil) {
       final tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus parentPayloadStatus =
           gloasUtil.getParentPayloadStatus(recentChainData.getStore(), block.getMessage()).join();
-      forkChoiceStrategy.updatePayloadStatus(block.getParentRoot(), parentPayloadStatus);
+      if (parentPayloadStatus
+          == tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus.PAYLOAD_STATUS_FULL) {
+        forkChoiceStrategy.rerouteBlockToFullParent(block.getRoot(), block.getParentRoot());
+      }
     }
 
     final UInt64 currentEpoch = spec.computeEpochAtSlot(spec.getCurrentSlot(transaction));
@@ -785,13 +788,10 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     // Note: not using thenRun here because we want to ensure each step is on the event thread
     transaction.commit().join();
 
-    final ForkChoiceStrategy forkChoiceStrategy = getForkChoiceStrategy();
-
-    // TODO-GLOAS: https://github.com/Consensys/teku/issues/9878 this is just a workaround for
-    // devnet-0, we need a proper fork choice implementation
-    forkChoiceStrategy.processExecutionPayload(signedEnvelope);
-
-    notifyForkChoiceUpdatedAndOptimisticSyncingChanged(Optional.empty());
+    // Create the FULL node in the fork choice tree. Per spec on_execution_payload, this makes
+    // the FULL child visible in get_node_children, allowing get_head to see the FULL path
+    // immediately after execution payload arrival.
+    getForkChoiceStrategy().onExecutionPayload(signedEnvelope.getBeaconBlockRoot());
 
     return ExecutionPayloadImportResult.successful(signedEnvelope);
   }

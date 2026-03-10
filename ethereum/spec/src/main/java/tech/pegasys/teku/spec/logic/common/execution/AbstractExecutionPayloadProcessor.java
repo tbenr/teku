@@ -40,7 +40,7 @@ public abstract class AbstractExecutionPayloadProcessor implements ExecutionPayl
       return blockState.updated(
           preState ->
               processExecutionPayload(
-                  signedEnvelope, preState, BLSSignatureVerifier.SIMPLE, payloadExecutor, true));
+                  signedEnvelope, preState, getSignatureVerifier(), payloadExecutor, true));
     } catch (final IllegalArgumentException | ExecutionPayloadProcessingException ex) {
       LOG.warn(
           String.format(
@@ -80,6 +80,8 @@ public abstract class AbstractExecutionPayloadProcessor implements ExecutionPayl
       }
     }
   }
+
+  protected abstract BLSSignatureVerifier getSignatureVerifier();
 
   protected abstract ExecutionPayloadValidationResult validateExecutionPayloadPreProcessing(
       BeaconState preState,

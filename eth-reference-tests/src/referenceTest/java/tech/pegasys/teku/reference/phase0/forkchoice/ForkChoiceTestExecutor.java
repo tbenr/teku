@@ -76,7 +76,9 @@ import tech.pegasys.teku.spec.executionlayer.ExecutionLayerChannelStub;
 import tech.pegasys.teku.spec.executionlayer.ExecutionPayloadStatus;
 import tech.pegasys.teku.spec.executionlayer.PayloadStatus;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.BlockImportResult;
+import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult;
 import tech.pegasys.teku.spec.logic.common.util.AsyncBLSSignatureVerifier;
+import tech.pegasys.teku.spec.schemas.SchemaDefinitionsGloas;
 import tech.pegasys.teku.statetransition.datacolumns.CurrentSlotProvider;
 import tech.pegasys.teku.statetransition.datacolumns.DasCustodyStand;
 import tech.pegasys.teku.statetransition.datacolumns.DasSamplerBasic;
@@ -112,6 +114,7 @@ public class ForkChoiceTestExecutor implements TestExecutor {
           .put("fork_choice/should_override_forkchoice_update", new ForkChoiceTestExecutor())
           .put("fork_choice/get_proposer_head", new ForkChoiceTestExecutor("basic_is_parent_root"))
           .put("fork_choice/deposit_with_reorg", new ForkChoiceTestExecutor())
+              .put("fork_choice/base", new ForkChoiceTestExecutor())
           // Fork choice generated test types
           .put("fork_choice_compliance/block_weight_test", new ForkChoiceTestExecutor())
           .put("fork_choice_compliance/block_tree_test", new ForkChoiceTestExecutor())
@@ -280,6 +283,9 @@ public class ForkChoiceTestExecutor implements TestExecutor {
       } else if (step.containsKey("block_hash")) {
         applyPosBlock(step, executionLayer);
 
+      } else if (step.containsKey("execution_payload")) {
+        applyExecutionPayload(testDefinition, spec, forkChoice, step, executionLayer);
+
       } else {
         throw new UnsupportedOperationException("Unsupported step: " + step);
       }
@@ -361,6 +367,30 @@ public class ForkChoiceTestExecutor implements TestExecutor {
     assertDoesNotThrow(
         () ->
             forkChoice.onAttesterSlashing(attesterSlashing, InternalValidationResult.ACCEPT, true));
+  }
+
+  private void applyExecutionPayload(
+      final TestDefinition testDefinition,
+      final Spec spec,
+      final ForkChoice forkChoice,
+      final Map<String, Object> step,
+      final ExecutionLayerChannelStub executionLayer) {
+    final String name = get(step, "execution_payload");
+    final boolean valid = !step.containsKey("valid") || (boolean) step.get("valid");
+    final var signedEnvelope =
+        TestDataUtils.loadSsz(
+            testDefinition,
+            name + SSZ_SNAPPY_EXTENSION,
+            SchemaDefinitionsGloas.required(spec.getGenesisSchemaDefinitions())
+                .getSignedExecutionPayloadEnvelopeSchema());
+    LOG.info("Importing execution payload envelope {}", name);
+    final SafeFuture<ExecutionPayloadImportResult> result =
+        forkChoice.onExecutionPayload(signedEnvelope, executionLayer);
+    assertThat(result).isCompleted();
+    final ExecutionPayloadImportResult importResult = safeJoin(result);
+    assertThat(importResult.isSuccessful())
+        .describedAs("execution payload import result for %s", name)
+        .isEqualTo(valid);
   }
 
   private void applyBlock(
@@ -592,6 +622,20 @@ public class ForkChoiceTestExecutor implements TestExecutor {
               UInt64 actualWeight = chainHeadRootsAndWeights.get(root);
               assertThat(actualWeight).describedAs("block %s's weight", root).isEqualTo(weight);
             }
+          }
+
+          case "head_payload_status" -> {
+            final int expectedValue = ((Number) checks.get(checkType)).intValue();
+            final Bytes32 headRoot = recentChainData.getBestBlockRoot().orElseThrow();
+            final tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus actual =
+                recentChainData
+                    .getForkChoiceStrategy()
+                    .orElseThrow()
+                    .payloadStatus(headRoot)
+                    .orElseThrow();
+            assertThat(actual.getValue())
+                .describedAs("head_payload_status")
+                .isEqualTo(expectedValue);
           }
 
           default ->

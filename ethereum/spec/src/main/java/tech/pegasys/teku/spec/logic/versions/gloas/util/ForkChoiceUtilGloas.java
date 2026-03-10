@@ -267,9 +267,13 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
       if (nodePayloadStatus == PAYLOAD_STATUS_PENDING) {
         return true;
       }
-      // For FULL/EMPTY queries, check if the ancestor's resolved payload status matches
+      // Walk the vote's parent chain to find the payload status at the ancestor's slot.
+      // With FULL nodes in protoarray, a FULL-descendant path walks through the FULL node,
+      // while an EMPTY-descendant path walks through the block node (PENDING).
       final PayloadStatus ancestorStatus =
-          forkChoiceStrategy.payloadStatus(nodeRoot).orElse(PAYLOAD_STATUS_PENDING);
+          forkChoiceStrategy
+              .getAncestorPayloadStatus(voteRoot, blockSlot)
+              .orElse(PAYLOAD_STATUS_PENDING);
       return nodePayloadStatus == ancestorStatus;
     }
   }

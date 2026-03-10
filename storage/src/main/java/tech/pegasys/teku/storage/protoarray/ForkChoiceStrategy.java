@@ -123,7 +123,8 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
               this.proposerBoostRoot,
               proposerBoostRoot,
               this.proposerBoostAmount,
-              proposerBoostAmount);
+              proposerBoostAmount,
+              protoArray.getFullNodeIndices());
 
       protoArray.applyScoreChanges(deltas, currentEpoch, justifiedCheckpoint, finalizedCheckpoint);
       balances = justifiedStateEffectiveBalances;
@@ -408,6 +409,32 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
     }
   }
 
+  /**
+   * Creates a FULL node in the protoarray for a block that has received its execution payload. This
+   * makes the FULL child visible in the three-state fork choice tree.
+   */
+  public void onExecutionPayload(final Bytes32 blockRoot) {
+    protoArrayLock.writeLock().lock();
+    try {
+      protoArray.onExecutionPayload(blockRoot);
+    } finally {
+      protoArrayLock.writeLock().unlock();
+    }
+  }
+
+  /**
+   * Re-routes a child block from the block node parent to the FULL node parent. Called when a child
+   * block was built on the parent's execution payload (FULL path).
+   */
+  public void rerouteBlockToFullParent(final Bytes32 blockRoot, final Bytes32 parentRoot) {
+    protoArrayLock.writeLock().lock();
+    try {
+      protoArray.rerouteBlockToFullParent(blockRoot, parentRoot);
+    } finally {
+      protoArrayLock.writeLock().unlock();
+    }
+  }
+
   @Override
   public Optional<Boolean> isOptimistic(final Bytes32 blockRoot) {
     protoArrayLock.readLock().lock();
@@ -439,6 +466,29 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
         currentNode = protoArray.getNodes().get(parentIndex.get());
       }
       return Optional.of(currentNode.getBlockRoot());
+    } finally {
+      protoArrayLock.readLock().unlock();
+    }
+  }
+
+  @Override
+  public Optional<PayloadStatus> getAncestorPayloadStatus(
+      final Bytes32 blockRoot, final UInt64 slot) {
+    protoArrayLock.readLock().lock();
+    try {
+      final Optional<ProtoNode> startingNode = getProtoNode(blockRoot);
+      if (startingNode.isEmpty()) {
+        return Optional.empty();
+      }
+      ProtoNode currentNode = startingNode.get();
+      while (currentNode.getBlockSlot().isGreaterThan(slot)) {
+        final Optional<Integer> parentIndex = currentNode.getParentIndex();
+        if (parentIndex.isEmpty()) {
+          return Optional.empty();
+        }
+        currentNode = protoArray.getNodes().get(parentIndex.get());
+      }
+      return Optional.of(currentNode.getPayloadStatus());
     } finally {
       protoArrayLock.readLock().unlock();
     }
@@ -488,6 +538,15 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       ProtoNode currentNode = startingNode.orElseThrow();
 
       while (protoArray.contains(currentNode.getBlockRoot())) {
+        // Skip FULL nodes — they are internal three-state tree nodes, not actual blocks.
+        // Walk through them transparently to their parent.
+        if (currentNode.getPayloadStatus() == PayloadStatus.PAYLOAD_STATUS_FULL) {
+          if (currentNode.getParentIndex().isEmpty()) {
+            break;
+          }
+          currentNode = protoArray.getNodes().get(currentNode.getParentIndex().get());
+          continue;
+        }
         final boolean shouldContinue =
             nodeProcessor.process(
                 currentNode.getBlockRoot(),
@@ -512,6 +571,8 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       protoArray.getNodes().stream()
           // Filter out nodes that could be pruned but are still in the protoarray
           .filter(node -> indices.containsKey(node.getBlockRoot()))
+          // Skip FULL nodes — they are internal three-state tree nodes, not actual blocks
+          .filter(node -> node.getPayloadStatus() != PayloadStatus.PAYLOAD_STATUS_FULL)
           .forEach(
               node ->
                   nodeProcessor.process(

@@ -56,4 +56,15 @@ public interface ReadOnlyForkChoiceStrategy {
   Optional<UInt64> getWeight(Bytes32 blockRoot);
 
   Optional<PayloadStatus> payloadStatus(Bytes32 blockRoot);
+
+  /**
+   * Walks the parent chain from blockRoot to find the ancestor at the given slot and returns its
+   * payload status. Unlike {@link #getAncestor(Bytes32, UInt64)} which returns the block root, this
+   * returns the payload status of the node at the target slot, which may be a FULL node if the path
+   * goes through a FULL node in the three-state tree.
+   */
+  default Optional<PayloadStatus> getAncestorPayloadStatus(
+      final Bytes32 blockRoot, final UInt64 slot) {
+    return payloadStatus(blockRoot);
+  }
 }

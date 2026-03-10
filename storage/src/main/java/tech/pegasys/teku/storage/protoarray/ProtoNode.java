@@ -180,6 +180,10 @@ public class ProtoNode {
     return executionBlockHash;
   }
 
+  public BlockCheckpoints getBlockCheckpoints() {
+    return checkpoints;
+  }
+
   public void pullUpCheckpoints() {
     checkpoints = checkpoints.realizeNextEpoch();
   }
