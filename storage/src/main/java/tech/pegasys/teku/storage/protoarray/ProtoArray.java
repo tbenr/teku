@@ -169,7 +169,10 @@ public class ProtoArray {
    * <p>Spec reference: on_execution_payload — stores payload_states[root], making the FULL child
    * visible in get_node_children.
    */
-  public void onExecutionPayload(final Bytes32 blockRoot) {
+  public void onExecutionPayload(
+      final Bytes32 blockRoot,
+      final UInt64 executionBlockNumber,
+      final Bytes32 executionBlockHash) {
     if (indices.hasFullNode(blockRoot)) {
       return;
     }
@@ -189,8 +192,8 @@ public class ProtoArray {
             blockNode.getParentRoot(),
             Optional.of(blockIndex),
             blockNode.getBlockCheckpoints(),
-            blockNode.getExecutionBlockNumber(),
-            blockNode.getExecutionBlockHash(),
+            executionBlockNumber,
+            executionBlockHash,
             UInt64.ZERO,
             Optional.empty(),
             Optional.empty(),
@@ -662,6 +665,10 @@ public class ProtoArray {
                 } else if (!childLeadsToViableHead && bestChildLeadsToViableHead) {
                   // The best child leads to a viable head, but the child doesn't.
                   // No change.
+                } else if (child.getBlockRoot().equals(parent.getBlockRoot())
+                    && child.getPayloadStatus().equals(PAYLOAD_STATUS_FULL)) {
+                  // TODO
+                  changeToChild(parent, childIndex);
                 } else if (child.getWeight().equals(bestChild.getWeight())) {
                   // Tie-breaker of equal weights by root.
                   if (child

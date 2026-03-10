@@ -93,6 +93,7 @@ import tech.pegasys.teku.statetransition.util.DebugDataDumper;
 import tech.pegasys.teku.statetransition.util.RPCFetchDelayProvider;
 import tech.pegasys.teku.statetransition.validation.BlockBroadcastValidator;
 import tech.pegasys.teku.statetransition.validation.InternalValidationResult;
+import tech.pegasys.teku.storage.client.ChainHead;
 import tech.pegasys.teku.storage.client.RecentChainData;
 import tech.pegasys.teku.storage.protoarray.ForkChoiceStrategy;
 import tech.pegasys.teku.storage.storageSystem.InMemoryStorageSystemBuilder;
@@ -114,7 +115,7 @@ public class ForkChoiceTestExecutor implements TestExecutor {
           .put("fork_choice/should_override_forkchoice_update", new ForkChoiceTestExecutor())
           .put("fork_choice/get_proposer_head", new ForkChoiceTestExecutor("basic_is_parent_root"))
           .put("fork_choice/deposit_with_reorg", new ForkChoiceTestExecutor())
-              .put("fork_choice/base", new ForkChoiceTestExecutor())
+          .put("fork_choice/base", new ForkChoiceTestExecutor())
           // Fork choice generated test types
           .put("fork_choice_compliance/block_weight_test", new ForkChoiceTestExecutor())
           .put("fork_choice_compliance/block_tree_test", new ForkChoiceTestExecutor())
@@ -626,14 +627,9 @@ public class ForkChoiceTestExecutor implements TestExecutor {
 
           case "head_payload_status" -> {
             final int expectedValue = ((Number) checks.get(checkType)).intValue();
-            final Bytes32 headRoot = recentChainData.getBestBlockRoot().orElseThrow();
-            final tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus actual =
-                recentChainData
-                    .getForkChoiceStrategy()
-                    .orElseThrow()
-                    .payloadStatus(headRoot)
-                    .orElseThrow();
-            assertThat(actual.getValue())
+            final tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus headStatus =
+                recentChainData.getChainHead().map(ChainHead::getPayloadStatus).orElseThrow();
+            assertThat(headStatus.getValue())
                 .describedAs("head_payload_status")
                 .isEqualTo(expectedValue);
           }

@@ -32,7 +32,6 @@ import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockAndCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
@@ -413,10 +412,13 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
    * Creates a FULL node in the protoarray for a block that has received its execution payload. This
    * makes the FULL child visible in the three-state fork choice tree.
    */
-  public void onExecutionPayload(final Bytes32 blockRoot) {
+  public void onExecutionPayload(
+      final Bytes32 blockRoot,
+      final UInt64 executionBlockNumber,
+      final Bytes32 executionBlockHash) {
     protoArrayLock.writeLock().lock();
     try {
-      protoArray.onExecutionPayload(blockRoot);
+      protoArray.onExecutionPayload(blockRoot, executionBlockNumber, executionBlockHash);
     } finally {
       protoArrayLock.writeLock().unlock();
     }
@@ -681,20 +683,6 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
         executionBlockNumber,
         executionBlockHash,
         spec.isBlockProcessorOptimistic(blockSlot));
-  }
-
-  // TODO-GLOAS: https://github.com/Consensys/teku/issues/9878 this is just a workaround for
-  // devnet-0, we need a proper fork choice implementation
-  public void processExecutionPayload(final SignedExecutionPayloadEnvelope executionPayload) {
-    protoArrayLock.writeLock().lock();
-    try {
-      protoArray.onExecutionPayload(
-          executionPayload.getBeaconBlockRoot(),
-          executionPayload.getMessage().getPayload().getBlockNumber(),
-          executionPayload.getMessage().getPayload().getBlockHash());
-    } finally {
-      protoArrayLock.writeLock().unlock();
-    }
   }
 
   private Optional<ProtoNode> getProtoNode(final Bytes32 blockRoot) {

@@ -13,11 +13,11 @@
 
 package tech.pegasys.teku.spec.logic.common.util;
 
+import com.google.common.annotations.VisibleForTesting;
 import java.util.List;
 import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.TreeMap;
-import com.google.common.annotations.VisibleForTesting;
 import javax.annotation.CheckReturnValue;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;

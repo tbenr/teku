@@ -99,7 +99,7 @@ public class ProtoNode {
     this.bestChildIndex = bestChildIndex;
     this.bestDescendantIndex = bestDescendantIndex;
     this.validationStatus = validationStatus;
-    this.payloadStatus = PayloadStatus.PAYLOAD_STATUS_PENDING;
+    this.payloadStatus = PayloadStatus.PAYLOAD_STATUS_EMPTY;
   }
 
   public void adjustWeight(final long delta) {

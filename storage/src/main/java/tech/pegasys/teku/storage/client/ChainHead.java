@@ -22,6 +22,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.MinimalBeaconBlockSummary;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
+import tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 
@@ -31,16 +32,19 @@ public class ChainHead implements MinimalBeaconBlockSummary {
   private final Bytes32 executionPayloadBlockHash;
   private final boolean isOptimistic;
   private final SafeFuture<StateAndBlockSummary> stateAndBlockSummaryFuture;
+  private final PayloadStatus payloadStatus;
 
   private ChainHead(
       final MinimalBeaconBlockSummary blockData,
       final Bytes32 executionPayloadBlockHash,
       final boolean isOptimistic,
-      final SafeFuture<StateAndBlockSummary> stateAndBlockSummaryFuture) {
+      final SafeFuture<StateAndBlockSummary> stateAndBlockSummaryFuture,
+      final PayloadStatus payloadStatus) {
     this.blockData = blockData;
     this.executionPayloadBlockHash = executionPayloadBlockHash;
     this.isOptimistic = isOptimistic;
     this.stateAndBlockSummaryFuture = stateAndBlockSummaryFuture;
+    this.payloadStatus = payloadStatus;
   }
 
   public static ChainHead create(final ChainHead chainHead) {
@@ -48,7 +52,8 @@ public class ChainHead implements MinimalBeaconBlockSummary {
         chainHead.blockData,
         chainHead.executionPayloadBlockHash,
         chainHead.isOptimistic,
-        chainHead.stateAndBlockSummaryFuture);
+        chainHead.stateAndBlockSummaryFuture,
+        chainHead.payloadStatus);
   }
 
   public static ChainHead create(final StateAndBlockSummary stateAndBlockSummary) {
@@ -56,7 +61,10 @@ public class ChainHead implements MinimalBeaconBlockSummary {
         stateAndBlockSummary.getBlockSummary(),
         stateAndBlockSummary.getExecutionBlockHash().orElse(Bytes32.ZERO),
         false,
-        SafeFuture.completedFuture(stateAndBlockSummary));
+        SafeFuture.completedFuture(stateAndBlockSummary)
+        // TODO
+        ,
+        PayloadStatus.PAYLOAD_STATUS_EMPTY);
   }
 
   public static ChainHead create(final SignedBlockAndState blockAndState) {
@@ -64,7 +72,10 @@ public class ChainHead implements MinimalBeaconBlockSummary {
         blockAndState.getBlockSummary(),
         blockAndState.getExecutionBlockHash().orElse(Bytes32.ZERO),
         false,
-        SafeFuture.completedFuture(blockAndState));
+        SafeFuture.completedFuture(blockAndState)
+        // TODO
+        ,
+        PayloadStatus.PAYLOAD_STATUS_EMPTY);
   }
 
   public static ChainHead create(
@@ -74,7 +85,8 @@ public class ChainHead implements MinimalBeaconBlockSummary {
         blockData,
         blockData.getExecutionBlockHash(),
         blockData.isOptimistic(),
-        stateAndBlockSummaryFuture);
+        stateAndBlockSummaryFuture,
+        blockData.getPayloadStatus());
   }
 
   public SafeFuture<BeaconState> getState() {
@@ -117,6 +129,10 @@ public class ChainHead implements MinimalBeaconBlockSummary {
     return executionPayloadBlockHash;
   }
 
+  public PayloadStatus getPayloadStatus() {
+    return payloadStatus;
+  }
+
   @Override
   public boolean equals(final Object o) {
     if (this == o) {
@@ -126,7 +142,8 @@ public class ChainHead implements MinimalBeaconBlockSummary {
       return false;
     }
     final ChainHead chainHead = (ChainHead) o;
-    return Objects.equals(blockData, chainHead.blockData);
+    return Objects.equals(blockData, chainHead.blockData)
+        && Objects.equals(payloadStatus, chainHead.payloadStatus);
   }
 
   @Override

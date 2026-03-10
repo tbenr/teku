@@ -553,6 +553,10 @@ class ProtoArrayTest {
     assertHead(block2a);
   }
 
+  private static final UInt64 EXECUTION_BLOCK_NUMBER = UInt64.valueOf(42);
+  private static final Bytes32 EXECUTION_BLOCK_HASH =
+      Bytes32.fromHexString("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
+
   // --- Three-state fork choice (Gloas FULL node) tests ---
 
   @Test
@@ -560,13 +564,15 @@ class ProtoArrayTest {
     addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
 
     assertThat(protoArray.getFullNodeIndices().containsKey(block1a)).isFalse();
-    protoArray.onExecutionPayload(block1a);
+    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
 
     assertThat(protoArray.getFullNodeIndices().containsKey(block1a)).isTrue();
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
     final ProtoNode fullNode = protoArray.getNodeByIndex(fullNodeIndex);
     assertThat(fullNode.getBlockRoot()).isEqualTo(block1a);
     assertThat(fullNode.getPayloadStatus()).isEqualTo(PayloadStatus.PAYLOAD_STATUS_FULL);
+    assertThat(fullNode.getExecutionBlockNumber()).isEqualTo(EXECUTION_BLOCK_NUMBER);
+    assertThat(fullNode.getExecutionBlockHash()).isEqualTo(EXECUTION_BLOCK_HASH);
     // FULL node parent should be the block node
     final int blockNodeIndex = protoArray.getIndexByRoot(block1a).orElseThrow();
     assertThat(fullNode.getParentIndex()).isEqualTo(Optional.of(blockNodeIndex));
@@ -575,24 +581,25 @@ class ProtoArrayTest {
   @Test
   void onExecutionPayload_shouldBeIdempotent() {
     addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
-    protoArray.onExecutionPayload(block1a);
+    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
     final int totalBefore = protoArray.getTotalTrackedNodeCount();
 
-    protoArray.onExecutionPayload(block1a);
+    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
     assertThat(protoArray.getTotalTrackedNodeCount()).isEqualTo(totalBefore);
   }
 
   @Test
   void onExecutionPayload_shouldDoNothingForUnknownRoot() {
     final int totalBefore = protoArray.getTotalTrackedNodeCount();
-    protoArray.onExecutionPayload(dataStructureUtil.randomBytes32());
+    protoArray.onExecutionPayload(
+        dataStructureUtil.randomBytes32(), EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
     assertThat(protoArray.getTotalTrackedNodeCount()).isEqualTo(totalBefore);
   }
 
   @Test
   void rerouteBlockToFullParent_shouldChangeParentIndex() {
     addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
-    protoArray.onExecutionPayload(block1a);
+    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
     addOptimisticBlock(2, block2a, block1a);
 
     // Before reroute: block2a's parent is the block node for block1a
@@ -626,7 +633,7 @@ class ProtoArrayTest {
   void threeStateTree_fullPathChildAndEmptyPathChild_shouldCompeteByWeight() {
     // Build tree: genesis -> block1a
     addValidBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
-    protoArray.onExecutionPayload(block1a);
+    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
     protoArray.markNodeValid(block1a);
 
     // block2a builds on FULL path (rerouted)
@@ -653,7 +660,7 @@ class ProtoArrayTest {
   @Test
   void markNodeValid_shouldAlsoMarkFullNodeValid() {
     addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
-    protoArray.onExecutionPayload(block1a);
+    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
 
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
     assertThat(protoArray.getNodeByIndex(fullNodeIndex).isOptimistic()).isTrue();
@@ -666,7 +673,7 @@ class ProtoArrayTest {
   @Test
   void maybePrune_shouldRemoveFullNodesFromIndices() {
     addValidBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
-    protoArray.onExecutionPayload(block1a);
+    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
     protoArray.markNodeValid(block1a);
 
     addValidBlock(2, block2a, block1a);

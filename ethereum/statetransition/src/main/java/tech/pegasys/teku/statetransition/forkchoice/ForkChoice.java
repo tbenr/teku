@@ -791,7 +791,11 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     // Create the FULL node in the fork choice tree. Per spec on_execution_payload, this makes
     // the FULL child visible in get_node_children, allowing get_head to see the FULL path
     // immediately after execution payload arrival.
-    getForkChoiceStrategy().onExecutionPayload(signedEnvelope.getBeaconBlockRoot());
+    getForkChoiceStrategy()
+        .onExecutionPayload(
+            signedEnvelope.getBeaconBlockRoot(),
+            signedEnvelope.getMessage().getPayload().getBlockNumber(),
+            signedEnvelope.getMessage().getPayload().getBlockHash());
 
     return ExecutionPayloadImportResult.successful(signedEnvelope);
   }
