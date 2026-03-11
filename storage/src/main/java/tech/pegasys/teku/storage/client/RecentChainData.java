@@ -414,11 +414,6 @@ public abstract class RecentChainData implements StoreUpdateHandler, ValidatorIs
     bestBlockInitialized.complete(null);
   }
 
-  public Optional<SlotAndBlockRoot> findCommonAncestor(
-      final Bytes32 blockRoot1, final Bytes32 blockRoot2) {
-    return store.getForkChoiceStrategy().findCommonAncestor(blockRoot1, blockRoot2);
-  }
-
   private Optional<ReorgContext> computeReorgContext(
       final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
       final Optional<ChainHead> originalChainHead,
@@ -460,7 +455,19 @@ public abstract class RecentChainData implements StoreUpdateHandler, ValidatorIs
                             new IllegalStateException(
                                 String.format(
                                     "Unable to update head block as of slot %s.  Block is unavailable: %s.",
-                                    currentSlot, root))));
+                                    currentSlot, root))))
+            // TODO-GLOAS: https://github.com/Consensys/teku/issues/9878 this is just a workaround
+            // for devnet-0, we may require a more proper implementation, when the complete fork
+            // choice is implemented
+            .thenApply(
+                stateAndBlockSummary ->
+                    store
+                        .getExecutionPayloadStateIfAvailable(root)
+                        .map(
+                            executionPayloadState ->
+                                StateAndBlockSummary.create(
+                                    stateAndBlockSummary.getBlockSummary(), executionPayloadState))
+                        .orElse(stateAndBlockSummary));
     return ChainHead.create(blockData, chainHeadStateFuture);
   }
 
