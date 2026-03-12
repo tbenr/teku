@@ -66,6 +66,7 @@ class ProtoArrayScoreCalculator {
         newProposerBoostRoot,
         previousBoostAmount,
         newBoostAmount,
+        null,
         null);
   }
 
@@ -79,7 +80,8 @@ class ProtoArrayScoreCalculator {
       final Optional<Bytes32> newProposerBoostRoot,
       final UInt64 previousBoostAmount,
       final UInt64 newBoostAmount,
-      final Object2IntMap<Bytes32> fullNodeIndices) {
+      final Object2IntMap<Bytes32> fullNodeIndices,
+      final Object2IntMap<Bytes32> emptyNodeIndices) {
     LongList deltas = new LongArrayList(Collections.nCopies(protoArraySize, 0L));
 
     UInt64.rangeClosed(UInt64.ZERO, store.getHighestVotedValidatorIndex())
@@ -92,7 +94,8 @@ class ProtoArrayScoreCalculator {
                     newBalances,
                     deltas,
                     validatorIndex,
-                    fullNodeIndices));
+                    fullNodeIndices,
+                    emptyNodeIndices));
 
     previousProposerBoostRoot.ifPresent(
         root -> subtractBalance(getIndexByRoot, deltas, root, previousBoostAmount));
@@ -108,7 +111,8 @@ class ProtoArrayScoreCalculator {
       final List<UInt64> newBalances,
       final LongList deltas,
       final UInt64 validatorIndex,
-      final Object2IntMap<Bytes32> fullNodeIndices) {
+      final Object2IntMap<Bytes32> fullNodeIndices,
+      final Object2IntMap<Bytes32> emptyNodeIndices) {
     VoteTracker vote = store.getVote(validatorIndex);
 
     // There is no need to create a score change if the validator has never voted
@@ -137,15 +141,17 @@ class ProtoArrayScoreCalculator {
             : UInt64.ZERO;
 
     if (!vote.getCurrentRoot().equals(vote.getNextRoot()) || !oldBalance.equals(newBalance)) {
-      // Route current vote subtraction: use FULL node if vote was payload-present
+      // Route current vote subtraction: use FULL/EMPTY node based on payload-present flag
       subtractBalance(
-          resolveIndexFn(getIndexByRoot, fullNodeIndices, vote.isCurrentPayloadPresent()),
+          resolveIndexFn(
+              getIndexByRoot, fullNodeIndices, emptyNodeIndices, vote.isCurrentPayloadPresent()),
           deltas,
           vote.getCurrentRoot(),
           oldBalance);
-      // Route next vote addition: use FULL node if vote is payload-present
+      // Route next vote addition: use FULL/EMPTY node based on payload-present flag
       addBalance(
-          resolveIndexFn(getIndexByRoot, fullNodeIndices, vote.isNextPayloadPresent()),
+          resolveIndexFn(
+              getIndexByRoot, fullNodeIndices, emptyNodeIndices, vote.isNextPayloadPresent()),
           deltas,
           vote.getNextRoot(),
           newBalance);
@@ -167,16 +173,31 @@ class ProtoArrayScoreCalculator {
   private static Function<Bytes32, Optional<Integer>> resolveIndexFn(
       final Function<Bytes32, Optional<Integer>> getIndexByRoot,
       final Object2IntMap<Bytes32> fullNodeIndices,
+      final Object2IntMap<Bytes32> emptyNodeIndices,
       final boolean payloadPresent) {
-    if (!payloadPresent || fullNodeIndices == null) {
+    if (fullNodeIndices == null && emptyNodeIndices == null) {
       return getIndexByRoot;
     }
-    return root -> {
-      if (fullNodeIndices.containsKey(root)) {
-        return Optional.of(fullNodeIndices.getInt(root));
-      }
-      return getIndexByRoot.apply(root);
-    };
+    if (payloadPresent) {
+      // payload-present votes: prefer FULL, fallback to EMPTY, then block index
+      return root -> {
+        if (fullNodeIndices != null && fullNodeIndices.containsKey(root)) {
+          return Optional.of(fullNodeIndices.getInt(root));
+        }
+        if (emptyNodeIndices != null && emptyNodeIndices.containsKey(root)) {
+          return Optional.of(emptyNodeIndices.getInt(root));
+        }
+        return getIndexByRoot.apply(root);
+      };
+    } else {
+      // non-payload votes: prefer EMPTY, then block index
+      return root -> {
+        if (emptyNodeIndices != null && emptyNodeIndices.containsKey(root)) {
+          return Optional.of(emptyNodeIndices.getInt(root));
+        }
+        return getIndexByRoot.apply(root);
+      };
+    }
   }
 
   private static void addBalance(

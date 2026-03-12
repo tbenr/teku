@@ -16,6 +16,7 @@ package tech.pegasys.teku.storage.protoarray;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
+import static tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY;
 import static tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL;
 import static tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeValidationStatus.INVALID;
 import static tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeValidationStatus.OPTIMISTIC;
@@ -54,6 +55,7 @@ public class ProtoArray {
   // When starting from genesis, this value is zero (genesis epoch)
   private final UInt64 initialEpoch;
   private final StatusLogger statusLog;
+  private Optional<PayloadStatusTiebreaker> payloadStatusTiebreaker = Optional.empty();
 
   /**
    * Lists all the known nodes. It is guaranteed that a node will be after its parent in the list.
@@ -135,6 +137,32 @@ public class ProtoArray {
       final UInt64 executionBlockNumber,
       final Bytes32 executionBlockHash,
       final boolean optimisticallyProcessed) {
+    onBlock(
+        blockSlot,
+        blockRoot,
+        parentRoot,
+        indices.get(parentRoot),
+        stateRoot,
+        checkpoints,
+        executionBlockNumber,
+        executionBlockHash,
+        optimisticallyProcessed);
+  }
+
+  /**
+   * Register a block with the fork choice using an explicit parent index. This overload is used by
+   * Gloas tree behavior to resolve the correct parent (FULL → EMPTY → PENDING) before insertion.
+   */
+  public void onBlock(
+      final UInt64 blockSlot,
+      final Bytes32 blockRoot,
+      final Bytes32 parentRoot,
+      final Optional<Integer> resolvedParentIndex,
+      final Bytes32 stateRoot,
+      final BlockCheckpoints checkpoints,
+      final UInt64 executionBlockNumber,
+      final Bytes32 executionBlockHash,
+      final boolean optimisticallyProcessed) {
     if (indices.contains(blockRoot)) {
       return;
     }
@@ -147,7 +175,7 @@ public class ProtoArray {
             stateRoot,
             blockRoot,
             parentRoot,
-            indices.get(parentRoot),
+            resolvedParentIndex,
             checkpoints,
             executionBlockNumber,
             executionBlockHash,
@@ -207,34 +235,58 @@ public class ProtoArray {
   }
 
   /**
-   * Re-routes a child block from the block node parent to the FULL node parent. Called when a child
-   * block was built on the parent's execution payload (FULL path).
+   * Creates an EMPTY child node for a block in the Gloas three-state fork choice tree. The EMPTY
+   * node is created immediately when a block arrives, representing the empty-payload path.
    */
-  public void rerouteBlockToFullParent(final Bytes32 blockRoot, final Bytes32 parentRoot) {
-    final Optional<Integer> blockNodeIndex = indices.get(blockRoot);
-    final Optional<Integer> fullNodeIndex = indices.getFullNodeIndex(parentRoot);
-    if (blockNodeIndex.isEmpty() || fullNodeIndex.isEmpty()) {
+  public void createEmptyNode(final Bytes32 blockRoot) {
+    if (indices.hasEmptyNode(blockRoot)) {
       return;
     }
-    final ProtoNode blockNode = getNodeByIndex(blockNodeIndex.get());
-    final Optional<Integer> oldParentIndex = blockNode.getParentIndex();
+    final Optional<Integer> maybeBlockIndex = indices.get(blockRoot);
+    if (maybeBlockIndex.isEmpty()) {
+      return;
+    }
+    final int blockIndex = maybeBlockIndex.get();
+    final ProtoNode blockNode = getNodeByIndex(blockIndex);
+    final int emptyNodeIndex = getTotalTrackedNodeCount();
 
-    blockNode.setParentIndex(Optional.of(fullNodeIndex.get()));
+    final ProtoNode emptyNode =
+        new ProtoNode(
+            blockNode.getBlockSlot(),
+            blockNode.getStateRoot(),
+            blockNode.getBlockRoot(),
+            blockNode.getParentRoot(),
+            Optional.of(blockIndex),
+            blockNode.getBlockCheckpoints(),
+            blockNode.getExecutionBlockNumber(),
+            blockNode.getExecutionBlockHash(),
+            UInt64.ZERO,
+            Optional.empty(),
+            Optional.empty(),
+            blockNode.isFullyValidated() ? VALID : blockNode.isInvalid() ? INVALID : OPTIMISTIC);
+    emptyNode.setPayloadStatus(PAYLOAD_STATUS_EMPTY);
 
-    // Clear stale bestChild on old parent if it pointed to this block.
-    // The correct bestChild will be recalculated during next applyDeltas.
-    oldParentIndex.ifPresent(
-        idx -> {
-          final ProtoNode oldParent = getNodeByIndex(idx);
-          if (oldParent
-              .getBestChildIndex()
-              .map(ci -> ci.equals(blockNodeIndex.get()))
-              .orElse(false)) {
-            changeToNone(oldParent);
-          }
-        });
+    indices.addEmptyNodeIndex(blockRoot, emptyNodeIndex);
+    nodes.add(emptyNode);
 
-    updateBestDescendantOfParent(blockNode, blockNodeIndex.get());
+    updateBestDescendantOfParent(emptyNode, emptyNodeIndex);
+  }
+
+  /**
+   * Resolves the correct parent index for a new child block in Gloas. Prefers FULL parent (if
+   * execution payload has arrived), falls back to EMPTY parent (always exists for Gloas blocks),
+   * then to the PENDING block node as a transition fallback for pre-Gloas parents.
+   */
+  public Optional<Integer> resolveGloasParentIndex(final Bytes32 parentRoot) {
+    final Optional<Integer> fullIndex = indices.getFullNodeIndex(parentRoot);
+    if (fullIndex.isPresent()) {
+      return fullIndex;
+    }
+    final Optional<Integer> emptyIndex = indices.getEmptyNodeIndex(parentRoot);
+    if (emptyIndex.isPresent()) {
+      return emptyIndex;
+    }
+    return indices.get(parentRoot);
   }
 
   public void setInitialCanonicalBlockRoot(final Bytes32 initialCanonicalBlockRoot) {
@@ -377,7 +429,10 @@ public class ProtoArray {
     final ProtoNode node = maybeNode.get();
     node.setValidationStatus(VALID);
 
-    // Also mark the FULL node valid if it exists
+    // Also mark the EMPTY and FULL nodes valid if they exist
+    indices
+        .getEmptyNodeIndex(blockRoot)
+        .ifPresent(emptyIndex -> getNodeByIndex(emptyIndex).setValidationStatus(VALID));
     indices
         .getFullNodeIndex(blockRoot)
         .ifPresent(fullIndex -> getNodeByIndex(fullIndex).setValidationStatus(VALID));
@@ -498,7 +553,6 @@ public class ProtoArray {
       if (invalidParents.contains((int) possibleDescendant.getParentIndex().get())) {
         possibleDescendant.setValidationStatus(INVALID);
         removeBlockRoot(possibleDescendant.getBlockRoot());
-        indices.removeFullNode(possibleDescendant.getBlockRoot());
         invalidParents.add(i);
       }
     }
@@ -530,7 +584,8 @@ public class ProtoArray {
       final LongList deltas,
       final UInt64 currentEpoch,
       final Checkpoint justifiedCheckpoint,
-      final Checkpoint finalizedCheckpoint) {
+      final Checkpoint finalizedCheckpoint,
+      final Optional<PayloadStatusTiebreaker> payloadStatusTiebreaker) {
     checkArgument(
         deltas.size() == getTotalTrackedNodeCount(),
         "ProtoArray: Invalid delta length expected %s but got %s",
@@ -540,6 +595,7 @@ public class ProtoArray {
     this.currentEpoch = currentEpoch;
     this.justifiedCheckpoint = justifiedCheckpoint;
     this.finalizedCheckpoint = finalizedCheckpoint;
+    this.payloadStatusTiebreaker = payloadStatusTiebreaker;
 
     applyDeltas(deltas);
   }
@@ -576,6 +632,7 @@ public class ProtoArray {
       Bytes32 root = getNodeByIndex(nodeIndex).getBlockRoot();
       indices.remove(root);
       indices.removeFullNode(root);
+      indices.removeEmptyNode(root);
     }
 
     // Drop all the nodes prior to finalization.
@@ -665,10 +722,19 @@ public class ProtoArray {
                 } else if (!childLeadsToViableHead && bestChildLeadsToViableHead) {
                   // The best child leads to a viable head, but the child doesn't.
                   // No change.
-                } else if (child.getBlockRoot().equals(parent.getBlockRoot())
-                    && child.getPayloadStatus().equals(PAYLOAD_STATUS_FULL)) {
-                  // TODO
-                  changeToChild(parent, childIndex);
+                } else if (payloadStatusTiebreaker.isPresent()
+                    && child.getBlockRoot().equals(parent.getBlockRoot())
+                    && bestChild.getBlockRoot().equals(parent.getBlockRoot())) {
+                  // Spec: get_payload_status_tiebreaker — third sort key in get_head
+                  // Gloas FULL vs EMPTY sibling comparison — delegate to tiebreaker
+                  int cmp =
+                      payloadStatusTiebreaker
+                          .get()
+                          .compare(child, bestChild, parent, ProtoArray.this);
+                  if (cmp > 0) {
+                    changeToChild(parent, childIndex);
+                  }
+                  // else: bestChild wins or tied, no change
                 } else if (child.getWeight().equals(bestChild.getWeight())) {
                   // Tie-breaker of equal weights by root.
                   if (child
@@ -827,6 +893,7 @@ public class ProtoArray {
   public void removeBlockRoot(final Bytes32 blockRoot) {
     indices.remove(blockRoot);
     indices.removeFullNode(blockRoot);
+    indices.removeEmptyNode(blockRoot);
   }
 
   public void pullUpBlockCheckpoints(final Bytes32 blockRoot) {
@@ -872,6 +939,14 @@ public class ProtoArray {
 
   public Object2IntMap<Bytes32> getFullNodeIndices() {
     return indices.getFullNodeIndices();
+  }
+
+  public Object2IntMap<Bytes32> getEmptyNodeIndices() {
+    return indices.getEmptyNodeIndices();
+  }
+
+  public boolean hasFullNode(final Bytes32 blockRoot) {
+    return indices.hasFullNode(blockRoot);
   }
 
   ProtoNode getNodeByIndex(final int index) {

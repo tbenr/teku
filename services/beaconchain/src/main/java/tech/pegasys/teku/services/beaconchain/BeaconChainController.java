@@ -1418,6 +1418,7 @@ public class BeaconChainController extends Service implements BeaconChainControl
       final AggregatingPayloadAttestationPool aggregatingPayloadAttestationPool =
           new AggregatingPayloadAttestationPool(spec, validator, metricsSystem);
       payloadAttestationPool = aggregatingPayloadAttestationPool;
+      payloadAttestationPool.subscribeOperationAdded(forkChoice::onPayloadAttestationMessage);
       eventChannels.subscribe(SlotEventsChannel.class, aggregatingPayloadAttestationPool);
     } else {
       payloadAttestationPool = PayloadAttestationPool.NOOP;

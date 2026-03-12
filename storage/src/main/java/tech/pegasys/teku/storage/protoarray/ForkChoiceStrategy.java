@@ -22,6 +22,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.apache.logging.log4j.LogManager;
@@ -29,9 +31,12 @@ import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
+import tech.pegasys.teku.spec.SpecMilestone;
+import tech.pegasys.teku.spec.config.SpecConfigGloas;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockAndCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
@@ -46,11 +51,16 @@ import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil;
 
 public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoiceStrategy {
   private static final Logger LOG = LogManager.getLogger();
+  private static final ForkChoiceTreeBehavior DEFAULT_BEHAVIOR =
+      new ForkChoiceTreeBehaviorDefault();
+  private static final ForkChoiceTreeBehavior GLOAS_BEHAVIOR = new ForkChoiceTreeBehaviorGloas();
+
   private final ReadWriteLock protoArrayLock = new ReentrantReadWriteLock();
   private final ReadWriteLock votesLock = new ReentrantReadWriteLock();
   private final ReadWriteLock balancesLock = new ReentrantReadWriteLock();
   private final Spec spec;
   private final ProtoArray protoArray;
+  private final Map<Bytes32, AtomicInteger> ptcPresentVoteCounts = new ConcurrentHashMap<>();
 
   private List<UInt64> balances;
   private Optional<Bytes32> proposerBoostRoot = Optional.empty();
@@ -63,11 +73,17 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
     this.balances = balances;
   }
 
+  private ForkChoiceTreeBehavior getTreeBehavior(final UInt64 slot) {
+    return spec.atSlot(slot).getMilestone().isGreaterThanOrEqualTo(SpecMilestone.GLOAS)
+        ? GLOAS_BEHAVIOR
+        : DEFAULT_BEHAVIOR;
+  }
+
   public static ForkChoiceStrategy initialize(final Spec spec, final ProtoArray protoArray) {
     return new ForkChoiceStrategy(spec, protoArray, new ArrayList<>());
   }
 
-  public SlotAndBlockRoot findHead(
+  public ForkChoiceNode findHead(
       final UInt64 currentEpoch,
       final Checkpoint justifiedCheckpoint,
       final Checkpoint finalizedCheckpoint) {
@@ -79,13 +95,13 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
     }
   }
 
-  private SlotAndBlockRoot findHeadImpl(
+  private ForkChoiceNode findHeadImpl(
       final UInt64 currentEpoch,
       final Checkpoint justifiedCheckpoint,
       final Checkpoint finalizedCheckpoint) {
     final ProtoNode bestNode =
         protoArray.findOptimisticHead(currentEpoch, justifiedCheckpoint, finalizedCheckpoint);
-    return new SlotAndBlockRoot(bestNode.getBlockSlot(), bestNode.getBlockRoot());
+    return new ForkChoiceNode(bestNode.getBlockRoot(), bestNode.getPayloadStatus());
   }
 
   /**
@@ -99,11 +115,12 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
    * @param justifiedCheckpoint the current justified checkpoint
    * @param justifiedStateEffectiveBalances the effective validator balances at the justified
    *     checkpoint
-   * @return the best chain head block root
+   * @return the best chain head as a ForkChoiceNode (blockRoot + payloadStatus)
    */
-  public Bytes32 applyPendingVotes(
+  public ForkChoiceNode applyPendingVotes(
       final VoteUpdater voteUpdater,
       final Optional<Bytes32> proposerBoostRoot,
+      final UInt64 currentSlot,
       final UInt64 currentEpoch,
       final Checkpoint finalizedCheckpoint,
       final Checkpoint justifiedCheckpoint,
@@ -124,14 +141,27 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
               proposerBoostRoot,
               this.proposerBoostAmount,
               proposerBoostAmount,
-              protoArray.getFullNodeIndices());
+              protoArray.getFullNodeIndices(),
+              protoArray.getEmptyNodeIndices());
 
-      protoArray.applyScoreChanges(deltas, currentEpoch, justifiedCheckpoint, finalizedCheckpoint);
+      final Optional<PayloadStatusTiebreaker> tiebreaker =
+          spec.atSlot(currentSlot).getMilestone().isGreaterThanOrEqualTo(SpecMilestone.GLOAS)
+              ? Optional.of(
+                  new GloasPayloadStatusTiebreaker(
+                      currentSlot,
+                      proposerBoostRoot,
+                      SpecConfigGloas.required(spec.atSlot(currentSlot).getConfig())
+                          .getPayloadTimelyThreshold(),
+                      this::getPtcPresentVoteCount))
+              : Optional.empty();
+
+      protoArray.applyScoreChanges(
+          deltas, currentEpoch, justifiedCheckpoint, finalizedCheckpoint, tiebreaker);
       balances = justifiedStateEffectiveBalances;
       this.proposerBoostRoot = proposerBoostRoot;
       this.proposerBoostAmount = proposerBoostAmount;
 
-      return findHeadImpl(currentEpoch, justifiedCheckpoint, finalizedCheckpoint).getBlockRoot();
+      return findHeadImpl(currentEpoch, justifiedCheckpoint, finalizedCheckpoint);
     } finally {
       protoArrayLock.writeLock().unlock();
       votesLock.writeLock().unlock();
@@ -381,6 +411,33 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
   }
 
   @Override
+  public Optional<ProtoNodeData> getBlockData(
+      final Bytes32 blockRoot, final ForkChoicePayloadStatus payloadStatus) {
+    protoArrayLock.readLock().lock();
+    try {
+      if (payloadStatus == ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL) {
+        return protoArray.getFullNodeIndices().containsKey(blockRoot)
+            ? Optional.of(
+                protoArray
+                    .getNodeByIndex(protoArray.getFullNodeIndices().getInt(blockRoot))
+                    .getBlockData())
+            : getProtoNode(blockRoot).map(ProtoNode::getBlockData);
+      }
+      if (payloadStatus == ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY) {
+        return protoArray.getEmptyNodeIndices().containsKey(blockRoot)
+            ? Optional.of(
+                protoArray
+                    .getNodeByIndex(protoArray.getEmptyNodeIndices().getInt(blockRoot))
+                    .getBlockData())
+            : getProtoNode(blockRoot).map(ProtoNode::getBlockData);
+      }
+      return getProtoNode(blockRoot).map(ProtoNode::getBlockData);
+    } finally {
+      protoArrayLock.readLock().unlock();
+    }
+  }
+
+  @Override
   public Optional<UInt64> getWeight(final Bytes32 blockRoot) {
     protoArrayLock.readLock().lock();
     try {
@@ -411,31 +468,32 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
 
   /**
    * Creates a FULL node in the protoarray for a block that has received its execution payload. This
-   * makes the FULL child visible in the three-state fork choice tree.
+   * makes the FULL child visible in the three-state fork choice tree. Delegates to the
+   * fork-specific tree behavior.
    */
   public void onExecutionPayload(
       final Bytes32 blockRoot,
+      final UInt64 blockSlot,
       final UInt64 executionBlockNumber,
       final Bytes32 executionBlockHash) {
     protoArrayLock.writeLock().lock();
     try {
-      protoArray.onExecutionPayload(blockRoot, executionBlockNumber, executionBlockHash);
+      getTreeBehavior(blockSlot)
+          .onExecutionPayload(protoArray, blockRoot, executionBlockNumber, executionBlockHash);
     } finally {
       protoArrayLock.writeLock().unlock();
     }
   }
 
-  /**
-   * Re-routes a child block from the block node parent to the FULL node parent. Called when a child
-   * block was built on the parent's execution payload (FULL path).
-   */
-  public void rerouteBlockToFullParent(final Bytes32 blockRoot, final Bytes32 parentRoot) {
-    protoArrayLock.writeLock().lock();
-    try {
-      protoArray.rerouteBlockToFullParent(blockRoot, parentRoot);
-    } finally {
-      protoArrayLock.writeLock().unlock();
-    }
+  /** Called when a validated payload attestation with payloadPresent=true arrives. */
+  public void onPtcVote(final Bytes32 blockRoot) {
+    ptcPresentVoteCounts.computeIfAbsent(blockRoot, __ -> new AtomicInteger(0)).incrementAndGet();
+  }
+
+  /** Returns the PTC "payload present" vote count for a block. */
+  public int getPtcPresentVoteCount(final Bytes32 blockRoot) {
+    final AtomicInteger count = ptcPresentVoteCounts.get(blockRoot);
+    return count != null ? count.get() : 0;
   }
 
   @Override
@@ -541,9 +599,12 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       ProtoNode currentNode = startingNode.orElseThrow();
 
       while (protoArray.contains(currentNode.getBlockRoot())) {
-        // Skip FULL nodes — they are internal three-state tree nodes, not actual blocks.
+        // Skip FULL and EMPTY internal tree nodes — they are children of PENDING block nodes
+        // in the Gloas three-state fork choice tree, not actual blocks.
         // Walk through them transparently to their parent.
-        if (currentNode.getPayloadStatus() == ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL) {
+        if (currentNode.getPayloadStatus() == ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL
+            || (currentNode.getPayloadStatus() == ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY
+                && protoArray.getEmptyNodeIndices().containsKey(currentNode.getBlockRoot()))) {
           if (currentNode.getParentIndex().isEmpty()) {
             break;
           }
@@ -574,8 +635,12 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       protoArray.getNodes().stream()
           // Filter out nodes that could be pruned but are still in the protoarray
           .filter(node -> indices.containsKey(node.getBlockRoot()))
-          // Skip FULL nodes — they are internal three-state tree nodes, not actual blocks
+          // Skip FULL and EMPTY internal tree nodes — not actual blocks
           .filter(node -> node.getPayloadStatus() != ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL)
+          .filter(
+              node ->
+                  node.getPayloadStatus() != ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY
+                      || !protoArray.getEmptyNodeIndices().containsKey(node.getBlockRoot()))
           .forEach(
               node ->
                   nodeProcessor.process(
@@ -626,9 +691,18 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
                                       .map(ProtoNode::getExecutionBlockNumber))
                           .orElse(ProtoNode.NO_EXECUTION_BLOCK_NUMBER),
                       block.getExecutionBlockHash().orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH)));
-      removedBlockRoots.forEach((root, uInt64) -> protoArray.removeBlockRoot(root));
+      removedBlockRoots.forEach(
+          (root, uInt64) -> {
+            protoArray.removeBlockRoot(root);
+            ptcPresentVoteCounts.remove(root);
+          });
       pulledUpBlocks.forEach(protoArray::pullUpBlockCheckpoints);
+      final int sizeBefore = protoArray.getTotalTrackedNodeCount();
       protoArray.maybePrune(finalizedCheckpoint.getRoot());
+      if (protoArray.getTotalTrackedNodeCount() < sizeBefore) {
+        // Nodes were pruned — clean up PTC vote counts for roots no longer in the tree
+        ptcPresentVoteCounts.keySet().removeIf(root -> !protoArray.contains(root));
+      }
     } finally {
       protoArrayLock.writeLock().unlock();
     }
@@ -675,15 +749,17 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       final BlockCheckpoints checkpoints,
       final UInt64 executionBlockNumber,
       final Bytes32 executionBlockHash) {
-    protoArray.onBlock(
-        blockSlot,
-        blockRoot,
-        parentRoot,
-        stateRoot,
-        checkpoints,
-        executionBlockNumber,
-        executionBlockHash,
-        spec.isBlockProcessorOptimistic(blockSlot));
+    getTreeBehavior(blockSlot)
+        .processBlock(
+            protoArray,
+            blockSlot,
+            blockRoot,
+            parentRoot,
+            stateRoot,
+            checkpoints,
+            executionBlockNumber,
+            executionBlockHash,
+            spec.isBlockProcessorOptimistic(blockSlot));
   }
 
   private Optional<ProtoNode> getProtoNode(final Bytes32 blockRoot) {

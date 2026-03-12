@@ -23,6 +23,7 @@ import org.apache.tuweni.bytes.Bytes32;
 public class ProtoArrayIndices {
   private final Object2IntMap<Bytes32> rootIndices = new Object2IntOpenHashMap<>();
   private final Object2IntMap<Bytes32> fullNodeIndices = new Object2IntOpenHashMap<>();
+  private final Object2IntMap<Bytes32> emptyNodeIndices = new Object2IntOpenHashMap<>();
 
   public boolean contains(final Bytes32 root) {
     return rootIndices.containsKey(root);
@@ -60,6 +61,28 @@ public class ProtoArrayIndices {
     return fullNodeIndices.containsKey(root);
   }
 
+  public Optional<Integer> getEmptyNodeIndex(final Bytes32 root) {
+    return emptyNodeIndices.containsKey(root)
+        ? Optional.of(emptyNodeIndices.getInt(root))
+        : Optional.empty();
+  }
+
+  public void addEmptyNodeIndex(final Bytes32 blockRoot, final int nodeIndex) {
+    emptyNodeIndices.put(blockRoot, nodeIndex);
+  }
+
+  public void removeEmptyNode(final Bytes32 root) {
+    emptyNodeIndices.removeInt(root);
+  }
+
+  public boolean hasEmptyNode(final Bytes32 root) {
+    return emptyNodeIndices.containsKey(root);
+  }
+
+  public Object2IntMap<Bytes32> getEmptyNodeIndices() {
+    return emptyNodeIndices;
+  }
+
   public void offsetIndices(final int finalizedIndex) {
     rootIndices.replaceAll(
         (key, value) -> {
@@ -71,6 +94,12 @@ public class ProtoArrayIndices {
         (key, value) -> {
           int newIndex = value - finalizedIndex;
           checkState(newIndex >= 0, "ProtoArray: New FULL node array index less than 0.");
+          return newIndex;
+        });
+    emptyNodeIndices.replaceAll(
+        (key, value) -> {
+          int newIndex = value - finalizedIndex;
+          checkState(newIndex >= 0, "ProtoArray: New EMPTY node array index less than 0.");
           return newIndex;
         });
   }

@@ -434,7 +434,8 @@ public class TestStoreImpl implements MutableStore, VoteUpdater {
   public void commit() {}
 
   @Override
-  public Bytes32 applyForkChoiceScoreChanges(
+  public ForkChoiceNode applyForkChoiceScoreChanges(
+      final UInt64 currentSlot,
       final UInt64 currentEpoch,
       final Checkpoint finalizedCheckpoint,
       final Checkpoint justifiedCheckpoint,

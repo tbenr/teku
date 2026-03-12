@@ -127,7 +127,11 @@ class ProtoArrayTest {
 
     // Apply score changes to ensure that the best descendant index is updated
     protoArray.applyScoreChanges(
-        computeDeltas(), UInt64.valueOf(5), GENESIS_CHECKPOINT, GENESIS_CHECKPOINT);
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.empty());
 
     // Check the best descendant has been updated
     assertThat(protoArray.getProtoNode(block1a).orElseThrow().getBestDescendantIndex())
@@ -147,7 +151,11 @@ class ProtoArrayTest {
 
     // Apply score changes to ensure that the best descendant index is updated
     protoArray.applyScoreChanges(
-        computeDeltas(), UInt64.valueOf(5), GENESIS_CHECKPOINT, GENESIS_CHECKPOINT);
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.empty());
 
     // Check the best descendant has been updated
     assertThat(protoArray.getProtoNode(block1a).orElseThrow().getBestDescendantIndex())
@@ -188,7 +196,11 @@ class ProtoArrayTest {
     voteUpdater.putVote(UInt64.ONE, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
     voteUpdater.putVote(UInt64.valueOf(2), new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
     protoArray.applyScoreChanges(
-        computeDeltas(), UInt64.valueOf(5), GENESIS_CHECKPOINT, GENESIS_CHECKPOINT);
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.empty());
 
     assertHead(block2b);
 
@@ -196,7 +208,11 @@ class ProtoArrayTest {
     voteUpdater.putVote(UInt64.ZERO, new VoteTracker(block1b, block2a, UInt64.ONE));
     voteUpdater.putVote(UInt64.ONE, new VoteTracker(block1b, block2a, UInt64.ONE));
     protoArray.applyScoreChanges(
-        computeDeltas(), UInt64.valueOf(5), GENESIS_CHECKPOINT, GENESIS_CHECKPOINT);
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.empty());
 
     // And our head should switch
     assertHead(block2a);
@@ -213,7 +229,11 @@ class ProtoArrayTest {
     voteUpdater.putVote(UInt64.ONE, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
     voteUpdater.putVote(UInt64.valueOf(2), new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
     protoArray.applyScoreChanges(
-        computeDeltas(), UInt64.valueOf(5), GENESIS_CHECKPOINT, GENESIS_CHECKPOINT);
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.empty());
 
     assertHead(block2b);
 
@@ -221,7 +241,11 @@ class ProtoArrayTest {
     voteUpdater.putVote(UInt64.ZERO, new VoteTracker(block1b, block2a, UInt64.ONE));
     voteUpdater.putVote(UInt64.ONE, new VoteTracker(block1b, block2a, UInt64.ONE));
     protoArray.applyScoreChanges(
-        computeDeltas(), UInt64.valueOf(5), GENESIS_CHECKPOINT, GENESIS_CHECKPOINT);
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.empty());
 
     // And our head should switch
     assertHead(block2a);
@@ -238,7 +262,11 @@ class ProtoArrayTest {
     voteUpdater.putVote(UInt64.ONE, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
     voteUpdater.putVote(UInt64.valueOf(2), new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
     protoArray.applyScoreChanges(
-        computeDeltas(), UInt64.valueOf(5), GENESIS_CHECKPOINT, GENESIS_CHECKPOINT);
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.empty());
 
     assertHead(block2b);
 
@@ -248,7 +276,11 @@ class ProtoArrayTest {
     voteUpdater.putVote(UInt64.ZERO, new VoteTracker(block1b, block2a, UInt64.ONE));
     voteUpdater.putVote(UInt64.ONE, new VoteTracker(block1b, block2a, UInt64.ONE));
     protoArray.applyScoreChanges(
-        computeDeltas(), UInt64.valueOf(5), GENESIS_CHECKPOINT, GENESIS_CHECKPOINT);
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.empty());
 
     // Votes for 2a don't count because it's invalid so we stick with chain b.
     assertHead(block2b);
@@ -265,7 +297,11 @@ class ProtoArrayTest {
     voteUpdater.putVote(UInt64.ONE, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
     voteUpdater.putVote(UInt64.valueOf(2), new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
     protoArray.applyScoreChanges(
-        computeDeltas(), UInt64.valueOf(5), GENESIS_CHECKPOINT, GENESIS_CHECKPOINT);
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.empty());
 
     assertHead(block2b);
 
@@ -273,7 +309,11 @@ class ProtoArrayTest {
     voteUpdater.putVote(UInt64.ZERO, new VoteTracker(block1b, block2a, UInt64.ONE));
     voteUpdater.putVote(UInt64.ONE, new VoteTracker(block1b, block2a, UInt64.ONE));
     protoArray.applyScoreChanges(
-        computeDeltas(), UInt64.valueOf(5), GENESIS_CHECKPOINT, GENESIS_CHECKPOINT);
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.empty());
 
     // We switch to chain a because it has the greater weight now
     assertHead(block2a);
@@ -362,7 +402,11 @@ class ProtoArrayTest {
     addOptimisticBlock(2, block2a, block1a);
     addOptimisticBlock(3, block3a, block2a);
     protoArray.applyScoreChanges(
-        computeDeltas(), UInt64.valueOf(5), GENESIS_CHECKPOINT, GENESIS_CHECKPOINT);
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.empty());
 
     // Check the best descendant has been updated
     assertThat(protoArray.getProtoNode(block1a).orElseThrow().getBestDescendantIndex())
@@ -597,82 +641,162 @@ class ProtoArrayTest {
   }
 
   @Test
-  void rerouteBlockToFullParent_shouldChangeParentIndex() {
+  void createEmptyNode_shouldCreateEmptyChildNode() {
     addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
-    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
-    addOptimisticBlock(2, block2a, block1a);
 
-    // Before reroute: block2a's parent is the block node for block1a
+    assertThat(protoArray.getEmptyNodeIndices().containsKey(block1a)).isFalse();
+    protoArray.createEmptyNode(block1a);
+
+    assertThat(protoArray.getEmptyNodeIndices().containsKey(block1a)).isTrue();
+    final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
+    final ProtoNode emptyNode = protoArray.getNodeByIndex(emptyNodeIndex);
+    assertThat(emptyNode.getBlockRoot()).isEqualTo(block1a);
+    assertThat(emptyNode.getPayloadStatus())
+        .isEqualTo(ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY);
+    // EMPTY node parent should be the block (PENDING) node
     final int blockNodeIndex = protoArray.getIndexByRoot(block1a).orElseThrow();
-    assertThat(protoArray.getProtoNode(block2a).orElseThrow().getParentIndex())
-        .isEqualTo(Optional.of(blockNodeIndex));
+    assertThat(emptyNode.getParentIndex()).isEqualTo(Optional.of(blockNodeIndex));
+  }
 
-    // Reroute to FULL parent
-    protoArray.rerouteBlockToFullParent(block2a, block1a);
+  @Test
+  void createEmptyNode_shouldBeIdempotent() {
+    addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.createEmptyNode(block1a);
+    final int totalBefore = protoArray.getTotalTrackedNodeCount();
 
-    // After reroute: block2a's parent is the FULL node for block1a
+    protoArray.createEmptyNode(block1a);
+    assertThat(protoArray.getTotalTrackedNodeCount()).isEqualTo(totalBefore);
+  }
+
+  @Test
+  void resolveGloasParentIndex_shouldPreferFull() {
+    addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.createEmptyNode(block1a);
+    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
+
+    // When FULL exists, resolve to FULL
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
+    assertThat(protoArray.resolveGloasParentIndex(block1a)).isEqualTo(Optional.of(fullNodeIndex));
+  }
+
+  @Test
+  void resolveGloasParentIndex_shouldFallbackToEmpty() {
+    addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.createEmptyNode(block1a);
+
+    // No FULL exists, should resolve to EMPTY
+    final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
+    assertThat(protoArray.resolveGloasParentIndex(block1a)).isEqualTo(Optional.of(emptyNodeIndex));
+  }
+
+  @Test
+  void resolveGloasParentIndex_shouldFallbackToPending() {
+    addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+
+    // No FULL or EMPTY exists (pre-Gloas parent), should resolve to block node
+    final int blockNodeIndex = protoArray.getIndexByRoot(block1a).orElseThrow();
+    assertThat(protoArray.resolveGloasParentIndex(block1a)).isEqualTo(Optional.of(blockNodeIndex));
+  }
+
+  @Test
+  void threeStateTree_childAttachesToFullParent() {
+    // Build tree: genesis -> block1a (with EMPTY and FULL children)
+    addValidBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.createEmptyNode(block1a);
+    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
+    protoArray.markNodeValid(block1a);
+
+    // block2a resolves parent via resolveGloasParentIndex → should attach to FULL
+    final Optional<Integer> resolvedParent = protoArray.resolveGloasParentIndex(block1a);
+    final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
+    assertThat(resolvedParent).isEqualTo(Optional.of(fullNodeIndex));
+
+    // Add block2a with resolved parent
+    addValidBlockWithParentIndex(2, block2a, block1a, resolvedParent);
+
+    // block2a's parent should be the FULL node
     assertThat(protoArray.getProtoNode(block2a).orElseThrow().getParentIndex())
         .isEqualTo(Optional.of(fullNodeIndex));
   }
 
   @Test
-  void rerouteBlockToFullParent_shouldDoNothingIfNoFullNode() {
-    addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
-    addOptimisticBlock(2, block2a, block1a);
+  void threeStateTree_childAttachesToEmptyWhenNoFull() {
+    // Build tree: genesis -> block1a (with EMPTY child only, no FULL yet)
+    addValidBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.createEmptyNode(block1a);
+    protoArray.markNodeValid(block1a);
 
-    final int blockNodeIndex = protoArray.getIndexByRoot(block1a).orElseThrow();
-    protoArray.rerouteBlockToFullParent(block2a, block1a);
+    // block2a resolves parent via resolveGloasParentIndex → should attach to EMPTY
+    final Optional<Integer> resolvedParent = protoArray.resolveGloasParentIndex(block1a);
+    final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
+    assertThat(resolvedParent).isEqualTo(Optional.of(emptyNodeIndex));
 
-    // Parent unchanged (no FULL node exists)
+    // Add block2a with resolved parent
+    addValidBlockWithParentIndex(2, block2a, block1a, resolvedParent);
+
+    // block2a's parent should be the EMPTY node
     assertThat(protoArray.getProtoNode(block2a).orElseThrow().getParentIndex())
-        .isEqualTo(Optional.of(blockNodeIndex));
+        .isEqualTo(Optional.of(emptyNodeIndex));
   }
 
   @Test
   void threeStateTree_fullPathChildAndEmptyPathChild_shouldCompeteByWeight() {
-    // Build tree: genesis -> block1a
+    // Build tree: genesis -> block1a (with EMPTY and FULL children)
     addValidBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.createEmptyNode(block1a);
     protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
     protoArray.markNodeValid(block1a);
 
-    // block2a builds on FULL path (rerouted)
-    addValidBlock(2, block2a, block1a);
-    protoArray.rerouteBlockToFullParent(block2a, block1a);
+    final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
+    final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
 
-    // block2b builds on EMPTY path (stays on block node)
-    addValidBlock(2, block2b, block1a);
+    // block2a attaches to FULL path
+    addValidBlockWithParentIndex(2, block2a, block1a, Optional.of(fullNodeIndex));
+
+    // block2b attaches to EMPTY path
+    addValidBlockWithParentIndex(2, block2b, block1a, Optional.of(emptyNodeIndex));
 
     // Vote for block2a (FULL path child)
     voteUpdater.putVote(
         UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block2a, UInt64.ONE, false, false));
 
-    // Apply deltas and check head
+    // Apply deltas with Gloas tiebreaker — currentSlot far from block slot so tiebreaker
+    // defaults to payload status ordering (FULL=2 > EMPTY=1)
     protoArray.applyScoreChanges(
-        computeDeltas(), UInt64.valueOf(5), GENESIS_CHECKPOINT, GENESIS_CHECKPOINT);
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.of(
+            new GloasPayloadStatusTiebreaker(UInt64.valueOf(100), Optional.empty(), 0, __ -> 0)));
 
-    // block2a should be head (it has a vote, block2b doesn't)
+    // block2a should be head (FULL path wins via tiebreaker)
     final ProtoNode head =
         protoArray.findOptimisticHead(UInt64.valueOf(5), GENESIS_CHECKPOINT, GENESIS_CHECKPOINT);
     assertThat(head.getBlockRoot()).isEqualTo(block2a);
   }
 
   @Test
-  void markNodeValid_shouldAlsoMarkFullNodeValid() {
+  void markNodeValid_shouldAlsoMarkFullAndEmptyNodesValid() {
     addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.createEmptyNode(block1a);
     protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
 
+    final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
+    assertThat(protoArray.getNodeByIndex(emptyNodeIndex).isOptimistic()).isTrue();
     assertThat(protoArray.getNodeByIndex(fullNodeIndex).isOptimistic()).isTrue();
 
     protoArray.markNodeValid(block1a);
 
+    assertThat(protoArray.getNodeByIndex(emptyNodeIndex).isFullyValidated()).isTrue();
     assertThat(protoArray.getNodeByIndex(fullNodeIndex).isFullyValidated()).isTrue();
   }
 
   @Test
-  void maybePrune_shouldRemoveFullNodesFromIndices() {
+  void maybePrune_shouldRemoveFullAndEmptyNodesFromIndices() {
     addValidBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.createEmptyNode(block1a);
     protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
     protoArray.markNodeValid(block1a);
 
@@ -681,13 +805,148 @@ class ProtoArrayTest {
 
     // Finalize at block2a
     final Checkpoint finalized = new Checkpoint(UInt64.ONE, block2a);
-    protoArray.applyScoreChanges(computeDeltas(), UInt64.valueOf(5), finalized, finalized);
+    protoArray.applyScoreChanges(
+        computeDeltas(), UInt64.valueOf(5), finalized, finalized, Optional.empty());
     protoArray.setPruneThreshold(0);
     protoArray.maybePrune(block2a);
 
-    // block1a's FULL node should have been removed from indices
+    // block1a's FULL and EMPTY nodes should have been removed from indices
     assertThat(protoArray.getFullNodeIndices().containsKey(block1a)).isFalse();
+    assertThat(protoArray.getEmptyNodeIndices().containsKey(block1a)).isFalse();
     assertThat(protoArray.contains(block1a)).isFalse();
+  }
+
+  // --- Payload status tiebreaker tests ---
+
+  @Test
+  void tiebreaker_fullWinsOverEmpty_whenNotPreviousSlot() {
+    // Block at slot 5, currentSlot = 100 → not previous slot → tiebreaker uses raw payload
+    // status: FULL(2) > EMPTY(1)
+    addValidBlock(5, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.createEmptyNode(block1a);
+    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
+    protoArray.markNodeValid(block1a);
+
+    protoArray.applyScoreChanges(
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.of(
+            new GloasPayloadStatusTiebreaker(UInt64.valueOf(100), Optional.empty(), 0, __ -> 0)));
+
+    // FULL should be bestChild of block1a (PENDING node)
+    final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
+    final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
+    assertThat(block1aNode.getBestChildIndex()).isEqualTo(Optional.of(fullNodeIndex));
+  }
+
+  @Test
+  void tiebreaker_fullWinsOverEmpty_whenShouldExtendPayload_noBoost() {
+    // Block at slot 5, currentSlot = 6 → previous slot → should_extend_payload
+    // No proposer boost → should_extend_payload returns true → FULL wins (score 2)
+    addValidBlock(5, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.createEmptyNode(block1a);
+    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
+    protoArray.markNodeValid(block1a);
+
+    protoArray.applyScoreChanges(
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.of(
+            new GloasPayloadStatusTiebreaker(UInt64.valueOf(6), Optional.empty(), 0, __ -> 0)));
+
+    final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
+    final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
+    assertThat(block1aNode.getBestChildIndex()).isEqualTo(Optional.of(fullNodeIndex));
+  }
+
+  @Test
+  void tiebreaker_fullWinsOverEmpty_whenBoostOnChildButFullNodeExists() {
+    // Block at slot 5, currentSlot = 6 → previous slot → should_extend_payload evaluated.
+    // Proposer boost on block2a (child of block1a). Since block1a HAS a FULL node,
+    // is_parent_node_full = true → should_extend_payload = true → FULL keeps score 2.
+    addValidBlock(5, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.createEmptyNode(block1a);
+    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
+    protoArray.markNodeValid(block1a);
+
+    // block2a builds on block1a's EMPTY node — this is the boosted block
+    final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
+    addValidBlockWithParentIndex(6, block2a, block1a, Optional.of(emptyNodeIndex));
+
+    protoArray.applyScoreChanges(
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.of(
+            new GloasPayloadStatusTiebreaker(UInt64.valueOf(6), Optional.of(block2a), 0, __ -> 0)));
+
+    // FULL wins: is_parent_node_full(block1a) = true → should_extend_payload = true
+    final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
+    final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
+    assertThat(block1aNode.getBestChildIndex()).isEqualTo(Optional.of(fullNodeIndex));
+  }
+
+  @Test
+  void tiebreaker_fullWinsOverEmpty_whenPayloadTimely() {
+    // Block at slot 5, currentSlot = 6, proposer boost on a child of block1a.
+    // PTC votes exceed threshold → is_payload_timely = true → should_extend_payload = true
+    // → FULL keeps score 2.
+    addValidBlock(5, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.createEmptyNode(block1a);
+    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
+    protoArray.markNodeValid(block1a);
+
+    final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
+    addValidBlockWithParentIndex(6, block2a, block1a, Optional.of(emptyNodeIndex));
+
+    // threshold = 5, ptcVoteCount = 6 → timely (6 > 5)
+    protoArray.applyScoreChanges(
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.of(
+            new GloasPayloadStatusTiebreaker(
+                UInt64.valueOf(6), Optional.of(block2a), 5, root -> root.equals(block1a) ? 6 : 0)));
+
+    final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
+    final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
+    assertThat(block1aNode.getBestChildIndex()).isEqualTo(Optional.of(fullNodeIndex));
+  }
+
+  @Test
+  void tiebreaker_fullWinsOverEmpty_whenPayloadNotTimely_butBoostOnChildWithFullParent() {
+    // Block at slot 5, currentSlot = 6, proposer boost on block2a (child building on EMPTY).
+    // PTC votes ≤ threshold → is_payload_timely = false.
+    // But hasFullNode(block1a) = true → is_parent_node_full = true
+    // → should_extend_payload = true → FULL keeps score 2.
+    addValidBlock(5, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.createEmptyNode(block1a);
+    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
+    protoArray.markNodeValid(block1a);
+
+    final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
+    addValidBlockWithParentIndex(6, block2a, block1a, Optional.of(emptyNodeIndex));
+
+    // threshold = 5, ptcVoteCount = 3 → NOT timely (3 ≤ 5)
+    protoArray.applyScoreChanges(
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.of(
+            new GloasPayloadStatusTiebreaker(
+                UInt64.valueOf(6), Optional.of(block2a), 5, root -> root.equals(block1a) ? 3 : 0)));
+
+    // FULL still wins because is_parent_node_full(block1a) = true
+    final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
+    final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
+    assertThat(block1aNode.getBestChildIndex()).isEqualTo(Optional.of(fullNodeIndex));
   }
 
   private void assertHead(final Bytes32 expectedBlockHash) {
@@ -711,6 +970,25 @@ class ProtoArrayTest {
       final Bytes32 parentRoot,
       final Bytes32 executionBlockHash) {
     addOptimisticBlock(slot, blockRoot, parentRoot, executionBlockHash);
+    protoArray.markNodeValid(blockRoot);
+  }
+
+  private void addValidBlockWithParentIndex(
+      final long slot,
+      final Bytes32 blockRoot,
+      final Bytes32 parentRoot,
+      final Optional<Integer> resolvedParentIndex) {
+    protoArray.onBlock(
+        UInt64.valueOf(slot),
+        blockRoot,
+        parentRoot,
+        resolvedParentIndex,
+        dataStructureUtil.randomBytes32(),
+        new BlockCheckpoints(
+            GENESIS_CHECKPOINT, GENESIS_CHECKPOINT, GENESIS_CHECKPOINT, GENESIS_CHECKPOINT),
+        ZERO,
+        getExecutionBlockHash(blockRoot),
+        true);
     protoArray.markNodeValid(blockRoot);
   }
 

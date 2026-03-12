@@ -53,6 +53,18 @@ public interface ReadOnlyForkChoiceStrategy {
 
   Optional<ProtoNodeData> getBlockData(Bytes32 blockRoot);
 
+  /**
+   * Gets block data for a specific node identity (blockRoot + payloadStatus). In the Gloas
+   * three-state tree, the same blockRoot may have multiple nodes (PENDING, EMPTY, FULL). This
+   * method resolves to the correct node based on the payload status.
+   *
+   * <p>Default: delegates to {@link #getBlockData(Bytes32)}, ignoring payloadStatus.
+   */
+  default Optional<ProtoNodeData> getBlockData(
+      final Bytes32 blockRoot, final ForkChoicePayloadStatus payloadStatus) {
+    return getBlockData(blockRoot);
+  }
+
   Optional<UInt64> getWeight(Bytes32 blockRoot);
 
   Optional<ForkChoicePayloadStatus> payloadStatus(Bytes32 blockRoot);

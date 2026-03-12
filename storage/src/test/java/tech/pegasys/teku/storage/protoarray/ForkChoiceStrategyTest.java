@@ -39,7 +39,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.Eth1Data;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
-import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeValidationStatus;
@@ -167,16 +167,18 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
             .getSpec()
             .getBeaconStateUtil(anchor.getState().getSlot())
             .getEffectiveActiveUnslashedBalances(anchor.getState());
-    final Bytes32 head =
+    final UInt64 currentSlot = spec.getCurrentSlot(store);
+    final ForkChoiceNode head =
         forkChoiceStrategy.applyPendingVotes(
             store,
             Optional.empty(),
-            spec.getCurrentSlot(store),
+            currentSlot,
+            currentSlot,
             anchor.getCheckpoint(),
             anchor.getCheckpoint(),
             effectiveBalances,
             ZERO);
-    assertThat(head).isEqualTo(anchor.getRoot());
+    assertThat(head.blockRoot()).isEqualTo(anchor.getRoot());
   }
 
   @Test
@@ -242,7 +244,7 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
                     ProtoNodeValidationStatus.VALID,
                     spec.calculateBlockCheckpoints(head.getState()),
                     ZERO,
-                    ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING)));
+                    ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY)));
   }
 
   @Test
@@ -383,10 +385,11 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
             .getSpec()
             .getBeaconStateUtil(block3State.getSlot())
             .getEffectiveActiveUnslashedBalances(block3State);
-    final Bytes32 bestHead =
+    final ForkChoiceNode bestHead =
         strategy.applyPendingVotes(
             transaction,
             Optional.empty(),
+            storageSystem.recentChainData().getCurrentSlot().orElseThrow(),
             storageSystem.recentChainData().getCurrentEpoch().orElseThrow(),
             storageSystem.recentChainData().getFinalizedCheckpoint().orElseThrow(),
             storageSystem.recentChainData().getStore().getBestJustifiedCheckpoint(),
@@ -394,7 +397,7 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
             ZERO);
     transaction.commit();
 
-    assertThat(bestHead).isEqualTo(block4.getRoot());
+    assertThat(bestHead.blockRoot()).isEqualTo(block4.getRoot());
   }
 
   @Test
@@ -489,17 +492,18 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
             .getSpec()
             .getBeaconStateUtil(block2State.getSlot())
             .getEffectiveActiveUnslashedBalances(block2State);
-    final Bytes32 bestHead =
+    final ForkChoiceNode bestHead =
         strategy.applyPendingVotes(
             transaction3,
             Optional.empty(),
+            storageSystem.recentChainData().getCurrentSlot().orElseThrow(),
             storageSystem.recentChainData().getCurrentEpoch().orElseThrow(),
             storageSystem.recentChainData().getFinalizedCheckpoint().orElseThrow(),
             storageSystem.recentChainData().getStore().getBestJustifiedCheckpoint(),
             effectiveBalances,
             ZERO);
     transaction3.commit();
-    assertThat(bestHead).isEqualTo(block2.getRoot());
+    assertThat(bestHead.blockRoot()).isEqualTo(block2.getRoot());
 
     assertThat(transaction3.getVote(ZERO).isCurrentEquivocating()).isTrue();
     // Not updated after equivocation
@@ -554,12 +558,12 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
     protoArray.onExecutionPayloadResult(currentJustified.getRoot(), PayloadStatus.VALID, false);
 
     // Find new chain head
-    final SlotAndBlockRoot revertHead =
+    final ForkChoiceNode revertHead =
         protoArray.findHead(
             recentChainData.getCurrentEpoch().orElseThrow(),
             recentChainData.getJustifiedCheckpoint().orElseThrow(),
             recentChainData.getFinalizedCheckpoint().orElseThrow());
-    recentChainData.updateHead(revertHead.getBlockRoot(), optimisticHead.getSlot());
+    recentChainData.updateHead(revertHead, optimisticHead.getSlot());
 
     // Advance current slot so that current head is no more viable
     chainUpdater.setCurrentSlot(UInt64.valueOf(60));
@@ -576,6 +580,37 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
     assertThat(protoArray.isFullyValidated(currentJustified.getRoot())).isTrue();
     // the head is optimistic because it is not viable
     assertThat(forkChoiceState.isHeadOptimistic()).isTrue();
+  }
+
+  @Test
+  void ptcVote_incrementsCount() {
+    final StorageSystem storageSystem = initStorageSystem();
+    final ForkChoiceStrategy strategy = getProtoArray(storageSystem);
+    final Bytes32 blockRoot = dataStructureUtil.randomBytes32();
+
+    assertThat(strategy.getPtcPresentVoteCount(blockRoot)).isEqualTo(0);
+
+    strategy.onPtcVote(blockRoot);
+    assertThat(strategy.getPtcPresentVoteCount(blockRoot)).isEqualTo(1);
+
+    strategy.onPtcVote(blockRoot);
+    strategy.onPtcVote(blockRoot);
+    assertThat(strategy.getPtcPresentVoteCount(blockRoot)).isEqualTo(3);
+  }
+
+  @Test
+  void ptcVote_differentBlocksTrackedSeparately() {
+    final StorageSystem storageSystem = initStorageSystem();
+    final ForkChoiceStrategy strategy = getProtoArray(storageSystem);
+    final Bytes32 root1 = dataStructureUtil.randomBytes32();
+    final Bytes32 root2 = dataStructureUtil.randomBytes32();
+
+    strategy.onPtcVote(root1);
+    strategy.onPtcVote(root1);
+    strategy.onPtcVote(root2);
+
+    assertThat(strategy.getPtcPresentVoteCount(root1)).isEqualTo(2);
+    assertThat(strategy.getPtcPresentVoteCount(root2)).isEqualTo(1);
   }
 
   private StorageSystem initStorageSystem() {

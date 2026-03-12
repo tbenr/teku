@@ -48,9 +48,9 @@ import tech.pegasys.teku.spec.datastructures.attestation.ValidatableAttestation;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationMessage;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.InvalidCheckpointException;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
@@ -313,6 +313,20 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
         .finishStackTrace();
   }
 
+  public void onPayloadAttestationMessage(
+      final PayloadAttestationMessage message,
+      final InternalValidationResult result,
+      final boolean fromNetwork) {
+    if (!result.isAccept()) {
+      return;
+    }
+    if (message.getData().isPayloadPresent()) {
+      recentChainData
+          .getUpdatableForkChoiceStrategy()
+          .ifPresent(strategy -> strategy.onPtcVote(message.getData().getBeaconBlockRoot()));
+    }
+  }
+
   public void subscribeToOptimisticHeadChangesAndUpdate(final OptimisticHeadSubscriber subscriber) {
     optimisticSyncSubscribers.subscribe(subscriber);
     getOptimisticSyncing().ifPresent(subscriber::onOptimisticHeadChanged);
@@ -416,8 +430,9 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     // There is no clean way to solve it unless we move to a fully transactional protoarray update.
     // Currently, the assumption is that any exception thrown by design is happening before any
     // update to protoarray, so it is correct to skip the transaction commit.
-    final Bytes32 headBlockRoot =
+    final ForkChoiceNode headNode =
         transaction.applyForkChoiceScoreChanges(
+            recentChainData.getCurrentSlot().orElseThrow(),
             recentChainData.getCurrentEpoch().orElseThrow(),
             finalizedCheckpoint,
             justifiedCheckpoint,
@@ -427,15 +442,15 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
 
     try {
       recentChainData.updateHead(
-          headBlockRoot,
+          headNode,
           nodeSlot.orElse(
               forkChoiceStrategy
-                  .blockSlot(headBlockRoot)
+                  .blockSlot(headNode.blockRoot())
                   .orElseThrow(
                       () ->
                           new IllegalStateException(
                               "Unable to retrieve the slot of fork choice head: "
-                                  + headBlockRoot))));
+                                  + headNode.blockRoot()))));
     } finally {
       // here we just make sure to commit, because protoarray has been updated. We just had an
       // exception while updating recentChainData which will become consistent again on the next
@@ -702,16 +717,6 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     blockImportPerformance.ifPresent(BlockImportPerformance::transactionCommitted);
     forkChoiceStrategy.onExecutionPayloadResult(block.getRoot(), payloadResult, true);
 
-    // For Gloas blocks, route the child block to the correct parent node (FULL or EMPTY path)
-    // based on whether this block was built on the parent's execution payload.
-    if (forkChoiceUtil instanceof ForkChoiceUtilGloas gloasUtil) {
-      final ForkChoicePayloadStatus parentPayloadStatus =
-          gloasUtil.getParentPayloadStatus(recentChainData.getStore(), block.getMessage()).join();
-      if (parentPayloadStatus == ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL) {
-        forkChoiceStrategy.rerouteBlockToFullParent(block.getRoot(), block.getParentRoot());
-      }
-    }
-
     final UInt64 currentEpoch = spec.computeEpochAtSlot(spec.getCurrentSlot(transaction));
 
     // We only need to apply attestations from the current or previous epoch. If the block is from
@@ -794,6 +799,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     getForkChoiceStrategy()
         .onExecutionPayload(
             signedEnvelope.getBeaconBlockRoot(),
+            signedEnvelope.getSlot(),
             signedEnvelope.getMessage().getPayload().getBlockNumber(),
             signedEnvelope.getMessage().getPayload().getBlockHash());
 
@@ -934,10 +940,12 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
 
     final ChainHead currentHead = recentChainData.getChainHead().orElseThrow();
 
-    final SlotAndBlockRoot bestHeadBlock = findNewChainHead(forkChoiceStrategy);
-    if (!bestHeadBlock.getBlockRoot().equals(currentHead.getRoot())) {
-      recentChainData.updateHead(bestHeadBlock.getBlockRoot(), bestHeadBlock.getSlot());
-      if (bestHeadBlock.getBlockRoot().equals(block.getRoot())) {
+    final ForkChoiceNode bestHeadBlock = findNewChainHead(forkChoiceStrategy);
+    if (!bestHeadBlock.blockRoot().equals(currentHead.getRoot())) {
+      recentChainData.updateHead(
+          bestHeadBlock,
+          forkChoiceStrategy.blockSlot(bestHeadBlock.blockRoot()).orElse(block.getSlot()));
+      if (bestHeadBlock.blockRoot().equals(block.getRoot())) {
         result.markAsCanonical();
       }
     }
@@ -958,7 +966,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     }
   }
 
-  private SlotAndBlockRoot findNewChainHead(final ForkChoiceStrategy forkChoiceStrategy) {
+  private ForkChoiceNode findNewChainHead(final ForkChoiceStrategy forkChoiceStrategy) {
     // use fork choice to find the new chain head as if this block is on time the proposer weighting
     // may cause us to reorg.
     final Checkpoint justifiedCheckpoint = recentChainData.getJustifiedCheckpoint().orElseThrow();

@@ -210,14 +210,18 @@ public class NoVotesTest {
       final Checkpoint finalizedCheckpoint,
       final Checkpoint justifiedCheckpoint,
       final List<UInt64> justifiedStateEffectiveBalances) {
-    return forkChoice.applyPendingVotes(
-        store,
-        Optional.empty(),
-        spec.getCurrentSlot(store),
-        finalizedCheckpoint,
-        justifiedCheckpoint,
-        justifiedStateEffectiveBalances,
-        ZERO);
+    final UInt64 currentSlot = spec.getCurrentSlot(store);
+    return forkChoice
+        .applyPendingVotes(
+            store,
+            Optional.empty(),
+            currentSlot,
+            currentSlot,
+            finalizedCheckpoint,
+            justifiedCheckpoint,
+            justifiedStateEffectiveBalances,
+            ZERO)
+        .blockRoot();
   }
 
   private UInt64 unsigned(final int i) {
