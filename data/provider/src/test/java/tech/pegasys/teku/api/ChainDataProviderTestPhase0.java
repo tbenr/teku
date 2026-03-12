@@ -57,7 +57,7 @@ import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlockHeader;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
-import tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeValidationStatus;
 import tech.pegasys.teku.spec.datastructures.lightclient.LightClientBootstrap;
@@ -101,7 +101,7 @@ public class ChainDataProviderTestPhase0 extends AbstractChainDataProviderTest {
                 ProtoNodeValidationStatus.VALID,
                 spec.calculateBlockCheckpoints(bestBlock.getState()),
                 ZERO,
-                PayloadStatus.PAYLOAD_STATUS_PENDING));
+                ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING));
   }
 
   @Test

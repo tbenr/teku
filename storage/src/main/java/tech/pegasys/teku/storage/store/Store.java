@@ -63,7 +63,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
 import tech.pegasys.teku.spec.datastructures.epbs.SignedExecutionPayloadAndState;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.SlotAndExecutionPayloadSummary;
-import tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteAccessor;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
@@ -688,10 +688,10 @@ class Store extends CacheableStore {
       if (gloas.isPresent()) {
         final GloasContext ctx = gloas.get();
         // Use the parent's stored payload status (resolved during onBlock of the child block)
-        final PayloadStatus parentPayloadStatus =
+        final ForkChoicePayloadStatus parentPayloadStatus =
             forkChoiceStrategy
                 .payloadStatus(parentRoot)
-                .orElse(PayloadStatus.PAYLOAD_STATUS_PENDING);
+                .orElse(ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING);
         result =
             ctx.forkChoiceUtil.isParentStrong(
                 forkChoiceStrategy,

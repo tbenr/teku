@@ -32,7 +32,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.blockbody.BeaconBlockBody;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.gloas.BeaconBlockBodyGloas;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
@@ -70,10 +70,10 @@ class ForkChoiceUtilGloasTest {
         .thenReturn(SafeFuture.completedFuture(Optional.of(parentBlock)));
 
     // Test
-    final SafeFuture<PayloadStatus> result =
+    final SafeFuture<ForkChoicePayloadStatus> result =
         forkChoiceUtil.getParentPayloadStatus(store, currentBlock);
 
-    assertThat(result).isCompletedWithValue(PayloadStatus.PAYLOAD_STATUS_FULL);
+    assertThat(result).isCompletedWithValue(ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL);
   }
 
   @Test
@@ -94,10 +94,10 @@ class ForkChoiceUtilGloasTest {
         .thenReturn(SafeFuture.completedFuture(Optional.of(parentBlock)));
 
     // Test
-    final SafeFuture<PayloadStatus> result =
+    final SafeFuture<ForkChoicePayloadStatus> result =
         forkChoiceUtil.getParentPayloadStatus(store, currentBlock);
 
-    assertThat(result).isCompletedWithValue(PayloadStatus.PAYLOAD_STATUS_EMPTY);
+    assertThat(result).isCompletedWithValue(ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY);
   }
 
   @Test
@@ -117,10 +117,10 @@ class ForkChoiceUtilGloasTest {
         .thenReturn(SafeFuture.completedFuture(Optional.of(parentBlock)));
 
     // Test
-    final SafeFuture<PayloadStatus> result =
+    final SafeFuture<ForkChoicePayloadStatus> result =
         forkChoiceUtil.getParentPayloadStatus(store, currentBlock);
 
-    assertThat(result).isCompletedWithValue(PayloadStatus.PAYLOAD_STATUS_EMPTY);
+    assertThat(result).isCompletedWithValue(ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY);
   }
 
   @Test

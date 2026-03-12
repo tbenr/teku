@@ -63,6 +63,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.execution.PowBlock;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteUpdater;
@@ -627,7 +628,7 @@ public class ForkChoiceTestExecutor implements TestExecutor {
 
           case "head_payload_status" -> {
             final int expectedValue = ((Number) checks.get(checkType)).intValue();
-            final tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus headStatus =
+            final ForkChoicePayloadStatus headStatus =
                 recentChainData.getChainHead().map(ChainHead::getPayloadStatus).orElseThrow();
             assertThat(headStatus.getValue())
                 .describedAs("head_payload_status")

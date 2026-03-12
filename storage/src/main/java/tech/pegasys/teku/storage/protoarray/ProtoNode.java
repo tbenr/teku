@@ -24,7 +24,7 @@ import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.logging.LogFormatter;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
-import tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeValidationStatus;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
@@ -72,7 +72,7 @@ public class ProtoNode {
    * PENDING and are resolved to FULL or EMPTY when a child block is processed. Pre-Gloas blocks
    * default to PENDING.
    */
-  private PayloadStatus payloadStatus;
+  private ForkChoicePayloadStatus payloadStatus;
 
   ProtoNode(
       final UInt64 blockSlot,
@@ -99,7 +99,7 @@ public class ProtoNode {
     this.bestChildIndex = bestChildIndex;
     this.bestDescendantIndex = bestDescendantIndex;
     this.validationStatus = validationStatus;
-    this.payloadStatus = PayloadStatus.PAYLOAD_STATUS_EMPTY;
+    this.payloadStatus = ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY;
   }
 
   public void adjustWeight(final long delta) {
@@ -230,11 +230,11 @@ public class ProtoNode {
     this.validationStatus = validationStatus;
   }
 
-  public PayloadStatus getPayloadStatus() {
+  public ForkChoicePayloadStatus getPayloadStatus() {
     return payloadStatus;
   }
 
-  public void setPayloadStatus(final PayloadStatus payloadStatus) {
+  public void setPayloadStatus(final ForkChoicePayloadStatus payloadStatus) {
     this.payloadStatus = payloadStatus;
   }
 

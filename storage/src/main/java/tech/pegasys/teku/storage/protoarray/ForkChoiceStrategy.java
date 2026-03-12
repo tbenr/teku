@@ -32,7 +32,7 @@ import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockAndCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
-import tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
@@ -41,6 +41,7 @@ import tech.pegasys.teku.spec.datastructures.operations.IndexedAttestation;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.executionlayer.ExecutionPayloadStatus;
 import tech.pegasys.teku.spec.executionlayer.ForkChoiceState;
+import tech.pegasys.teku.spec.executionlayer.PayloadStatus;
 import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil;
 
 public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoiceStrategy {
@@ -390,7 +391,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
   }
 
   @Override
-  public Optional<PayloadStatus> payloadStatus(final Bytes32 blockRoot) {
+  public Optional<ForkChoicePayloadStatus> payloadStatus(final Bytes32 blockRoot) {
     protoArrayLock.readLock().lock();
     try {
       return getProtoNode(blockRoot).map(ProtoNode::getPayloadStatus);
@@ -399,7 +400,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
     }
   }
 
-  public void updatePayloadStatus(final Bytes32 blockRoot, final PayloadStatus status) {
+  public void updatePayloadStatus(final Bytes32 blockRoot, final ForkChoicePayloadStatus status) {
     protoArrayLock.writeLock().lock();
     try {
       getProtoNode(blockRoot).ifPresent(node -> node.setPayloadStatus(status));
@@ -474,7 +475,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
   }
 
   @Override
-  public Optional<PayloadStatus> getAncestorPayloadStatus(
+  public Optional<ForkChoicePayloadStatus> getAncestorPayloadStatus(
       final Bytes32 blockRoot, final UInt64 slot) {
     protoArrayLock.readLock().lock();
     try {
@@ -542,7 +543,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       while (protoArray.contains(currentNode.getBlockRoot())) {
         // Skip FULL nodes — they are internal three-state tree nodes, not actual blocks.
         // Walk through them transparently to their parent.
-        if (currentNode.getPayloadStatus() == PayloadStatus.PAYLOAD_STATUS_FULL) {
+        if (currentNode.getPayloadStatus() == ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL) {
           if (currentNode.getParentIndex().isEmpty()) {
             break;
           }
@@ -574,7 +575,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
           // Filter out nodes that could be pruned but are still in the protoarray
           .filter(node -> indices.containsKey(node.getBlockRoot()))
           // Skip FULL nodes — they are internal three-state tree nodes, not actual blocks
-          .filter(node -> node.getPayloadStatus() != PayloadStatus.PAYLOAD_STATUS_FULL)
+          .filter(node -> node.getPayloadStatus() != ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL)
           .forEach(
               node ->
                   nodeProcessor.process(
@@ -691,7 +692,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
 
   public void onExecutionPayloadResult(
       final Bytes32 blockRoot,
-      final tech.pegasys.teku.spec.executionlayer.PayloadStatus result,
+      final PayloadStatus result,
       final boolean verifiedInvalidTransition) {
     if (result.hasFailedExecution()) {
       LOG.warn(

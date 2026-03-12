@@ -14,9 +14,9 @@
 package tech.pegasys.teku.spec.logic.versions.gloas.util;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import static tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus.PAYLOAD_STATUS_EMPTY;
-import static tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus.PAYLOAD_STATUS_FULL;
-import static tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus.PAYLOAD_STATUS_PENDING;
+import static tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY;
+import static tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL;
+import static tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING;
 
 import it.unimi.dsi.fastutil.ints.IntList;
 import java.util.Optional;
@@ -29,8 +29,8 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.gloas.BeaconBlockBodyGloas;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.MutableStore;
-import tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteAccessor;
@@ -233,7 +233,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
    */
   boolean isSupportingVote(
       final Bytes32 nodeRoot,
-      final PayloadStatus nodePayloadStatus,
+      final ForkChoicePayloadStatus nodePayloadStatus,
       final Bytes32 voteRoot,
       final UInt64 voteSlot,
       final boolean votePayloadPresent,
@@ -270,7 +270,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
       // Walk the vote's parent chain to find the payload status at the ancestor's slot.
       // With FULL nodes in protoarray, a FULL-descendant path walks through the FULL node,
       // while an EMPTY-descendant path walks through the block node (PENDING).
-      final PayloadStatus ancestorStatus =
+      final ForkChoicePayloadStatus ancestorStatus =
           forkChoiceStrategy
               .getAncestorPayloadStatus(voteRoot, blockSlot)
               .orElse(PAYLOAD_STATUS_PENDING);
@@ -292,7 +292,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
    */
   UInt64 getAttestationScore(
       final Bytes32 nodeRoot,
-      final PayloadStatus nodePayloadStatus,
+      final ForkChoicePayloadStatus nodePayloadStatus,
       final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
       final VoteAccessor voteAccessor,
       final BeaconState justifiedState) {
@@ -427,7 +427,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
       final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
       final Bytes32 parentRoot,
       final UInt64 parentThreshold,
-      final PayloadStatus parentPayloadStatus,
+      final ForkChoicePayloadStatus parentPayloadStatus,
       final VoteAccessor voteAccessor,
       final BeaconState justifiedState) {
     final UInt64 attestationScore =
@@ -461,7 +461,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
    * @return PAYLOAD_STATUS_FULL if parent has full payload, PAYLOAD_STATUS_EMPTY otherwise
    */
   // get_parent_payload_status
-  public SafeFuture<PayloadStatus> getParentPayloadStatus(
+  public SafeFuture<ForkChoicePayloadStatus> getParentPayloadStatus(
       final ReadOnlyStore store, final BeaconBlock block) {
     return store
         .retrieveBlock(block.getParentRoot())

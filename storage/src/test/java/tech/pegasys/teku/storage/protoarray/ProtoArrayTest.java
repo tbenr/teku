@@ -32,7 +32,7 @@ import tech.pegasys.teku.infrastructure.logging.StatusLogger;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
-import tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.StubVoteUpdater;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteUpdater;
@@ -570,7 +570,7 @@ class ProtoArrayTest {
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
     final ProtoNode fullNode = protoArray.getNodeByIndex(fullNodeIndex);
     assertThat(fullNode.getBlockRoot()).isEqualTo(block1a);
-    assertThat(fullNode.getPayloadStatus()).isEqualTo(PayloadStatus.PAYLOAD_STATUS_FULL);
+    assertThat(fullNode.getPayloadStatus()).isEqualTo(ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL);
     assertThat(fullNode.getExecutionBlockNumber()).isEqualTo(EXECUTION_BLOCK_NUMBER);
     assertThat(fullNode.getExecutionBlockHash()).isEqualTo(EXECUTION_BLOCK_HASH);
     // FULL node parent should be the block node

@@ -31,7 +31,7 @@ public class ProtoNodeData implements MinimalBeaconBlockSummary {
   private final ProtoNodeValidationStatus validationStatus;
   private final BlockCheckpoints checkpoints;
   private final UInt64 weight;
-  private final PayloadStatus payloadStatus;
+  private final ForkChoicePayloadStatus payloadStatus;
 
   public ProtoNodeData(
       final UInt64 slot,
@@ -43,7 +43,7 @@ public class ProtoNodeData implements MinimalBeaconBlockSummary {
       final ProtoNodeValidationStatus validationStatus,
       final BlockCheckpoints checkpoints,
       final UInt64 weight,
-      final PayloadStatus payloadStatus) {
+      final ForkChoicePayloadStatus payloadStatus) {
     this.slot = slot;
     this.root = root;
     this.parentRoot = parentRoot;
@@ -100,7 +100,7 @@ public class ProtoNodeData implements MinimalBeaconBlockSummary {
     return weight;
   }
 
-  public PayloadStatus getPayloadStatus() {
+  public ForkChoicePayloadStatus getPayloadStatus() {
     return payloadStatus;
   }
 

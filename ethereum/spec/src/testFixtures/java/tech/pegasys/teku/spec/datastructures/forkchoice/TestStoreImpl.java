@@ -506,7 +506,7 @@ public class TestStoreImpl implements MutableStore, VoteUpdater {
                         ProtoNodeValidationStatus.VALID,
                         blockCheckpoints.get(root),
                         UInt64.ZERO,
-                        PayloadStatus.PAYLOAD_STATUS_PENDING));
+                        ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING));
                 headsByRoot.remove(block.getParentRoot());
               });
       return new ArrayList<>(headsByRoot.values());
@@ -548,7 +548,7 @@ public class TestStoreImpl implements MutableStore, VoteUpdater {
     }
 
     @Override
-    public Optional<PayloadStatus> payloadStatus(final Bytes32 blockRoot) {
+    public Optional<ForkChoicePayloadStatus> payloadStatus(final Bytes32 blockRoot) {
       throw new UnsupportedOperationException("Not implemented");
     }
   }

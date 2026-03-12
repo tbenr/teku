@@ -50,6 +50,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.InvalidCheckpointException;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
@@ -704,10 +705,9 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     // For Gloas blocks, route the child block to the correct parent node (FULL or EMPTY path)
     // based on whether this block was built on the parent's execution payload.
     if (forkChoiceUtil instanceof ForkChoiceUtilGloas gloasUtil) {
-      final tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus parentPayloadStatus =
+      final ForkChoicePayloadStatus parentPayloadStatus =
           gloasUtil.getParentPayloadStatus(recentChainData.getStore(), block.getMessage()).join();
-      if (parentPayloadStatus
-          == tech.pegasys.teku.spec.datastructures.forkchoice.PayloadStatus.PAYLOAD_STATUS_FULL) {
+      if (parentPayloadStatus == ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL) {
         forkChoiceStrategy.rerouteBlockToFullParent(block.getRoot(), block.getParentRoot());
       }
     }
