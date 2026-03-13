@@ -160,7 +160,10 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
 
   @Override
   public SafeFuture<StateAndBlockSummary> retrieveNewChainHeadStateAndBlockSummary(
-      final Bytes32 root, final UInt64 chainHeadSlot, final ReadOnlyStore store) {
+      final Bytes32 root,
+      final ForkChoicePayloadStatus payloadStatus,
+      final UInt64 chainHeadSlot,
+      final ReadOnlyStore store) {
     return store
         .retrieveStateAndBlockSummary(root)
         .thenApply(
@@ -171,18 +174,24 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
                             String.format(
                                 "Unable to update head block as of slot %s.  Block is unavailable: %s.",
                                 chainHeadSlot, root))))
-        // TODO-GLOAS: https://github.com/Consensys/teku/issues/9878 this is just a workaround
-        // for devnet-0, we may require a more proper implementation, when the complete fork
-        // choice is implemented
         .thenApply(
-            stateAndBlockSummary ->
-                store
+            stateAndBlockSummary -> {
+              if (payloadStatus.equals(PAYLOAD_STATUS_FULL)) {
+                return store
                     .getExecutionPayloadStateIfAvailable(root)
                     .map(
                         executionPayloadState ->
                             StateAndBlockSummary.create(
                                 stateAndBlockSummary.getBlockSummary(), executionPayloadState))
-                    .orElse(stateAndBlockSummary));
+                    .orElseThrow(
+                        () ->
+                            new IllegalStateException(
+                                String.format(
+                                    "Unable get getExecutionPayloadState at %s for block root %s.",
+                                    chainHeadSlot, root)));
+              }
+              return stateAndBlockSummary;
+            });
   }
 
   public boolean isBlockStatusFull(final ReadOnlyStore store, final BeaconBlock block) {

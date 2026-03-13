@@ -34,6 +34,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.BeaconBlockBody;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.MutableStore;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
@@ -665,7 +666,10 @@ public class ForkChoiceUtil {
   }
 
   public SafeFuture<StateAndBlockSummary> retrieveNewChainHeadStateAndBlockSummary(
-      final Bytes32 root, final UInt64 chainHeadSlot, final ReadOnlyStore store) {
+      final Bytes32 root,
+      final ForkChoicePayloadStatus payloadStatus,
+      final UInt64 chainHeadSlot,
+      final ReadOnlyStore store) {
     return store
         .retrieveStateAndBlockSummary(root)
         .thenApply(

@@ -452,7 +452,8 @@ public abstract class RecentChainData implements StoreUpdateHandler, ValidatorIs
       final ProtoNodeData blockData) {
     return ChainHead.create(
         blockData,
-        forkChoiceUtil.retrieveNewChainHeadStateAndBlockSummary(root, currentSlot, store));
+        forkChoiceUtil.retrieveNewChainHeadStateAndBlockSummary(
+            root, blockData.getPayloadStatus(), currentSlot, store));
   }
 
   private Bytes32 getFinalizedBlockParentRoot() {
