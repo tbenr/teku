@@ -374,7 +374,8 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
   public Optional<Bytes32> executionBlockHash(final Bytes32 blockRoot) {
     protoArrayLock.readLock().lock();
     try {
-      return getProtoNode(blockRoot).map(ProtoNode::getExecutionBlockHash);
+      return getBlockData(blockRoot, ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL)
+          .map(ProtoNodeData::getExecutionBlockHash);
     } finally {
       protoArrayLock.readLock().unlock();
     }

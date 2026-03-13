@@ -797,15 +797,13 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     // Create the FULL node in the fork choice tree. Per spec on_execution_payload, this makes
     // the FULL child visible in get_node_children, allowing get_head to see the FULL path
     // immediately after execution payload arrival.
-    forkChoiceStrategy
-        .onExecutionPayload(
-            signedEnvelope.getBeaconBlockRoot(),
-            signedEnvelope.getSlot(),
-            signedEnvelope.getMessage().getPayload().getBlockNumber(),
-            signedEnvelope.getMessage().getPayload().getBlockHash());
+    forkChoiceStrategy.onExecutionPayload(
+        signedEnvelope.getBeaconBlockRoot(),
+        signedEnvelope.getSlot(),
+        signedEnvelope.getMessage().getPayload().getBlockNumber(),
+        signedEnvelope.getMessage().getPayload().getBlockHash());
 
-    updateForkChoiceForImportedExecutionPayload(signedEnvelope, forkChoiceStrategy);
-    notifyForkChoiceUpdatedAndOptimisticSyncingChanged(Optional.empty());
+    processHead().finishError(LOG);
 
     return ExecutionPayloadImportResult.successful(signedEnvelope);
   }
@@ -970,19 +968,19 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     }
   }
 
-  // TODO-GLOAS: https://github.com/Consensys/teku/issues/9878 this is just a workaround for
-  // devnet-0, we need a proper fork choice implementation
-  private void updateForkChoiceForImportedExecutionPayload(
-      final SignedExecutionPayloadEnvelope signedEnvelope,
-      final ForkChoiceStrategy forkChoiceStrategy) {
-    recentChainData.updateHead(signedEnvelope.getBeaconBlockRoot(), signedEnvelope.getSlot());
-    final SlotAndBlockRoot bestHeadBlock = findNewChainHead(forkChoiceStrategy);
-    if (!bestHeadBlock.getBlockRoot().equals(signedEnvelope.getBeaconBlockRoot())) {
-      processHead().finish(error -> LOG.error("Fork choice updating head failed", error));
-      return;
-    }
-    recentChainData.updateHead(bestHeadBlock.getBlockRoot(), bestHeadBlock.getSlot());
-  }
+  //  // TODO-GLOAS: https://github.com/Consensys/teku/issues/9878 this is just a workaround for
+  //  // devnet-0, we need a proper fork choice implementation
+  //  private void updateForkChoiceForImportedExecutionPayload(
+  //      final SignedExecutionPayloadEnvelope signedEnvelope,
+  //      final ForkChoiceStrategy forkChoiceStrategy) {
+  //    recentChainData.updateHead(signedEnvelope.getBeaconBlockRoot(), signedEnvelope.getSlot());
+  //    final ForkChoiceNode bestForkChoiceNode = findNewChainHead(forkChoiceStrategy);
+  //    if (!bestForkChoiceNode.blockRoot().equals(signedEnvelope.getBeaconBlockRoot())) {
+  //      processHead().finish(error -> LOG.error("Fork choice updating head failed", error));
+  //      return;
+  //    }
+  //    recentChainData.updateHead(bestForkChoiceNode.blockRoot(), bestForkChoiceNode.);
+  //  }
 
   private ForkChoiceNode findNewChainHead(final ForkChoiceStrategy forkChoiceStrategy) {
     // use fork choice to find the new chain head as if this block is on time the proposer weighting
