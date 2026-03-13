@@ -357,7 +357,9 @@ public abstract class RecentChainData implements StoreUpdateHandler, ValidatorIs
   private void updateHeadInternal(
       final Bytes32 root, final ForkChoicePayloadStatus payloadStatus, final UInt64 currentSlot) {
     synchronized (this) {
-      if (chainHead.map(head -> head.getRoot().equals(root)).orElse(false)) {
+      if (chainHead
+          .map(head -> head.getRoot().equals(root) && head.getPayloadStatus().equals(payloadStatus))
+          .orElse(false)) {
         LOG.trace("Skipping head update because new head is same as previous head");
         return;
       }
