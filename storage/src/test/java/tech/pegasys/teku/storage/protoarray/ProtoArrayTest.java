@@ -669,24 +669,38 @@ class ProtoArrayTest {
   }
 
   @Test
-  void resolveGloasParentIndex_shouldPreferFull() {
+  void resolveGloasParentIndex_shouldResolveFull_whenBlockHashMatches() {
     addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
     protoArray.createEmptyNode(block1a);
     protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
 
-    // When FULL exists, resolve to FULL
+    // When child's parent_block_hash matches FULL node's execution hash → FULL
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
-    assertThat(protoArray.resolveGloasParentIndex(block1a)).isEqualTo(Optional.of(fullNodeIndex));
+    assertThat(protoArray.resolveGloasParentIndex(block1a, EXECUTION_BLOCK_HASH))
+        .isEqualTo(Optional.of(fullNodeIndex));
   }
 
   @Test
-  void resolveGloasParentIndex_shouldFallbackToEmpty() {
+  void resolveGloasParentIndex_shouldResolveEmpty_whenBlockHashDoesNotMatch() {
+    addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.createEmptyNode(block1a);
+    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
+
+    // When child's parent_block_hash does NOT match FULL node's execution hash → EMPTY
+    final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
+    assertThat(protoArray.resolveGloasParentIndex(block1a, Bytes32.ZERO))
+        .isEqualTo(Optional.of(emptyNodeIndex));
+  }
+
+  @Test
+  void resolveGloasParentIndex_shouldFallbackToEmpty_whenNoFull() {
     addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
     protoArray.createEmptyNode(block1a);
 
-    // No FULL exists, should resolve to EMPTY
+    // No FULL exists, should resolve to EMPTY regardless of hash
     final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
-    assertThat(protoArray.resolveGloasParentIndex(block1a)).isEqualTo(Optional.of(emptyNodeIndex));
+    assertThat(protoArray.resolveGloasParentIndex(block1a, EXECUTION_BLOCK_HASH))
+        .isEqualTo(Optional.of(emptyNodeIndex));
   }
 
   @Test
@@ -695,7 +709,8 @@ class ProtoArrayTest {
 
     // No FULL or EMPTY exists (pre-Gloas parent), should resolve to block node
     final int blockNodeIndex = protoArray.getIndexByRoot(block1a).orElseThrow();
-    assertThat(protoArray.resolveGloasParentIndex(block1a)).isEqualTo(Optional.of(blockNodeIndex));
+    assertThat(protoArray.resolveGloasParentIndex(block1a, Bytes32.ZERO))
+        .isEqualTo(Optional.of(blockNodeIndex));
   }
 
   @Test
@@ -706,8 +721,9 @@ class ProtoArrayTest {
     protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
     protoArray.markNodeValid(block1a);
 
-    // block2a resolves parent via resolveGloasParentIndex → should attach to FULL
-    final Optional<Integer> resolvedParent = protoArray.resolveGloasParentIndex(block1a);
+    // block2a resolves parent via resolveGloasParentIndex with matching hash → should attach to FULL
+    final Optional<Integer> resolvedParent =
+        protoArray.resolveGloasParentIndex(block1a, EXECUTION_BLOCK_HASH);
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
     assertThat(resolvedParent).isEqualTo(Optional.of(fullNodeIndex));
 
@@ -726,8 +742,9 @@ class ProtoArrayTest {
     protoArray.createEmptyNode(block1a);
     protoArray.markNodeValid(block1a);
 
-    // block2a resolves parent via resolveGloasParentIndex → should attach to EMPTY
-    final Optional<Integer> resolvedParent = protoArray.resolveGloasParentIndex(block1a);
+    // block2a resolves parent via resolveGloasParentIndex with non-matching hash → should attach to EMPTY
+    final Optional<Integer> resolvedParent =
+        protoArray.resolveGloasParentIndex(block1a, Bytes32.ZERO);
     final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
     assertThat(resolvedParent).isEqualTo(Optional.of(emptyNodeIndex));
 
@@ -864,18 +881,18 @@ class ProtoArrayTest {
   }
 
   @Test
-  void tiebreaker_fullWinsOverEmpty_whenBoostOnChildButFullNodeExists() {
+  void tiebreaker_fullWinsOverEmpty_whenBoostOnChildBuiltOnFull() {
     // Block at slot 5, currentSlot = 6 → previous slot → should_extend_payload evaluated.
-    // Proposer boost on block2a (child of block1a). Since block1a HAS a FULL node,
-    // is_parent_node_full = true → should_extend_payload = true → FULL keeps score 2.
+    // Proposer boost on block2a (child of block1a). block2a was built on FULL(block1a)
+    // (matching execution hash) → is_parent_node_full = true → should_extend = true → FULL wins.
     addValidBlock(5, block1a, GENESIS_CHECKPOINT.getRoot());
     protoArray.createEmptyNode(block1a);
     protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
     protoArray.markNodeValid(block1a);
 
-    // block2a builds on block1a's EMPTY node — this is the boosted block
-    final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
-    addValidBlockWithParentIndex(6, block2a, block1a, Optional.of(emptyNodeIndex));
+    // block2a builds on FULL(block1a) — execution hash matches parent's FULL
+    final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
+    addValidBlockWithParentIndex(6, block2a, block1a, Optional.of(fullNodeIndex), EXECUTION_BLOCK_HASH);
 
     protoArray.applyScoreChanges(
         computeDeltas(),
@@ -887,7 +904,6 @@ class ProtoArrayTest {
 
     // FULL wins: is_parent_node_full(block1a) = true → should_extend_payload = true
     final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
-    final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
     assertThat(block1aNode.getBestChildIndex()).isEqualTo(Optional.of(fullNodeIndex));
   }
 
@@ -921,17 +937,17 @@ class ProtoArrayTest {
 
   @Test
   void tiebreaker_fullWinsOverEmpty_whenPayloadNotTimely_butBoostOnChildWithFullParent() {
-    // Block at slot 5, currentSlot = 6, proposer boost on block2a (child building on EMPTY).
+    // Block at slot 5, currentSlot = 6, proposer boost on block2a (child building on FULL).
     // PTC votes ≤ threshold → is_payload_timely = false.
-    // But hasFullNode(block1a) = true → is_parent_node_full = true
+    // But is_parent_node_full = true (block2a's execution hash matches parent's FULL hash)
     // → should_extend_payload = true → FULL keeps score 2.
     addValidBlock(5, block1a, GENESIS_CHECKPOINT.getRoot());
     protoArray.createEmptyNode(block1a);
     protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
     protoArray.markNodeValid(block1a);
 
-    final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
-    addValidBlockWithParentIndex(6, block2a, block1a, Optional.of(emptyNodeIndex));
+    final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
+    addValidBlockWithParentIndex(6, block2a, block1a, Optional.of(fullNodeIndex), EXECUTION_BLOCK_HASH);
 
     // threshold = 5, ptcVoteCount = 3 → NOT timely (3 ≤ 5)
     protoArray.applyScoreChanges(
@@ -945,7 +961,6 @@ class ProtoArrayTest {
 
     // FULL still wins because is_parent_node_full(block1a) = true
     final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
-    final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
     assertThat(block1aNode.getBestChildIndex()).isEqualTo(Optional.of(fullNodeIndex));
   }
 
@@ -1062,6 +1077,16 @@ class ProtoArrayTest {
       final Bytes32 blockRoot,
       final Bytes32 parentRoot,
       final Optional<Integer> resolvedParentIndex) {
+    addValidBlockWithParentIndex(
+        slot, blockRoot, parentRoot, resolvedParentIndex, getExecutionBlockHash(blockRoot));
+  }
+
+  private void addValidBlockWithParentIndex(
+      final long slot,
+      final Bytes32 blockRoot,
+      final Bytes32 parentRoot,
+      final Optional<Integer> resolvedParentIndex,
+      final Bytes32 executionBlockHash) {
     protoArray.onBlock(
         UInt64.valueOf(slot),
         blockRoot,
@@ -1071,7 +1096,7 @@ class ProtoArrayTest {
         new BlockCheckpoints(
             GENESIS_CHECKPOINT, GENESIS_CHECKPOINT, GENESIS_CHECKPOINT, GENESIS_CHECKPOINT),
         ZERO,
-        getExecutionBlockHash(blockRoot),
+        executionBlockHash,
         true);
     protoArray.markNodeValid(blockRoot);
   }

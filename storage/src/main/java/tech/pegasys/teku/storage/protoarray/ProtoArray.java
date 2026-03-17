@@ -273,20 +273,50 @@ public class ProtoArray {
   }
 
   /**
-   * Resolves the correct parent index for a new child block in Gloas. Prefers FULL parent (if
-   * execution payload has arrived), falls back to EMPTY parent (always exists for Gloas blocks),
-   * then to the PENDING block node as a transition fallback for pre-Gloas parents.
+   * Resolves the correct parent index for a new child block in Gloas based on the spec's
+   * get_parent_payload_status. Uses FULL parent if the child's parent_block_hash (from the bid)
+   * matches the FULL node's execution block hash. Otherwise uses EMPTY. Falls back to PENDING for
+   * pre-Gloas parents.
+   *
+   * @param parentRoot the parent block's beacon root
+   * @param childParentBlockHash the child block's bid's parent_block_hash (EL block hash of
+   *     parent). For Gloas blocks, this comes from
+   *     block.body.signed_execution_payload_bid.message.parent_block_hash
    */
-  public Optional<Integer> resolveGloasParentIndex(final Bytes32 parentRoot) {
+  public Optional<Integer> resolveGloasParentIndex(
+      final Bytes32 parentRoot, final Bytes32 childParentBlockHash) {
     final Optional<Integer> fullIndex = indices.getFullNodeIndex(parentRoot);
     if (fullIndex.isPresent()) {
-      return fullIndex;
+      // Check if the child was built on the FULL state by comparing execution block hashes
+      // Spec: get_parent_payload_status returns FULL iff parent_block_hash == message_block_hash
+      final ProtoNode fullNode = getNodeByIndex(fullIndex.get());
+      if (fullNode.getExecutionBlockHash().equals(childParentBlockHash)) {
+        return fullIndex;
+      }
     }
     final Optional<Integer> emptyIndex = indices.getEmptyNodeIndex(parentRoot);
     if (emptyIndex.isPresent()) {
       return emptyIndex;
     }
     return indices.get(parentRoot);
+  }
+
+  /**
+   * Spec: is_parent_node_full — checks if the proposer block was built on the FULL state of its
+   * parent by comparing the proposer's bid parent_block_hash with the parent's FULL execution
+   * block hash.
+   */
+  public boolean isParentNodeFull(final Bytes32 parentRoot, final ProtoNode proposerNode) {
+    return indices
+        .getFullNodeIndex(parentRoot)
+        .map(
+            idx -> {
+              final ProtoNode fullNode = getNodeByIndex(idx);
+              return fullNode
+                  .getExecutionBlockHash()
+                  .equals(proposerNode.getExecutionBlockHash());
+            })
+        .orElse(false);
   }
 
   public void setInitialCanonicalBlockRoot(final Bytes32 initialCanonicalBlockRoot) {
@@ -390,6 +420,7 @@ public class ProtoArray {
 
     int bestDescendantIndex = justifiedNode.getBestDescendantIndex().orElse(justifiedIndex);
     ProtoNode bestNode = getNodeByIndex(bestDescendantIndex);
+
 
     // Normally the best descendant index would point straight to chain head, but onBlock only
     // updates the parent, not all the ancestors. When applyScoreChanges runs it propagates the

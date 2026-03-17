@@ -103,7 +103,9 @@ class GloasPayloadStatusTiebreaker implements PayloadStatusTiebreaker {
       return true;
     }
     // Spec: is_parent_node_full(store, store.blocks[proposer_root])
-    return protoArray.hasFullNode(blockRoot);
+    // Checks get_parent_payload_status(proposer_block) == FULL by comparing
+    // the proposer block's bid parent_block_hash with the parent's FULL execution block hash
+    return protoArray.isParentNodeFull(blockRoot, proposerNode.get());
   }
 
   /**

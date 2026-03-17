@@ -37,8 +37,10 @@ class ForkChoiceTreeBehaviorGloas implements ForkChoiceTreeBehavior {
       final UInt64 executionBlockNumber,
       final Bytes32 executionBlockHash,
       final boolean optimisticallyProcessed) {
-    // Resolve correct parent: FULL > EMPTY > PENDING (transition fallback)
-    final Optional<Integer> resolvedParentIndex = protoArray.resolveGloasParentIndex(parentRoot);
+    // Resolve correct parent using get_parent_payload_status:
+    // FULL if child's parent_block_hash matches parent's FULL execution hash, else EMPTY
+    final Optional<Integer> resolvedParentIndex =
+        protoArray.resolveGloasParentIndex(parentRoot, executionBlockHash);
 
     protoArray.onBlock(
         blockSlot,
