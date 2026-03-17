@@ -899,7 +899,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
 
     // Find all distinct block roots at the parent's slot (excluding the parent itself)
     final List<Bytes32> rootsAtSlot = forkChoiceStrategy.getBlockRootsAtSlot(parentSlot);
-    return rootsAtSlot.stream()
+    var r = rootsAtSlot.stream()
         .distinct()
         .filter(root -> !root.equals(parentRoot))
         .anyMatch(
@@ -917,6 +917,8 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
                   && maybeBlock.get().getMessage().getProposerIndex().intValue()
                       == parentProposerIndex;
             });
+
+    return r;
   }
 
   private Optional<List<BlobSidecar>> extractBlobSidecarsFromValidationResults(
