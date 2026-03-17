@@ -949,6 +949,90 @@ class ProtoArrayTest {
     assertThat(block1aNode.getBestChildIndex()).isEqualTo(Optional.of(fullNodeIndex));
   }
 
+  @Test
+  void emptyPathWinsOverFullPath_whenEmptyHasMoreWeight_notPreviousSlot() {
+    // Block at slot 5, currentSlot = 100 → not previous slot → effectiveWeight = node.getWeight()
+    // EMPTY path has more attestation weight than FULL path → EMPTY wins by weight,
+    // overriding tiebreaker (which would favor FULL)
+    addValidBlock(5, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.createEmptyNode(block1a);
+    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
+    protoArray.markNodeValid(block1a);
+
+    final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
+    final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
+
+    // block2a attaches to EMPTY path, block2b attaches to FULL path
+    addValidBlockWithParentIndex(6, block2a, block1a, Optional.of(emptyNodeIndex));
+    addValidBlockWithParentIndex(6, block2b, block1a, Optional.of(fullNodeIndex));
+
+    // Vote for block2a (EMPTY path child) — gives EMPTY path more weight
+    // Need two votes so the balance list covers validator 0
+    voteUpdater.putVote(
+        UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block2a, UInt64.ONE, false, false));
+    voteUpdater.putVote(
+        UInt64.ONE, new VoteTracker(Bytes32.ZERO, block2a, UInt64.ONE, false, false));
+
+    protoArray.applyScoreChanges(
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.of(
+            new GloasPayloadStatusTiebreaker(UInt64.valueOf(100), Optional.empty(), 0, __ -> 0)));
+
+    // EMPTY path wins by weight, even though tiebreaker would favor FULL
+    final ProtoNode head =
+        protoArray.findOptimisticHead(UInt64.valueOf(5), GENESIS_CHECKPOINT, GENESIS_CHECKPOINT);
+    assertThat(head.getBlockRoot()).isEqualTo(block2a);
+  }
+
+  @Test
+  void tiebreakerDecides_whenBothZeroWeight_atPreviousSlot() {
+    // Block at slot 5, currentSlot = 6 → previous slot → effectiveWeight = 0 for both
+    // EMPTY and FULL siblings. Both have descendant votes, but effective weight is 0 for both
+    // at current_slot-1, so tiebreaker decides (FULL wins via should_extend_payload)
+    addValidBlock(5, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.createEmptyNode(block1a);
+    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
+    protoArray.markNodeValid(block1a);
+
+    final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
+    final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
+
+    // block2a on EMPTY path, block2b on FULL path — both get votes
+    addValidBlockWithParentIndex(6, block2a, block1a, Optional.of(emptyNodeIndex));
+    addValidBlockWithParentIndex(6, block2b, block1a, Optional.of(fullNodeIndex));
+
+    // Vote for EMPTY path child (more votes) — validators 0 and 1
+    voteUpdater.putVote(
+        UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block2a, UInt64.ONE, false, false));
+    voteUpdater.putVote(
+        UInt64.ONE, new VoteTracker(Bytes32.ZERO, block2a, UInt64.ONE, false, false));
+    // Vote for FULL path child (less votes) — validator 2
+    voteUpdater.putVote(
+        UInt64.valueOf(2), new VoteTracker(Bytes32.ZERO, block2b, UInt64.ONE, false, false));
+    // Dummy vote to ensure balance list covers all validators above
+    voteUpdater.putVote(
+        UInt64.valueOf(3), new VoteTracker(Bytes32.ZERO, block2b, UInt64.ONE, false, false));
+
+    // currentSlot = 6 = block slot + 1 → effective weight is 0 for both EMPTY and FULL
+    // No proposer boost → should_extend_payload = true → FULL wins tiebreaker
+    protoArray.applyScoreChanges(
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.of(
+            new GloasPayloadStatusTiebreaker(UInt64.valueOf(6), Optional.empty(), 0, __ -> 0)));
+
+    // Even though EMPTY path has more votes, at previous slot both have effectiveWeight 0,
+    // so tiebreaker decides → FULL wins
+    final ProtoNode head =
+        protoArray.findOptimisticHead(UInt64.valueOf(5), GENESIS_CHECKPOINT, GENESIS_CHECKPOINT);
+    assertThat(head.getBlockRoot()).isEqualTo(block2b);
+  }
+
   private void assertHead(final Bytes32 expectedBlockHash) {
     final ProtoNode node = protoArray.getProtoNode(expectedBlockHash).orElseThrow();
     assertThat(

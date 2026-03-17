@@ -15,6 +15,7 @@ package tech.pegasys.teku.statetransition.forkchoice;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static tech.pegasys.teku.infrastructure.logging.P2PLogger.P2P_LOG;
+import static tech.pegasys.teku.infrastructure.time.TimeUtilities.secondsToMillis;
 import static tech.pegasys.teku.statetransition.forkchoice.StateRootCollector.addParentStateRoots;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -419,7 +420,10 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
         if (!gloasUtil.shouldApplyProposerBoost(
             effectiveProposerBoostRoot,
             forkChoiceStrategy,
-            recentChainData.getStore().getReorgThreshold())) {
+            recentChainData.getStore().getReorgThreshold(),
+            transaction,
+            justifiedState,
+            parentRoot -> isProposerEquivocation(parentRoot, forkChoiceStrategy))) {
           effectiveProposerBoostRoot = Optional.empty();
         }
       }
@@ -706,6 +710,9 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
         blobSidecars,
         earliestBlobSidecarsSlot);
 
+    // record_block_timeliness: compute and store block timeliness using store time
+    recordBlockTimeliness(block, forkChoiceUtil);
+
     final boolean shouldUpdateProposerBoostRoot = shouldUpdateProposerBoostRoot(block, transaction);
     if (shouldUpdateProposerBoostRoot) {
       transaction.setProposerBoostRoot(block.getRoot());
@@ -845,6 +852,71 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
               }
             })
         .orElse(true);
+  }
+
+  /**
+   * Records block timeliness on the store using store time. Implements spec's
+   * record_block_timeliness: computes timeliness from store.time and stores it for later use by
+   * should_apply_proposer_boost's equivocation check.
+   */
+  private void recordBlockTimeliness(
+      final SignedBeaconBlock block, final ForkChoiceUtil forkChoiceUtil) {
+    final UpdatableStore store = recentChainData.getStore();
+    final UInt64 storeTimeSeconds = store.getTimeSeconds();
+    final UInt64 genesisTime = store.getGenesisTime();
+    final UInt64 secondsSinceGenesis = storeTimeSeconds.minusMinZero(genesisTime);
+    final UInt64 slotDurationMs =
+        UInt64.valueOf((long) spec.getGenesisSpecConfig().getSecondsPerSlot() * 1000);
+    final UInt64 timeIntoSlotMs =
+        secondsToMillis(secondsSinceGenesis).mod(slotDurationMs);
+    final UInt64 currentSlot = spec.getCurrentSlot(storeTimeSeconds, genesisTime);
+    final boolean[] timeliness =
+        forkChoiceUtil.computeBlockTimeliness(
+            block.getSlot(), currentSlot, timeIntoSlotMs.intValue());
+    store.recordBlockTimeliness(block.getRoot(), timeliness);
+  }
+
+  /**
+   * Checks if there is a proposer equivocation at the given parent's slot. A proposer equivocation
+   * exists if there is another PTC-timely block at the same slot from the same proposer.
+   *
+   * <p>Spec reference: equivocation check in should_apply_proposer_boost
+   */
+  private boolean isProposerEquivocation(
+      final Bytes32 parentRoot,
+      final ReadOnlyForkChoiceStrategy forkChoiceStrategy) {
+    final UpdatableStore store = recentChainData.getStore();
+    final Optional<UInt64> maybeParentSlot = forkChoiceStrategy.blockSlot(parentRoot);
+    if (maybeParentSlot.isEmpty()) {
+      return false;
+    }
+    final UInt64 parentSlot = maybeParentSlot.get();
+    final Optional<SignedBeaconBlock> maybeParentBlock = store.getBlockIfAvailable(parentRoot);
+    if (maybeParentBlock.isEmpty()) {
+      return false;
+    }
+    final int parentProposerIndex = maybeParentBlock.get().getMessage().getProposerIndex().intValue();
+
+    // Find all distinct block roots at the parent's slot (excluding the parent itself)
+    final List<Bytes32> rootsAtSlot = forkChoiceStrategy.getBlockRootsAtSlot(parentSlot);
+    return rootsAtSlot.stream()
+        .distinct()
+        .filter(root -> !root.equals(parentRoot))
+        .anyMatch(
+            root -> {
+              // Check PTC-timeliness
+              final Optional<boolean[]> timeliness = store.getBlockTimeliness(root);
+              if (timeliness.isEmpty()
+                  || timeliness.get().length <= ForkChoiceUtilGloas.PTC_TIMELINESS_INDEX
+                  || !timeliness.get()[ForkChoiceUtilGloas.PTC_TIMELINESS_INDEX]) {
+                return false;
+              }
+              // Check same proposer
+              final Optional<SignedBeaconBlock> maybeBlock = store.getBlockIfAvailable(root);
+              return maybeBlock.isPresent()
+                  && maybeBlock.get().getMessage().getProposerIndex().intValue()
+                      == parentProposerIndex;
+            });
   }
 
   private Optional<List<BlobSidecar>> extractBlobSidecarsFromValidationResults(

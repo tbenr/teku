@@ -13,7 +13,9 @@
 
 package tech.pegasys.teku.storage.store;
 
+import java.util.Optional;
 import java.util.function.Consumer;
+import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.spec.datastructures.forkchoice.MutableStore;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
@@ -33,6 +35,10 @@ public interface UpdatableStore extends ReadOnlyStore {
   VoteUpdater startVoteUpdate(VoteUpdateChannel voteUpdateChannel);
 
   void startMetrics();
+
+  void recordBlockTimeliness(Bytes32 blockRoot, boolean[] timeliness);
+
+  Optional<boolean[]> getBlockTimeliness(Bytes32 blockRoot);
 
   @Override
   ForkChoiceStrategy getForkChoiceStrategy();

@@ -395,11 +395,6 @@ public class ProtoArray {
     // updates the parent, not all the ancestors. When applyScoreChanges runs it propagates the
     // change back up and everything works, but we run findHead to determine if the new block should
     // become the best head so need to follow down the chain.
-    while (bestNode.getBestDescendantIndex().isPresent() && !bestNode.isInvalid()) {
-      bestDescendantIndex = bestNode.getBestDescendantIndex().get();
-      bestNode = getNodeByIndex(bestDescendantIndex);
-    }
-
     // Walk backwards to find the last valid node in the chain
     while (bestNode.isInvalid()) {
       final Optional<Integer> maybeParentIndex = bestNode.getParentIndex();
@@ -725,16 +720,23 @@ public class ProtoArray {
                 } else if (payloadStatusTiebreaker.isPresent()
                     && child.getBlockRoot().equals(parent.getBlockRoot())
                     && bestChild.getBlockRoot().equals(parent.getBlockRoot())) {
-                  // Spec: get_payload_status_tiebreaker — third sort key in get_head
-                  // Gloas FULL vs EMPTY sibling comparison — delegate to tiebreaker
-                  int cmp =
-                      payloadStatusTiebreaker
-                          .get()
-                          .compare(child, bestChild, parent, ProtoArray.this);
-                  if (cmp > 0) {
+                  // EMPTY/FULL sibling comparison.
+                  // Spec: get_head sorts by (get_weight, root, get_payload_status_tiebreaker)
+                  // Root is the same for EMPTY/FULL siblings, so compare effective weight
+                  // (spec's get_weight) first, then tiebreaker when weights are equal.
+                  PayloadStatusTiebreaker tb = payloadStatusTiebreaker.get();
+                  UInt64 childEffWeight = tb.effectiveWeight(child);
+                  UInt64 bestChildEffWeight = tb.effectiveWeight(bestChild);
+                  int weightCmp = childEffWeight.compareTo(bestChildEffWeight);
+                  if (weightCmp > 0) {
                     changeToChild(parent, childIndex);
+                  } else if (weightCmp == 0) {
+                    int cmp = tb.compare(child, bestChild, parent, ProtoArray.this);
+                    if (cmp > 0) {
+                      changeToChild(parent, childIndex);
+                    }
                   }
-                  // else: bestChild wins or tied, no change
+                  // else: bestChild has more effective weight, no change
                 } else if (child.getWeight().equals(bestChild.getWeight())) {
                   // Tie-breaker of equal weights by root.
                   if (child
@@ -898,6 +900,12 @@ public class ProtoArray {
 
   public void pullUpBlockCheckpoints(final Bytes32 blockRoot) {
     getProtoNode(blockRoot).ifPresent(ProtoNode::pullUpCheckpoints);
+    indices
+        .getEmptyNodeIndex(blockRoot)
+        .ifPresent(idx -> getNodeByIndex(idx).pullUpCheckpoints());
+    indices
+        .getFullNodeIndex(blockRoot)
+        .ifPresent(idx -> getNodeByIndex(idx).pullUpCheckpoints());
   }
 
   private void applyDeltas(final LongList deltas) {

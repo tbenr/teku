@@ -20,6 +20,7 @@ import static tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayload
 
 import it.unimi.dsi.fastutil.ints.IntList;
 import java.util.Optional;
+import java.util.function.Predicate;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
@@ -215,13 +216,20 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
    * @param proposerBoostRoot the current proposer boost root, empty if none
    * @param forkChoiceStrategy the fork choice strategy for looking up block data
    * @param reorgThreshold the threshold for the head weakness check
+   * @param voteAccessor read-only access to validator votes for attestation score computation
+   * @param justifiedState the justified checkpoint state for balance lookups
+   * @param isProposerEquivocation predicate that checks if the parent block has a PTC-timely
+   *     equivocating block at the same slot from the same proposer
    * @return true if proposer boost should be applied
    */
   // should_apply_proposer_boost
   public boolean shouldApplyProposerBoost(
       final Optional<Bytes32> proposerBoostRoot,
       final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
-      final UInt64 reorgThreshold) {
+      final UInt64 reorgThreshold,
+      final VoteAccessor voteAccessor,
+      final BeaconState justifiedState,
+      final Predicate<Bytes32> isProposerEquivocation) {
     if (proposerBoostRoot.isEmpty()) {
       return false;
     }
@@ -241,18 +249,16 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
     if (maybeParentSlot.get().increment().isLessThan(blockSlot)) {
       return true;
     }
-    // Apply proposer boost if parent is not weak
-    if (!isHeadWeak(forkChoiceStrategy, parentRoot, reorgThreshold)) {
+    // Apply proposer boost if parent is not weak (using attestation score, excluding boost)
+    final UInt64 parentAttestationScore =
+        getAttestationScore(
+            parentRoot, PAYLOAD_STATUS_PENDING, forkChoiceStrategy, voteAccessor, justifiedState);
+    if (!parentAttestationScore.isLessThan(reorgThreshold)) {
       return true;
     }
     // Parent is weak and from the previous slot.
-    // TODO-GLOAS: Check for equivocating blocks from the same proposer as the parent.
-    // The spec checks if there are any OTHER blocks with the same proposer_index, in the slot
-    // before the boosted block, that are PTC-timely (indicating a proposer equivocation).
-    // Currently equivocating blocks are dropped at gossip validation
-    // (EQUIVOCATING_BLOCK_FOR_SLOT_PROPOSER), so this condition always passes.
-    // When is_proposer_equivocation is implemented, the equivocation check should be added here.
-    return true;
+    // Suppress proposer boost if there are PTC-timely equivocating blocks from the same proposer.
+    return !isProposerEquivocation.test(parentRoot);
   }
 
   /**

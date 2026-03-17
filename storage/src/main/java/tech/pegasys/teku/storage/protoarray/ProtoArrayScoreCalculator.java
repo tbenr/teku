@@ -82,6 +82,34 @@ class ProtoArrayScoreCalculator {
       final UInt64 newBoostAmount,
       final Object2IntMap<Bytes32> fullNodeIndices,
       final Object2IntMap<Bytes32> emptyNodeIndices) {
+    return computeDeltas(
+        store,
+        protoArraySize,
+        getIndexByRoot,
+        oldBalances,
+        newBalances,
+        previousProposerBoostRoot,
+        newProposerBoostRoot,
+        previousBoostAmount,
+        newBoostAmount,
+        fullNodeIndices,
+        emptyNodeIndices,
+        null);
+  }
+
+  static LongList computeDeltas(
+      final VoteUpdater store,
+      final int protoArraySize,
+      final Function<Bytes32, Optional<Integer>> getIndexByRoot,
+      final List<UInt64> oldBalances,
+      final List<UInt64> newBalances,
+      final Optional<Bytes32> previousProposerBoostRoot,
+      final Optional<Bytes32> newProposerBoostRoot,
+      final UInt64 previousBoostAmount,
+      final UInt64 newBoostAmount,
+      final Object2IntMap<Bytes32> fullNodeIndices,
+      final Object2IntMap<Bytes32> emptyNodeIndices,
+      final Function<Bytes32, Optional<UInt64>> blockSlotLookup) {
     LongList deltas = new LongArrayList(Collections.nCopies(protoArraySize, 0L));
 
     UInt64.rangeClosed(UInt64.ZERO, store.getHighestVotedValidatorIndex())
@@ -95,7 +123,8 @@ class ProtoArrayScoreCalculator {
                     deltas,
                     validatorIndex,
                     fullNodeIndices,
-                    emptyNodeIndices));
+                    emptyNodeIndices,
+                    blockSlotLookup));
 
     previousProposerBoostRoot.ifPresent(
         root -> subtractBalance(getIndexByRoot, deltas, root, previousBoostAmount));
@@ -112,7 +141,8 @@ class ProtoArrayScoreCalculator {
       final LongList deltas,
       final UInt64 validatorIndex,
       final Object2IntMap<Bytes32> fullNodeIndices,
-      final Object2IntMap<Bytes32> emptyNodeIndices) {
+      final Object2IntMap<Bytes32> emptyNodeIndices,
+      final Function<Bytes32, Optional<UInt64>> blockSlotLookup) {
     VoteTracker vote = store.getVote(validatorIndex);
 
     // There is no need to create a score change if the validator has never voted
@@ -141,17 +171,31 @@ class ProtoArrayScoreCalculator {
             : UInt64.ZERO;
 
     if (!vote.getCurrentRoot().equals(vote.getNextRoot()) || !oldBalance.equals(newBalance)) {
-      // Route current vote subtraction: use FULL/EMPTY node based on payload-present flag
+      // Route current vote subtraction: use FULL/EMPTY node based on payload-present flag.
+      // Spec: is_supporting_vote returns false for EMPTY/FULL when message.slot <= block.slot,
+      // so only route to EMPTY/FULL when vote slot > block slot.
       subtractBalance(
           resolveIndexFn(
-              getIndexByRoot, fullNodeIndices, emptyNodeIndices, vote.isCurrentPayloadPresent()),
+              getIndexByRoot,
+              fullNodeIndices,
+              emptyNodeIndices,
+              vote.isCurrentPayloadPresent(),
+              vote.getCurrentSlot(),
+              vote.getCurrentRoot(),
+              blockSlotLookup),
           deltas,
           vote.getCurrentRoot(),
           oldBalance);
-      // Route next vote addition: use FULL/EMPTY node based on payload-present flag
+      // Route next vote addition
       addBalance(
           resolveIndexFn(
-              getIndexByRoot, fullNodeIndices, emptyNodeIndices, vote.isNextPayloadPresent()),
+              getIndexByRoot,
+              fullNodeIndices,
+              emptyNodeIndices,
+              vote.isNextPayloadPresent(),
+              vote.getNextSlot(),
+              vote.getNextRoot(),
+              blockSlotLookup),
           deltas,
           vote.getNextRoot(),
           newBalance);
@@ -174,9 +218,20 @@ class ProtoArrayScoreCalculator {
       final Function<Bytes32, Optional<Integer>> getIndexByRoot,
       final Object2IntMap<Bytes32> fullNodeIndices,
       final Object2IntMap<Bytes32> emptyNodeIndices,
-      final boolean payloadPresent) {
+      final boolean payloadPresent,
+      final UInt64 voteSlot,
+      final Bytes32 voteRoot,
+      final Function<Bytes32, Optional<UInt64>> blockSlotLookup) {
     if (fullNodeIndices == null && emptyNodeIndices == null) {
       return getIndexByRoot;
+    }
+    // Spec: is_supporting_vote returns false for EMPTY/FULL when message.slot <= block.slot.
+    // Only route to EMPTY/FULL nodes when the vote slot is strictly after the block slot.
+    if (blockSlotLookup != null) {
+      final Optional<UInt64> blockSlot = blockSlotLookup.apply(voteRoot);
+      if (blockSlot.isPresent() && voteSlot.isLessThanOrEqualTo(blockSlot.get())) {
+        return getIndexByRoot;
+      }
     }
     if (payloadPresent) {
       // payload-present votes: prefer FULL, fallback to EMPTY, then block index

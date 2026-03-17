@@ -142,7 +142,11 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
               this.proposerBoostAmount,
               proposerBoostAmount,
               protoArray.getFullNodeIndices(),
-              protoArray.getEmptyNodeIndices());
+              protoArray.getEmptyNodeIndices(),
+              root ->
+                  protoArray
+                      .getProtoNode(root)
+                      .map(ProtoNode::getBlockSlot));
 
       final Optional<PayloadStatusTiebreaker> tiebreaker =
           spec.atSlot(currentSlot).getMilestone().isGreaterThanOrEqualTo(SpecMilestone.GLOAS)

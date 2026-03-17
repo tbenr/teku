@@ -55,6 +55,16 @@ class GloasPayloadStatusTiebreaker implements PayloadStatusTiebreaker {
         computePayloadStatusTiebreaker(bestChild, protoArray));
   }
 
+  @Override
+  public UInt64 effectiveWeight(final ProtoNode node) {
+    // Spec: get_weight returns 0 for non-PENDING nodes at current_slot - 1
+    if (node.getPayloadStatus() == PAYLOAD_STATUS_PENDING
+        || !node.getBlockSlot().plus(1).equals(currentSlot)) {
+      return node.getWeight();
+    }
+    return UInt64.ZERO;
+  }
+
   /**
    * Spec: get_payload_status_tiebreaker
    * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-get_payload_status_tiebreaker

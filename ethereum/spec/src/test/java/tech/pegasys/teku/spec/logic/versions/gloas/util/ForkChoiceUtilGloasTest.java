@@ -19,6 +19,7 @@ import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 import java.util.Optional;
+import org.mockito.ArgumentMatchers;
 import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,6 +36,9 @@ import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecution
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
+import tech.pegasys.teku.spec.datastructures.forkchoice.VoteAccessor;
+import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
+import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 
 class ForkChoiceUtilGloasTest {
@@ -45,6 +49,8 @@ class ForkChoiceUtilGloasTest {
   private DataStructureUtil dataStructureUtil;
   private ForkChoiceUtilGloas forkChoiceUtil;
   private UInt64 gloasSlot;
+  private VoteAccessor mockVoteAccessor;
+  private BeaconState justifiedState;
 
   @BeforeEach
   void setUp() {
@@ -52,6 +58,11 @@ class ForkChoiceUtilGloasTest {
     dataStructureUtil = new DataStructureUtil(spec);
     gloasSlot = spec.computeStartSlotAtEpoch(GLOAS_FORK_EPOCH);
     forkChoiceUtil = ForkChoiceUtilGloas.required(spec.atSlot(gloasSlot).getForkChoiceUtil());
+    mockVoteAccessor = mock(VoteAccessor.class);
+    when(mockVoteAccessor.getVote(ArgumentMatchers.any()))
+        .thenReturn(VoteTracker.DEFAULT);
+    when(mockVoteAccessor.getHighestVotedValidatorIndex()).thenReturn(UInt64.ZERO);
+    justifiedState = dataStructureUtil.randomBeaconState(gloasSlot);
   }
 
   @Test
@@ -224,7 +235,8 @@ class ForkChoiceUtilGloasTest {
     final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.empty(), strategy, UInt64.valueOf(100)))
+                Optional.empty(), strategy, UInt64.valueOf(100),
+                mockVoteAccessor, justifiedState, root -> false))
         .isFalse();
   }
 
@@ -239,7 +251,8 @@ class ForkChoiceUtilGloasTest {
 
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.of(boostRoot), strategy, UInt64.valueOf(100)))
+                Optional.of(boostRoot), strategy, UInt64.valueOf(100),
+                mockVoteAccessor, justifiedState, root -> false))
         .isTrue();
   }
 
@@ -249,35 +262,52 @@ class ForkChoiceUtilGloasTest {
     final Bytes32 parentRoot = dataStructureUtil.randomBytes32();
     final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
     when(strategy.blockParentRoot(boostRoot)).thenReturn(Optional.of(parentRoot));
-    when(strategy.blockSlot(boostRoot)).thenReturn(Optional.of(UInt64.valueOf(5)));
-    when(strategy.blockSlot(parentRoot)).thenReturn(Optional.of(UInt64.valueOf(4))); // consecutive
-    // Parent weight > reorgThreshold → parent is NOT weak (isHeadWeak returns false)
-    when(strategy.getWeight(parentRoot)).thenReturn(Optional.of(UInt64.valueOf(200)));
-
+    when(strategy.blockSlot(boostRoot)).thenReturn(Optional.of(gloasSlot.plus(1)));
+    when(strategy.blockSlot(parentRoot)).thenReturn(Optional.of(gloasSlot)); // consecutive
+    // Parent has high attestation score → parent is NOT weak
+    // getAttestationScore will iterate votes via mockVoteAccessor; all return DEFAULT → score = 0
+    // So we set reorgThreshold to 0 → not weak
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.of(boostRoot), strategy, UInt64.valueOf(100)))
+                Optional.of(boostRoot), strategy, UInt64.ZERO,
+                mockVoteAccessor, justifiedState, root -> false))
         .isTrue();
   }
 
   @Test
-  void shouldApplyProposerBoost_returnsTrue_whenParentIsWeakAndConsecutive() {
-    // When parent is weak and from the previous slot, the spec checks for equivocating blocks.
-    // Since equivocating blocks are dropped at gossip, this always returns true for now.
+  void shouldApplyProposerBoost_returnsTrue_whenParentIsWeakAndNoEquivocation() {
     final Bytes32 boostRoot = dataStructureUtil.randomBytes32();
     final Bytes32 parentRoot = dataStructureUtil.randomBytes32();
     final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
     when(strategy.blockParentRoot(boostRoot)).thenReturn(Optional.of(parentRoot));
-    when(strategy.blockSlot(boostRoot)).thenReturn(Optional.of(UInt64.valueOf(5)));
-    when(strategy.blockSlot(parentRoot)).thenReturn(Optional.of(UInt64.valueOf(4))); // consecutive
-    // Parent weight < reorgThreshold → parent IS weak
-    when(strategy.getWeight(parentRoot)).thenReturn(Optional.of(UInt64.valueOf(50)));
+    when(strategy.blockSlot(boostRoot)).thenReturn(Optional.of(gloasSlot.plus(1)));
+    when(strategy.blockSlot(parentRoot)).thenReturn(Optional.of(gloasSlot)); // consecutive
+    // Parent attestation score = 0 (all votes DEFAULT) < reorgThreshold → parent IS weak
 
-    // Returns true because equivocation check is deferred (gossip drops equivocating blocks)
+    // No equivocation → boost applies
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.of(boostRoot), strategy, UInt64.valueOf(100)))
+                Optional.of(boostRoot), strategy, UInt64.valueOf(100),
+                mockVoteAccessor, justifiedState, root -> false))
         .isTrue();
+  }
+
+  @Test
+  void shouldApplyProposerBoost_returnsFalse_whenParentIsWeakAndEquivocation() {
+    final Bytes32 boostRoot = dataStructureUtil.randomBytes32();
+    final Bytes32 parentRoot = dataStructureUtil.randomBytes32();
+    final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
+    when(strategy.blockParentRoot(boostRoot)).thenReturn(Optional.of(parentRoot));
+    when(strategy.blockSlot(boostRoot)).thenReturn(Optional.of(gloasSlot.plus(1)));
+    when(strategy.blockSlot(parentRoot)).thenReturn(Optional.of(gloasSlot)); // consecutive
+    // Parent attestation score = 0 (all votes DEFAULT) < reorgThreshold → parent IS weak
+
+    // Equivocation detected → boost suppressed
+    assertThat(
+            forkChoiceUtil.shouldApplyProposerBoost(
+                Optional.of(boostRoot), strategy, UInt64.valueOf(100),
+                mockVoteAccessor, justifiedState, root -> true))
+        .isFalse();
   }
 
   // Helper methods to create blocks with specific properties
