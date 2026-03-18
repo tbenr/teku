@@ -62,6 +62,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationMessage;
 import tech.pegasys.teku.spec.datastructures.execution.PowBlock;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
@@ -288,6 +289,9 @@ public class ForkChoiceTestExecutor implements TestExecutor {
       } else if (step.containsKey("execution_payload")) {
         applyExecutionPayload(testDefinition, spec, forkChoice, step, executionLayer);
 
+      } else if (step.containsKey("payload_attestation")) {
+        applyPayloadAttestation(testDefinition, forkChoice, step);
+
       } else {
         throw new UnsupportedOperationException("Unsupported step: " + step);
       }
@@ -371,6 +375,23 @@ public class ForkChoiceTestExecutor implements TestExecutor {
             forkChoice.onAttesterSlashing(attesterSlashing, InternalValidationResult.ACCEPT, true));
   }
 
+  private void applyPayloadAttestation(
+      final TestDefinition testDefinition,
+      final ForkChoice forkChoice,
+      final Map<String, Object> step) {
+    final String payloadAttestationName = get(step, "payload_attestation");
+    final PayloadAttestationMessage payloadAttestationMessage =
+        TestDataUtils.loadSsz(
+            testDefinition,
+            payloadAttestationName + SSZ_SNAPPY_EXTENSION,
+            SchemaDefinitionsGloas.required(testDefinition.getSpec().getGenesisSchemaDefinitions())
+                .getPayloadAttestationMessageSchema());
+    assertDoesNotThrow(
+        () ->
+            forkChoice.onPayloadAttestationMessage(
+                payloadAttestationMessage, InternalValidationResult.ACCEPT, true));
+  }
+
   private void applyExecutionPayload(
       final TestDefinition testDefinition,
       final Spec spec,
@@ -387,7 +408,9 @@ public class ForkChoiceTestExecutor implements TestExecutor {
                 .getSignedExecutionPayloadEnvelopeSchema());
     LOG.info("Importing execution payload envelope {}", name);
     final SafeFuture<ExecutionPayloadImportResult> result =
-        forkChoice.onExecutionPayload(signedEnvelope, executionLayer);
+        forkChoice
+            .onExecutionPayload(signedEnvelope, executionLayer)
+            .exceptionally(ExecutionPayloadImportResult::failedExecution);
     assertThat(result).isCompleted();
     final ExecutionPayloadImportResult importResult = safeJoin(result);
     assertThat(importResult.isSuccessful())
@@ -458,8 +481,12 @@ public class ForkChoiceTestExecutor implements TestExecutor {
         block.getRoot(),
         block.getSlot(),
         block.getParentRoot());
+    recentChainData.setBlockTimelinessFromArrivalTime(
+        block, recentChainData.getStore().getTimeInMillis());
     final SafeFuture<BlockImportResult> result =
-        forkChoice.onBlock(block, Optional.empty(), BlockBroadcastValidator.NOOP, executionLayer);
+        forkChoice
+            .onBlock(block, Optional.empty(), BlockBroadcastValidator.NOOP, executionLayer)
+            .exceptionally(BlockImportResult::internalError);
     assertThat(result).isCompleted();
     final BlockImportResult importResult = safeJoin(result);
     assertThat(importResult)

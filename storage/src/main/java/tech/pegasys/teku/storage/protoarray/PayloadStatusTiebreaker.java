@@ -35,8 +35,8 @@ interface PayloadStatusTiebreaker {
   /**
    * Returns the effective weight for a node, implementing the spec's get_weight zero-weight rule.
    *
-   * <p>Spec: get_weight returns 0 for non-PENDING nodes at current_slot - 1 (EMPTY/FULL at the
-   * slot immediately before the current slot).
+   * <p>Spec: get_weight returns 0 for non-PENDING nodes at current_slot - 1 (EMPTY/FULL at the slot
+   * immediately before the current slot).
    */
   UInt64 effectiveWeight(ProtoNode node);
 }

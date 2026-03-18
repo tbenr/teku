@@ -721,7 +721,8 @@ class ProtoArrayTest {
     protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
     protoArray.markNodeValid(block1a);
 
-    // block2a resolves parent via resolveGloasParentIndex with matching hash → should attach to FULL
+    // block2a resolves parent via resolveGloasParentIndex with matching hash → should attach to
+    // FULL
     final Optional<Integer> resolvedParent =
         protoArray.resolveGloasParentIndex(block1a, EXECUTION_BLOCK_HASH);
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
@@ -742,7 +743,8 @@ class ProtoArrayTest {
     protoArray.createEmptyNode(block1a);
     protoArray.markNodeValid(block1a);
 
-    // block2a resolves parent via resolveGloasParentIndex with non-matching hash → should attach to EMPTY
+    // block2a resolves parent via resolveGloasParentIndex with non-matching hash → should attach to
+    // EMPTY
     final Optional<Integer> resolvedParent =
         protoArray.resolveGloasParentIndex(block1a, Bytes32.ZERO);
     final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
@@ -892,7 +894,8 @@ class ProtoArrayTest {
 
     // block2a builds on FULL(block1a) — execution hash matches parent's FULL
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
-    addValidBlockWithParentIndex(6, block2a, block1a, Optional.of(fullNodeIndex), EXECUTION_BLOCK_HASH);
+    addValidBlockWithParentIndex(
+        6, block2a, block1a, Optional.of(fullNodeIndex), EXECUTION_BLOCK_HASH);
 
     protoArray.applyScoreChanges(
         computeDeltas(),
@@ -947,7 +950,8 @@ class ProtoArrayTest {
     protoArray.markNodeValid(block1a);
 
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
-    addValidBlockWithParentIndex(6, block2a, block1a, Optional.of(fullNodeIndex), EXECUTION_BLOCK_HASH);
+    addValidBlockWithParentIndex(
+        6, block2a, block1a, Optional.of(fullNodeIndex), EXECUTION_BLOCK_HASH);
 
     // threshold = 5, ptcVoteCount = 3 → NOT timely (3 ≤ 5)
     protoArray.applyScoreChanges(

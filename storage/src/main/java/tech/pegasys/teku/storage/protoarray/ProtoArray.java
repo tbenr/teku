@@ -303,8 +303,8 @@ public class ProtoArray {
 
   /**
    * Spec: is_parent_node_full — checks if the proposer block was built on the FULL state of its
-   * parent by comparing the proposer's bid parent_block_hash with the parent's FULL execution
-   * block hash.
+   * parent by comparing the proposer's bid parent_block_hash with the parent's FULL execution block
+   * hash.
    */
   public boolean isParentNodeFull(final Bytes32 parentRoot, final ProtoNode proposerNode) {
     return indices
@@ -312,9 +312,7 @@ public class ProtoArray {
         .map(
             idx -> {
               final ProtoNode fullNode = getNodeByIndex(idx);
-              return fullNode
-                  .getExecutionBlockHash()
-                  .equals(proposerNode.getExecutionBlockHash());
+              return fullNode.getExecutionBlockHash().equals(proposerNode.getExecutionBlockHash());
             })
         .orElse(false);
   }
@@ -420,7 +418,6 @@ public class ProtoArray {
 
     int bestDescendantIndex = justifiedNode.getBestDescendantIndex().orElse(justifiedIndex);
     ProtoNode bestNode = getNodeByIndex(bestDescendantIndex);
-
 
     // Normally the best descendant index would point straight to chain head, but onBlock only
     // updates the parent, not all the ancestors. When applyScoreChanges runs it propagates the
@@ -931,12 +928,8 @@ public class ProtoArray {
 
   public void pullUpBlockCheckpoints(final Bytes32 blockRoot) {
     getProtoNode(blockRoot).ifPresent(ProtoNode::pullUpCheckpoints);
-    indices
-        .getEmptyNodeIndex(blockRoot)
-        .ifPresent(idx -> getNodeByIndex(idx).pullUpCheckpoints());
-    indices
-        .getFullNodeIndex(blockRoot)
-        .ifPresent(idx -> getNodeByIndex(idx).pullUpCheckpoints());
+    indices.getEmptyNodeIndex(blockRoot).ifPresent(idx -> getNodeByIndex(idx).pullUpCheckpoints());
+    indices.getFullNodeIndex(blockRoot).ifPresent(idx -> getNodeByIndex(idx).pullUpCheckpoints());
   }
 
   private void applyDeltas(final LongList deltas) {

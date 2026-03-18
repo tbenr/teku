@@ -24,7 +24,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -131,7 +130,6 @@ class Store extends CacheableStore {
   private UInt64 reorgThreshold = UInt64.ZERO;
   private UInt64 parentThreshold = UInt64.ZERO;
   private volatile BeaconState cachedJustifiedState;
-  private final Map<Bytes32, boolean[]> blockTimeliness = new HashMap<>();
 
   private Store(
       final MetricsSystem metricsSystem,
@@ -254,8 +252,7 @@ class Store extends CacheableStore {
             "memory_checkpoint_states",
             config.getCheckpointStateCacheSize());
     final CachingTaskQueue<Bytes32, StateAndBlockSummary> blockStateTaskQueue =
-        CachingTaskQueue.create(
-            asyncRunner, metricsSystem, "memory_states", config.getStateCacheSize());
+        CachingTaskQueue.create(asyncRunner, metricsSystem, "memory_states", 32);
     final Optional<Map<Bytes32, StateAndBlockSummary>> maybeEpochStates =
         config.getEpochStateCacheSize() > 0
             ? Optional.of(LimitedMap.createSynchronizedLRU(config.getEpochStateCacheSize()))
@@ -588,26 +585,6 @@ class Store extends CacheableStore {
     readLock.lock();
     try {
       return proposerBoostRoot;
-    } finally {
-      readLock.unlock();
-    }
-  }
-
-  @Override
-  public void recordBlockTimeliness(final Bytes32 blockRoot, final boolean[] timeliness) {
-    lock.writeLock().lock();
-    try {
-      blockTimeliness.putIfAbsent(blockRoot, timeliness);
-    } finally {
-      lock.writeLock().unlock();
-    }
-  }
-
-  @Override
-  public Optional<boolean[]> getBlockTimeliness(final Bytes32 blockRoot) {
-    readLock.lock();
-    try {
-      return Optional.ofNullable(blockTimeliness.get(blockRoot));
     } finally {
       readLock.unlock();
     }

@@ -59,7 +59,9 @@ public class LateBlockReorgLogic {
   // record_block_timeliness
   public void setBlockTimelinessFromArrivalTime(
       final SignedBeaconBlock block, final UInt64 arrivalTimeMillis) {
-    if (blockTimeliness.get(block.getRoot()) != null) {
+    final boolean[] existing = blockTimeliness.get(block.getRoot());
+    if (existing != null && existing[0]) {
+      // Already recorded as timely for attestation — keep first-seen timeliness
       return;
     }
     final UInt64 computedSlot =

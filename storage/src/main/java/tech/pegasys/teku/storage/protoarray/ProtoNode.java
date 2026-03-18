@@ -99,7 +99,11 @@ public class ProtoNode {
     this.bestChildIndex = bestChildIndex;
     this.bestDescendantIndex = bestDescendantIndex;
     this.validationStatus = validationStatus;
-    this.payloadStatus = ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY;
+    // TODO: startup issue: this must be set following is_parent_block_full in buildProtoArray
+    this.payloadStatus =
+        executionBlockHash.isZero()
+            ? ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL
+            : ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY;
   }
 
   public void adjustWeight(final long delta) {

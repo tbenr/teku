@@ -64,7 +64,7 @@ public class ChainHead implements MinimalBeaconBlockSummary {
         SafeFuture.completedFuture(stateAndBlockSummary)
         // TODO
         ,
-        ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY);
+        ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL);
   }
 
   public static ChainHead create(final SignedBlockAndState blockAndState) {
@@ -75,7 +75,7 @@ public class ChainHead implements MinimalBeaconBlockSummary {
         SafeFuture.completedFuture(blockAndState)
         // TODO
         ,
-        ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY);
+        ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL);
   }
 
   public static ChainHead create(

@@ -794,6 +794,10 @@ public abstract class RecentChainData implements StoreUpdateHandler, ValidatorIs
     lateBlockReorgLogic.setBlockTimelinessFromArrivalTime(block, store.getTimeInMillis());
   }
 
+  public Optional<boolean[]> getBlockTimeliness(final Bytes32 root) {
+    return lateBlockReorgLogic.isBlockTimely(root);
+  }
+
   public boolean isBlockLate(final Bytes32 root) {
     return lateBlockReorgLogic.isBlockLate(root);
   }

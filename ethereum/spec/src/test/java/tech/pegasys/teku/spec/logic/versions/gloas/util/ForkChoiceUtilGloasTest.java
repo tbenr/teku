@@ -19,10 +19,10 @@ import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 import java.util.Optional;
-import org.mockito.ArgumentMatchers;
 import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
@@ -59,8 +59,7 @@ class ForkChoiceUtilGloasTest {
     gloasSlot = spec.computeStartSlotAtEpoch(GLOAS_FORK_EPOCH);
     forkChoiceUtil = ForkChoiceUtilGloas.required(spec.atSlot(gloasSlot).getForkChoiceUtil());
     mockVoteAccessor = mock(VoteAccessor.class);
-    when(mockVoteAccessor.getVote(ArgumentMatchers.any()))
-        .thenReturn(VoteTracker.DEFAULT);
+    when(mockVoteAccessor.getVote(ArgumentMatchers.any())).thenReturn(VoteTracker.DEFAULT);
     when(mockVoteAccessor.getHighestVotedValidatorIndex()).thenReturn(UInt64.ZERO);
     justifiedState = dataStructureUtil.randomBeaconState(gloasSlot);
   }
@@ -235,8 +234,12 @@ class ForkChoiceUtilGloasTest {
     final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.empty(), strategy, UInt64.valueOf(100),
-                mockVoteAccessor, justifiedState, root -> false))
+                Optional.empty(),
+                strategy,
+                UInt64.valueOf(100),
+                mockVoteAccessor,
+                justifiedState,
+                root -> false))
         .isFalse();
   }
 
@@ -251,8 +254,12 @@ class ForkChoiceUtilGloasTest {
 
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.of(boostRoot), strategy, UInt64.valueOf(100),
-                mockVoteAccessor, justifiedState, root -> false))
+                Optional.of(boostRoot),
+                strategy,
+                UInt64.valueOf(100),
+                mockVoteAccessor,
+                justifiedState,
+                root -> false))
         .isTrue();
   }
 
@@ -269,8 +276,12 @@ class ForkChoiceUtilGloasTest {
     // So we set reorgThreshold to 0 → not weak
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.of(boostRoot), strategy, UInt64.ZERO,
-                mockVoteAccessor, justifiedState, root -> false))
+                Optional.of(boostRoot),
+                strategy,
+                UInt64.ZERO,
+                mockVoteAccessor,
+                justifiedState,
+                root -> false))
         .isTrue();
   }
 
@@ -287,8 +298,12 @@ class ForkChoiceUtilGloasTest {
     // No equivocation → boost applies
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.of(boostRoot), strategy, UInt64.valueOf(100),
-                mockVoteAccessor, justifiedState, root -> false))
+                Optional.of(boostRoot),
+                strategy,
+                UInt64.valueOf(100),
+                mockVoteAccessor,
+                justifiedState,
+                root -> false))
         .isTrue();
   }
 
@@ -305,8 +320,12 @@ class ForkChoiceUtilGloasTest {
     // Equivocation detected → boost suppressed
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.of(boostRoot), strategy, UInt64.valueOf(100),
-                mockVoteAccessor, justifiedState, root -> true))
+                Optional.of(boostRoot),
+                strategy,
+                UInt64.valueOf(100),
+                mockVoteAccessor,
+                justifiedState,
+                root -> true))
         .isFalse();
   }
 
