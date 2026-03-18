@@ -481,8 +481,6 @@ public class ForkChoiceTestExecutor implements TestExecutor {
         block.getRoot(),
         block.getSlot(),
         block.getParentRoot());
-    recentChainData.setBlockTimelinessFromArrivalTime(
-        block, recentChainData.getStore().getTimeInMillis());
     final SafeFuture<BlockImportResult> result =
         forkChoice
             .onBlock(block, Optional.empty(), BlockBroadcastValidator.NOOP, executionLayer)

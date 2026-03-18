@@ -149,6 +149,16 @@ public class BlockImporterTest {
   }
 
   @Test
+  public void importBlock_success_shouldRecordTimeliness() throws Exception {
+    final SignedBeaconBlock block = otherChain.createBlockAtSlot(UInt64.ONE);
+    localChain.setSlot(block.getSlot());
+
+    final BlockImportResult result = blockImporter.importBlock(block).get();
+    assertSuccessfulResult(result);
+    assertThat(recentChainData.getBlockTimeliness(block.getRoot())).isPresent();
+  }
+
+  @Test
   public void importBlock_errorDuringWeakSubjectivityCheck() throws Exception {
     final SignedBeaconBlock block = otherChain.createBlockAtSlot(UInt64.ONE);
     localChain.setSlot(block.getSlot());

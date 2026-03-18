@@ -356,14 +356,16 @@ public class BlockManagerTest {
         localChain.chainBuilder().generateBlockAtSlot(nextNextSlot).getBlock();
 
     final SafeFuture<BlockImportResult> blockImportResult = new SafeFuture<>();
-    when(blockImporter.importBlock(eq(nextNextBlock), eq(Optional.empty()), any()))
+    when(blockImporter.importBlock(eq(nextNextBlock), eq(Optional.empty()), any(), eq(Optional.empty())))
         .thenReturn(blockImportResult)
         .thenReturn(new SafeFuture<>());
 
     incrementSlot();
     incrementSlot();
     assertThatBlockImport(nextNextBlock).isNotCompleted();
-    ignoreFuture(verify(blockImporter).importBlock(eq(nextNextBlock), eq(Optional.empty()), any()));
+    ignoreFuture(
+        verify(blockImporter)
+            .importBlock(eq(nextNextBlock), eq(Optional.empty()), any(), eq(Optional.empty())));
 
     // Before nextNextBlock imports, it's parent becomes available
     when(localRecentChainData.containsBlock(nextNextBlock.getParentRoot())).thenReturn(true);
@@ -372,7 +374,7 @@ public class BlockManagerTest {
     blockImportResult.complete(BlockImportResult.FAILED_UNKNOWN_PARENT);
     ignoreFuture(
         verify(blockImporter, times(2))
-            .importBlock(eq(nextNextBlock), eq(Optional.empty()), any()));
+            .importBlock(eq(nextNextBlock), eq(Optional.empty()), any(), eq(Optional.empty())));
 
     assertThat(pendingBlocks.contains(nextNextBlock)).isFalse();
   }
@@ -829,6 +831,28 @@ public class BlockManagerTest {
     assertThat(blockManager.validateAndImportBlock(block, Optional.empty()))
         .isCompletedWithValueMatching(InternalValidationResult::isAccept);
     verifyNoInteractions(eventLogger);
+  }
+
+  @Test
+  void validateAndImportBlock_shouldRecordTimelinessOnlyAfterSuccessfulImport() {
+    final SignedBeaconBlock parentBlock =
+        localChain.chainBuilder().generateBlockAtSlot(incrementSlot()).getBlock();
+    final SignedBeaconBlock childBlock =
+        localChain.chainBuilder().generateBlockAtSlot(incrementSlot()).getBlock();
+
+    when(blockValidator.validateGossip(any()))
+        .thenReturn(SafeFuture.completedFuture(InternalValidationResult.ACCEPT));
+
+    final Optional<UInt64> arrivalTime = Optional.of(timeProvider.getTimeInMillis());
+    assertThat(blockManager.validateAndImportBlock(childBlock, arrivalTime))
+        .isCompletedWithValueMatching(InternalValidationResult::isAccept);
+    assertThat(localRecentChainData.getBlockTimeliness(childBlock.getRoot())).isEmpty();
+
+    timeProvider.advanceTimeByMillis(5_000);
+    assertImportBlockSuccessfully(parentBlock);
+
+    assertThat(localRecentChainData.getBlockTimeliness(childBlock.getRoot())).isPresent();
+    assertThat(localRecentChainData.isBlockLate(childBlock.getRoot())).isFalse();
   }
 
   @Test

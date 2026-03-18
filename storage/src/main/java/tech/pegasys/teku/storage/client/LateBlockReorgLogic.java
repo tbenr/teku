@@ -64,6 +64,20 @@ public class LateBlockReorgLogic {
       // Already recorded as timely for attestation — keep first-seen timeliness
       return;
     }
+    setBlockTimeliness(block, computeBlockTimelinessFromArrivalTime(block, arrivalTimeMillis));
+  }
+
+  public void setBlockTimeliness(final SignedBeaconBlock block, final boolean[] timeliness) {
+    final boolean[] existing = blockTimeliness.get(block.getRoot());
+    if (existing != null && existing[0]) {
+      // Already recorded as timely for attestation — keep first-seen timeliness
+      return;
+    }
+    blockTimeliness.put(block.getRoot(), timeliness);
+  }
+
+  public boolean[] computeBlockTimelinessFromArrivalTime(
+      final SignedBeaconBlock block, final UInt64 arrivalTimeMillis) {
     final UInt64 computedSlot =
         spec.getCurrentSlot(
             timeProviderSupplier.get().getTimeInSeconds(), recentChainData.getGenesisTime());
@@ -74,31 +88,24 @@ public class LateBlockReorgLogic {
           root,
           block.getSlot(),
           computedSlot);
-      blockTimeliness.put(root, new boolean[] {false});
-      return;
+      return new boolean[] {false};
     }
-    recentChainData
-        .getCurrentSlot()
-        .ifPresent(
-            slot -> {
-              final UInt64 slotStartTimeMillis =
-                  spec.computeTimeMillisAtSlot(slot, recentChainData.getGenesisTimeMillis());
-              final int millisIntoSlot =
-                  arrivalTimeMillis.minusMinZero(slotStartTimeMillis).intValue();
+    final UInt64 slotStartTimeMillis =
+        spec.computeTimeMillisAtSlot(computedSlot, recentChainData.getGenesisTimeMillis());
+    final int millisIntoSlot = arrivalTimeMillis.minusMinZero(slotStartTimeMillis).intValue();
 
-              final ForkChoiceUtil forkChoiceUtil = spec.atSlot(slot).getForkChoiceUtil();
-              final boolean[] timeliness =
-                  forkChoiceUtil.computeBlockTimeliness(
-                      block.getMessage().getSlot(), slot, millisIntoSlot);
-              LOG.debug(
-                  "Block {}:{} arrived at {} ms into slot {}, timeliness: {}",
-                  root,
-                  block.getSlot(),
-                  millisIntoSlot,
-                  computedSlot,
-                  timeliness);
-              blockTimeliness.put(root, timeliness);
-            });
+    final ForkChoiceUtil forkChoiceUtil = spec.atSlot(computedSlot).getForkChoiceUtil();
+    final boolean[] timeliness =
+        forkChoiceUtil.computeBlockTimeliness(
+            block.getMessage().getSlot(), computedSlot, millisIntoSlot);
+    LOG.debug(
+        "Block {}:{} arrived at {} ms into slot {}, timeliness: {}",
+        root,
+        block.getSlot(),
+        millisIntoSlot,
+        computedSlot,
+        timeliness);
+    return timeliness;
   }
 
   // implements is_timely from Consensus Spec

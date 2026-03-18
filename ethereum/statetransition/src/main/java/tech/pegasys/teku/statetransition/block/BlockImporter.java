@@ -114,6 +114,15 @@ public class BlockImporter {
       final SignedBeaconBlock block,
       final Optional<BlockImportPerformance> blockImportPerformance,
       final BlockBroadcastValidator blockBroadcastValidator) {
+    return importBlock(block, blockImportPerformance, blockBroadcastValidator, Optional.empty());
+  }
+
+  @CheckReturnValue
+  SafeFuture<BlockImportResult> importBlock(
+      final SignedBeaconBlock block,
+      final Optional<BlockImportPerformance> blockImportPerformance,
+      final BlockBroadcastValidator blockBroadcastValidator,
+      final Optional<UInt64> arrivalTimestamp) {
     final Optional<Boolean> knownOptimistic = recentChainData.isBlockOptimistic(block.getRoot());
     if (knownOptimistic.isPresent()) {
       LOG.trace(
@@ -142,7 +151,8 @@ public class BlockImporter {
                             block,
                             blockImportPerformance,
                             blockBroadcastValidator,
-                            executionLayer)))
+                            executionLayer,
+                            arrivalTimestamp)))
         .thenApply(
             result -> {
               if (!result.isSuccessful()) {
