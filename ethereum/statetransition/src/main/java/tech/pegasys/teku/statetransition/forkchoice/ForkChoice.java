@@ -220,11 +220,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
       final BlockBroadcastValidator blockBroadcastValidator,
       final ExecutionLayerChannel executionLayer) {
     return onBlock(
-        block,
-        blockImportPerformance,
-        blockBroadcastValidator,
-        executionLayer,
-        Optional.empty());
+        block, blockImportPerformance, blockBroadcastValidator, executionLayer, Optional.empty());
   }
 
   /** Import a block to the store using the supplied arrival time for timeliness checks. */
@@ -335,11 +331,15 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     if (!result.isAccept()) {
       return;
     }
-    if (message.getData().isPayloadPresent()) {
-      recentChainData
-          .getUpdatableForkChoiceStrategy()
-          .ifPresent(strategy -> strategy.onPtcVote(message.getData().getBeaconBlockRoot()));
-    }
+    recentChainData
+        .getUpdatableForkChoiceStrategy()
+        .ifPresent(
+            strategy ->
+                strategy.onPtcVote(
+                    message.getData().getBeaconBlockRoot(),
+                    message.getValidatorIndex(),
+                    message.getData().isPayloadPresent(),
+                    message.getData().isBlobDataAvailable()));
   }
 
   public void subscribeToOptimisticHeadChangesAndUpdate(final OptimisticHeadSubscriber subscriber) {

@@ -103,7 +103,7 @@ public class ProtoNode {
     this.payloadStatus =
         executionBlockHash.isZero()
             ? ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL
-            : ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY;
+            : ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING;
   }
 
   public void adjustWeight(final long delta) {

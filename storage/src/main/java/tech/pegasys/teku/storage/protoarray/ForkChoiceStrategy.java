@@ -21,9 +21,10 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.apache.logging.log4j.LogManager;
@@ -60,11 +61,14 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
   private final ReadWriteLock balancesLock = new ReentrantReadWriteLock();
   private final Spec spec;
   private final ProtoArray protoArray;
-  private final Map<Bytes32, AtomicInteger> ptcPresentVoteCounts = new ConcurrentHashMap<>();
-
+  private final Map<Bytes32, PayloadAndDataTimelinessVotesPerValidator> ptcVotesByRoot =
+      new ConcurrentHashMap<>();
   private List<UInt64> balances;
+
   private Optional<Bytes32> proposerBoostRoot = Optional.empty();
   private UInt64 proposerBoostAmount = UInt64.ZERO;
+
+  private record PayloadAndDataTimelinessVotesPerValidator(Set<UInt64> payload, Set<UInt64> data) {}
 
   private ForkChoiceStrategy(
       final Spec spec, final ProtoArray protoArray, final List<UInt64> balances) {
@@ -153,7 +157,10 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
                       proposerBoostRoot,
                       SpecConfigGloas.required(spec.atSlot(currentSlot).getConfig())
                           .getPayloadTimelyThreshold(),
-                      this::getPtcPresentVoteCount))
+                      SpecConfigGloas.required(spec.atSlot(currentSlot).getConfig())
+                          .getDataAvailabilityTimelyThreshold(),
+                      this::getPtcPresentVoteCount,
+                      this::getDataAvailableVoteCount))
               : Optional.empty();
 
       protoArray.applyScoreChanges(
@@ -487,15 +494,47 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
     }
   }
 
-  /** Called when a validated payload attestation with payloadPresent=true arrives. */
-  public void onPtcVote(final Bytes32 blockRoot) {
-    ptcPresentVoteCounts.computeIfAbsent(blockRoot, __ -> new AtomicInteger(0)).incrementAndGet();
+  /** Records the latest payload-attestation vote for a validator on a given block root. */
+  public void onPtcVote(
+      final Bytes32 blockRoot,
+      final UInt64 validatorIndex,
+      final boolean payloadPresent,
+      final boolean blobDataAvailable) {
+    ptcVotesByRoot.compute(
+        blockRoot,
+        (__, validatorIndices) -> {
+          final PayloadAndDataTimelinessVotesPerValidator updatedValidatorIndices =
+              validatorIndices != null
+                  ? validatorIndices
+                  : new PayloadAndDataTimelinessVotesPerValidator(
+                      ConcurrentHashMap.newKeySet(), ConcurrentHashMap.newKeySet());
+          if (payloadPresent) {
+            updatedValidatorIndices.payload.add(validatorIndex);
+          } else {
+            updatedValidatorIndices.payload.remove(validatorIndex);
+          }
+
+          if (blobDataAvailable) {
+            updatedValidatorIndices.data.add(validatorIndex);
+          } else {
+            updatedValidatorIndices.data.remove(validatorIndex);
+          }
+
+          return updatedValidatorIndices;
+        });
   }
 
   /** Returns the PTC "payload present" vote count for a block. */
   public int getPtcPresentVoteCount(final Bytes32 blockRoot) {
-    final AtomicInteger count = ptcPresentVoteCounts.get(blockRoot);
-    return count != null ? count.get() : 0;
+    final PayloadAndDataTimelinessVotesPerValidator validatorIndices =
+        ptcVotesByRoot.get(blockRoot);
+    return validatorIndices != null ? validatorIndices.payload.size() : 0;
+  }
+
+  public int getDataAvailableVoteCount(final Bytes32 blockRoot) {
+    final PayloadAndDataTimelinessVotesPerValidator validatorIndices =
+        ptcVotesByRoot.get(blockRoot);
+    return validatorIndices != null ? validatorIndices.data.size() : 0;
   }
 
   @Override
@@ -601,12 +640,10 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       ProtoNode currentNode = startingNode.orElseThrow();
 
       while (protoArray.contains(currentNode.getBlockRoot())) {
-        // Skip FULL and EMPTY internal tree nodes — they are children of PENDING block nodes
-        // in the Gloas three-state fork choice tree, not actual blocks.
-        // Walk through them transparently to their parent.
-        if (currentNode.getPayloadStatus() == ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL
-            || (currentNode.getPayloadStatus() == ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY
-                && protoArray.getEmptyNodeIndices().containsKey(currentNode.getBlockRoot()))) {
+        // Skip the internal FULL and EMPTY children of the Gloas three-state tree.
+        // Regular block nodes may also carry a non-PENDING payload status, so key off the
+        // dedicated child-node indices rather than the payload status alone.
+        if (isInternalFullNode(currentNode) || isInternalEmptyNode(currentNode)) {
           if (currentNode.getParentIndex().isEmpty()) {
             break;
           }
@@ -638,11 +675,8 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
           // Filter out nodes that could be pruned but are still in the protoarray
           .filter(node -> indices.containsKey(node.getBlockRoot()))
           // Skip FULL and EMPTY internal tree nodes — not actual blocks
-          .filter(node -> node.getPayloadStatus() != ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL)
-          .filter(
-              node ->
-                  node.getPayloadStatus() != ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY
-                      || !protoArray.getEmptyNodeIndices().containsKey(node.getBlockRoot()))
+          .filter(node -> !isInternalFullNode(node))
+          .filter(node -> !isInternalEmptyNode(node))
           .forEach(
               node ->
                   nodeProcessor.process(
@@ -650,6 +684,22 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
     } finally {
       protoArrayLock.readLock().unlock();
     }
+  }
+
+  private boolean isInternalFullNode(final ProtoNode node) {
+    return node.getPayloadStatus() == ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL
+        && protoArray.getFullNodeIndices().containsKey(node.getBlockRoot())
+        && Objects.equals(
+            protoArray.getNodeByIndex(protoArray.getFullNodeIndices().getInt(node.getBlockRoot())),
+            node);
+  }
+
+  private boolean isInternalEmptyNode(final ProtoNode node) {
+    return node.getPayloadStatus() == ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY
+        && protoArray.getEmptyNodeIndices().containsKey(node.getBlockRoot())
+        && Objects.equals(
+            protoArray.getNodeByIndex(protoArray.getEmptyNodeIndices().getInt(node.getBlockRoot())),
+            node);
   }
 
   @Override
@@ -696,14 +746,14 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       removedBlockRoots.forEach(
           (root, uInt64) -> {
             protoArray.removeBlockRoot(root);
-            ptcPresentVoteCounts.remove(root);
+            ptcVotesByRoot.remove(root);
           });
       pulledUpBlocks.forEach(protoArray::pullUpBlockCheckpoints);
       final int sizeBefore = protoArray.getTotalTrackedNodeCount();
       protoArray.maybePrune(finalizedCheckpoint.getRoot());
       if (protoArray.getTotalTrackedNodeCount() < sizeBefore) {
         // Nodes were pruned — clean up PTC vote counts for roots no longer in the tree
-        ptcPresentVoteCounts.keySet().removeIf(root -> !protoArray.contains(root));
+        ptcVotesByRoot.keySet().removeIf(root -> !protoArray.contains(root));
       }
     } finally {
       protoArrayLock.writeLock().unlock();

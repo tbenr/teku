@@ -110,8 +110,7 @@ public class BlockManager extends Service
         blockValidator.initiateBroadcastValidation(block, broadcastValidationLevel);
 
     final SafeFuture<BlockImportResult> importResult =
-        doImportBlock(
-            block, Optional.empty(), blockBroadcastValidator, origin, Optional.empty());
+        doImportBlock(block, Optional.empty(), blockBroadcastValidator, origin, Optional.empty());
 
     // we want to intercept any early import exceptions happening before the consensus validation is
     // completed

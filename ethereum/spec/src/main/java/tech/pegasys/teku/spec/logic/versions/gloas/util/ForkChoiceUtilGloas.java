@@ -295,11 +295,9 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
       if (voteSlot.isLessThanOrEqualTo(blockSlot)) {
         return false;
       }
-      if (votePayloadPresent) {
-        return nodePayloadStatus == PAYLOAD_STATUS_FULL;
-      } else {
-        return nodePayloadStatus == PAYLOAD_STATUS_EMPTY;
-      }
+      return votePayloadPresent
+          ? nodePayloadStatus == PAYLOAD_STATUS_FULL
+          : nodePayloadStatus == PAYLOAD_STATUS_EMPTY;
     } else {
       // Ancestor vote: check if the node is an ancestor of the vote
       final Optional<Bytes32> ancestorRoot = forkChoiceStrategy.getAncestor(voteRoot, blockSlot);

@@ -356,7 +356,8 @@ public class BlockManagerTest {
         localChain.chainBuilder().generateBlockAtSlot(nextNextSlot).getBlock();
 
     final SafeFuture<BlockImportResult> blockImportResult = new SafeFuture<>();
-    when(blockImporter.importBlock(eq(nextNextBlock), eq(Optional.empty()), any(), eq(Optional.empty())))
+    when(blockImporter.importBlock(
+            eq(nextNextBlock), eq(Optional.empty()), any(), eq(Optional.empty())))
         .thenReturn(blockImportResult)
         .thenReturn(new SafeFuture<>());
 

@@ -23,6 +23,7 @@ import it.unimi.dsi.fastutil.longs.LongList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.ToIntFunction;
 import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -786,8 +787,7 @@ class ProtoArrayTest {
         UInt64.valueOf(5),
         GENESIS_CHECKPOINT,
         GENESIS_CHECKPOINT,
-        Optional.of(
-            new GloasPayloadStatusTiebreaker(UInt64.valueOf(100), Optional.empty(), 0, __ -> 0)));
+        Optional.of(createGloasPayloadStatusTiebreaker(UInt64.valueOf(100), Optional.empty())));
 
     // block2a should be head (FULL path wins via tiebreaker)
     final ProtoNode head =
@@ -851,8 +851,7 @@ class ProtoArrayTest {
         UInt64.valueOf(5),
         GENESIS_CHECKPOINT,
         GENESIS_CHECKPOINT,
-        Optional.of(
-            new GloasPayloadStatusTiebreaker(UInt64.valueOf(100), Optional.empty(), 0, __ -> 0)));
+        Optional.of(createGloasPayloadStatusTiebreaker(UInt64.valueOf(100), Optional.empty())));
 
     // FULL should be bestChild of block1a (PENDING node)
     final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
@@ -874,8 +873,7 @@ class ProtoArrayTest {
         UInt64.valueOf(5),
         GENESIS_CHECKPOINT,
         GENESIS_CHECKPOINT,
-        Optional.of(
-            new GloasPayloadStatusTiebreaker(UInt64.valueOf(6), Optional.empty(), 0, __ -> 0)));
+        Optional.of(createGloasPayloadStatusTiebreaker(UInt64.valueOf(6), Optional.empty())));
 
     final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
@@ -903,7 +901,7 @@ class ProtoArrayTest {
         GENESIS_CHECKPOINT,
         GENESIS_CHECKPOINT,
         Optional.of(
-            new GloasPayloadStatusTiebreaker(UInt64.valueOf(6), Optional.of(block2a), 0, __ -> 0)));
+            createGloasPayloadStatusTiebreaker(UInt64.valueOf(6), Optional.of(block2a))));
 
     // FULL wins: is_parent_node_full(block1a) = true → should_extend_payload = true
     final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
@@ -911,10 +909,10 @@ class ProtoArrayTest {
   }
 
   @Test
-  void tiebreaker_fullWinsOverEmpty_whenPayloadTimely() {
+  void tiebreaker_fullWinsOverEmpty_whenPayloadTimelyAndDataAvailable() {
     // Block at slot 5, currentSlot = 6, proposer boost on a child of block1a.
-    // PTC votes exceed threshold → is_payload_timely = true → should_extend_payload = true
-    // → FULL keeps score 2.
+    // PTC payload and data-availability votes exceed threshold
+    // → should_extend_payload = true → FULL keeps score 2.
     addValidBlock(5, block1a, GENESIS_CHECKPOINT.getRoot());
     protoArray.createEmptyNode(block1a);
     protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
@@ -930,12 +928,49 @@ class ProtoArrayTest {
         GENESIS_CHECKPOINT,
         GENESIS_CHECKPOINT,
         Optional.of(
-            new GloasPayloadStatusTiebreaker(
-                UInt64.valueOf(6), Optional.of(block2a), 5, root -> root.equals(block1a) ? 6 : 0)));
+            createGloasPayloadStatusTiebreaker(
+                UInt64.valueOf(6),
+                Optional.of(block2a),
+                5,
+                5,
+                root -> root.equals(block1a) ? 6 : 0,
+                root -> root.equals(block1a) ? 6 : 0)));
 
     final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
     assertThat(block1aNode.getBestChildIndex()).isEqualTo(Optional.of(fullNodeIndex));
+  }
+
+  @Test
+  void tiebreaker_emptyWinsOverFull_whenPayloadTimelyButDataUnavailable() {
+    // Block at slot 5, currentSlot = 6, proposer boost on a child of block1a built on EMPTY.
+    // PTC payload votes exceed threshold but data-availability votes do not
+    // → should_extend_payload = false
+    // → EMPTY wins (score 1) over FULL (score 0).
+    addValidBlock(5, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.createEmptyNode(block1a);
+    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
+    protoArray.markNodeValid(block1a);
+
+    final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
+    addValidBlockWithParentIndex(6, block2a, block1a, Optional.of(emptyNodeIndex));
+
+    protoArray.applyScoreChanges(
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        Optional.of(
+            createGloasPayloadStatusTiebreaker(
+                UInt64.valueOf(6),
+                Optional.of(block2a),
+                5,
+                5,
+                root -> root.equals(block1a) ? 6 : 0,
+                __ -> 0)));
+
+    final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
+    assertThat(block1aNode.getBestChildIndex()).isEqualTo(Optional.of(emptyNodeIndex));
   }
 
   @Test
@@ -960,8 +995,13 @@ class ProtoArrayTest {
         GENESIS_CHECKPOINT,
         GENESIS_CHECKPOINT,
         Optional.of(
-            new GloasPayloadStatusTiebreaker(
-                UInt64.valueOf(6), Optional.of(block2a), 5, root -> root.equals(block1a) ? 3 : 0)));
+            createGloasPayloadStatusTiebreaker(
+                UInt64.valueOf(6),
+                Optional.of(block2a),
+                5,
+                5,
+                root -> root.equals(block1a) ? 3 : 0,
+                __ -> 0)));
 
     // FULL still wins because is_parent_node_full(block1a) = true
     final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
@@ -997,8 +1037,7 @@ class ProtoArrayTest {
         UInt64.valueOf(5),
         GENESIS_CHECKPOINT,
         GENESIS_CHECKPOINT,
-        Optional.of(
-            new GloasPayloadStatusTiebreaker(UInt64.valueOf(100), Optional.empty(), 0, __ -> 0)));
+        Optional.of(createGloasPayloadStatusTiebreaker(UInt64.valueOf(100), Optional.empty())));
 
     // EMPTY path wins by weight, even though tiebreaker would favor FULL
     final ProtoNode head =
@@ -1042,8 +1081,7 @@ class ProtoArrayTest {
         UInt64.valueOf(5),
         GENESIS_CHECKPOINT,
         GENESIS_CHECKPOINT,
-        Optional.of(
-            new GloasPayloadStatusTiebreaker(UInt64.valueOf(6), Optional.empty(), 0, __ -> 0)));
+        Optional.of(createGloasPayloadStatusTiebreaker(UInt64.valueOf(6), Optional.empty())));
 
     // Even though EMPTY path has more votes, at previous slot both have effectiveWeight 0,
     // so tiebreaker decides → FULL wins
@@ -1061,6 +1099,28 @@ class ProtoArrayTest {
 
     assertThat(node.getBestDescendantIndex()).isEmpty();
     assertThat(node.getBestChildIndex()).isEmpty();
+  }
+
+  private GloasPayloadStatusTiebreaker createGloasPayloadStatusTiebreaker(
+      final UInt64 currentSlot, final Optional<Bytes32> proposerBoostRoot) {
+    return createGloasPayloadStatusTiebreaker(
+        currentSlot, proposerBoostRoot, 0, 0, __ -> 0, __ -> 0);
+  }
+
+  private GloasPayloadStatusTiebreaker createGloasPayloadStatusTiebreaker(
+      final UInt64 currentSlot,
+      final Optional<Bytes32> proposerBoostRoot,
+      final int payloadTimelyThreshold,
+      final int dataAvailabilityTimelyThreshold,
+      final ToIntFunction<Bytes32> ptcPresentVoteCountLookup,
+      final ToIntFunction<Bytes32> ptcDataAvailableVoteCountLookup) {
+    return new GloasPayloadStatusTiebreaker(
+        currentSlot,
+        proposerBoostRoot,
+        payloadTimelyThreshold,
+        dataAvailabilityTimelyThreshold,
+        ptcPresentVoteCountLookup,
+        ptcDataAvailableVoteCountLookup);
   }
 
   private void addValidBlock(final long slot, final Bytes32 blockRoot, final Bytes32 parentRoot) {

@@ -31,17 +31,23 @@ class GloasPayloadStatusTiebreaker implements PayloadStatusTiebreaker {
   private final UInt64 currentSlot;
   private final Optional<Bytes32> proposerBoostRoot;
   private final int payloadTimelyThreshold;
+  private final int dataAvailabilityTimelyThreshold;
   private final ToIntFunction<Bytes32> ptcPresentVoteCountLookup;
+  private final ToIntFunction<Bytes32> ptcDataAvailableVoteCountLookup;
 
   GloasPayloadStatusTiebreaker(
       final UInt64 currentSlot,
       final Optional<Bytes32> proposerBoostRoot,
       final int payloadTimelyThreshold,
-      final ToIntFunction<Bytes32> ptcPresentVoteCountLookup) {
+      final int dataAvailabilityTimelyThreshold,
+      final ToIntFunction<Bytes32> ptcPresentVoteCountLookup,
+      final ToIntFunction<Bytes32> ptcDataAvailableVoteCountLookup) {
     this.currentSlot = currentSlot;
     this.proposerBoostRoot = proposerBoostRoot;
     this.payloadTimelyThreshold = payloadTimelyThreshold;
+    this.dataAvailabilityTimelyThreshold = dataAvailabilityTimelyThreshold;
     this.ptcPresentVoteCountLookup = ptcPresentVoteCountLookup;
+    this.ptcDataAvailableVoteCountLookup = ptcDataAvailableVoteCountLookup;
   }
 
   @Override
@@ -87,7 +93,7 @@ class GloasPayloadStatusTiebreaker implements PayloadStatusTiebreaker {
    */
   private boolean shouldExtendPayload(final Bytes32 blockRoot, final ProtoArray protoArray) {
     // Spec: is_payload_timely(store, root)
-    if (isPayloadTimely(blockRoot, protoArray)) {
+    if (isPayloadTimely(blockRoot, protoArray) && isPayloadDataAvailable(blockRoot, protoArray)) {
       return true;
     }
     // Spec: proposer_root == Root()
@@ -117,5 +123,12 @@ class GloasPayloadStatusTiebreaker implements PayloadStatusTiebreaker {
       return false;
     }
     return ptcPresentVoteCountLookup.applyAsInt(blockRoot) > payloadTimelyThreshold;
+  }
+
+  private boolean isPayloadDataAvailable(final Bytes32 blockRoot, final ProtoArray protoArray) {
+    if (!protoArray.hasFullNode(blockRoot)) {
+      return false;
+    }
+    return ptcDataAvailableVoteCountLookup.applyAsInt(blockRoot) > dataAvailabilityTimelyThreshold;
   }
 }

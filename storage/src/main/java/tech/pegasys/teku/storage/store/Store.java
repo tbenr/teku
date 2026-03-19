@@ -252,7 +252,7 @@ class Store extends CacheableStore {
             "memory_checkpoint_states",
             config.getCheckpointStateCacheSize());
     final CachingTaskQueue<Bytes32, StateAndBlockSummary> blockStateTaskQueue =
-        CachingTaskQueue.create(asyncRunner, metricsSystem, "memory_states", 32);
+        CachingTaskQueue.create(asyncRunner, metricsSystem, "memory_states", 132);
     final Optional<Map<Bytes32, StateAndBlockSummary>> maybeEpochStates =
         config.getEpochStateCacheSize() > 0
             ? Optional.of(LimitedMap.createSynchronizedLRU(config.getEpochStateCacheSize()))
@@ -385,6 +385,8 @@ class Store extends CacheableStore {
         throw new IllegalStateException(
             "Incompatible database version detected. The data in this database is too old to be read by Teku. A re-sync will be required.");
       }
+
+      // TODO: GLOAS - we need to rebuild a proper protoarray (PENDING-EMPTY-FULL nodes)
 
       protoArray.onBlock(
           block.getBlockSlot(),

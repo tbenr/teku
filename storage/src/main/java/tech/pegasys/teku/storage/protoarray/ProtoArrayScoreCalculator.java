@@ -171,9 +171,7 @@ class ProtoArrayScoreCalculator {
             : UInt64.ZERO;
 
     if (!vote.getCurrentRoot().equals(vote.getNextRoot()) || !oldBalance.equals(newBalance)) {
-      // Route current vote subtraction: use FULL/EMPTY node based on payload-present flag.
-      // Spec: is_supporting_vote returns false for EMPTY/FULL when message.slot <= block.slot,
-      // so only route to EMPTY/FULL when vote slot > block slot.
+      // Route current vote subtraction to the corresponding Gloas node identity.
       subtractBalance(
           resolveIndexFn(
               getIndexByRoot,
@@ -186,7 +184,7 @@ class ProtoArrayScoreCalculator {
           deltas,
           vote.getCurrentRoot(),
           oldBalance);
-      // Route next vote addition
+      // Route next vote addition to the corresponding Gloas node identity.
       addBalance(
           resolveIndexFn(
               getIndexByRoot,
@@ -225,8 +223,6 @@ class ProtoArrayScoreCalculator {
     if (fullNodeIndices == null && emptyNodeIndices == null) {
       return getIndexByRoot;
     }
-    // Spec: is_supporting_vote returns false for EMPTY/FULL when message.slot <= block.slot.
-    // Only route to EMPTY/FULL nodes when the vote slot is strictly after the block slot.
     if (blockSlotLookup != null) {
       final Optional<UInt64> blockSlot = blockSlotLookup.apply(voteRoot);
       if (blockSlot.isPresent() && voteSlot.isLessThanOrEqualTo(blockSlot.get())) {
@@ -234,18 +230,15 @@ class ProtoArrayScoreCalculator {
       }
     }
     if (payloadPresent) {
-      // payload-present votes: prefer FULL, fallback to EMPTY, then block index
+      // payload-present votes support FULL if available, otherwise only the PENDING block node.
       return root -> {
         if (fullNodeIndices != null && fullNodeIndices.containsKey(root)) {
           return Optional.of(fullNodeIndices.getInt(root));
         }
-        if (emptyNodeIndices != null && emptyNodeIndices.containsKey(root)) {
-          return Optional.of(emptyNodeIndices.getInt(root));
-        }
         return getIndexByRoot.apply(root);
       };
     } else {
-      // non-payload votes: prefer EMPTY, then block index
+      // payload-absent votes support EMPTY only after the block's own slot.
       return root -> {
         if (emptyNodeIndices != null && emptyNodeIndices.containsKey(root)) {
           return Optional.of(emptyNodeIndices.getInt(root));

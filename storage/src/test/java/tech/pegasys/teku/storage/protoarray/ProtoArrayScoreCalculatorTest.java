@@ -518,6 +518,108 @@ public class ProtoArrayScoreCalculatorTest {
   }
 
   @Test
+  void computeDeltas_payloadPresentVoteFallsBackToPendingWhenFullNodeIsMissing() {
+    final UInt64 balance = UInt64.valueOf(42);
+    final Bytes32 root = getHash(1);
+    final Object2IntMap<Bytes32> fullNodeIndices = new Object2IntOpenHashMap<>();
+    final Object2IntMap<Bytes32> emptyNodeIndices = new Object2IntOpenHashMap<>();
+    indices.put(root, 0);
+    emptyNodeIndices.put(root, 1);
+    oldBalances = List.of(balance);
+    newBalances = List.of(balance);
+
+    store.putVote(
+        ZERO,
+        new VoteTracker(
+            Bytes32.ZERO, root, ZERO, false, false, UInt64.valueOf(2), true, ZERO, false));
+
+    final List<Long> deltas =
+        computeDeltas(
+            store,
+            2,
+            this::getIndex,
+            oldBalances,
+            newBalances,
+            oldProposerBoostRoot,
+            newProposerBoostRoot,
+            oldProposerBoostAmount,
+            newProposerBoostAmount,
+            fullNodeIndices,
+            emptyNodeIndices,
+            rootLookup -> Optional.of(UInt64.ONE));
+
+    assertThat(deltas).containsExactly(balance.longValue(), 0L);
+  }
+
+  @Test
+  void computeDeltas_payloadAbsentVoteAtBlockSlotTargetsPendingNode() {
+    final UInt64 balance = UInt64.valueOf(42);
+    final Bytes32 root = getHash(1);
+    final Object2IntMap<Bytes32> fullNodeIndices = new Object2IntOpenHashMap<>();
+    final Object2IntMap<Bytes32> emptyNodeIndices = new Object2IntOpenHashMap<>();
+    indices.put(root, 0);
+    emptyNodeIndices.put(root, 1);
+    oldBalances = List.of(balance);
+    newBalances = List.of(balance);
+
+    store.putVote(
+        ZERO,
+        new VoteTracker(Bytes32.ZERO, root, ZERO, false, false, UInt64.ONE, false, ZERO, false));
+
+    final List<Long> deltas =
+        computeDeltas(
+            store,
+            2,
+            this::getIndex,
+            oldBalances,
+            newBalances,
+            oldProposerBoostRoot,
+            newProposerBoostRoot,
+            oldProposerBoostAmount,
+            newProposerBoostAmount,
+            fullNodeIndices,
+            emptyNodeIndices,
+            rootLookup -> Optional.of(UInt64.ONE));
+
+    assertThat(deltas).containsExactly(balance.longValue(), 0L);
+  }
+
+  @Test
+  void computeDeltas_payloadPresentVoteTargetsFullWhenFullNodeExists() {
+    final UInt64 balance = UInt64.valueOf(42);
+    final Bytes32 root = getHash(1);
+    final Object2IntMap<Bytes32> fullNodeIndices = new Object2IntOpenHashMap<>();
+    final Object2IntMap<Bytes32> emptyNodeIndices = new Object2IntOpenHashMap<>();
+    indices.put(root, 0);
+    emptyNodeIndices.put(root, 1);
+    fullNodeIndices.put(root, 2);
+    oldBalances = List.of(balance);
+    newBalances = List.of(balance);
+
+    store.putVote(
+        ZERO,
+        new VoteTracker(
+            Bytes32.ZERO, root, ZERO, false, false, UInt64.valueOf(2), true, ZERO, false));
+
+    final List<Long> deltas =
+        computeDeltas(
+            store,
+            3,
+            this::getIndex,
+            oldBalances,
+            newBalances,
+            oldProposerBoostRoot,
+            newProposerBoostRoot,
+            oldProposerBoostAmount,
+            newProposerBoostAmount,
+            fullNodeIndices,
+            emptyNodeIndices,
+            rootLookup -> Optional.of(UInt64.ONE));
+
+    assertThat(deltas).containsExactly(0L, 0L, balance.longValue());
+  }
+
+  @Test
   void computeDeltas_validatorEquivocatesChain() {
     final UInt64 balance = UInt64.valueOf(42);
 
