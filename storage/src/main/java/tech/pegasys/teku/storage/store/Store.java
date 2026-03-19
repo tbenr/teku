@@ -607,7 +607,8 @@ class Store extends CacheableStore {
     readLock.lock();
     try {
       final List<Bytes32> blockRoots = new ArrayList<>();
-      forkChoiceStrategy.processAllInOrder((root, slot, parent) -> blockRoots.add(root));
+      forkChoiceStrategy.processAllBeaconBlocksInOrder(
+          (root, slot, parent) -> blockRoots.add(root));
       return blockRoots;
     } finally {
       readLock.unlock();
@@ -1130,7 +1131,7 @@ class Store extends CacheableStore {
     final AtomicReference<SlotAndBlockRoot> latestEpochBoundary = new AtomicReference<>();
     readLock.lock();
     try {
-      forkChoiceStrategy.processHashesInChain(
+      forkChoiceStrategy.processBeaconBlockChain(
           blockRoot,
           (root, slot, parent) -> {
             treeBuilder.childAndParentRoots(root, parent);
@@ -1172,9 +1173,9 @@ class Store extends CacheableStore {
     final AtomicReference<BeaconState> baseState = new AtomicReference<>();
     readLock.lock();
     try {
-      forkChoiceStrategy.processHashesInChainWhile(
+      forkChoiceStrategy.processBeaconBlockChainWhile(
           blockRoot,
-          (root, slot, parent, executionHash) -> {
+          (root, slot, parent) -> {
             treeBuilder.childAndParentRoots(root, parent);
             final Optional<BeaconState> blockState = getBlockStateIfAvailable(root);
             blockState.ifPresent(

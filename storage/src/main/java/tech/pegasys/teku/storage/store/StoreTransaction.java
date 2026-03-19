@@ -360,7 +360,7 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
       final NavigableMap<UInt64, Bytes32> blockRootsBySlot = new TreeMap<>();
       store
           .getForkChoiceStrategy()
-          .processAllInOrder((root, slot, parent) -> blockRootsBySlot.put(slot, root));
+          .processAllBeaconBlocksInOrder((root, slot, parent) -> blockRootsBySlot.put(slot, root));
       this.blockData
           .values()
           .forEach(

@@ -25,6 +25,7 @@ import static org.mockito.Mockito.verify;
 import static tech.pegasys.teku.infrastructure.unsigned.UInt64.ONE;
 import static tech.pegasys.teku.infrastructure.unsigned.UInt64.ZERO;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -100,6 +101,34 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
                         .orElse(ProtoNode.NO_EXECUTION_BLOCK_NUMBER),
                     blockAndState.getExecutionBlockHash().orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH),
                     spec.isBlockProcessorOptimistic(blockAndState.getSlot())));
+  }
+
+  @Test
+  void processAllBeaconBlocksInOrder_shouldExcludeInternalPayloadChildNodes() {
+    final InternalPayloadTraversalFixture fixture = createInternalPayloadTraversalFixture();
+    final List<Bytes32> visitedRoots = new ArrayList<>();
+
+    fixture
+        .strategy()
+        .processAllBeaconBlocksInOrder((root, slot, parent) -> visitedRoots.add(root));
+
+    assertThat(visitedRoots)
+        .containsExactly(
+            fixture.genesis().getRoot(), fixture.block1().getRoot(), fixture.block2().getRoot());
+  }
+
+  @Test
+  void processBeaconBlockChain_shouldSkipInternalPayloadChildNodes() {
+    final InternalPayloadTraversalFixture fixture = createInternalPayloadTraversalFixture();
+    final List<Bytes32> visitedRoots = new ArrayList<>();
+
+    fixture
+        .strategy()
+        .processBeaconBlockChain(fixture.block2().getRoot(), (root, slot, parent) -> visitedRoots.add(root));
+
+    assertThat(visitedRoots)
+        .containsExactly(
+            fixture.block2().getRoot(), fixture.block1().getRoot(), fixture.genesis().getRoot());
   }
 
   @Test
@@ -659,4 +688,71 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
   private ForkChoiceStrategy getProtoArray(final StorageSystem storageSystem) {
     return storageSystem.recentChainData().getStore().getForkChoiceStrategy();
   }
+
+  private InternalPayloadTraversalFixture createInternalPayloadTraversalFixture() {
+    final ChainBuilder chainBuilder = ChainBuilder.create(spec);
+    final SignedBlockAndState genesis = chainBuilder.generateGenesis();
+    final SignedBlockAndState block1 = chainBuilder.generateBlockAtSlot(1);
+    final SignedBlockAndState block2 = chainBuilder.generateBlockAtSlot(2);
+
+    final ProtoArray protoArray = createProtoArray(block2.getState());
+    addBlockToProtoArray(protoArray, genesis);
+    addBlockToProtoArray(protoArray, block1);
+
+    protoArray.createEmptyNode(block1.getRoot());
+    protoArray.onExecutionPayload(
+        block1.getRoot(),
+        block1.getExecutionBlockNumber().orElse(UInt64.ONE),
+        block1.getExecutionBlockHash().orElse(dataStructureUtil.randomBytes32()));
+
+    addBlockToProtoArray(
+        protoArray, block2, Optional.of(protoArray.getFullNodeIndices().getInt(block1.getRoot())));
+
+    return new InternalPayloadTraversalFixture(
+        ForkChoiceStrategy.initialize(spec, protoArray), genesis, block1, block2);
+  }
+
+  private ProtoArray createProtoArray(final BeaconState latestState) {
+    return ProtoArray.builder()
+        .spec(spec)
+        .currentEpoch(ZERO)
+        .finalizedCheckpoint(latestState.getFinalizedCheckpoint())
+        .justifiedCheckpoint(latestState.getCurrentJustifiedCheckpoint())
+        .build();
+  }
+
+  private void addBlockToProtoArray(
+      final ProtoArray protoArray, final SignedBlockAndState blockAndState) {
+    protoArray.onBlock(
+        blockAndState.getSlot(),
+        blockAndState.getRoot(),
+        blockAndState.getParentRoot(),
+        blockAndState.getStateRoot(),
+        spec.calculateBlockCheckpoints(blockAndState.getState()),
+        blockAndState.getExecutionBlockNumber().orElse(ProtoNode.NO_EXECUTION_BLOCK_NUMBER),
+        blockAndState.getExecutionBlockHash().orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH),
+        spec.isBlockProcessorOptimistic(blockAndState.getSlot()));
+  }
+
+  private void addBlockToProtoArray(
+      final ProtoArray protoArray,
+      final SignedBlockAndState blockAndState,
+      final Optional<Integer> parentIndex) {
+    protoArray.onBlock(
+        blockAndState.getSlot(),
+        blockAndState.getRoot(),
+        blockAndState.getParentRoot(),
+        parentIndex,
+        blockAndState.getStateRoot(),
+        spec.calculateBlockCheckpoints(blockAndState.getState()),
+        blockAndState.getExecutionBlockNumber().orElse(ProtoNode.NO_EXECUTION_BLOCK_NUMBER),
+        blockAndState.getExecutionBlockHash().orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH),
+        spec.isBlockProcessorOptimistic(blockAndState.getSlot()));
+  }
+
+  private record InternalPayloadTraversalFixture(
+      ForkChoiceStrategy strategy,
+      SignedBlockAndState genesis,
+      SignedBlockAndState block1,
+      SignedBlockAndState block2) {}
 }

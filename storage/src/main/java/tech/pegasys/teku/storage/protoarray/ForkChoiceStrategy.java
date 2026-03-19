@@ -21,7 +21,6 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -616,8 +615,9 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
    * @param processor The callback to invoke for each child-parent pair
    */
   @Override
-  public void processHashesInChain(final Bytes32 head, final NodeProcessor processor) {
-    processHashesInChainWhile(head, HaltableNodeProcessor.fromNodeProcessor(processor));
+  public void processBeaconBlockChain(final Bytes32 head, final BeaconBlockProcessor processor) {
+    processBeaconBlockChainWhile(
+        head, HaltableBeaconBlockProcessor.fromBeaconBlockProcessor(processor));
   }
 
   /**
@@ -625,41 +625,44 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
    * shouldContinue} returns false.
    *
    * @param head The root defining the head of the chain to construct
-   * @param nodeProcessor The callback receiving hashes and determining whether to continue
-   *     processing
+   * @param beaconBlockProcessor The callback receiving block roots and determining whether to
+   *     continue processing
    */
   @Override
-  public void processHashesInChainWhile(
-      final Bytes32 head, final HaltableNodeProcessor nodeProcessor) {
+  public void processBeaconBlockChainWhile(
+      final Bytes32 head, final HaltableBeaconBlockProcessor beaconBlockProcessor) {
     protoArrayLock.readLock().lock();
     try {
-      final Optional<ProtoNode> startingNode = getProtoNode(head);
-      if (startingNode.isEmpty()) {
+      final Optional<Integer> startingIndex = protoArray.getIndexByRoot(head);
+      if (startingIndex.isEmpty()) {
         throw new IllegalArgumentException("Unknown root supplied: " + head);
       }
-      ProtoNode currentNode = startingNode.orElseThrow();
+      final List<ProtoNode> nodes = protoArray.getNodes();
+      final Object2IntMap<Bytes32> rootIndices = protoArray.getRootIndices();
+      int currentNodeIndex = startingIndex.orElseThrow();
+      ProtoNode currentNode = nodes.get(currentNodeIndex);
 
       while (protoArray.contains(currentNode.getBlockRoot())) {
-        // Skip the internal FULL and EMPTY children of the Gloas three-state tree.
-        // Regular block nodes may also carry a non-PENDING payload status, so key off the
-        // dedicated child-node indices rather than the payload status alone.
-        if (isInternalFullNode(currentNode) || isInternalEmptyNode(currentNode)) {
+        // Process only the canonical node tracked for each block root. Internal FULL and EMPTY
+        // payload-path nodes share the same block root but are not the rootIndices entry.
+        if (rootIndices.getOrDefault(currentNode.getBlockRoot(), -1) != currentNodeIndex) {
           if (currentNode.getParentIndex().isEmpty()) {
             break;
           }
-          currentNode = protoArray.getNodes().get(currentNode.getParentIndex().get());
+          currentNodeIndex = currentNode.getParentIndex().get();
+          currentNode = nodes.get(currentNodeIndex);
           continue;
         }
         final boolean shouldContinue =
-            nodeProcessor.process(
+            beaconBlockProcessor.process(
                 currentNode.getBlockRoot(),
                 currentNode.getBlockSlot(),
-                currentNode.getParentRoot(),
-                currentNode.getExecutionBlockHash());
+                currentNode.getParentRoot());
         if (!shouldContinue || currentNode.getParentIndex().isEmpty()) {
           break;
         }
-        currentNode = protoArray.getNodes().get(currentNode.getParentIndex().get());
+        currentNodeIndex = currentNode.getParentIndex().get();
+        currentNode = nodes.get(currentNodeIndex);
       }
     } finally {
       protoArrayLock.readLock().unlock();
@@ -667,39 +670,23 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
   }
 
   @Override
-  public void processAllInOrder(final NodeProcessor nodeProcessor) {
+  public void processAllBeaconBlocksInOrder(final BeaconBlockProcessor beaconBlockProcessor) {
     protoArrayLock.readLock().lock();
     try {
-      final Object2IntMap<Bytes32> indices = protoArray.getRootIndices();
-      protoArray.getNodes().stream()
-          // Filter out nodes that could be pruned but are still in the protoarray
-          .filter(node -> indices.containsKey(node.getBlockRoot()))
-          // Skip FULL and EMPTY internal tree nodes — not actual blocks
-          .filter(node -> !isInternalFullNode(node))
-          .filter(node -> !isInternalEmptyNode(node))
-          .forEach(
-              node ->
-                  nodeProcessor.process(
-                      node.getBlockRoot(), node.getBlockSlot(), node.getParentRoot()));
+      final List<ProtoNode> nodes = protoArray.getNodes();
+      final Object2IntMap<Bytes32> rootIndices = protoArray.getRootIndices();
+      for (int nodeIndex = 0; nodeIndex < nodes.size(); nodeIndex++) {
+        final ProtoNode node = nodes.get(nodeIndex);
+        // Process only the canonical node tracked for each block root. Pruned block nodes and
+        // internal FULL/EMPTY payload-path nodes fail this check.
+        if (rootIndices.getOrDefault(node.getBlockRoot(), -1) != nodeIndex) {
+          continue;
+        }
+        beaconBlockProcessor.process(node.getBlockRoot(), node.getBlockSlot(), node.getParentRoot());
+      }
     } finally {
       protoArrayLock.readLock().unlock();
     }
-  }
-
-  private boolean isInternalFullNode(final ProtoNode node) {
-    return node.getPayloadStatus() == ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL
-        && protoArray.getFullNodeIndices().containsKey(node.getBlockRoot())
-        && Objects.equals(
-            protoArray.getNodeByIndex(protoArray.getFullNodeIndices().getInt(node.getBlockRoot())),
-            node);
-  }
-
-  private boolean isInternalEmptyNode(final ProtoNode node) {
-    return node.getPayloadStatus() == ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY
-        && protoArray.getEmptyNodeIndices().containsKey(node.getBlockRoot())
-        && Objects.equals(
-            protoArray.getNodeByIndex(protoArray.getEmptyNodeIndices().getInt(node.getBlockRoot())),
-            node);
   }
 
   @Override
