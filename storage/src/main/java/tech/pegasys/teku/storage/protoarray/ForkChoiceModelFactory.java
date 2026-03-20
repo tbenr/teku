@@ -13,13 +13,11 @@
 
 package tech.pegasys.teku.storage.protoarray;
 
-import java.util.Optional;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.SpecMilestone;
 import tech.pegasys.teku.spec.SpecVersion;
 import tech.pegasys.teku.spec.config.SpecConfigGloas;
-import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.storage.api.StoredBlockMetadata;
 
 /** Centralizes the storage-layer milestone split for forkchoice models. */
@@ -48,11 +46,9 @@ public class ForkChoiceModelFactory {
       final ProtoArray protoArray,
       final BlockNodeVariantsIndex blockNodeIndex,
       final StoredBlockMetadata block,
-      final Optional<SignedBeaconBlock> maybeBlock,
       final boolean optimisticallyProcessed) {
     forSlot(block.getBlockSlot())
-        .rebuildTrackedBlock(
-            protoArray, blockNodeIndex, block, maybeBlock, optimisticallyProcessed);
+        .rebuildTrackedBlock(protoArray, blockNodeIndex, block, optimisticallyProcessed);
   }
 
   void onPrunedBlocks(final BlockNodeVariantsIndex blockNodeIndex) {

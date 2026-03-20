@@ -18,12 +18,10 @@ import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.config.SpecConfigGloas;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
-import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
+import tech.pegasys.teku.storage.api.GloasForkChoiceRebuildData;
 import tech.pegasys.teku.storage.api.StoredBlockMetadata;
 
 /**
@@ -149,20 +147,13 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
       final ProtoArray protoArray,
       final BlockNodeVariantsIndex blockNodeIndex,
       final StoredBlockMetadata block,
-      final Optional<SignedBeaconBlock> maybeBlock,
       final boolean optimisticallyProcessed) {
     // Recovery replays the same modified on_block logic as live import so the EMPTY/FULL layout
     // matches the Gloas store model after restart.
     final Bytes32 parentBlockHash =
-        maybeBlock
-            .flatMap(
-                signedBlock ->
-                    signedBlock
-                        .getMessage()
-                        .getBody()
-                        .getOptionalSignedExecutionPayloadBid()
-                        .map(SignedExecutionPayloadBid::getMessage)
-                        .map(ExecutionPayloadBid::getParentBlockHash))
+        block
+            .getGloasForkChoiceRebuildData()
+            .map(GloasForkChoiceRebuildData::payloadParentBlockHash)
             .orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH);
     final UInt64 executionBlockNumber =
         block
@@ -185,6 +176,17 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
         executionBlockNumber,
         parentBlockHash,
         optimisticallyProcessed);
+    block
+        .getGloasForkChoiceRebuildData()
+        .flatMap(this::getFullNodeRebuildPayload)
+        .ifPresent(
+            rebuildPayload ->
+                onExecutionPayload(
+                    protoArray,
+                    blockNodeIndex,
+                    block.getBlockRoot(),
+                    rebuildPayload.executionBlockNumber(),
+                    rebuildPayload.executionBlockHash()));
   }
 
   @Override
@@ -278,4 +280,15 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
   public void onPrunedBlocks(final BlockNodeVariantsIndex blockNodeIndex) {
     ptcVoteTracker.removeIf(root -> !blockNodeIndex.containsBlock(root));
   }
+
+  private Optional<FullNodeRebuildPayload> getFullNodeRebuildPayload(
+      final GloasForkChoiceRebuildData rebuildData) {
+    return rebuildData
+        .payloadBlockNumber()
+        .map(
+            executionBlockNumber ->
+                new FullNodeRebuildPayload(executionBlockNumber, rebuildData.payloadBlockHash()));
+  }
+
+  private record FullNodeRebuildPayload(UInt64 executionBlockNumber, Bytes32 executionBlockHash) {}
 }

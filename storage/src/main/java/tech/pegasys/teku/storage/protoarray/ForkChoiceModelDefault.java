@@ -17,7 +17,6 @@ import java.util.Optional;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
-import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.storage.api.StoredBlockMetadata;
@@ -71,7 +70,6 @@ class ForkChoiceModelDefault implements ForkChoiceModel {
       final ProtoArray protoArray,
       final BlockNodeVariantsIndex blockNodeIndex,
       final StoredBlockMetadata block,
-      final Optional<SignedBeaconBlock> maybeBlock,
       final boolean optimisticallyProcessed) {
     processBlock(
         protoArray,

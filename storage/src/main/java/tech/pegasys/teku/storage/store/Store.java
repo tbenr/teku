@@ -53,7 +53,6 @@ import tech.pegasys.teku.infrastructure.metrics.SettableGauge;
 import tech.pegasys.teku.infrastructure.metrics.TekuMetricCategory;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
-import tech.pegasys.teku.spec.SpecMilestone;
 import tech.pegasys.teku.spec.SpecVersion;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockAndCheckpoints;
@@ -323,7 +322,6 @@ class Store extends CacheableStore {
             spec,
             buildProtoArray(
                 spec,
-                blockProvider,
                 blockInfoByRoot,
                 initialCheckpoint,
                 currentEpoch,
@@ -364,7 +362,6 @@ class Store extends CacheableStore {
 
   private static ProtoArray buildProtoArray(
       final Spec spec,
-      final BlockProvider blockProvider,
       final Map<Bytes32, StoredBlockMetadata> blockInfoByRoot,
       final Optional<Checkpoint> initialCheckpoint,
       final UInt64 currentEpoch,
@@ -383,26 +380,13 @@ class Store extends CacheableStore {
             .justifiedCheckpoint(justifiedCheckpoint)
             .finalizedCheckpoint(finalizedAnchor.getCheckpoint())
             .build();
-    final Map<Bytes32, SignedBeaconBlock> recoveredBlocks =
-        blocks.stream()
-                .anyMatch(
-                    block ->
-                        spec.atSlot(block.getBlockSlot())
-                            .getMilestone()
-                            .isGreaterThanOrEqualTo(SpecMilestone.GLOAS))
-            ? blockProvider.getBlocks(blockInfoByRoot.keySet()).join()
-            : Collections.emptyMap();
     for (StoredBlockMetadata block : blocks) {
       if (block.getCheckpointEpochs().isEmpty()) {
         throw new IllegalStateException(
             "Incompatible database version detected. The data in this database is too old to be read by Teku. A re-sync will be required.");
       }
       forkChoiceModelFactory.rebuildTrackedBlock(
-          protoArray,
-          blockNodeIndex,
-          block,
-          Optional.ofNullable(recoveredBlocks.get(block.getBlockRoot())),
-          spec.isBlockProcessorOptimistic(block.getBlockSlot()));
+          protoArray, blockNodeIndex, block, spec.isBlockProcessorOptimistic(block.getBlockSlot()));
     }
 
     initialCanonicalBlockRoot.ifPresent(protoArray::setInitialCanonicalBlockRoot);
