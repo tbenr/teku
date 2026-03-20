@@ -62,10 +62,8 @@ public class ChainHead implements MinimalBeaconBlockSummary {
         stateAndBlockSummary.getBlockSummary(),
         stateAndBlockSummary.getExecutionBlockHash().orElse(Bytes32.ZERO),
         false,
-        SafeFuture.completedFuture(stateAndBlockSummary)
-        // TODO
-        ,
-        ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL);
+        SafeFuture.completedFuture(stateAndBlockSummary),
+        ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING);
   }
 
   public static ChainHead create(final SignedBlockAndState blockAndState) {
@@ -73,10 +71,8 @@ public class ChainHead implements MinimalBeaconBlockSummary {
         blockAndState.getBlockSummary(),
         blockAndState.getExecutionBlockHash().orElse(Bytes32.ZERO),
         false,
-        SafeFuture.completedFuture(blockAndState)
-        // TODO
-        ,
-        ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL);
+        SafeFuture.completedFuture(blockAndState),
+        ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING);
   }
 
   public static ChainHead create(

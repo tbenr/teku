@@ -37,6 +37,7 @@ import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.metadata.BlockAndMetaData;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.CommitteeAssignment;
@@ -231,6 +232,32 @@ class CombinedChainDataClientTest {
     // getStateAtSlotExact
     verify(recentChainData).getBlockRootInEffectBySlot(UInt64.ONE);
     verify(store).retrieveBlockState(slotAndBlockRoot);
+  }
+
+  @Test
+  void getStateForBlockProduction_whenEnabledAndHeadChainMatchesFullPayload()
+      throws ExecutionException, InterruptedException {
+    final BeaconState state = dataStructureUtil.randomBeaconState(UInt64.valueOf(2));
+    final Bytes32 recentBlockRoot = spec.getBlockRootAtSlot(state, UInt64.ONE);
+    final Runnable onLateBlockReorgPreparationCompleted = mock(Runnable.class);
+
+    when(recentChainData.getChainHead()).thenReturn(Optional.of(chainHead));
+    when(chainHead.getRoot()).thenReturn(recentBlockRoot);
+    when(chainHead.getPayloadStatus()).thenReturn(ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL);
+
+    final SlotAndBlockRoot slotAndBlockRoot = new SlotAndBlockRoot(UInt64.ONE, recentBlockRoot);
+    when(recentChainData.getStore()).thenReturn(store);
+    when(recentChainData.getProposerHead(any(), any())).thenReturn(recentBlockRoot);
+    when(store.retrieveExecutionPayloadState(slotAndBlockRoot))
+        .thenReturn(SafeFuture.completedFuture(Optional.of(state)));
+
+    final SafeFuture<Optional<BeaconState>> future =
+        client.getStateForBlockProduction(UInt64.ONE, true, onLateBlockReorgPreparationCompleted);
+
+    assertThat(future.get()).contains(state);
+    verify(onLateBlockReorgPreparationCompleted, never()).run();
+    verify(store).retrieveExecutionPayloadState(slotAndBlockRoot);
+    verify(store, never()).retrieveBlockState(slotAndBlockRoot);
   }
 
   @Test

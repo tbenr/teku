@@ -53,6 +53,7 @@ import tech.pegasys.teku.infrastructure.metrics.SettableGauge;
 import tech.pegasys.teku.infrastructure.metrics.TekuMetricCategory;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
+import tech.pegasys.teku.spec.SpecMilestone;
 import tech.pegasys.teku.spec.SpecVersion;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockAndCheckpoints;
@@ -253,7 +254,8 @@ class Store extends CacheableStore {
             "memory_checkpoint_states",
             config.getCheckpointStateCacheSize());
     final CachingTaskQueue<Bytes32, StateAndBlockSummary> blockStateTaskQueue =
-        CachingTaskQueue.create(asyncRunner, metricsSystem, "memory_states", 132);
+        CachingTaskQueue.create(
+            asyncRunner, metricsSystem, "memory_states", config.getStateCacheSize());
     final Optional<Map<Bytes32, StateAndBlockSummary>> maybeEpochStates =
         config.getEpochStateCacheSize() > 0
             ? Optional.of(LimitedMap.createSynchronizedLRU(config.getEpochStateCacheSize()))
@@ -360,7 +362,6 @@ class Store extends CacheableStore {
     return initialCanonicalBlockRoot;
   }
 
-  @SuppressWarnings("UnusedVariable")
   private static ProtoArray buildProtoArray(
       final Spec spec,
       final BlockProvider blockProvider,
@@ -383,7 +384,14 @@ class Store extends CacheableStore {
             .finalizedCheckpoint(finalizedAnchor.getCheckpoint())
             .build();
     final Map<Bytes32, SignedBeaconBlock> recoveredBlocks =
-        blockProvider.getBlocks(blockInfoByRoot.keySet()).join();
+        blocks.stream()
+                .anyMatch(
+                    block ->
+                        spec.atSlot(block.getBlockSlot())
+                            .getMilestone()
+                            .isGreaterThanOrEqualTo(SpecMilestone.GLOAS))
+            ? blockProvider.getBlocks(blockInfoByRoot.keySet()).join()
+            : Collections.emptyMap();
     for (StoredBlockMetadata block : blocks) {
       if (block.getCheckpointEpochs().isEmpty()) {
         throw new IllegalStateException(

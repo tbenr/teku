@@ -59,6 +59,14 @@ import tech.pegasys.teku.storage.store.UpdatableStore.StoreTransaction;
 
 class StoreTest extends AbstractStoreTest {
   @Test
+  public void create_shouldRebuildPreGloasStoreWithoutRecoveringBlocks() {
+    final UpdatableStore store =
+        createStoreBuilder(defaultStoreConfig).blockProvider(roots -> null).build();
+
+    assertThat(store.getOrderedBlockRoots()).hasSize(1);
+  }
+
+  @Test
   public void create_timeLessThanGenesisTime() {
     final UInt64 genesisTime = UInt64.valueOf(100);
     final SignedBlockAndState genesis = chainBuilder.generateGenesis(genesisTime, false);

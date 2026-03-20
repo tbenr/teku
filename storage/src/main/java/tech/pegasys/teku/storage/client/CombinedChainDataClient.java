@@ -312,7 +312,7 @@ public class CombinedChainDataClient {
 
     final Bytes32 proposerHeadRoot = recentChainData.getProposerHead(headRoot, slot);
     if (proposerHeadRoot.equals(headRoot)) {
-      if (payloadStatus.equals(ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL)) {
+      if (ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL.equals(payloadStatus)) {
         return getStore()
             .retrieveExecutionPayloadState(new SlotAndBlockRoot(slot, proposerHeadRoot));
       }
