@@ -124,7 +124,8 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
 
     fixture
         .strategy()
-        .processBeaconBlockChain(fixture.block2().getRoot(), (root, slot, parent) -> visitedRoots.add(root));
+        .processBeaconBlockChain(
+            fixture.block2().getRoot(), (root, slot, parent) -> visitedRoots.add(root));
 
     assertThat(visitedRoots)
         .containsExactly(
@@ -609,70 +610,6 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
     assertThat(protoArray.isFullyValidated(currentJustified.getRoot())).isTrue();
     // the head is optimistic because it is not viable
     assertThat(forkChoiceState.isHeadOptimistic()).isTrue();
-  }
-
-  @Test
-  void ptcVote_incrementsPayloadAndDataCounts() {
-    final StorageSystem storageSystem = initStorageSystem();
-    final ForkChoiceStrategy strategy = getProtoArray(storageSystem);
-    final Bytes32 blockRoot = dataStructureUtil.randomBytes32();
-
-    assertThat(strategy.getPtcPresentVoteCount(blockRoot)).isEqualTo(0);
-    assertThat(strategy.getDataAvailableVoteCount(blockRoot)).isEqualTo(0);
-
-    strategy.onPtcVote(blockRoot, ZERO, true, false);
-    assertThat(strategy.getPtcPresentVoteCount(blockRoot)).isEqualTo(1);
-    assertThat(strategy.getDataAvailableVoteCount(blockRoot)).isEqualTo(0);
-
-    strategy.onPtcVote(blockRoot, UInt64.ONE, true, true);
-    strategy.onPtcVote(blockRoot, UInt64.valueOf(2), true, true);
-    assertThat(strategy.getPtcPresentVoteCount(blockRoot)).isEqualTo(3);
-    assertThat(strategy.getDataAvailableVoteCount(blockRoot)).isEqualTo(2);
-  }
-
-  @Test
-  void ptcVote_tracksUniqueValidatorsPerBlock() {
-    final StorageSystem storageSystem = initStorageSystem();
-    final ForkChoiceStrategy strategy = getProtoArray(storageSystem);
-    final Bytes32 blockRoot = dataStructureUtil.randomBytes32();
-
-    strategy.onPtcVote(blockRoot, ZERO, true, true);
-    strategy.onPtcVote(blockRoot, ZERO, true, true);
-    strategy.onPtcVote(blockRoot, UInt64.ONE, true, false);
-
-    assertThat(strategy.getPtcPresentVoteCount(blockRoot)).isEqualTo(2);
-    assertThat(strategy.getDataAvailableVoteCount(blockRoot)).isEqualTo(1);
-  }
-
-  @Test
-  void ptcVote_removesValidatorWhenPayloadOrDataBecomesAbsent() {
-    final StorageSystem storageSystem = initStorageSystem();
-    final ForkChoiceStrategy strategy = getProtoArray(storageSystem);
-    final Bytes32 blockRoot = dataStructureUtil.randomBytes32();
-
-    strategy.onPtcVote(blockRoot, ZERO, true, true);
-    strategy.onPtcVote(blockRoot, UInt64.ONE, true, true);
-    strategy.onPtcVote(blockRoot, ZERO, false, false);
-
-    assertThat(strategy.getPtcPresentVoteCount(blockRoot)).isEqualTo(1);
-    assertThat(strategy.getDataAvailableVoteCount(blockRoot)).isEqualTo(1);
-  }
-
-  @Test
-  void ptcVote_differentBlocksTrackedSeparately() {
-    final StorageSystem storageSystem = initStorageSystem();
-    final ForkChoiceStrategy strategy = getProtoArray(storageSystem);
-    final Bytes32 root1 = dataStructureUtil.randomBytes32();
-    final Bytes32 root2 = dataStructureUtil.randomBytes32();
-
-    strategy.onPtcVote(root1, ZERO, true, true);
-    strategy.onPtcVote(root1, UInt64.ONE, true, false);
-    strategy.onPtcVote(root2, ZERO, true, true);
-
-    assertThat(strategy.getPtcPresentVoteCount(root1)).isEqualTo(2);
-    assertThat(strategy.getPtcPresentVoteCount(root2)).isEqualTo(1);
-    assertThat(strategy.getDataAvailableVoteCount(root1)).isEqualTo(1);
-    assertThat(strategy.getDataAvailableVoteCount(root2)).isEqualTo(1);
   }
 
   private StorageSystem initStorageSystem() {

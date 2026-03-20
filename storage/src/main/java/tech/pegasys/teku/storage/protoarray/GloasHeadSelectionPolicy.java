@@ -22,12 +22,17 @@ import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
 /**
- * Gloas payload status tiebreaker for fork-choice head selection.
+ * Gloas head-selection comparison policy for EMPTY/FULL sibling nodes.
  *
- * <p>Spec: get_payload_status_tiebreaker
+ * <p>This class groups the Python helpers used by modified `get_head(...)`:
+ * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#modified-get_head
+ * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#modified-get_weight
  * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-get_payload_status_tiebreaker
+ * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-should_extend_payload
+ * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-is_payload_timely
+ * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-is_payload_data_available
  */
-class GloasPayloadStatusTiebreaker implements PayloadStatusTiebreaker {
+class GloasHeadSelectionPolicy implements HeadSelectionPolicy {
   private final UInt64 currentSlot;
   private final Optional<Bytes32> proposerBoostRoot;
   private final int payloadTimelyThreshold;
@@ -35,7 +40,7 @@ class GloasPayloadStatusTiebreaker implements PayloadStatusTiebreaker {
   private final ToIntFunction<Bytes32> ptcPresentVoteCountLookup;
   private final ToIntFunction<Bytes32> ptcDataAvailableVoteCountLookup;
 
-  GloasPayloadStatusTiebreaker(
+  GloasHeadSelectionPolicy(
       final UInt64 currentSlot,
       final Optional<Bytes32> proposerBoostRoot,
       final int payloadTimelyThreshold,
@@ -51,19 +56,32 @@ class GloasPayloadStatusTiebreaker implements PayloadStatusTiebreaker {
   }
 
   @Override
-  public int compare(
-      final ProtoNode child,
-      final ProtoNode bestChild,
+  public int compareChildren(
+      final ProtoNode candidateChild,
+      final ProtoNode currentBestChild,
       final ProtoNode parent,
       final ProtoArray protoArray) {
+    // Spec mapping: the extra Gloas sort key in modified get_head only applies to the EMPTY/FULL
+    // children returned by get_node_children(parent_root).
+    if (!candidateChild.getBlockRoot().equals(parent.getBlockRoot())
+        || !currentBestChild.getBlockRoot().equals(parent.getBlockRoot())) {
+      return 0;
+    }
+
+    final UInt64 candidateEffectiveWeight = effectiveWeight(candidateChild);
+    final UInt64 currentEffectiveWeight = effectiveWeight(currentBestChild);
+    final int weightComparison = candidateEffectiveWeight.compareTo(currentEffectiveWeight);
+    if (weightComparison != 0) {
+      return weightComparison;
+    }
+
     return Integer.compare(
-        computePayloadStatusTiebreaker(child, protoArray),
-        computePayloadStatusTiebreaker(bestChild, protoArray));
+        computePayloadStatusTiebreaker(candidateChild, protoArray),
+        computePayloadStatusTiebreaker(currentBestChild, protoArray));
   }
 
-  @Override
-  public UInt64 effectiveWeight(final ProtoNode node) {
-    // Spec: get_weight returns 0 for non-PENDING nodes at current_slot - 1
+  private UInt64 effectiveWeight(final ProtoNode node) {
+    // Spec mapping: modified get_weight(store, node)
     if (node.getPayloadStatus() == PAYLOAD_STATUS_PENDING
         || !node.getBlockSlot().plus(1).equals(currentSlot)) {
       return node.getWeight();
@@ -71,11 +89,8 @@ class GloasPayloadStatusTiebreaker implements PayloadStatusTiebreaker {
     return UInt64.ZERO;
   }
 
-  /**
-   * Spec: get_payload_status_tiebreaker
-   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-get_payload_status_tiebreaker
-   */
   private int computePayloadStatusTiebreaker(final ProtoNode node, final ProtoArray protoArray) {
+    // Spec mapping: get_payload_status_tiebreaker(store, node)
     if (node.getPayloadStatus() == PAYLOAD_STATUS_PENDING
         || !node.getBlockSlot().plus(1).equals(currentSlot)) {
       return node.getPayloadStatus().getValue();
@@ -83,24 +98,18 @@ class GloasPayloadStatusTiebreaker implements PayloadStatusTiebreaker {
     if (node.getPayloadStatus() == PAYLOAD_STATUS_EMPTY) {
       return 1;
     }
-    // FULL
     return shouldExtendPayload(node.getBlockRoot(), protoArray) ? 2 : 0;
   }
 
-  /**
-   * Spec: should_extend_payload
-   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-should_extend_payload
-   */
   private boolean shouldExtendPayload(final Bytes32 blockRoot, final ProtoArray protoArray) {
-    // Spec: is_payload_timely(store, root)
+    // Spec mapping: should_extend_payload(store, root)
+    // The proposer-equivocation decision is delegated to the surrounding store/fork-choice code.
     if (isPayloadTimely(blockRoot, protoArray) && isPayloadDataAvailable(blockRoot, protoArray)) {
       return true;
     }
-    // Spec: proposer_root == Root()
     if (proposerBoostRoot.isEmpty()) {
       return true;
     }
-    // Spec: store.blocks[proposer_root].parent_root != root
     final Optional<ProtoNode> proposerNode = protoArray.getProtoNode(proposerBoostRoot.get());
     if (proposerNode.isEmpty()) {
       return true;
@@ -108,17 +117,11 @@ class GloasPayloadStatusTiebreaker implements PayloadStatusTiebreaker {
     if (!proposerNode.get().getParentRoot().equals(blockRoot)) {
       return true;
     }
-    // Spec: is_parent_node_full(store, store.blocks[proposer_root])
-    // Checks get_parent_payload_status(proposer_block) == FULL by comparing
-    // the proposer block's bid parent_block_hash with the parent's FULL execution block hash
     return protoArray.isParentNodeFull(blockRoot, proposerNode.get());
   }
 
-  /**
-   * Spec: is_payload_timely Returns true if the block has a FULL node AND PTC "present" votes
-   * exceed threshold.
-   */
   private boolean isPayloadTimely(final Bytes32 blockRoot, final ProtoArray protoArray) {
+    // Spec mapping: is_payload_timely(store, root)
     if (!protoArray.hasFullNode(blockRoot)) {
       return false;
     }
@@ -126,6 +129,7 @@ class GloasPayloadStatusTiebreaker implements PayloadStatusTiebreaker {
   }
 
   private boolean isPayloadDataAvailable(final Bytes32 blockRoot, final ProtoArray protoArray) {
+    // Spec mapping: is_payload_data_available(store, root)
     if (!protoArray.hasFullNode(blockRoot)) {
       return false;
     }

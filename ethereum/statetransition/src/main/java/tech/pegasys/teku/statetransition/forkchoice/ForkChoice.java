@@ -437,7 +437,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
             recentChainData.getStore().getReorgThreshold(),
             transaction,
             justifiedState,
-            parentRoot -> isProposerEquivocation(parentRoot, forkChoiceStrategy))) {
+            this::isProposerEquivocation)) {
           effectiveProposerBoostRoot = Optional.empty();
         }
       }
@@ -882,44 +882,9 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
    *
    * <p>Spec reference: equivocation check in should_apply_proposer_boost
    */
-  private boolean isProposerEquivocation(
-      final Bytes32 parentRoot, final ReadOnlyForkChoiceStrategy forkChoiceStrategy) {
-    final UpdatableStore store = recentChainData.getStore();
-    final Optional<UInt64> maybeParentSlot = forkChoiceStrategy.blockSlot(parentRoot);
-    if (maybeParentSlot.isEmpty()) {
-      return false;
-    }
-    final UInt64 parentSlot = maybeParentSlot.get();
-    final Optional<SignedBeaconBlock> maybeParentBlock = store.getBlockIfAvailable(parentRoot);
-    if (maybeParentBlock.isEmpty()) {
-      return false;
-    }
-    final int parentProposerIndex =
-        maybeParentBlock.get().getMessage().getProposerIndex().intValue();
-
-    // Find all distinct block roots at the parent's slot (excluding the parent itself)
-    final List<Bytes32> rootsAtSlot = forkChoiceStrategy.getBlockRootsAtSlot(parentSlot);
-    var r =
-        rootsAtSlot.stream()
-            .distinct()
-            .filter(root -> !root.equals(parentRoot))
-            .anyMatch(
-                root -> {
-                  // Check PTC-timeliness
-                  final Optional<boolean[]> timeliness = recentChainData.getBlockTimeliness(root);
-                  if (timeliness.isEmpty()
-                      || timeliness.get().length <= ForkChoiceUtilGloas.PTC_TIMELINESS_INDEX
-                      || !timeliness.get()[ForkChoiceUtilGloas.PTC_TIMELINESS_INDEX]) {
-                    return false;
-                  }
-                  // Check same proposer
-                  final Optional<SignedBeaconBlock> maybeBlock = store.getBlockIfAvailable(root);
-                  return maybeBlock.isPresent()
-                      && maybeBlock.get().getMessage().getProposerIndex().intValue()
-                          == parentProposerIndex;
-                });
-
-    return r;
+  private boolean isProposerEquivocation(final Bytes32 parentRoot) {
+    // NOOP. Requires interaction with gossip structures to detect equivocations
+    return false;
   }
 
   private Optional<List<BlobSidecar>> extractBlobSidecarsFromValidationResults(

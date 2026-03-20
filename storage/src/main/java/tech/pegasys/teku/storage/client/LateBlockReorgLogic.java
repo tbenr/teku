@@ -79,8 +79,7 @@ public class LateBlockReorgLogic {
   public boolean[] computeBlockTimelinessFromArrivalTime(
       final SignedBeaconBlock block, final UInt64 arrivalTimeMillis) {
     final UInt64 computedSlot =
-        spec.getCurrentSlot(
-            timeProviderSupplier.get().getTimeInSeconds(), recentChainData.getGenesisTime());
+        spec.getCurrentSlot(arrivalTimeMillis.dividedBy(1000), recentChainData.getGenesisTime());
     final Bytes32 root = block.getRoot();
     if (computedSlot.isGreaterThan(block.getMessage().getSlot())) {
       LOG.debug(

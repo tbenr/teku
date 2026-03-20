@@ -67,7 +67,19 @@ class ProtoArrayScoreCalculator {
         previousBoostAmount,
         newBoostAmount,
         null,
-        null);
+        new VoteScoringResolver() {
+          @Override
+          public Optional<Integer> resolveCurrentIndex(
+              final VoteTracker vote, final ProtoArray ignoredProtoArray) {
+            return getIndexByRoot.apply(vote.getCurrentRoot());
+          }
+
+          @Override
+          public Optional<Integer> resolveNextIndex(
+              final VoteTracker vote, final ProtoArray ignoredProtoArray) {
+            return getIndexByRoot.apply(vote.getNextRoot());
+          }
+        });
   }
 
   static LongList computeDeltas(
@@ -80,8 +92,42 @@ class ProtoArrayScoreCalculator {
       final Optional<Bytes32> newProposerBoostRoot,
       final UInt64 previousBoostAmount,
       final UInt64 newBoostAmount,
-      final Object2IntMap<Bytes32> fullNodeIndices,
-      final Object2IntMap<Bytes32> emptyNodeIndices) {
+      final ProtoArray protoArray,
+      final VoteScoringResolver voteScoringResolver) {
+    LongList deltas = new LongArrayList(Collections.nCopies(protoArraySize, 0L));
+
+    UInt64.rangeClosed(UInt64.ZERO, store.getHighestVotedValidatorIndex())
+        .forEach(
+            validatorIndex ->
+                computeDelta(
+                    store,
+                    oldBalances,
+                    newBalances,
+                    deltas,
+                    validatorIndex,
+                    protoArray,
+                    voteScoringResolver));
+
+    previousProposerBoostRoot.ifPresent(
+        root -> subtractBalance(getIndexByRoot, deltas, root, previousBoostAmount));
+    newProposerBoostRoot.ifPresent(
+        root -> addBalance(getIndexByRoot, deltas, root, newBoostAmount));
+    return deltas;
+  }
+
+  static LongList computeDeltas(
+      final VoteUpdater store,
+      final int protoArraySize,
+      final Function<Bytes32, Optional<Integer>> getIndexByRoot,
+      final List<UInt64> oldBalances,
+      final List<UInt64> newBalances,
+      final Optional<Bytes32> previousProposerBoostRoot,
+      final Optional<Bytes32> newProposerBoostRoot,
+      final UInt64 previousBoostAmount,
+      final UInt64 newBoostAmount,
+      final ProtoArray protoArray,
+      final VoteScoringResolver voteScoringResolver,
+      final Function<Bytes32, Optional<UInt64>> unusedBlockSlotLookup) {
     return computeDeltas(
         store,
         protoArraySize,
@@ -92,9 +138,8 @@ class ProtoArrayScoreCalculator {
         newProposerBoostRoot,
         previousBoostAmount,
         newBoostAmount,
-        fullNodeIndices,
-        emptyNodeIndices,
-        null);
+        protoArray,
+        voteScoringResolver);
   }
 
   static LongList computeDeltas(
@@ -110,39 +155,54 @@ class ProtoArrayScoreCalculator {
       final Object2IntMap<Bytes32> fullNodeIndices,
       final Object2IntMap<Bytes32> emptyNodeIndices,
       final Function<Bytes32, Optional<UInt64>> blockSlotLookup) {
-    LongList deltas = new LongArrayList(Collections.nCopies(protoArraySize, 0L));
+    return computeDeltas(
+        store,
+        protoArraySize,
+        getIndexByRoot,
+        oldBalances,
+        newBalances,
+        previousProposerBoostRoot,
+        newProposerBoostRoot,
+        previousBoostAmount,
+        newBoostAmount,
+        null,
+        new VoteScoringResolver() {
+          @Override
+          public Optional<Integer> resolveCurrentIndex(
+              final VoteTracker vote, final ProtoArray ignoredProtoArray) {
+            return resolveIndex(
+                vote.getCurrentRoot(),
+                vote.getCurrentSlot(),
+                vote.isCurrentPayloadPresent(),
+                getIndexByRoot,
+                fullNodeIndices,
+                emptyNodeIndices,
+                blockSlotLookup);
+          }
 
-    UInt64.rangeClosed(UInt64.ZERO, store.getHighestVotedValidatorIndex())
-        .forEach(
-            validatorIndex ->
-                computeDelta(
-                    store,
-                    getIndexByRoot,
-                    oldBalances,
-                    newBalances,
-                    deltas,
-                    validatorIndex,
-                    fullNodeIndices,
-                    emptyNodeIndices,
-                    blockSlotLookup));
-
-    previousProposerBoostRoot.ifPresent(
-        root -> subtractBalance(getIndexByRoot, deltas, root, previousBoostAmount));
-    newProposerBoostRoot.ifPresent(
-        root -> addBalance(getIndexByRoot, deltas, root, newBoostAmount));
-    return deltas;
+          @Override
+          public Optional<Integer> resolveNextIndex(
+              final VoteTracker vote, final ProtoArray ignoredProtoArray) {
+            return resolveIndex(
+                vote.getNextRoot(),
+                vote.getNextSlot(),
+                vote.isNextPayloadPresent(),
+                getIndexByRoot,
+                fullNodeIndices,
+                emptyNodeIndices,
+                blockSlotLookup);
+          }
+        });
   }
 
   private static void computeDelta(
       final VoteUpdater store,
-      final Function<Bytes32, Optional<Integer>> getIndexByRoot,
       final List<UInt64> oldBalances,
       final List<UInt64> newBalances,
       final LongList deltas,
       final UInt64 validatorIndex,
-      final Object2IntMap<Bytes32> fullNodeIndices,
-      final Object2IntMap<Bytes32> emptyNodeIndices,
-      final Function<Bytes32, Optional<UInt64>> blockSlotLookup) {
+      final ProtoArray protoArray,
+      final VoteScoringResolver voteScoringResolver) {
     VoteTracker vote = store.getVote(validatorIndex);
 
     // There is no need to create a score change if the validator has never voted
@@ -171,32 +231,9 @@ class ProtoArrayScoreCalculator {
             : UInt64.ZERO;
 
     if (!vote.getCurrentRoot().equals(vote.getNextRoot()) || !oldBalance.equals(newBalance)) {
-      // Route current vote subtraction to the corresponding Gloas node identity.
       subtractBalance(
-          resolveIndexFn(
-              getIndexByRoot,
-              fullNodeIndices,
-              emptyNodeIndices,
-              vote.isCurrentPayloadPresent(),
-              vote.getCurrentSlot(),
-              vote.getCurrentRoot(),
-              blockSlotLookup),
-          deltas,
-          vote.getCurrentRoot(),
-          oldBalance);
-      // Route next vote addition to the corresponding Gloas node identity.
-      addBalance(
-          resolveIndexFn(
-              getIndexByRoot,
-              fullNodeIndices,
-              emptyNodeIndices,
-              vote.isNextPayloadPresent(),
-              vote.getNextSlot(),
-              vote.getNextRoot(),
-              blockSlotLookup),
-          deltas,
-          vote.getNextRoot(),
-          newBalance);
+          voteScoringResolver.resolveCurrentIndex(vote, protoArray), deltas, oldBalance);
+      addBalance(voteScoringResolver.resolveNextIndex(vote, protoArray), deltas, newBalance);
       final VoteTracker newVote =
           new VoteTracker(
               vote.getNextRoot(),
@@ -212,40 +249,27 @@ class ProtoArrayScoreCalculator {
     }
   }
 
-  private static Function<Bytes32, Optional<Integer>> resolveIndexFn(
-      final Function<Bytes32, Optional<Integer>> getIndexByRoot,
-      final Object2IntMap<Bytes32> fullNodeIndices,
-      final Object2IntMap<Bytes32> emptyNodeIndices,
-      final boolean payloadPresent,
-      final UInt64 voteSlot,
-      final Bytes32 voteRoot,
-      final Function<Bytes32, Optional<UInt64>> blockSlotLookup) {
-    if (fullNodeIndices == null && emptyNodeIndices == null) {
-      return getIndexByRoot;
-    }
-    if (blockSlotLookup != null) {
-      final Optional<UInt64> blockSlot = blockSlotLookup.apply(voteRoot);
-      if (blockSlot.isPresent() && voteSlot.isLessThanOrEqualTo(blockSlot.get())) {
-        return getIndexByRoot;
-      }
-    }
-    if (payloadPresent) {
-      // payload-present votes support FULL if available, otherwise only the PENDING block node.
-      return root -> {
-        if (fullNodeIndices != null && fullNodeIndices.containsKey(root)) {
-          return Optional.of(fullNodeIndices.getInt(root));
-        }
-        return getIndexByRoot.apply(root);
-      };
-    } else {
-      // payload-absent votes support EMPTY only after the block's own slot.
-      return root -> {
-        if (emptyNodeIndices != null && emptyNodeIndices.containsKey(root)) {
-          return Optional.of(emptyNodeIndices.getInt(root));
-        }
-        return getIndexByRoot.apply(root);
-      };
-    }
+  private static void addBalance(
+      final Optional<Integer> maybeIndex, final LongList deltas, final UInt64 balanceToAdd) {
+    maybeIndex.ifPresent(
+        nextDeltaIndex -> {
+          checkState(
+              nextDeltaIndex < deltas.size(), "ProtoArrayForkChoice: Invalid node delta index");
+          long delta = addExact(deltas.getLong(nextDeltaIndex), balanceToAdd.longValue());
+          deltas.set(nextDeltaIndex.intValue(), delta);
+        });
+  }
+
+  private static void subtractBalance(
+      final Optional<Integer> maybeIndex, final LongList deltas, final UInt64 balanceToRemove) {
+    maybeIndex.ifPresent(
+        currentDeltaIndex -> {
+          checkState(
+              currentDeltaIndex < deltas.size(), "ProtoArrayForkChoice: Invalid node delta index");
+          long delta =
+              subtractExact(deltas.getLong(currentDeltaIndex), balanceToRemove.longValue());
+          deltas.set(currentDeltaIndex.intValue(), delta);
+        });
   }
 
   private static void addBalance(
@@ -285,5 +309,26 @@ class ProtoArrayScoreCalculator {
                   subtractExact(deltas.getLong(currentDeltaIndex), balanceToRemove.longValue());
               deltas.set(currentDeltaIndex.intValue(), delta);
             });
+  }
+
+  private static Optional<Integer> resolveIndex(
+      final Bytes32 voteRoot,
+      final UInt64 voteSlot,
+      final boolean payloadPresent,
+      final Function<Bytes32, Optional<Integer>> getIndexByRoot,
+      final Object2IntMap<Bytes32> fullNodeIndices,
+      final Object2IntMap<Bytes32> emptyNodeIndices,
+      final Function<Bytes32, Optional<UInt64>> blockSlotLookup) {
+    final Optional<UInt64> blockSlot = blockSlotLookup.apply(voteRoot);
+    if (blockSlot.isPresent() && voteSlot.isLessThanOrEqualTo(blockSlot.get())) {
+      return getIndexByRoot.apply(voteRoot);
+    }
+    if (payloadPresent && fullNodeIndices.containsKey(voteRoot)) {
+      return Optional.of(fullNodeIndices.getInt(voteRoot));
+    }
+    if (!payloadPresent && emptyNodeIndices.containsKey(voteRoot)) {
+      return Optional.of(emptyNodeIndices.getInt(voteRoot));
+    }
+    return getIndexByRoot.apply(voteRoot);
   }
 }

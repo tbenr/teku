@@ -80,9 +80,9 @@ import tech.pegasys.teku.spec.logic.versions.gloas.util.ForkChoiceUtilGloas;
 import tech.pegasys.teku.storage.api.StorageUpdateChannel;
 import tech.pegasys.teku.storage.api.StoredBlockMetadata;
 import tech.pegasys.teku.storage.api.VoteUpdateChannel;
+import tech.pegasys.teku.storage.protoarray.ForkChoiceModelFactory;
 import tech.pegasys.teku.storage.protoarray.ForkChoiceStrategy;
 import tech.pegasys.teku.storage.protoarray.ProtoArray;
-import tech.pegasys.teku.storage.protoarray.ProtoNode;
 
 class Store extends CacheableStore {
   private static final Logger LOG = LogManager.getLogger();
@@ -320,6 +320,7 @@ class Store extends CacheableStore {
             spec,
             buildProtoArray(
                 spec,
+                blockProvider,
                 blockInfoByRoot,
                 initialCheckpoint,
                 currentEpoch,
@@ -361,6 +362,7 @@ class Store extends CacheableStore {
   @SuppressWarnings("UnusedVariable")
   private static ProtoArray buildProtoArray(
       final Spec spec,
+      final BlockProvider blockProvider,
       final Map<Bytes32, StoredBlockMetadata> blockInfoByRoot,
       final Optional<Checkpoint> initialCheckpoint,
       final UInt64 currentEpoch,
@@ -369,6 +371,7 @@ class Store extends CacheableStore {
       final Optional<Bytes32> initialCanonicalBlockRoot) {
     final List<StoredBlockMetadata> blocks = new ArrayList<>(blockInfoByRoot.values());
     blocks.sort(Comparator.comparing(StoredBlockMetadata::getBlockSlot));
+    final ForkChoiceModelFactory forkChoiceModelFactory = new ForkChoiceModelFactory(spec);
     final ProtoArray protoArray =
         ProtoArray.builder()
             .spec(spec)
@@ -377,25 +380,17 @@ class Store extends CacheableStore {
             .justifiedCheckpoint(justifiedCheckpoint)
             .finalizedCheckpoint(finalizedAnchor.getCheckpoint())
             .build();
-    // Payload status (Gloas) cannot be determined during DB recovery because block bodies are
-    // not available from StoredBlockMetadata. All nodes default to PENDING, which is acceptable:
-    // the first new block processed after restart will resolve its parent's payload status.
+    final Map<Bytes32, SignedBeaconBlock> recoveredBlocks =
+        blockProvider.getBlocks(blockInfoByRoot.keySet()).join();
     for (StoredBlockMetadata block : blocks) {
       if (block.getCheckpointEpochs().isEmpty()) {
         throw new IllegalStateException(
             "Incompatible database version detected. The data in this database is too old to be read by Teku. A re-sync will be required.");
       }
-
-      // TODO: GLOAS - we need to rebuild a proper protoarray (PENDING-EMPTY-FULL nodes)
-
-      protoArray.onBlock(
-          block.getBlockSlot(),
-          block.getBlockRoot(),
-          block.getParentRoot(),
-          block.getStateRoot(),
-          block.getCheckpointEpochs().get(),
-          block.getExecutionBlockNumber().orElse(ProtoNode.NO_EXECUTION_BLOCK_NUMBER),
-          block.getExecutionBlockHash().orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH),
+      forkChoiceModelFactory.rebuildTrackedBlock(
+          protoArray,
+          block,
+          Optional.ofNullable(recoveredBlocks.get(block.getBlockRoot())),
           spec.isBlockProcessorOptimistic(block.getBlockSlot()));
     }
 

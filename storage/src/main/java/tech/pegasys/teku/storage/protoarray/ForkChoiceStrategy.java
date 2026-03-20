@@ -22,8 +22,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.apache.logging.log4j.LogManager;
@@ -31,8 +29,6 @@ import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
-import tech.pegasys.teku.spec.SpecMilestone;
-import tech.pegasys.teku.spec.config.SpecConfigGloas;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockAndCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
@@ -51,35 +47,35 @@ import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil;
 
 public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoiceStrategy {
   private static final Logger LOG = LogManager.getLogger();
-  private static final ForkChoiceTreeBehavior DEFAULT_BEHAVIOR =
-      new ForkChoiceTreeBehaviorDefault();
-  private static final ForkChoiceTreeBehavior GLOAS_BEHAVIOR = new ForkChoiceTreeBehaviorGloas();
 
   private final ReadWriteLock protoArrayLock = new ReentrantReadWriteLock();
   private final ReadWriteLock votesLock = new ReentrantReadWriteLock();
   private final ReadWriteLock balancesLock = new ReentrantReadWriteLock();
   private final Spec spec;
   private final ProtoArray protoArray;
-  private final Map<Bytes32, PayloadAndDataTimelinessVotesPerValidator> ptcVotesByRoot =
-      new ConcurrentHashMap<>();
+  private final ForkChoiceModelFactory forkChoiceModelFactory;
   private List<UInt64> balances;
 
   private Optional<Bytes32> proposerBoostRoot = Optional.empty();
   private UInt64 proposerBoostAmount = UInt64.ZERO;
 
-  private record PayloadAndDataTimelinessVotesPerValidator(Set<UInt64> payload, Set<UInt64> data) {}
-
   private ForkChoiceStrategy(
       final Spec spec, final ProtoArray protoArray, final List<UInt64> balances) {
     this.spec = spec;
     this.protoArray = protoArray;
+    this.forkChoiceModelFactory = new ForkChoiceModelFactory(spec);
     this.balances = balances;
   }
 
-  private ForkChoiceTreeBehavior getTreeBehavior(final UInt64 slot) {
-    return spec.atSlot(slot).getMilestone().isGreaterThanOrEqualTo(SpecMilestone.GLOAS)
-        ? GLOAS_BEHAVIOR
-        : DEFAULT_BEHAVIOR;
+  private ForkChoiceModel getForkChoiceModel(final UInt64 slot) {
+    return forkChoiceModelFactory.forSlot(slot);
+  }
+
+  private Optional<ForkChoiceModel> getForkChoiceModelForRoot(final Bytes32 blockRoot) {
+    return protoArray
+        .getProtoNode(blockRoot)
+        .map(ProtoNode::getBlockSlot)
+        .map(this::getForkChoiceModel);
   }
 
   public static ForkChoiceStrategy initialize(final Spec spec, final ProtoArray protoArray) {
@@ -133,6 +129,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
     votesLock.writeLock().lock();
     balancesLock.writeLock().lock();
     try {
+      final ForkChoiceModel forkChoiceModel = getForkChoiceModel(currentSlot);
       LongList deltas =
           ProtoArrayScoreCalculator.computeDeltas(
               voteUpdater,
@@ -144,26 +141,15 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
               proposerBoostRoot,
               this.proposerBoostAmount,
               proposerBoostAmount,
-              protoArray.getFullNodeIndices(),
-              protoArray.getEmptyNodeIndices(),
-              root -> protoArray.getProtoNode(root).map(ProtoNode::getBlockSlot));
-
-      final Optional<PayloadStatusTiebreaker> tiebreaker =
-          spec.atSlot(currentSlot).getMilestone().isGreaterThanOrEqualTo(SpecMilestone.GLOAS)
-              ? Optional.of(
-                  new GloasPayloadStatusTiebreaker(
-                      currentSlot,
-                      proposerBoostRoot,
-                      SpecConfigGloas.required(spec.atSlot(currentSlot).getConfig())
-                          .getPayloadTimelyThreshold(),
-                      SpecConfigGloas.required(spec.atSlot(currentSlot).getConfig())
-                          .getDataAvailabilityTimelyThreshold(),
-                      this::getPtcPresentVoteCount,
-                      this::getDataAvailableVoteCount))
-              : Optional.empty();
+              protoArray,
+              forkChoiceModel.getVoteScoringResolver());
 
       protoArray.applyScoreChanges(
-          deltas, currentEpoch, justifiedCheckpoint, finalizedCheckpoint, tiebreaker);
+          deltas,
+          currentEpoch,
+          justifiedCheckpoint,
+          finalizedCheckpoint,
+          forkChoiceModel.createHeadSelectionPolicy(currentSlot, proposerBoostRoot));
       balances = justifiedStateEffectiveBalances;
       this.proposerBoostRoot = proposerBoostRoot;
       this.proposerBoostAmount = proposerBoostAmount;
@@ -248,14 +234,12 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       final UInt64 headExecutionBlockNumber = headNode.getExecutionBlockNumber();
       final Bytes32 headExecutionBlockHash = headNode.getExecutionBlockHash();
       final Bytes32 justifiedExecutionHash =
-          protoArray
-              .getProtoNode(justifiedCheckpoint.getRoot())
-              .map(ProtoNode::getExecutionBlockHash)
+          getExecutionNodeData(justifiedCheckpoint.getRoot())
+              .map(ProtoNodeData::getExecutionBlockHash)
               .orElse(Bytes32.ZERO);
       final Bytes32 finalizedExecutionHash =
-          protoArray
-              .getProtoNode(finalizedCheckpoint.getRoot())
-              .map(ProtoNode::getExecutionBlockHash)
+          getExecutionNodeData(finalizedCheckpoint.getRoot())
+              .map(ProtoNodeData::getExecutionBlockHash)
               .orElse(Bytes32.ZERO);
       return new ForkChoiceState(
           headNode.getBlockRoot(),
@@ -371,7 +355,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
   public Optional<UInt64> executionBlockNumber(final Bytes32 blockRoot) {
     protoArrayLock.readLock().lock();
     try {
-      return getProtoNode(blockRoot).map(ProtoNode::getExecutionBlockNumber);
+      return getExecutionNodeData(blockRoot).map(ProtoNodeData::getExecutionBlockNumber);
     } finally {
       protoArrayLock.readLock().unlock();
     }
@@ -381,8 +365,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
   public Optional<Bytes32> executionBlockHash(final Bytes32 blockRoot) {
     protoArrayLock.readLock().lock();
     try {
-      return getBlockData(blockRoot, ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL)
-          .map(ProtoNodeData::getExecutionBlockHash);
+      return getExecutionNodeData(blockRoot).map(ProtoNodeData::getExecutionBlockHash);
     } finally {
       protoArrayLock.readLock().unlock();
     }
@@ -412,7 +395,8 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
   public Optional<ProtoNodeData> getBlockData(final Bytes32 blockRoot) {
     protoArrayLock.readLock().lock();
     try {
-      return getProtoNode(blockRoot).map(ProtoNode::getBlockData);
+      return getForkChoiceModelForRoot(blockRoot)
+          .flatMap(forkChoiceModel -> forkChoiceModel.getBlockData(protoArray, blockRoot));
     } finally {
       protoArrayLock.readLock().unlock();
     }
@@ -423,23 +407,11 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       final Bytes32 blockRoot, final ForkChoicePayloadStatus payloadStatus) {
     protoArrayLock.readLock().lock();
     try {
-      if (payloadStatus == ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL) {
-        return protoArray.getFullNodeIndices().containsKey(blockRoot)
-            ? Optional.of(
-                protoArray
-                    .getNodeByIndex(protoArray.getFullNodeIndices().getInt(blockRoot))
-                    .getBlockData())
-            : getProtoNode(blockRoot).map(ProtoNode::getBlockData);
-      }
-      if (payloadStatus == ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY) {
-        return protoArray.getEmptyNodeIndices().containsKey(blockRoot)
-            ? Optional.of(
-                protoArray
-                    .getNodeByIndex(protoArray.getEmptyNodeIndices().getInt(blockRoot))
-                    .getBlockData())
-            : getProtoNode(blockRoot).map(ProtoNode::getBlockData);
-      }
-      return getProtoNode(blockRoot).map(ProtoNode::getBlockData);
+      return getForkChoiceModelForRoot(blockRoot)
+          .flatMap(
+              forkChoiceModel ->
+                  forkChoiceModel.getNodeData(
+                      protoArray, new ForkChoiceNode(blockRoot, payloadStatus)));
     } finally {
       protoArrayLock.readLock().unlock();
     }
@@ -459,7 +431,8 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
   public Optional<ForkChoicePayloadStatus> payloadStatus(final Bytes32 blockRoot) {
     protoArrayLock.readLock().lock();
     try {
-      return getProtoNode(blockRoot).map(ProtoNode::getPayloadStatus);
+      return getForkChoiceModelForRoot(blockRoot)
+          .flatMap(forkChoiceModel -> forkChoiceModel.payloadStatus(protoArray, blockRoot));
     } finally {
       protoArrayLock.readLock().unlock();
     }
@@ -476,8 +449,8 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
 
   /**
    * Creates a FULL node in the protoarray for a block that has received its execution payload. This
-   * makes the FULL child visible in the three-state fork choice tree. Delegates to the
-   * fork-specific tree behavior.
+   * makes the FULL child visible in the three-state fork choice tree. Delegates to the fork-aware
+   * model selected for the block slot.
    */
   public void onExecutionPayload(
       final Bytes32 blockRoot,
@@ -486,54 +459,31 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       final Bytes32 executionBlockHash) {
     protoArrayLock.writeLock().lock();
     try {
-      getTreeBehavior(blockSlot)
+      getForkChoiceModel(blockSlot)
           .onExecutionPayload(protoArray, blockRoot, executionBlockNumber, executionBlockHash);
     } finally {
       protoArrayLock.writeLock().unlock();
     }
   }
 
-  /** Records the latest payload-attestation vote for a validator on a given block root. */
+  /**
+   * Records the latest payload-attestation vote for a validator on a given block root.
+   *
+   * <p>Spec mapping: `on_payload_attestation_message(...)` updates the PTC vote material later
+   * consumed by `notify_ptc_messages(...)` and the Gloas head-selection helpers.
+   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-on_payload_attestation_message
+   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-notify_ptc_messages
+   */
   public void onPtcVote(
       final Bytes32 blockRoot,
       final UInt64 validatorIndex,
       final boolean payloadPresent,
       final boolean blobDataAvailable) {
-    ptcVotesByRoot.compute(
-        blockRoot,
-        (__, validatorIndices) -> {
-          final PayloadAndDataTimelinessVotesPerValidator updatedValidatorIndices =
-              validatorIndices != null
-                  ? validatorIndices
-                  : new PayloadAndDataTimelinessVotesPerValidator(
-                      ConcurrentHashMap.newKeySet(), ConcurrentHashMap.newKeySet());
-          if (payloadPresent) {
-            updatedValidatorIndices.payload.add(validatorIndex);
-          } else {
-            updatedValidatorIndices.payload.remove(validatorIndex);
-          }
-
-          if (blobDataAvailable) {
-            updatedValidatorIndices.data.add(validatorIndex);
-          } else {
-            updatedValidatorIndices.data.remove(validatorIndex);
-          }
-
-          return updatedValidatorIndices;
-        });
-  }
-
-  /** Returns the PTC "payload present" vote count for a block. */
-  public int getPtcPresentVoteCount(final Bytes32 blockRoot) {
-    final PayloadAndDataTimelinessVotesPerValidator validatorIndices =
-        ptcVotesByRoot.get(blockRoot);
-    return validatorIndices != null ? validatorIndices.payload.size() : 0;
-  }
-
-  public int getDataAvailableVoteCount(final Bytes32 blockRoot) {
-    final PayloadAndDataTimelinessVotesPerValidator validatorIndices =
-        ptcVotesByRoot.get(blockRoot);
-    return validatorIndices != null ? validatorIndices.data.size() : 0;
+    getForkChoiceModelForRoot(blockRoot)
+        .ifPresent(
+            forkChoiceModel ->
+                forkChoiceModel.onPtcVote(
+                    blockRoot, validatorIndex, payloadPresent, blobDataAvailable));
   }
 
   @Override
@@ -599,10 +549,15 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
   public List<Bytes32> getBlockRootsAtSlot(final UInt64 slot) {
     protoArrayLock.readLock().lock();
     try {
-      return protoArray.getNodes().stream()
-          .filter(protoNode -> protoNode.getBlockSlot().equals(slot))
-          .map(ProtoNode::getBlockRoot)
-          .toList();
+      final List<Bytes32> blockRoots = new ArrayList<>();
+      final List<ProtoNode> nodes = protoArray.getNodes();
+      for (int nodeIndex = 0; nodeIndex < nodes.size(); nodeIndex++) {
+        final ProtoNode node = nodes.get(nodeIndex);
+        if (node.getBlockSlot().equals(slot) && isCanonicalNode(nodeIndex, node)) {
+          blockRoots.add(node.getBlockRoot());
+        }
+      }
+      return blockRoots;
     } finally {
       protoArrayLock.readLock().unlock();
     }
@@ -682,7 +637,8 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
         if (rootIndices.getOrDefault(node.getBlockRoot(), -1) != nodeIndex) {
           continue;
         }
-        beaconBlockProcessor.process(node.getBlockRoot(), node.getBlockSlot(), node.getParentRoot());
+        beaconBlockProcessor.process(
+            node.getBlockRoot(), node.getBlockSlot(), node.getParentRoot());
       }
     } finally {
       protoArrayLock.readLock().unlock();
@@ -731,16 +687,15 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
                           .orElse(ProtoNode.NO_EXECUTION_BLOCK_NUMBER),
                       block.getExecutionBlockHash().orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH)));
       removedBlockRoots.forEach(
-          (root, uInt64) -> {
+          (root, blockSlot) -> {
+            getForkChoiceModel(blockSlot).onRemovedBlockRoot(root);
             protoArray.removeBlockRoot(root);
-            ptcVotesByRoot.remove(root);
           });
       pulledUpBlocks.forEach(protoArray::pullUpBlockCheckpoints);
       final int sizeBefore = protoArray.getTotalTrackedNodeCount();
       protoArray.maybePrune(finalizedCheckpoint.getRoot());
       if (protoArray.getTotalTrackedNodeCount() < sizeBefore) {
-        // Nodes were pruned — clean up PTC vote counts for roots no longer in the tree
-        ptcVotesByRoot.keySet().removeIf(root -> !protoArray.contains(root));
+        forkChoiceModelFactory.onPrunedBlocks(protoArray);
       }
     } finally {
       protoArrayLock.writeLock().unlock();
@@ -788,7 +743,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       final BlockCheckpoints checkpoints,
       final UInt64 executionBlockNumber,
       final Bytes32 executionBlockHash) {
-    getTreeBehavior(blockSlot)
+    getForkChoiceModel(blockSlot)
         .processBlock(
             protoArray,
             blockSlot,
@@ -803,6 +758,18 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
 
   private Optional<ProtoNode> getProtoNode(final Bytes32 blockRoot) {
     return protoArray.getProtoNode(blockRoot);
+  }
+
+  private Optional<ProtoNodeData> getExecutionNodeData(final Bytes32 blockRoot) {
+    return getForkChoiceModelForRoot(blockRoot)
+        .flatMap(
+            forkChoiceModel ->
+                forkChoiceModel.getNodeData(
+                    protoArray, forkChoiceModel.resolveExecutionNode(protoArray, blockRoot)));
+  }
+
+  private boolean isCanonicalNode(final int nodeIndex, final ProtoNode node) {
+    return protoArray.getRootIndices().getOrDefault(node.getBlockRoot(), -1) == nodeIndex;
   }
 
   public void onExecutionPayloadResult(

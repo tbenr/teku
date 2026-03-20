@@ -55,7 +55,7 @@ public class ProtoArray {
   // When starting from genesis, this value is zero (genesis epoch)
   private final UInt64 initialEpoch;
   private final StatusLogger statusLog;
-  private Optional<PayloadStatusTiebreaker> payloadStatusTiebreaker = Optional.empty();
+  private HeadSelectionPolicy headSelectionPolicy = DefaultHeadSelectionPolicy.INSTANCE;
 
   /**
    * Lists all the known nodes. It is guaranteed that a node will be after its parent in the list.
@@ -151,7 +151,7 @@ public class ProtoArray {
 
   /**
    * Register a block with the fork choice using an explicit parent index. This overload is used by
-   * Gloas tree behavior to resolve the correct parent (FULL → EMPTY → PENDING) before insertion.
+   * fork-aware models that resolve parent selection before insertion.
    */
   public void onBlock(
       final UInt64 blockSlot,
@@ -196,6 +196,8 @@ public class ProtoArray {
    *
    * <p>Spec reference: on_execution_payload — stores payload_states[root], making the FULL child
    * visible in get_node_children.
+   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-on_execution_payload
+   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-get_node_children
    */
   public void onExecutionPayload(
       final Bytes32 blockRoot,
@@ -237,6 +239,10 @@ public class ProtoArray {
   /**
    * Creates an EMPTY child node for a block in the Gloas three-state fork choice tree. The EMPTY
    * node is created immediately when a block arrives, representing the empty-payload path.
+   *
+   * <p>Spec reference: modified on_block plus get_node_children.
+   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#modified-on_block
+   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-get_node_children
    */
   public void createEmptyNode(final Bytes32 blockRoot) {
     if (indices.hasEmptyNode(blockRoot)) {
@@ -273,38 +279,10 @@ public class ProtoArray {
   }
 
   /**
-   * Resolves the correct parent index for a new child block in Gloas based on the spec's
-   * get_parent_payload_status. Uses FULL parent if the child's parent_block_hash (from the bid)
-   * matches the FULL node's execution block hash. Otherwise uses EMPTY. Falls back to PENDING for
-   * pre-Gloas parents.
-   *
-   * @param parentRoot the parent block's beacon root
-   * @param childParentBlockHash the child block's bid's parent_block_hash (EL block hash of
-   *     parent). For Gloas blocks, this comes from
-   *     block.body.signed_execution_payload_bid.message.parent_block_hash
-   */
-  public Optional<Integer> resolveGloasParentIndex(
-      final Bytes32 parentRoot, final Bytes32 childParentBlockHash) {
-    final Optional<Integer> fullIndex = indices.getFullNodeIndex(parentRoot);
-    if (fullIndex.isPresent()) {
-      // Check if the child was built on the FULL state by comparing execution block hashes
-      // Spec: get_parent_payload_status returns FULL iff parent_block_hash == message_block_hash
-      final ProtoNode fullNode = getNodeByIndex(fullIndex.get());
-      if (fullNode.getExecutionBlockHash().equals(childParentBlockHash)) {
-        return fullIndex;
-      }
-    }
-    final Optional<Integer> emptyIndex = indices.getEmptyNodeIndex(parentRoot);
-    if (emptyIndex.isPresent()) {
-      return emptyIndex;
-    }
-    return indices.get(parentRoot);
-  }
-
-  /**
    * Spec: is_parent_node_full — checks if the proposer block was built on the FULL state of its
    * parent by comparing the proposer's bid parent_block_hash with the parent's FULL execution block
    * hash.
+   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-is_parent_node_full
    */
   public boolean isParentNodeFull(final Bytes32 parentRoot, final ProtoNode proposerNode) {
     return indices
@@ -608,7 +586,7 @@ public class ProtoArray {
       final UInt64 currentEpoch,
       final Checkpoint justifiedCheckpoint,
       final Checkpoint finalizedCheckpoint,
-      final Optional<PayloadStatusTiebreaker> payloadStatusTiebreaker) {
+      final HeadSelectionPolicy headSelectionPolicy) {
     checkArgument(
         deltas.size() == getTotalTrackedNodeCount(),
         "ProtoArray: Invalid delta length expected %s but got %s",
@@ -618,7 +596,7 @@ public class ProtoArray {
     this.currentEpoch = currentEpoch;
     this.justifiedCheckpoint = justifiedCheckpoint;
     this.finalizedCheckpoint = finalizedCheckpoint;
-    this.payloadStatusTiebreaker = payloadStatusTiebreaker;
+    this.headSelectionPolicy = headSelectionPolicy;
 
     applyDeltas(deltas);
   }
@@ -745,43 +723,32 @@ public class ProtoArray {
                 } else if (!childLeadsToViableHead && bestChildLeadsToViableHead) {
                   // The best child leads to a viable head, but the child doesn't.
                   // No change.
-                } else if (payloadStatusTiebreaker.isPresent()
-                    && child.getBlockRoot().equals(parent.getBlockRoot())
-                    && bestChild.getBlockRoot().equals(parent.getBlockRoot())) {
-                  // EMPTY/FULL sibling comparison.
-                  // Spec: get_head sorts by (get_weight, root, get_payload_status_tiebreaker)
-                  // Root is the same for EMPTY/FULL siblings, so compare effective weight
-                  // (spec's get_weight) first, then tiebreaker when weights are equal.
-                  PayloadStatusTiebreaker tb = payloadStatusTiebreaker.get();
-                  UInt64 childEffWeight = tb.effectiveWeight(child);
-                  UInt64 bestChildEffWeight = tb.effectiveWeight(bestChild);
-                  int weightCmp = childEffWeight.compareTo(bestChildEffWeight);
-                  if (weightCmp > 0) {
-                    changeToChild(parent, childIndex);
-                  } else if (weightCmp == 0) {
-                    int cmp = tb.compare(child, bestChild, parent, ProtoArray.this);
-                    if (cmp > 0) {
-                      changeToChild(parent, childIndex);
-                    }
-                  }
-                  // else: bestChild has more effective weight, no change
-                } else if (child.getWeight().equals(bestChild.getWeight())) {
-                  // Tie-breaker of equal weights by root.
-                  if (child
-                          .getBlockRoot()
-                          .toHexString()
-                          .compareTo(bestChild.getBlockRoot().toHexString())
-                      >= 0) {
-                    changeToChild(parent, childIndex);
-                  } else {
-                    // No change.
-                  }
                 } else {
-                  // Choose the winner by weight.
-                  if (child.getWeight().compareTo(bestChild.getWeight()) >= 0) {
+                  final int policyDecision =
+                      headSelectionPolicy.compareChildren(
+                          child, bestChild, parent, ProtoArray.this);
+                  if (policyDecision > 0) {
                     changeToChild(parent, childIndex);
-                  } else {
+                  } else if (policyDecision < 0) {
                     // No change.
+                  } else if (child.getWeight().equals(bestChild.getWeight())) {
+                    // Tie-breaker of equal weights by root.
+                    if (child
+                            .getBlockRoot()
+                            .toHexString()
+                            .compareTo(bestChild.getBlockRoot().toHexString())
+                        >= 0) {
+                      changeToChild(parent, childIndex);
+                    } else {
+                      // No change.
+                    }
+                  } else {
+                    // Choose the winner by weight.
+                    if (child.getWeight().compareTo(bestChild.getWeight()) >= 0) {
+                      changeToChild(parent, childIndex);
+                    } else {
+                      // No change.
+                    }
                   }
                 }
               }
@@ -979,6 +946,14 @@ public class ProtoArray {
 
   public boolean hasFullNode(final Bytes32 blockRoot) {
     return indices.hasFullNode(blockRoot);
+  }
+
+  public Optional<Integer> getFullNodeIndex(final Bytes32 blockRoot) {
+    return indices.getFullNodeIndex(blockRoot);
+  }
+
+  public Optional<Integer> getEmptyNodeIndex(final Bytes32 blockRoot) {
+    return indices.getEmptyNodeIndex(blockRoot);
   }
 
   ProtoNode getNodeByIndex(final int index) {

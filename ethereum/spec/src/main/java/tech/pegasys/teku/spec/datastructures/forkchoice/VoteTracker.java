@@ -18,6 +18,13 @@ import java.util.Objects;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
+/**
+ * Teku representation of fork-choice latest-message state.
+ *
+ * <p>Gloas extends the spec's `LatestMessage` helper to track `slot` and `payload_present` instead
+ * of only target epoch. The corresponding Python definition lives in:
+ * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#modified-latestmessage
+ */
 public class VoteTracker {
 
   public static final VoteTracker DEFAULT =

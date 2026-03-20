@@ -31,7 +31,9 @@ import tech.pegasys.teku.infrastructure.crypto.Hash;
 import tech.pegasys.teku.infrastructure.exceptions.FatalServiceFailureException;
 import tech.pegasys.teku.infrastructure.logging.StatusLogger;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
+import tech.pegasys.teku.spec.SpecMilestone;
 import tech.pegasys.teku.spec.TestSpecFactory;
+import tech.pegasys.teku.spec.config.SpecConfigGloas;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.StubVoteUpdater;
@@ -47,6 +49,10 @@ class ProtoArrayTest {
       new DataStructureUtil(TestSpecFactory.createMinimalPhase0());
   private final VoteUpdater voteUpdater = new StubVoteUpdater();
   private final StatusLogger statusLog = mock(StatusLogger.class);
+  private final ForkChoiceModelGloas gloasModel =
+      new ForkChoiceModelGloas(
+          SpecConfigGloas.required(
+              TestSpecFactory.createMinimalGloas().forMilestone(SpecMilestone.GLOAS).getConfig()));
 
   private final Bytes32 block1a = dataStructureUtil.randomBytes32();
   private final Bytes32 block1b = dataStructureUtil.randomBytes32();
@@ -127,12 +133,7 @@ class ProtoArrayTest {
     addOptimisticBlock(3, block3a, block2a);
 
     // Apply score changes to ensure that the best descendant index is updated
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.empty());
+    applyScoreChanges();
 
     // Check the best descendant has been updated
     assertThat(protoArray.getProtoNode(block1a).orElseThrow().getBestDescendantIndex())
@@ -151,12 +152,7 @@ class ProtoArrayTest {
     addOptimisticBlock(3, block3a, block2a);
 
     // Apply score changes to ensure that the best descendant index is updated
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.empty());
+    applyScoreChanges();
 
     // Check the best descendant has been updated
     assertThat(protoArray.getProtoNode(block1a).orElseThrow().getBestDescendantIndex())
@@ -196,24 +192,14 @@ class ProtoArrayTest {
     voteUpdater.putVote(UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
     voteUpdater.putVote(UInt64.ONE, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
     voteUpdater.putVote(UInt64.valueOf(2), new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.empty());
+    applyScoreChanges();
 
     assertHead(block2b);
 
     // Validators 0 and 1 switch forks to chain a
     voteUpdater.putVote(UInt64.ZERO, new VoteTracker(block1b, block2a, UInt64.ONE));
     voteUpdater.putVote(UInt64.ONE, new VoteTracker(block1b, block2a, UInt64.ONE));
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.empty());
+    applyScoreChanges();
 
     // And our head should switch
     assertHead(block2a);
@@ -229,24 +215,14 @@ class ProtoArrayTest {
     voteUpdater.putVote(UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
     voteUpdater.putVote(UInt64.ONE, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
     voteUpdater.putVote(UInt64.valueOf(2), new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.empty());
+    applyScoreChanges();
 
     assertHead(block2b);
 
     // Validators 0 and 1 switch forks to chain a
     voteUpdater.putVote(UInt64.ZERO, new VoteTracker(block1b, block2a, UInt64.ONE));
     voteUpdater.putVote(UInt64.ONE, new VoteTracker(block1b, block2a, UInt64.ONE));
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.empty());
+    applyScoreChanges();
 
     // And our head should switch
     assertHead(block2a);
@@ -262,12 +238,7 @@ class ProtoArrayTest {
     voteUpdater.putVote(UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
     voteUpdater.putVote(UInt64.ONE, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
     voteUpdater.putVote(UInt64.valueOf(2), new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.empty());
+    applyScoreChanges();
 
     assertHead(block2b);
 
@@ -276,12 +247,7 @@ class ProtoArrayTest {
     // Validators 0 and 1 switch forks to chain a
     voteUpdater.putVote(UInt64.ZERO, new VoteTracker(block1b, block2a, UInt64.ONE));
     voteUpdater.putVote(UInt64.ONE, new VoteTracker(block1b, block2a, UInt64.ONE));
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.empty());
+    applyScoreChanges();
 
     // Votes for 2a don't count because it's invalid so we stick with chain b.
     assertHead(block2b);
@@ -297,24 +263,14 @@ class ProtoArrayTest {
     voteUpdater.putVote(UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
     voteUpdater.putVote(UInt64.ONE, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
     voteUpdater.putVote(UInt64.valueOf(2), new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.empty());
+    applyScoreChanges();
 
     assertHead(block2b);
 
     // Validators 0 and 1 switch forks to chain a
     voteUpdater.putVote(UInt64.ZERO, new VoteTracker(block1b, block2a, UInt64.ONE));
     voteUpdater.putVote(UInt64.ONE, new VoteTracker(block1b, block2a, UInt64.ONE));
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.empty());
+    applyScoreChanges();
 
     // We switch to chain a because it has the greater weight now
     assertHead(block2a);
@@ -402,12 +358,7 @@ class ProtoArrayTest {
     addValidBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
     addOptimisticBlock(2, block2a, block1a);
     addOptimisticBlock(3, block3a, block2a);
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.empty());
+    applyScoreChanges();
 
     // Check the best descendant has been updated
     assertThat(protoArray.getProtoNode(block1a).orElseThrow().getBestDescendantIndex())
@@ -670,47 +621,47 @@ class ProtoArrayTest {
   }
 
   @Test
-  void resolveGloasParentIndex_shouldResolveFull_whenBlockHashMatches() {
+  void resolveParentIndex_shouldResolveFull_whenBlockHashMatches() {
     addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
     protoArray.createEmptyNode(block1a);
     protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
 
     // When child's parent_block_hash matches FULL node's execution hash → FULL
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
-    assertThat(protoArray.resolveGloasParentIndex(block1a, EXECUTION_BLOCK_HASH))
+    assertThat(gloasModel.resolveParentIndex(protoArray, block1a, EXECUTION_BLOCK_HASH))
         .isEqualTo(Optional.of(fullNodeIndex));
   }
 
   @Test
-  void resolveGloasParentIndex_shouldResolveEmpty_whenBlockHashDoesNotMatch() {
+  void resolveParentIndex_shouldResolveEmpty_whenBlockHashDoesNotMatch() {
     addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
     protoArray.createEmptyNode(block1a);
     protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
 
     // When child's parent_block_hash does NOT match FULL node's execution hash → EMPTY
     final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
-    assertThat(protoArray.resolveGloasParentIndex(block1a, Bytes32.ZERO))
+    assertThat(gloasModel.resolveParentIndex(protoArray, block1a, Bytes32.ZERO))
         .isEqualTo(Optional.of(emptyNodeIndex));
   }
 
   @Test
-  void resolveGloasParentIndex_shouldFallbackToEmpty_whenNoFull() {
+  void resolveParentIndex_shouldFallbackToEmpty_whenNoFull() {
     addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
     protoArray.createEmptyNode(block1a);
 
     // No FULL exists, should resolve to EMPTY regardless of hash
     final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
-    assertThat(protoArray.resolveGloasParentIndex(block1a, EXECUTION_BLOCK_HASH))
+    assertThat(gloasModel.resolveParentIndex(protoArray, block1a, EXECUTION_BLOCK_HASH))
         .isEqualTo(Optional.of(emptyNodeIndex));
   }
 
   @Test
-  void resolveGloasParentIndex_shouldFallbackToPending() {
+  void resolveParentIndex_shouldFallbackToPending() {
     addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
 
     // No FULL or EMPTY exists (pre-Gloas parent), should resolve to block node
     final int blockNodeIndex = protoArray.getIndexByRoot(block1a).orElseThrow();
-    assertThat(protoArray.resolveGloasParentIndex(block1a, Bytes32.ZERO))
+    assertThat(gloasModel.resolveParentIndex(protoArray, block1a, Bytes32.ZERO))
         .isEqualTo(Optional.of(blockNodeIndex));
   }
 
@@ -722,10 +673,10 @@ class ProtoArrayTest {
     protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
     protoArray.markNodeValid(block1a);
 
-    // block2a resolves parent via resolveGloasParentIndex with matching hash → should attach to
+    // block2a resolves parent via the Gloas model with matching hash → should attach to
     // FULL
     final Optional<Integer> resolvedParent =
-        protoArray.resolveGloasParentIndex(block1a, EXECUTION_BLOCK_HASH);
+        gloasModel.resolveParentIndex(protoArray, block1a, EXECUTION_BLOCK_HASH);
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
     assertThat(resolvedParent).isEqualTo(Optional.of(fullNodeIndex));
 
@@ -744,10 +695,10 @@ class ProtoArrayTest {
     protoArray.createEmptyNode(block1a);
     protoArray.markNodeValid(block1a);
 
-    // block2a resolves parent via resolveGloasParentIndex with non-matching hash → should attach to
+    // block2a resolves parent via the Gloas model with non-matching hash → should attach to
     // EMPTY
     final Optional<Integer> resolvedParent =
-        protoArray.resolveGloasParentIndex(block1a, Bytes32.ZERO);
+        gloasModel.resolveParentIndex(protoArray, block1a, Bytes32.ZERO);
     final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
     assertThat(resolvedParent).isEqualTo(Optional.of(emptyNodeIndex));
 
@@ -782,12 +733,7 @@ class ProtoArrayTest {
 
     // Apply deltas with Gloas tiebreaker — currentSlot far from block slot so tiebreaker
     // defaults to payload status ordering (FULL=2 > EMPTY=1)
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.of(createGloasPayloadStatusTiebreaker(UInt64.valueOf(100), Optional.empty())));
+    applyScoreChanges(createGloasHeadSelectionPolicy(UInt64.valueOf(100), Optional.empty()));
 
     // block2a should be head (FULL path wins via tiebreaker)
     final ProtoNode head =
@@ -825,7 +771,11 @@ class ProtoArrayTest {
     // Finalize at block2a
     final Checkpoint finalized = new Checkpoint(UInt64.ONE, block2a);
     protoArray.applyScoreChanges(
-        computeDeltas(), UInt64.valueOf(5), finalized, finalized, Optional.empty());
+        computeDeltas(),
+        UInt64.valueOf(5),
+        finalized,
+        finalized,
+        DefaultHeadSelectionPolicy.INSTANCE);
     protoArray.setPruneThreshold(0);
     protoArray.maybePrune(block2a);
 
@@ -835,7 +785,7 @@ class ProtoArrayTest {
     assertThat(protoArray.contains(block1a)).isFalse();
   }
 
-  // --- Payload status tiebreaker tests ---
+  // --- Gloas head-selection policy tests ---
 
   @Test
   void tiebreaker_fullWinsOverEmpty_whenNotPreviousSlot() {
@@ -846,12 +796,7 @@ class ProtoArrayTest {
     protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
     protoArray.markNodeValid(block1a);
 
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.of(createGloasPayloadStatusTiebreaker(UInt64.valueOf(100), Optional.empty())));
+    applyScoreChanges(createGloasHeadSelectionPolicy(UInt64.valueOf(100), Optional.empty()));
 
     // FULL should be bestChild of block1a (PENDING node)
     final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
@@ -868,12 +813,7 @@ class ProtoArrayTest {
     protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
     protoArray.markNodeValid(block1a);
 
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.of(createGloasPayloadStatusTiebreaker(UInt64.valueOf(6), Optional.empty())));
+    applyScoreChanges(createGloasHeadSelectionPolicy(UInt64.valueOf(6), Optional.empty()));
 
     final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
@@ -895,13 +835,7 @@ class ProtoArrayTest {
     addValidBlockWithParentIndex(
         6, block2a, block1a, Optional.of(fullNodeIndex), EXECUTION_BLOCK_HASH);
 
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.of(
-            createGloasPayloadStatusTiebreaker(UInt64.valueOf(6), Optional.of(block2a))));
+    applyScoreChanges(createGloasHeadSelectionPolicy(UInt64.valueOf(6), Optional.of(block2a)));
 
     // FULL wins: is_parent_node_full(block1a) = true → should_extend_payload = true
     final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
@@ -922,19 +856,14 @@ class ProtoArrayTest {
     addValidBlockWithParentIndex(6, block2a, block1a, Optional.of(emptyNodeIndex));
 
     // threshold = 5, ptcVoteCount = 6 → timely (6 > 5)
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.of(
-            createGloasPayloadStatusTiebreaker(
-                UInt64.valueOf(6),
-                Optional.of(block2a),
-                5,
-                5,
-                root -> root.equals(block1a) ? 6 : 0,
-                root -> root.equals(block1a) ? 6 : 0)));
+    applyScoreChanges(
+        createGloasHeadSelectionPolicy(
+            UInt64.valueOf(6),
+            Optional.of(block2a),
+            5,
+            5,
+            root -> root.equals(block1a) ? 6 : 0,
+            root -> root.equals(block1a) ? 6 : 0));
 
     final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
@@ -955,19 +884,14 @@ class ProtoArrayTest {
     final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
     addValidBlockWithParentIndex(6, block2a, block1a, Optional.of(emptyNodeIndex));
 
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.of(
-            createGloasPayloadStatusTiebreaker(
-                UInt64.valueOf(6),
-                Optional.of(block2a),
-                5,
-                5,
-                root -> root.equals(block1a) ? 6 : 0,
-                __ -> 0)));
+    applyScoreChanges(
+        createGloasHeadSelectionPolicy(
+            UInt64.valueOf(6),
+            Optional.of(block2a),
+            5,
+            5,
+            root -> root.equals(block1a) ? 6 : 0,
+            __ -> 0));
 
     final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
     assertThat(block1aNode.getBestChildIndex()).isEqualTo(Optional.of(emptyNodeIndex));
@@ -989,19 +913,14 @@ class ProtoArrayTest {
         6, block2a, block1a, Optional.of(fullNodeIndex), EXECUTION_BLOCK_HASH);
 
     // threshold = 5, ptcVoteCount = 3 → NOT timely (3 ≤ 5)
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.of(
-            createGloasPayloadStatusTiebreaker(
-                UInt64.valueOf(6),
-                Optional.of(block2a),
-                5,
-                5,
-                root -> root.equals(block1a) ? 3 : 0,
-                __ -> 0)));
+    applyScoreChanges(
+        createGloasHeadSelectionPolicy(
+            UInt64.valueOf(6),
+            Optional.of(block2a),
+            5,
+            5,
+            root -> root.equals(block1a) ? 3 : 0,
+            __ -> 0));
 
     // FULL still wins because is_parent_node_full(block1a) = true
     final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
@@ -1032,12 +951,7 @@ class ProtoArrayTest {
     voteUpdater.putVote(
         UInt64.ONE, new VoteTracker(Bytes32.ZERO, block2a, UInt64.ONE, false, false));
 
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.of(createGloasPayloadStatusTiebreaker(UInt64.valueOf(100), Optional.empty())));
+    applyScoreChanges(createGloasHeadSelectionPolicy(UInt64.valueOf(100), Optional.empty()));
 
     // EMPTY path wins by weight, even though tiebreaker would favor FULL
     final ProtoNode head =
@@ -1076,12 +990,7 @@ class ProtoArrayTest {
 
     // currentSlot = 6 = block slot + 1 → effective weight is 0 for both EMPTY and FULL
     // No proposer boost → should_extend_payload = true → FULL wins tiebreaker
-    protoArray.applyScoreChanges(
-        computeDeltas(),
-        UInt64.valueOf(5),
-        GENESIS_CHECKPOINT,
-        GENESIS_CHECKPOINT,
-        Optional.of(createGloasPayloadStatusTiebreaker(UInt64.valueOf(6), Optional.empty())));
+    applyScoreChanges(createGloasHeadSelectionPolicy(UInt64.valueOf(6), Optional.empty()));
 
     // Even though EMPTY path has more votes, at previous slot both have effectiveWeight 0,
     // so tiebreaker decides → FULL wins
@@ -1101,20 +1010,32 @@ class ProtoArrayTest {
     assertThat(node.getBestChildIndex()).isEmpty();
   }
 
-  private GloasPayloadStatusTiebreaker createGloasPayloadStatusTiebreaker(
-      final UInt64 currentSlot, final Optional<Bytes32> proposerBoostRoot) {
-    return createGloasPayloadStatusTiebreaker(
-        currentSlot, proposerBoostRoot, 0, 0, __ -> 0, __ -> 0);
+  private void applyScoreChanges() {
+    applyScoreChanges(DefaultHeadSelectionPolicy.INSTANCE);
   }
 
-  private GloasPayloadStatusTiebreaker createGloasPayloadStatusTiebreaker(
+  private void applyScoreChanges(final HeadSelectionPolicy headSelectionPolicy) {
+    protoArray.applyScoreChanges(
+        computeDeltas(),
+        UInt64.valueOf(5),
+        GENESIS_CHECKPOINT,
+        GENESIS_CHECKPOINT,
+        headSelectionPolicy);
+  }
+
+  private GloasHeadSelectionPolicy createGloasHeadSelectionPolicy(
+      final UInt64 currentSlot, final Optional<Bytes32> proposerBoostRoot) {
+    return createGloasHeadSelectionPolicy(currentSlot, proposerBoostRoot, 0, 0, __ -> 0, __ -> 0);
+  }
+
+  private GloasHeadSelectionPolicy createGloasHeadSelectionPolicy(
       final UInt64 currentSlot,
       final Optional<Bytes32> proposerBoostRoot,
       final int payloadTimelyThreshold,
       final int dataAvailabilityTimelyThreshold,
       final ToIntFunction<Bytes32> ptcPresentVoteCountLookup,
       final ToIntFunction<Bytes32> ptcDataAvailableVoteCountLookup) {
-    return new GloasPayloadStatusTiebreaker(
+    return new GloasHeadSelectionPolicy(
         currentSlot,
         proposerBoostRoot,
         payloadTimelyThreshold,

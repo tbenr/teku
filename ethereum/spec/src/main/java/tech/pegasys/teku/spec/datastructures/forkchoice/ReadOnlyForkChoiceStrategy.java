@@ -53,10 +53,20 @@ public interface ReadOnlyForkChoiceStrategy {
 
   Optional<ProtoNodeData> getBlockData(Bytes32 blockRoot);
 
+  default Optional<ProtoNodeData> getNodeData(final ForkChoiceNode node) {
+    return getBlockData(node.blockRoot(), node.payloadStatus());
+  }
+
   /**
    * Gets block data for a specific node identity (blockRoot + payloadStatus). In the Gloas
    * three-state tree, the same blockRoot may have multiple nodes (PENDING, EMPTY, FULL). This
    * method resolves to the correct node based on the payload status.
+   *
+   * <p>This is the read-side mirror of the Gloas spec helpers that distinguish the canonical block
+   * root from the EMPTY/FULL child returned by `get_node_children(...)` and selected by
+   * `get_head(...)`:
+   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-get_node_children
+   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#modified-get_head
    *
    * <p>Default: delegates to {@link #getBlockData(Bytes32)}, ignoring payloadStatus.
    */
@@ -74,6 +84,11 @@ public interface ReadOnlyForkChoiceStrategy {
    * payload status. Unlike {@link #getAncestor(Bytes32, UInt64)} which returns the block root, this
    * returns the payload status of the node at the target slot, which may be a FULL node if the path
    * goes through a FULL node in the three-state tree.
+   *
+   * <p>This is the payload-status-aware counterpart of the Gloas `get_ancestor(...)` walk used by
+   * `is_supporting_vote(...)`:
+   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#modified-get_ancestor
+   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-is_supporting_vote
    */
   default Optional<ForkChoicePayloadStatus> getAncestorPayloadStatus(
       final Bytes32 blockRoot, final UInt64 slot) {
