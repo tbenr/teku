@@ -35,6 +35,15 @@ public interface ReadOnlyForkChoiceStrategy {
 
   List<Bytes32> getBlockRootsAtSlot(UInt64 slot);
 
+  /**
+   * Returns the current terminal fork-choice heads.
+   *
+   * <p>This is a node-facing API. In pre-Gloas it returns the base block nodes. In the Gloas
+   * three-state tree it may return EMPTY/FULL nodes for the same block root, because those are the
+   * actual candidate heads selected by the modified {@code get_head(...)} spec logic.
+   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#modified-get_head
+   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-get_node_children
+   */
   default List<ProtoNodeData> getChainHeads() {
     return getChainHeads(false);
   }

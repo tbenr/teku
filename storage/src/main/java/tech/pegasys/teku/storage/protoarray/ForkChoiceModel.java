@@ -68,10 +68,22 @@ interface ForkChoiceModel {
   Optional<ProtoNodeData> getNodeData(ProtoArray protoArray, ForkChoiceNode node);
 
   default Optional<ProtoNodeData> getBlockData(
-      final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex, final Bytes32 blockRoot) {
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockRoot) {
     return blockNodeIndex
         .getBaseNode(blockRoot)
         .flatMap(nodeIdentity -> getNodeData(protoArray, nodeIdentity));
+  }
+
+  /**
+   * Returns whether the supplied node is a valid head candidate for this fork-aware model.
+   *
+   * <p>Pre-Gloas head candidates are the base nodes. In Gloas, the structural base node is never a
+   * head and only the EMPTY/FULL children are valid terminal heads.
+   */
+  default boolean isHeadCandidate(final ProtoNode node) {
+    return node.getPayloadStatus() == ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING;
   }
 
   ForkChoiceNode resolveBaseNode(BlockNodeVariantsIndex blockNodeIndex, Bytes32 blockRoot);
@@ -80,12 +92,16 @@ interface ForkChoiceModel {
       ProtoArray protoArray, BlockNodeVariantsIndex blockNodeIndex, Bytes32 blockRoot);
 
   default Optional<ForkChoicePayloadStatus> payloadStatus(
-      final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex, final Bytes32 blockRoot) {
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockRoot) {
     return getBlockData(protoArray, blockNodeIndex, blockRoot).map(ProtoNodeData::getPayloadStatus);
   }
 
   default void pullUpBlockCheckpoints(
-      final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex, final Bytes32 blockRoot) {
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockRoot) {
     blockNodeIndex
         .getVariants(blockRoot)
         .ifPresent(variants -> variants.allNodes().forEach(protoArray::pullUpCheckpoints));
@@ -98,7 +114,9 @@ interface ForkChoiceModel {
       final boolean blobDataAvailable) {}
 
   default void onRemovedBlockRoot(
-      final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex, final Bytes32 blockRoot) {
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockRoot) {
     blockNodeIndex
         .getVariants(blockRoot)
         .ifPresent(variants -> variants.allNodes().forEach(protoArray::removeNode));

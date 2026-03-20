@@ -227,6 +227,14 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
     }
   }
 
+  /**
+   * Returns terminal fork-choice heads using the fork-aware model to decide which node variants are
+   * eligible heads.
+   *
+   * <p>Pre-Gloas only exposes base nodes here. In Gloas this returns EMPTY/FULL leaves, matching
+   * the modified {@code get_head(...)} semantics of the three-state tree.
+   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#modified-get_head
+   */
   @Override
   public List<ProtoNodeData> getChainHeads(final boolean includeNonViableHeads) {
     protoArrayLock.readLock().lock();
@@ -234,8 +242,8 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       return protoArray.getNodes().stream()
           .filter(
               protoNode ->
-                  isBaseNode(protoNode)
-                      && protoNode.getBestChildIndex().isEmpty()
+                  protoNode.getBestChildIndex().isEmpty()
+                      && getForkChoiceModel(protoNode.getBlockSlot()).isHeadCandidate(protoNode)
                       && (includeNonViableHeads || protoArray.nodeIsViableForHead(protoNode)))
           .map(ProtoNode::getBlockData)
           .toList();
@@ -823,6 +831,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       if (status.isValid()) {
         blockNodeIndex
             .getVariants(blockRoot)
+            // TODO: i believe only FULL node becomes invalid
             .ifPresent(variants -> variants.allNodes().forEach(protoArray::markNodeValid));
       } else if (status.isInvalid()) {
         if (verifiedInvalidTransition) {

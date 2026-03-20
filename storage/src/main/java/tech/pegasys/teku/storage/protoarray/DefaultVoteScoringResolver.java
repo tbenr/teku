@@ -26,13 +26,17 @@ class DefaultVoteScoringResolver implements VoteScoringResolver {
 
   @Override
   public Optional<ForkChoiceNode> resolveCurrentNode(
-      final VoteTracker vote, final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex) {
+      final VoteTracker vote,
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex) {
     return blockNodeIndex.getBaseNode(vote.getCurrentRoot());
   }
 
   @Override
   public Optional<ForkChoiceNode> resolveNextNode(
-      final VoteTracker vote, final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex) {
+      final VoteTracker vote,
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex) {
     return blockNodeIndex.getBaseNode(vote.getNextRoot());
   }
 }

@@ -29,8 +29,8 @@ import tech.pegasys.teku.storage.api.StoredBlockMetadata;
 /**
  * Storage-side implementation of the Gloas three-state fork-choice tree.
  *
- * <p>This class is the fork-aware model-side implementation of the Python helpers and handlers
- * that introduce the EMPTY/FULL child nodes:
+ * <p>This class is the fork-aware model-side implementation of the Python helpers and handlers that
+ * introduce the EMPTY/FULL child nodes:
  * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#modified-on_block
  * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-on_execution_payload
  * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-get_node_children
@@ -215,6 +215,14 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
   }
 
   @Override
+  public boolean isHeadCandidate(final ProtoNode node) {
+    // Spec mapping: modified get_head(store)
+    // In the Gloas three-state tree the base PENDING node is structural only. Candidate heads are
+    // the EMPTY/FULL children selected from get_node_children(...).
+    return node.getPayloadStatus() != ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING;
+  }
+
+  @Override
   public ForkChoiceNode resolveBaseNode(
       final BlockNodeVariantsIndex blockNodeIndex, final Bytes32 blockRoot) {
     return blockNodeIndex.getBaseNode(blockRoot).orElse(ForkChoiceNode.createBase(blockRoot));
@@ -222,7 +230,9 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
 
   @Override
   public ForkChoiceNode resolveExecutionNode(
-      final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex, final Bytes32 blockRoot) {
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockRoot) {
     // FULL is the execution-state node selected when the payload has been revealed.
     return blockNodeIndex
         .getFullNode(blockRoot)
@@ -231,7 +241,9 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
 
   @Override
   public Optional<ForkChoicePayloadStatus> payloadStatus(
-      final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex, final Bytes32 blockRoot) {
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockRoot) {
     // Compatibility read for block-root-only callers. This mirrors the best-available payload
     // status without promoting it to a first-class "preferred node" abstraction.
     if (blockNodeIndex.getFullNode(blockRoot).isPresent()) {
@@ -255,7 +267,9 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
 
   @Override
   public void onRemovedBlockRoot(
-      final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex, final Bytes32 blockRoot) {
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockRoot) {
     ForkChoiceModel.super.onRemovedBlockRoot(protoArray, blockNodeIndex, blockRoot);
     ptcVoteTracker.remove(blockRoot);
   }

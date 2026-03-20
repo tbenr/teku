@@ -23,8 +23,7 @@ import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
  * Storage-side vote routing for the Gloas fork-choice tree.
  *
  * <p>This is not a literal spec helper. It is the model-side implementation of the Python logic
- * spread
- * across `LatestMessage`, `update_latest_messages(...)`, `is_supporting_vote(...)`, and
+ * spread across `LatestMessage`, `update_latest_messages(...)`, `is_supporting_vote(...)`, and
  * `get_attestation_score(...)`:
  * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#modified-latestmessage
  * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#modified-update_latest_messages
@@ -42,7 +41,9 @@ class GloasVoteScoringResolver implements VoteScoringResolver {
 
   @Override
   public Optional<ForkChoiceNode> resolveCurrentNode(
-      final VoteTracker vote, final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex) {
+      final VoteTracker vote,
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex) {
     return resolveNode(
         vote.getCurrentRoot(),
         vote.getCurrentSlot(),
@@ -53,7 +54,9 @@ class GloasVoteScoringResolver implements VoteScoringResolver {
 
   @Override
   public Optional<ForkChoiceNode> resolveNextNode(
-      final VoteTracker vote, final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex) {
+      final VoteTracker vote,
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex) {
     return resolveNode(
         vote.getNextRoot(),
         vote.getNextSlot(),

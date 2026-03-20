@@ -114,7 +114,9 @@ class ForkChoiceModelDefault implements ForkChoiceModel {
 
   @Override
   public ForkChoiceNode resolveExecutionNode(
-      final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex, final Bytes32 blockRoot) {
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockRoot) {
     return resolveBaseNode(blockNodeIndex, blockRoot);
   }
 }

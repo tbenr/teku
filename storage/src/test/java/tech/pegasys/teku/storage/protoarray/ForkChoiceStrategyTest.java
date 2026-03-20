@@ -272,6 +272,57 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
   }
 
   @Test
+  void getChainHeads_shouldReturnGloasDerivedHeadNodes() {
+    final Spec gloasSpec = TestSpecFactory.createMinimalGloas();
+    final ChainBuilder chainBuilder = ChainBuilder.create(gloasSpec);
+    final SignedBlockAndState genesis = chainBuilder.generateGenesis();
+    final SignedBlockAndState block1 = chainBuilder.generateBlockAtSlot(1);
+    final SignedBlockAndState block2 = chainBuilder.generateBlockAtSlot(2);
+
+    final ProtoArray protoArray = createProtoArray(gloasSpec, block2.getState());
+    addBlockToProtoArray(gloasSpec, protoArray, genesis);
+    addBlockToProtoArray(gloasSpec, protoArray, block1);
+    addProjectedNodeToProtoArray(
+        gloasSpec,
+        protoArray,
+        block1,
+        ForkChoiceNode.createEmpty(block1.getRoot()),
+        ForkChoiceNode.createBase(block1.getRoot()));
+    addProjectedNodeToProtoArray(
+        gloasSpec,
+        protoArray,
+        block1,
+        ForkChoiceNode.createFull(block1.getRoot()),
+        ForkChoiceNode.createBase(block1.getRoot()),
+        block1.getRoot(),
+        block1.getExecutionBlockNumber().orElse(UInt64.ONE),
+        block1.getExecutionBlockHash().orElse(dataStructureUtil.randomBytes32()));
+    addBlockToProtoArray(
+        gloasSpec,
+        protoArray,
+        block2,
+        Optional.of(
+            protoArray.getNodeIndex(ForkChoiceNode.createFull(block1.getRoot())).orElseThrow()));
+    addProjectedNodeToProtoArray(
+        gloasSpec,
+        protoArray,
+        block2,
+        ForkChoiceNode.createEmpty(block2.getRoot()),
+        ForkChoiceNode.createBase(block2.getRoot()));
+
+    final ForkChoiceStrategy protoArrayStrategy =
+        ForkChoiceStrategy.initialize(gloasSpec, protoArray);
+
+    assertThat(
+            protoArrayStrategy.getChainHeads().stream()
+                .map(node -> new ForkChoiceNode(node.getRoot(), node.getPayloadStatus()))
+                .toList())
+        .containsExactlyInAnyOrder(
+            ForkChoiceNode.createEmpty(block1.getRoot()),
+            ForkChoiceNode.createEmpty(block2.getRoot()));
+  }
+
+  @Test
   void getAncestor_headIsUnknown() {
     final StorageSystem storageSystem = initStorageSystem();
     final ForkChoiceStrategy protoArrayStrategy = getProtoArray(storageSystem);
@@ -655,6 +706,10 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
   }
 
   private ProtoArray createProtoArray(final BeaconState latestState) {
+    return createProtoArray(spec, latestState);
+  }
+
+  private ProtoArray createProtoArray(final Spec spec, final BeaconState latestState) {
     return ProtoArray.builder()
         .spec(spec)
         .currentEpoch(ZERO)
@@ -665,6 +720,11 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
 
   private void addBlockToProtoArray(
       final ProtoArray protoArray, final SignedBlockAndState blockAndState) {
+    addBlockToProtoArray(spec, protoArray, blockAndState);
+  }
+
+  private void addBlockToProtoArray(
+      final Spec spec, final ProtoArray protoArray, final SignedBlockAndState blockAndState) {
     protoArray.addNode(
         ForkChoiceNode.createBase(blockAndState.getRoot()),
         blockAndState.getSlot(),
@@ -681,6 +741,14 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
   }
 
   private void addBlockToProtoArray(
+      final ProtoArray protoArray,
+      final SignedBlockAndState blockAndState,
+      final Optional<Integer> parentIndex) {
+    addBlockToProtoArray(spec, protoArray, blockAndState, parentIndex);
+  }
+
+  private void addBlockToProtoArray(
+      final Spec spec,
       final ProtoArray protoArray,
       final SignedBlockAndState blockAndState,
       final Optional<Integer> parentIndex) {
@@ -702,7 +770,17 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
       final SignedBlockAndState blockAndState,
       final ForkChoiceNode nodeIdentity,
       final ForkChoiceNode parentNodeIdentity) {
+    addProjectedNodeToProtoArray(spec, protoArray, blockAndState, nodeIdentity, parentNodeIdentity);
+  }
+
+  private void addProjectedNodeToProtoArray(
+      final Spec spec,
+      final ProtoArray protoArray,
+      final SignedBlockAndState blockAndState,
+      final ForkChoiceNode nodeIdentity,
+      final ForkChoiceNode parentNodeIdentity) {
     addProjectedNodeToProtoArray(
+        spec,
         protoArray,
         blockAndState,
         nodeIdentity,
@@ -713,6 +791,26 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
   }
 
   private void addProjectedNodeToProtoArray(
+      final ProtoArray protoArray,
+      final SignedBlockAndState blockAndState,
+      final ForkChoiceNode nodeIdentity,
+      final ForkChoiceNode parentNodeIdentity,
+      final Bytes32 blockRoot,
+      final UInt64 executionBlockNumber,
+      final Bytes32 executionBlockHash) {
+    addProjectedNodeToProtoArray(
+        spec,
+        protoArray,
+        blockAndState,
+        nodeIdentity,
+        parentNodeIdentity,
+        blockRoot,
+        executionBlockNumber,
+        executionBlockHash);
+  }
+
+  private void addProjectedNodeToProtoArray(
+      final Spec spec,
       final ProtoArray protoArray,
       final SignedBlockAndState blockAndState,
       final ForkChoiceNode nodeIdentity,
