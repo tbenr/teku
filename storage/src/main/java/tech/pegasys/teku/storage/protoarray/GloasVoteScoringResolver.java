@@ -16,12 +16,14 @@ package tech.pegasys.teku.storage.protoarray;
 import java.util.Optional;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 
 /**
  * Storage-side vote routing for the Gloas fork-choice tree.
  *
- * <p>This is not a literal spec helper. It is the protoarray projection of the Python logic spread
+ * <p>This is not a literal spec helper. It is the model-side implementation of the Python logic
+ * spread
  * across `LatestMessage`, `update_latest_messages(...)`, `is_supporting_vote(...)`, and
  * `get_attestation_score(...)`:
  * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#modified-latestmessage
@@ -29,8 +31,8 @@ import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
  * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-is_supporting_vote
  * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#modified-get_attestation_score
  *
- * <p>Votes at or before the block's own slot stay on the canonical block node. Later votes are
- * routed to the EMPTY or FULL child according to `payload_present`.
+ * <p>Votes at or before the block's own slot stay on the block's base node. Later votes are routed
+ * to the EMPTY or FULL child according to `payload_present`.
  */
 class GloasVoteScoringResolver implements VoteScoringResolver {
 
@@ -39,31 +41,46 @@ class GloasVoteScoringResolver implements VoteScoringResolver {
   private GloasVoteScoringResolver() {}
 
   @Override
-  public Optional<Integer> resolveCurrentIndex(
-      final VoteTracker vote, final ProtoArray protoArray) {
-    return resolveIndex(
-        vote.getCurrentRoot(), vote.getCurrentSlot(), vote.isCurrentPayloadPresent(), protoArray);
+  public Optional<ForkChoiceNode> resolveCurrentNode(
+      final VoteTracker vote, final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex) {
+    return resolveNode(
+        vote.getCurrentRoot(),
+        vote.getCurrentSlot(),
+        vote.isCurrentPayloadPresent(),
+        protoArray,
+        blockNodeIndex);
   }
 
   @Override
-  public Optional<Integer> resolveNextIndex(final VoteTracker vote, final ProtoArray protoArray) {
-    return resolveIndex(
-        vote.getNextRoot(), vote.getNextSlot(), vote.isNextPayloadPresent(), protoArray);
+  public Optional<ForkChoiceNode> resolveNextNode(
+      final VoteTracker vote, final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex) {
+    return resolveNode(
+        vote.getNextRoot(),
+        vote.getNextSlot(),
+        vote.isNextPayloadPresent(),
+        protoArray,
+        blockNodeIndex);
   }
 
-  private Optional<Integer> resolveIndex(
+  private Optional<ForkChoiceNode> resolveNode(
       final Bytes32 voteRoot,
       final UInt64 voteSlot,
       final boolean payloadPresent,
-      final ProtoArray protoArray) {
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex) {
+    final Optional<ForkChoiceNode> maybeBaseNode = blockNodeIndex.getBaseNode(voteRoot);
+    if (maybeBaseNode.isEmpty()) {
+      return Optional.empty();
+    }
+
     final Optional<UInt64> blockSlot =
-        protoArray.getProtoNode(voteRoot).map(ProtoNode::getBlockSlot);
+        protoArray.getNode(maybeBaseNode.get()).map(ProtoNode::getBlockSlot);
     if (blockSlot.isPresent() && voteSlot.isLessThanOrEqualTo(blockSlot.get())) {
-      return protoArray.getIndexByRoot(voteRoot);
+      return maybeBaseNode;
     }
     if (payloadPresent) {
-      return protoArray.getFullNodeIndex(voteRoot).or(() -> protoArray.getIndexByRoot(voteRoot));
+      return blockNodeIndex.getFullNode(voteRoot).or(() -> maybeBaseNode);
     }
-    return protoArray.getEmptyNodeIndex(voteRoot).or(() -> protoArray.getIndexByRoot(voteRoot));
+    return blockNodeIndex.getEmptyNode(voteRoot).or(() -> maybeBaseNode);
   }
 }

@@ -14,9 +14,10 @@
 package tech.pegasys.teku.storage.protoarray;
 
 import java.util.Optional;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 
-/** Pre-Gloas vote routing: every vote resolves directly to the canonical block node. */
+/** Pre-Gloas vote routing: every vote resolves directly to the block's base node. */
 class DefaultVoteScoringResolver implements VoteScoringResolver {
 
   static final DefaultVoteScoringResolver INSTANCE = new DefaultVoteScoringResolver();
@@ -24,13 +25,14 @@ class DefaultVoteScoringResolver implements VoteScoringResolver {
   private DefaultVoteScoringResolver() {}
 
   @Override
-  public Optional<Integer> resolveCurrentIndex(
-      final VoteTracker vote, final ProtoArray protoArray) {
-    return protoArray.getIndexByRoot(vote.getCurrentRoot());
+  public Optional<ForkChoiceNode> resolveCurrentNode(
+      final VoteTracker vote, final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex) {
+    return blockNodeIndex.getBaseNode(vote.getCurrentRoot());
   }
 
   @Override
-  public Optional<Integer> resolveNextIndex(final VoteTracker vote, final ProtoArray protoArray) {
-    return protoArray.getIndexByRoot(vote.getNextRoot());
+  public Optional<ForkChoiceNode> resolveNextNode(
+      final VoteTracker vote, final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex) {
+    return blockNodeIndex.getBaseNode(vote.getNextRoot());
   }
 }

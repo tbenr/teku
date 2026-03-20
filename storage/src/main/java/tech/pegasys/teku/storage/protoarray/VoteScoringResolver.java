@@ -14,12 +14,15 @@
 package tech.pegasys.teku.storage.protoarray;
 
 import java.util.Optional;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 
-/** Maps the current/next latest-message recorded for a validator onto concrete protoarray nodes. */
+/** Maps validator latest-message votes onto concrete fork-choice node identities. */
 interface VoteScoringResolver {
 
-  Optional<Integer> resolveCurrentIndex(VoteTracker vote, ProtoArray protoArray);
+  Optional<ForkChoiceNode> resolveCurrentNode(
+      VoteTracker vote, ProtoArray protoArray, BlockNodeVariantsIndex blockNodeIndex);
 
-  Optional<Integer> resolveNextIndex(VoteTracker vote, ProtoArray protoArray);
+  Optional<ForkChoiceNode> resolveNextNode(
+      VoteTracker vote, ProtoArray protoArray, BlockNodeVariantsIndex blockNodeIndex);
 }

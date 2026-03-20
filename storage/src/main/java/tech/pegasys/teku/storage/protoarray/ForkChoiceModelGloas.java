@@ -29,8 +29,8 @@ import tech.pegasys.teku.storage.api.StoredBlockMetadata;
 /**
  * Storage-side implementation of the Gloas three-state fork-choice tree.
  *
- * <p>This class is the fork-aware projection of the Python helpers and handlers that introduce the
- * EMPTY/FULL child nodes:
+ * <p>This class is the fork-aware model-side implementation of the Python helpers and handlers
+ * that introduce the EMPTY/FULL child nodes:
  * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#modified-on_block
  * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-on_execution_payload
  * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-get_node_children
@@ -49,6 +49,7 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
   @Override
   public void processBlock(
       final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
       final UInt64 blockSlot,
       final Bytes32 blockRoot,
       final Bytes32 parentRoot,
@@ -59,59 +60,94 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
       final boolean optimisticallyProcessed) {
     // Spec mapping: modified on_block(store, signed_block)
     // The parent choice follows get_parent_payload_status / is_parent_node_full and the node
-    // layout follows get_node_children with a canonical PENDING node plus an immediate EMPTY child.
-    final Optional<Integer> resolvedParentIndex =
-        resolveParentIndex(protoArray, parentRoot, executionBlockHash);
-    protoArray.onBlock(
+    // layout follows get_node_children with a base PENDING node plus an immediate EMPTY child.
+    final ForkChoiceNode baseNode = ForkChoiceNode.createBase(blockRoot);
+    protoArray.addNode(
+        baseNode,
         blockSlot,
         blockRoot,
         parentRoot,
-        resolvedParentIndex,
+        resolveParentNode(protoArray, blockNodeIndex, parentRoot, executionBlockHash),
         stateRoot,
         checkpoints,
         executionBlockNumber,
         executionBlockHash,
         optimisticallyProcessed);
-    protoArray
-        .getProtoNode(blockRoot)
-        .ifPresent(node -> node.setPayloadStatus(ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING));
-    protoArray.createEmptyNode(blockRoot);
+    blockNodeIndex.putBaseNode(blockRoot, blockSlot, baseNode);
+
+    final ForkChoiceNode emptyNode = ForkChoiceNode.createEmpty(blockRoot);
+    protoArray.addNode(
+        emptyNode,
+        blockSlot,
+        blockRoot,
+        parentRoot,
+        Optional.of(baseNode),
+        stateRoot,
+        checkpoints,
+        executionBlockNumber,
+        executionBlockHash,
+        optimisticallyProcessed);
+    blockNodeIndex.attachEmptyNode(blockRoot, emptyNode);
   }
 
-  Optional<Integer> resolveParentIndex(
-      final ProtoArray protoArray, final Bytes32 parentRoot, final Bytes32 childParentBlockHash) {
+  Optional<ForkChoiceNode> resolveParentNode(
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 parentRoot,
+      final Bytes32 childParentBlockHash) {
     // Spec mapping: get_parent_payload_status(store, block)
     // FULL wins only when the child bid's parent_block_hash matches the parent's FULL execution
-    // block hash. Otherwise we attach to EMPTY, falling back to the canonical block node for
-    // pre-Gloas parents that have no EMPTY/FULL projection.
-    final Optional<Integer> fullIndex = protoArray.getFullNodeIndex(parentRoot);
-    if (fullIndex.isPresent()) {
-      final ProtoNode fullNode = protoArray.getNodeByIndex(fullIndex.get());
-      if (fullNode.getExecutionBlockHash().equals(childParentBlockHash)) {
-        return fullIndex;
+    // block hash. Otherwise we attach to EMPTY, falling back to the base node for pre-Gloas
+    // parents that have no EMPTY/FULL variants.
+    final Optional<ForkChoiceNode> fullNode = blockNodeIndex.getFullNode(parentRoot);
+    if (fullNode.isPresent()) {
+      final Optional<ProtoNode> maybeFullNode = protoArray.getNode(fullNode.get());
+      if (maybeFullNode.isPresent()
+          && maybeFullNode.get().getExecutionBlockHash().equals(childParentBlockHash)) {
+        return fullNode;
       }
     }
 
-    final Optional<Integer> emptyIndex = protoArray.getEmptyNodeIndex(parentRoot);
-    if (emptyIndex.isPresent()) {
-      return emptyIndex;
-    }
-    return protoArray.getIndexByRoot(parentRoot);
+    return blockNodeIndex.getEmptyNode(parentRoot).or(() -> blockNodeIndex.getBaseNode(parentRoot));
   }
 
   @Override
   public void onExecutionPayload(
       final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
       final Bytes32 blockRoot,
       final UInt64 executionBlockNumber,
       final Bytes32 executionBlockHash) {
     // Spec mapping: on_execution_payload(store, signed_execution_payload_envelope)
-    protoArray.onExecutionPayload(blockRoot, executionBlockNumber, executionBlockHash);
+    if (blockNodeIndex.getFullNode(blockRoot).isPresent()) {
+      return;
+    }
+    final Optional<ProtoNodeData> maybeBaseNode =
+        getNodeData(protoArray, resolveBaseNode(blockNodeIndex, blockRoot));
+    if (maybeBaseNode.isEmpty()) {
+      return;
+    }
+
+    final ForkChoiceNode fullNode = ForkChoiceNode.createFull(blockRoot);
+    final ProtoNodeData baseNode = maybeBaseNode.get();
+    protoArray.addNode(
+        fullNode,
+        baseNode.getSlot(),
+        blockRoot,
+        baseNode.getParentRoot(),
+        Optional.of(resolveBaseNode(blockNodeIndex, blockRoot)),
+        baseNode.getStateRoot(),
+        baseNode.getCheckpoints(),
+        executionBlockNumber,
+        executionBlockHash,
+        baseNode.isOptimistic());
+    blockNodeIndex.attachFullNode(blockRoot, fullNode);
   }
 
   @Override
   public void rebuildTrackedBlock(
       final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
       final StoredBlockMetadata block,
       final Optional<SignedBeaconBlock> maybeBlock,
       final boolean optimisticallyProcessed) {
@@ -133,12 +169,14 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
             .getExecutionBlockNumber()
             .or(
                 () ->
-                    protoArray
-                        .getProtoNode(block.getParentRoot())
+                    blockNodeIndex
+                        .getBaseNode(block.getParentRoot())
+                        .flatMap(protoArray::getNode)
                         .map(ProtoNode::getExecutionBlockNumber))
             .orElse(ProtoNode.NO_EXECUTION_BLOCK_NUMBER);
     processBlock(
         protoArray,
+        blockNodeIndex,
         block.getBlockSlot(),
         block.getBlockRoot(),
         block.getParentRoot(),
@@ -156,8 +194,12 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
 
   @Override
   public HeadSelectionPolicy createHeadSelectionPolicy(
-      final UInt64 currentSlot, final Optional<Bytes32> proposerBoostRoot) {
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final UInt64 currentSlot,
+      final Optional<Bytes32> proposerBoostRoot) {
     return new GloasHeadSelectionPolicy(
+        blockNodeIndex,
         currentSlot,
         proposerBoostRoot,
         specConfig.getPayloadTimelyThreshold(),
@@ -169,47 +211,36 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
   @Override
   public Optional<ProtoNodeData> getNodeData(
       final ProtoArray protoArray, final ForkChoiceNode node) {
-    // Read-side projection of get_node_children / get_head node identities.
-    if (node.payloadStatus() == ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL) {
-      return protoArray
-          .getFullNodeIndex(node.blockRoot())
-          .map(protoArray::getNodeByIndex)
-          .map(ProtoNode::getBlockData);
-    }
-    if (node.payloadStatus() == ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY) {
-      return protoArray
-          .getEmptyNodeIndex(node.blockRoot())
-          .map(protoArray::getNodeByIndex)
-          .map(ProtoNode::getBlockData);
-    }
-    return protoArray.getProtoNode(node.blockRoot()).map(ProtoNode::getBlockData);
+    return protoArray.getNode(node).map(ProtoNode::getBlockData);
   }
 
   @Override
-  public ForkChoiceNode resolveCanonicalNode(final Bytes32 blockRoot) {
-    return new ForkChoiceNode(blockRoot, ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING);
+  public ForkChoiceNode resolveBaseNode(
+      final BlockNodeVariantsIndex blockNodeIndex, final Bytes32 blockRoot) {
+    return blockNodeIndex.getBaseNode(blockRoot).orElse(ForkChoiceNode.createBase(blockRoot));
   }
 
   @Override
-  public ForkChoiceNode resolveExecutionNode(final ProtoArray protoArray, final Bytes32 blockRoot) {
+  public ForkChoiceNode resolveExecutionNode(
+      final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex, final Bytes32 blockRoot) {
     // FULL is the execution-state node selected when the payload has been revealed.
-    if (protoArray.hasFullNode(blockRoot)) {
-      return new ForkChoiceNode(blockRoot, ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL);
-    }
-    return resolveCanonicalNode(blockRoot);
+    return blockNodeIndex
+        .getFullNode(blockRoot)
+        .orElseGet(() -> resolveBaseNode(blockNodeIndex, blockRoot));
   }
 
   @Override
-  public ForkChoiceNode resolvePreferredNode(final ProtoArray protoArray, final Bytes32 blockRoot) {
-    // Preferred read-side ordering mirrors the best-available-state rule used around modified
-    // on_block and get_head: FULL first, then EMPTY, then canonical PENDING.
-    if (protoArray.hasFullNode(blockRoot)) {
-      return new ForkChoiceNode(blockRoot, ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL);
+  public Optional<ForkChoicePayloadStatus> payloadStatus(
+      final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex, final Bytes32 blockRoot) {
+    // Compatibility read for block-root-only callers. This mirrors the best-available payload
+    // status without promoting it to a first-class "preferred node" abstraction.
+    if (blockNodeIndex.getFullNode(blockRoot).isPresent()) {
+      return Optional.of(ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL);
     }
-    if (protoArray.getEmptyNodeIndex(blockRoot).isPresent()) {
-      return ForkChoiceNode.createEmpty(blockRoot);
+    if (blockNodeIndex.getEmptyNode(blockRoot).isPresent()) {
+      return Optional.of(ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY);
     }
-    return resolveCanonicalNode(blockRoot);
+    return Optional.of(ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING);
   }
 
   @Override
@@ -223,12 +254,14 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
   }
 
   @Override
-  public void onRemovedBlockRoot(final Bytes32 blockRoot) {
+  public void onRemovedBlockRoot(
+      final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex, final Bytes32 blockRoot) {
+    ForkChoiceModel.super.onRemovedBlockRoot(protoArray, blockNodeIndex, blockRoot);
     ptcVoteTracker.remove(blockRoot);
   }
 
   @Override
-  public void onPrunedBlocks(final ProtoArray protoArray) {
-    ptcVoteTracker.removeIf(root -> !protoArray.contains(root));
+  public void onPrunedBlocks(final BlockNodeVariantsIndex blockNodeIndex) {
+    ptcVoteTracker.removeIf(root -> !blockNodeIndex.containsBlock(root));
   }
 }

@@ -25,7 +25,15 @@ import org.apache.tuweni.bytes.Bytes32;
  */
 public record ForkChoiceNode(Bytes32 blockRoot, ForkChoicePayloadStatus payloadStatus) {
 
+  public static ForkChoiceNode createBase(final Bytes32 blockRoot) {
+    return new ForkChoiceNode(blockRoot, ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING);
+  }
+
   public static ForkChoiceNode createEmpty(final Bytes32 blockRoot) {
     return new ForkChoiceNode(blockRoot, ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY);
+  }
+
+  public static ForkChoiceNode createFull(final Bytes32 blockRoot) {
+    return new ForkChoiceNode(blockRoot, ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL);
   }
 }

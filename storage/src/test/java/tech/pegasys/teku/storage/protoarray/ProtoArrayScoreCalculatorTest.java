@@ -28,10 +28,20 @@ import java.util.Optional;
 import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.Test;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
+import tech.pegasys.teku.spec.Spec;
+import tech.pegasys.teku.spec.TestSpecFactory;
+import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteUpdater;
+import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 
 public class ProtoArrayScoreCalculatorTest {
+  private static final Spec SPEC = TestSpecFactory.createMinimalPhase0();
+  private static final Checkpoint GENESIS_CHECKPOINT = new Checkpoint(ZERO, Bytes32.ZERO);
+  private static final BlockCheckpoints GENESIS_BLOCK_CHECKPOINTS =
+      new BlockCheckpoints(
+          GENESIS_CHECKPOINT, GENESIS_CHECKPOINT, GENESIS_CHECKPOINT, GENESIS_CHECKPOINT);
 
   private final Object2IntMap<Bytes32> indices = new Object2IntOpenHashMap<>();
   private List<UInt64> oldBalances = new ArrayList<>();
@@ -521,10 +531,9 @@ public class ProtoArrayScoreCalculatorTest {
   void computeDeltas_payloadPresentVoteFallsBackToPendingWhenFullNodeIsMissing() {
     final UInt64 balance = UInt64.valueOf(42);
     final Bytes32 root = getHash(1);
-    final Object2IntMap<Bytes32> fullNodeIndices = new Object2IntOpenHashMap<>();
-    final Object2IntMap<Bytes32> emptyNodeIndices = new Object2IntOpenHashMap<>();
-    indices.put(root, 0);
-    emptyNodeIndices.put(root, 1);
+    final ProtoArray protoArray = createProtoArray();
+    final BlockNodeVariantsIndex blockNodeIndex =
+        createBlockNodeVariantsIndex(protoArray, root, true, false, UInt64.ONE);
     oldBalances = List.of(balance);
     newBalances = List.of(balance);
 
@@ -536,17 +545,17 @@ public class ProtoArrayScoreCalculatorTest {
     final List<Long> deltas =
         computeDeltas(
             store,
-            2,
-            this::getIndex,
+            protoArray.getTotalTrackedNodeCount(),
+            protoArray::getNodeIndex,
+            Optional.empty(),
+            Optional.empty(),
             oldBalances,
             newBalances,
-            oldProposerBoostRoot,
-            newProposerBoostRoot,
             oldProposerBoostAmount,
             newProposerBoostAmount,
-            fullNodeIndices,
-            emptyNodeIndices,
-            rootLookup -> Optional.of(UInt64.ONE));
+            protoArray,
+            blockNodeIndex,
+            GloasVoteScoringResolver.INSTANCE);
 
     assertThat(deltas).containsExactly(balance.longValue(), 0L);
   }
@@ -555,10 +564,9 @@ public class ProtoArrayScoreCalculatorTest {
   void computeDeltas_payloadAbsentVoteAtBlockSlotTargetsPendingNode() {
     final UInt64 balance = UInt64.valueOf(42);
     final Bytes32 root = getHash(1);
-    final Object2IntMap<Bytes32> fullNodeIndices = new Object2IntOpenHashMap<>();
-    final Object2IntMap<Bytes32> emptyNodeIndices = new Object2IntOpenHashMap<>();
-    indices.put(root, 0);
-    emptyNodeIndices.put(root, 1);
+    final ProtoArray protoArray = createProtoArray();
+    final BlockNodeVariantsIndex blockNodeIndex =
+        createBlockNodeVariantsIndex(protoArray, root, true, false, UInt64.ONE);
     oldBalances = List.of(balance);
     newBalances = List.of(balance);
 
@@ -569,17 +577,17 @@ public class ProtoArrayScoreCalculatorTest {
     final List<Long> deltas =
         computeDeltas(
             store,
-            2,
-            this::getIndex,
+            protoArray.getTotalTrackedNodeCount(),
+            protoArray::getNodeIndex,
+            Optional.empty(),
+            Optional.empty(),
             oldBalances,
             newBalances,
-            oldProposerBoostRoot,
-            newProposerBoostRoot,
             oldProposerBoostAmount,
             newProposerBoostAmount,
-            fullNodeIndices,
-            emptyNodeIndices,
-            rootLookup -> Optional.of(UInt64.ONE));
+            protoArray,
+            blockNodeIndex,
+            GloasVoteScoringResolver.INSTANCE);
 
     assertThat(deltas).containsExactly(balance.longValue(), 0L);
   }
@@ -588,11 +596,9 @@ public class ProtoArrayScoreCalculatorTest {
   void computeDeltas_payloadPresentVoteTargetsFullWhenFullNodeExists() {
     final UInt64 balance = UInt64.valueOf(42);
     final Bytes32 root = getHash(1);
-    final Object2IntMap<Bytes32> fullNodeIndices = new Object2IntOpenHashMap<>();
-    final Object2IntMap<Bytes32> emptyNodeIndices = new Object2IntOpenHashMap<>();
-    indices.put(root, 0);
-    emptyNodeIndices.put(root, 1);
-    fullNodeIndices.put(root, 2);
+    final ProtoArray protoArray = createProtoArray();
+    final BlockNodeVariantsIndex blockNodeIndex =
+        createBlockNodeVariantsIndex(protoArray, root, true, true, UInt64.ONE);
     oldBalances = List.of(balance);
     newBalances = List.of(balance);
 
@@ -604,17 +610,17 @@ public class ProtoArrayScoreCalculatorTest {
     final List<Long> deltas =
         computeDeltas(
             store,
-            3,
-            this::getIndex,
+            protoArray.getTotalTrackedNodeCount(),
+            protoArray::getNodeIndex,
+            Optional.empty(),
+            Optional.empty(),
             oldBalances,
             newBalances,
-            oldProposerBoostRoot,
-            newProposerBoostRoot,
             oldProposerBoostAmount,
             newProposerBoostAmount,
-            fullNodeIndices,
-            emptyNodeIndices,
-            rootLookup -> Optional.of(UInt64.ONE));
+            protoArray,
+            blockNodeIndex,
+            GloasVoteScoringResolver.INSTANCE);
 
     assertThat(deltas).containsExactly(0L, 0L, balance.longValue());
   }
@@ -682,6 +688,71 @@ public class ProtoArrayScoreCalculatorTest {
     for (int i = 0; i < 3; i++) {
       assertThat(deltas2.get(i)).isEqualTo(0);
     }
+  }
+
+  private ProtoArray createProtoArray() {
+    return ProtoArray.builder()
+        .spec(SPEC)
+        .currentEpoch(ZERO)
+        .justifiedCheckpoint(GENESIS_CHECKPOINT)
+        .finalizedCheckpoint(GENESIS_CHECKPOINT)
+        .build();
+  }
+
+  private BlockNodeVariantsIndex createBlockNodeVariantsIndex(
+      final ProtoArray protoArray,
+      final Bytes32 blockRoot,
+      final boolean includeEmptyNode,
+      final boolean includeFullNode,
+      final UInt64 blockSlot) {
+    final BlockNodeVariantsIndex blockNodeIndex = new BlockNodeVariantsIndex();
+    final ForkChoiceNode baseNode = ForkChoiceNode.createBase(blockRoot);
+    protoArray.addNode(
+        baseNode,
+        blockSlot,
+        blockRoot,
+        Bytes32.ZERO,
+        Optional.empty(),
+        Bytes32.ZERO,
+        GENESIS_BLOCK_CHECKPOINTS,
+        ZERO,
+        Bytes32.ZERO,
+        false);
+    blockNodeIndex.putBaseNode(blockRoot, blockSlot, baseNode);
+
+    if (includeEmptyNode) {
+      final ForkChoiceNode emptyNode = ForkChoiceNode.createEmpty(blockRoot);
+      protoArray.addNode(
+          emptyNode,
+          blockSlot,
+          blockRoot,
+          Bytes32.ZERO,
+          Optional.of(baseNode),
+          Bytes32.ZERO,
+          GENESIS_BLOCK_CHECKPOINTS,
+          ZERO,
+          Bytes32.ZERO,
+          false);
+      blockNodeIndex.attachEmptyNode(blockRoot, emptyNode);
+    }
+
+    if (includeFullNode) {
+      final ForkChoiceNode fullNode = ForkChoiceNode.createFull(blockRoot);
+      protoArray.addNode(
+          fullNode,
+          blockSlot,
+          blockRoot,
+          Bytes32.ZERO,
+          Optional.of(baseNode),
+          Bytes32.ZERO,
+          GENESIS_BLOCK_CHECKPOINTS,
+          ZERO,
+          getHash(999),
+          false);
+      blockNodeIndex.attachFullNode(blockRoot, fullNode);
+    }
+
+    return blockNodeIndex;
   }
 
   private void votesShouldBeUpdated(final VoteUpdater store) {

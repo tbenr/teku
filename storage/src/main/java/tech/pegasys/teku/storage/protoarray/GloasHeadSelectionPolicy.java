@@ -33,6 +33,7 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
  * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-is_payload_data_available
  */
 class GloasHeadSelectionPolicy implements HeadSelectionPolicy {
+  private final BlockNodeVariantsIndex blockNodeIndex;
   private final UInt64 currentSlot;
   private final Optional<Bytes32> proposerBoostRoot;
   private final int payloadTimelyThreshold;
@@ -41,12 +42,14 @@ class GloasHeadSelectionPolicy implements HeadSelectionPolicy {
   private final ToIntFunction<Bytes32> ptcDataAvailableVoteCountLookup;
 
   GloasHeadSelectionPolicy(
+      final BlockNodeVariantsIndex blockNodeIndex,
       final UInt64 currentSlot,
       final Optional<Bytes32> proposerBoostRoot,
       final int payloadTimelyThreshold,
       final int dataAvailabilityTimelyThreshold,
       final ToIntFunction<Bytes32> ptcPresentVoteCountLookup,
       final ToIntFunction<Bytes32> ptcDataAvailableVoteCountLookup) {
+    this.blockNodeIndex = blockNodeIndex;
     this.currentSlot = currentSlot;
     this.proposerBoostRoot = proposerBoostRoot;
     this.payloadTimelyThreshold = payloadTimelyThreshold;
@@ -104,33 +107,40 @@ class GloasHeadSelectionPolicy implements HeadSelectionPolicy {
   private boolean shouldExtendPayload(final Bytes32 blockRoot, final ProtoArray protoArray) {
     // Spec mapping: should_extend_payload(store, root)
     // The proposer-equivocation decision is delegated to the surrounding store/fork-choice code.
-    if (isPayloadTimely(blockRoot, protoArray) && isPayloadDataAvailable(blockRoot, protoArray)) {
+    if (isPayloadTimely(blockRoot) && isPayloadDataAvailable(blockRoot)) {
       return true;
     }
     if (proposerBoostRoot.isEmpty()) {
       return true;
     }
-    final Optional<ProtoNode> proposerNode = protoArray.getProtoNode(proposerBoostRoot.get());
+    final Optional<ProtoNode> proposerNode =
+        blockNodeIndex.getBaseNode(proposerBoostRoot.get()).flatMap(protoArray::getNode);
     if (proposerNode.isEmpty()) {
       return true;
     }
     if (!proposerNode.get().getParentRoot().equals(blockRoot)) {
       return true;
     }
-    return protoArray.isParentNodeFull(blockRoot, proposerNode.get());
+    return blockNodeIndex
+        .getFullNode(blockRoot)
+        .flatMap(protoArray::getNode)
+        .map(
+            fullNode ->
+                fullNode.getExecutionBlockHash().equals(proposerNode.get().getExecutionBlockHash()))
+        .orElse(false);
   }
 
-  private boolean isPayloadTimely(final Bytes32 blockRoot, final ProtoArray protoArray) {
+  private boolean isPayloadTimely(final Bytes32 blockRoot) {
     // Spec mapping: is_payload_timely(store, root)
-    if (!protoArray.hasFullNode(blockRoot)) {
+    if (blockNodeIndex.getFullNode(blockRoot).isEmpty()) {
       return false;
     }
     return ptcPresentVoteCountLookup.applyAsInt(blockRoot) > payloadTimelyThreshold;
   }
 
-  private boolean isPayloadDataAvailable(final Bytes32 blockRoot, final ProtoArray protoArray) {
+  private boolean isPayloadDataAvailable(final Bytes32 blockRoot) {
     // Spec mapping: is_payload_data_available(store, root)
-    if (!protoArray.hasFullNode(blockRoot)) {
+    if (blockNodeIndex.getFullNode(blockRoot).isEmpty()) {
       return false;
     }
     return ptcDataAvailableVoteCountLookup.applyAsInt(blockRoot) > dataAvailabilityTimelyThreshold;

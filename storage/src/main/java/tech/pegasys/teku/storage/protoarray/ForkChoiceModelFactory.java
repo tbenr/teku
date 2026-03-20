@@ -46,15 +46,17 @@ public class ForkChoiceModelFactory {
 
   public void rebuildTrackedBlock(
       final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
       final StoredBlockMetadata block,
       final Optional<SignedBeaconBlock> maybeBlock,
       final boolean optimisticallyProcessed) {
     forSlot(block.getBlockSlot())
-        .rebuildTrackedBlock(protoArray, block, maybeBlock, optimisticallyProcessed);
+        .rebuildTrackedBlock(
+            protoArray, blockNodeIndex, block, maybeBlock, optimisticallyProcessed);
   }
 
-  void onPrunedBlocks(final ProtoArray protoArray) {
-    defaultModel.onPrunedBlocks(protoArray);
-    gloasModel.onPrunedBlocks(protoArray);
+  void onPrunedBlocks(final BlockNodeVariantsIndex blockNodeIndex) {
+    defaultModel.onPrunedBlocks(blockNodeIndex);
+    gloasModel.onPrunedBlocks(blockNodeIndex);
   }
 }

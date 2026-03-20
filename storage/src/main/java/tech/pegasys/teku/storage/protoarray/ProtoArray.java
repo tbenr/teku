@@ -16,8 +16,6 @@ package tech.pegasys.teku.storage.protoarray;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
-import static tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY;
-import static tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL;
 import static tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeValidationStatus.INVALID;
 import static tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeValidationStatus.OPTIMISTIC;
 import static tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeValidationStatus.VALID;
@@ -40,6 +38,7 @@ import tech.pegasys.teku.infrastructure.logging.StatusLogger;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 
 public class ProtoArray {
@@ -96,21 +95,21 @@ public class ProtoArray {
     return new ProtoArrayBuilder();
   }
 
-  public boolean contains(final Bytes32 root) {
-    return indices.contains(root);
+  public boolean containsNode(final ForkChoiceNode node) {
+    return indices.contains(node);
   }
 
-  public Optional<Integer> getIndexByRoot(final Bytes32 root) {
-    return indices.get(root);
+  public Optional<Integer> getNodeIndex(final ForkChoiceNode node) {
+    return indices.get(node);
   }
 
-  public Optional<ProtoNode> getProtoNode(final Bytes32 root) {
+  public Optional<ProtoNode> getNode(final ForkChoiceNode node) {
     return indices
-        .get(root)
+        .get(node)
         .flatMap(
-            blockIndex -> {
-              if (blockIndex < getTotalTrackedNodeCount()) {
-                return Optional.of(getNodeByIndex(blockIndex));
+            nodeIndex -> {
+              if (nodeIndex < getTotalTrackedNodeCount()) {
+                return Optional.of(getNodeByIndex(nodeIndex));
               }
               return Optional.empty();
             });
@@ -125,45 +124,23 @@ public class ProtoArray {
   }
 
   /**
-   * Register a block with the fork choice. It is only sane to supply a `None` parent for the
-   * genesis block.
+   * Add a node to the fork-choice tree using explicit node identities.
+   *
+   * <p>The fork-aware model layer is responsible for deciding which node identity to create and
+   * which parent node identity it should attach to.
    */
-  public void onBlock(
+  public void addNode(
+      final ForkChoiceNode nodeIdentity,
       final UInt64 blockSlot,
       final Bytes32 blockRoot,
       final Bytes32 parentRoot,
+      final Optional<ForkChoiceNode> parentNodeIdentity,
       final Bytes32 stateRoot,
       final BlockCheckpoints checkpoints,
       final UInt64 executionBlockNumber,
       final Bytes32 executionBlockHash,
       final boolean optimisticallyProcessed) {
-    onBlock(
-        blockSlot,
-        blockRoot,
-        parentRoot,
-        indices.get(parentRoot),
-        stateRoot,
-        checkpoints,
-        executionBlockNumber,
-        executionBlockHash,
-        optimisticallyProcessed);
-  }
-
-  /**
-   * Register a block with the fork choice using an explicit parent index. This overload is used by
-   * fork-aware models that resolve parent selection before insertion.
-   */
-  public void onBlock(
-      final UInt64 blockSlot,
-      final Bytes32 blockRoot,
-      final Bytes32 parentRoot,
-      final Optional<Integer> resolvedParentIndex,
-      final Bytes32 stateRoot,
-      final BlockCheckpoints checkpoints,
-      final UInt64 executionBlockNumber,
-      final Bytes32 executionBlockHash,
-      final boolean optimisticallyProcessed) {
-    if (indices.contains(blockRoot)) {
+    if (indices.contains(nodeIdentity)) {
       return;
     }
 
@@ -171,11 +148,11 @@ public class ProtoArray {
 
     ProtoNode node =
         new ProtoNode(
+            nodeIdentity,
             blockSlot,
             stateRoot,
-            blockRoot,
             parentRoot,
-            resolvedParentIndex,
+            parentNodeIdentity.flatMap(indices::get),
             checkpoints,
             executionBlockNumber,
             executionBlockHash,
@@ -184,119 +161,15 @@ public class ProtoArray {
             Optional.empty(),
             optimisticallyProcessed && !executionBlockHash.isZero() ? OPTIMISTIC : VALID);
 
-    indices.add(blockRoot, nodeIndex);
+    indices.add(nodeIdentity, nodeIndex);
     nodes.add(node);
 
     updateBestDescendantOfParent(node, nodeIndex);
   }
 
-  /**
-   * Creates a FULL node for a block when its execution payload arrives. The FULL node is a child of
-   * the block node in the three-state fork choice tree.
-   *
-   * <p>Spec reference: on_execution_payload — stores payload_states[root], making the FULL child
-   * visible in get_node_children.
-   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-on_execution_payload
-   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-get_node_children
-   */
-  public void onExecutionPayload(
-      final Bytes32 blockRoot,
-      final UInt64 executionBlockNumber,
-      final Bytes32 executionBlockHash) {
-    if (indices.hasFullNode(blockRoot)) {
-      return;
-    }
-    final Optional<Integer> maybeBlockIndex = indices.get(blockRoot);
-    if (maybeBlockIndex.isEmpty()) {
-      return;
-    }
-    final int blockIndex = maybeBlockIndex.get();
-    final ProtoNode blockNode = getNodeByIndex(blockIndex);
-    final int fullNodeIndex = getTotalTrackedNodeCount();
-
-    final ProtoNode fullNode =
-        new ProtoNode(
-            blockNode.getBlockSlot(),
-            blockNode.getStateRoot(),
-            blockNode.getBlockRoot(),
-            blockNode.getParentRoot(),
-            Optional.of(blockIndex),
-            blockNode.getBlockCheckpoints(),
-            executionBlockNumber,
-            executionBlockHash,
-            UInt64.ZERO,
-            Optional.empty(),
-            Optional.empty(),
-            blockNode.isFullyValidated() ? VALID : blockNode.isInvalid() ? INVALID : OPTIMISTIC);
-    fullNode.setPayloadStatus(PAYLOAD_STATUS_FULL);
-
-    indices.addFullNodeIndex(blockRoot, fullNodeIndex);
-    nodes.add(fullNode);
-
-    updateBestDescendantOfParent(fullNode, fullNodeIndex);
-  }
-
-  /**
-   * Creates an EMPTY child node for a block in the Gloas three-state fork choice tree. The EMPTY
-   * node is created immediately when a block arrives, representing the empty-payload path.
-   *
-   * <p>Spec reference: modified on_block plus get_node_children.
-   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#modified-on_block
-   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-get_node_children
-   */
-  public void createEmptyNode(final Bytes32 blockRoot) {
-    if (indices.hasEmptyNode(blockRoot)) {
-      return;
-    }
-    final Optional<Integer> maybeBlockIndex = indices.get(blockRoot);
-    if (maybeBlockIndex.isEmpty()) {
-      return;
-    }
-    final int blockIndex = maybeBlockIndex.get();
-    final ProtoNode blockNode = getNodeByIndex(blockIndex);
-    final int emptyNodeIndex = getTotalTrackedNodeCount();
-
-    final ProtoNode emptyNode =
-        new ProtoNode(
-            blockNode.getBlockSlot(),
-            blockNode.getStateRoot(),
-            blockNode.getBlockRoot(),
-            blockNode.getParentRoot(),
-            Optional.of(blockIndex),
-            blockNode.getBlockCheckpoints(),
-            blockNode.getExecutionBlockNumber(),
-            blockNode.getExecutionBlockHash(),
-            UInt64.ZERO,
-            Optional.empty(),
-            Optional.empty(),
-            blockNode.isFullyValidated() ? VALID : blockNode.isInvalid() ? INVALID : OPTIMISTIC);
-    emptyNode.setPayloadStatus(PAYLOAD_STATUS_EMPTY);
-
-    indices.addEmptyNodeIndex(blockRoot, emptyNodeIndex);
-    nodes.add(emptyNode);
-
-    updateBestDescendantOfParent(emptyNode, emptyNodeIndex);
-  }
-
-  /**
-   * Spec: is_parent_node_full — checks if the proposer block was built on the FULL state of its
-   * parent by comparing the proposer's bid parent_block_hash with the parent's FULL execution block
-   * hash.
-   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-is_parent_node_full
-   */
-  public boolean isParentNodeFull(final Bytes32 parentRoot, final ProtoNode proposerNode) {
-    return indices
-        .getFullNodeIndex(parentRoot)
-        .map(
-            idx -> {
-              final ProtoNode fullNode = getNodeByIndex(idx);
-              return fullNode.getExecutionBlockHash().equals(proposerNode.getExecutionBlockHash());
-            })
-        .orElse(false);
-  }
-
   public void setInitialCanonicalBlockRoot(final Bytes32 initialCanonicalBlockRoot) {
-    final Optional<ProtoNode> initialCanonicalProtoNode = getProtoNode(initialCanonicalBlockRoot);
+    final Optional<ProtoNode> initialCanonicalProtoNode =
+        getNode(ForkChoiceNode.createBase(initialCanonicalBlockRoot));
     if (initialCanonicalProtoNode.isEmpty()) {
       LOG.warn("Initial canonical block root not found: {}", initialCanonicalBlockRoot);
       return;
@@ -340,8 +213,9 @@ public class ProtoArray {
         .orElseThrow(fatalException("Finalized block was found to be invalid."));
   }
 
-  public Optional<ProtoNode> findOptimisticallySyncedMergeTransitionBlock(final Bytes32 head) {
-    final Optional<ProtoNode> maybeStartingNode = getProtoNode(head);
+  public Optional<ProtoNode> findOptimisticallySyncedMergeTransitionBlock(
+      final ForkChoiceNode head) {
+    final Optional<ProtoNode> maybeStartingNode = getNode(head);
     if (maybeStartingNode.isEmpty()) {
       return Optional.empty();
     }
@@ -350,7 +224,7 @@ public class ProtoArray {
       // Transition not yet reached so no transition block
       return Optional.empty();
     }
-    while (contains(currentNode.getBlockRoot())) {
+    while (containsNode(currentNode.getForkChoiceNode())) {
       if (currentNode.getParentIndex().isEmpty() || currentNode.isFullyValidated()) {
         // Stop searching when we reach fully validated nodes or a node we don't have the parent for
         return Optional.empty();
@@ -383,7 +257,7 @@ public class ProtoArray {
     }
     int justifiedIndex =
         indices
-            .get(justifiedCheckpoint.getRoot())
+            .get(ForkChoiceNode.createBase(justifiedCheckpoint.getRoot()))
             .orElseThrow(
                 fatalException(
                     "Invalid or unknown justified root: " + justifiedCheckpoint.getRoot()));
@@ -420,23 +294,15 @@ public class ProtoArray {
     return Optional.of(bestNode);
   }
 
-  public void markNodeValid(final Bytes32 blockRoot) {
-    final Optional<ProtoNode> maybeNode = getProtoNode(blockRoot);
+  public void markNodeValid(final ForkChoiceNode nodeIdentity) {
+    final Optional<ProtoNode> maybeNode = getNode(nodeIdentity);
     if (maybeNode.isEmpty()) {
       // Most likely just pruned prior to the validation result being received.
-      LOG.debug("Couldn't mark block {} valid because it was unknown", blockRoot);
+      LOG.debug("Couldn't mark node {} valid because it was unknown", nodeIdentity);
       return;
     }
     final ProtoNode node = maybeNode.get();
     node.setValidationStatus(VALID);
-
-    // Also mark the EMPTY and FULL nodes valid if they exist
-    indices
-        .getEmptyNodeIndex(blockRoot)
-        .ifPresent(emptyIndex -> getNodeByIndex(emptyIndex).setValidationStatus(VALID));
-    indices
-        .getFullNodeIndex(blockRoot)
-        .ifPresent(fullIndex -> getNodeByIndex(fullIndex).setValidationStatus(VALID));
 
     Optional<Integer> parentIndex = node.getParentIndex();
     while (parentIndex.isPresent()) {
@@ -454,11 +320,12 @@ public class ProtoArray {
    * `latestValidHash` (exclusive) execution block as INVALID. If node with `latestValidHash` is
    * found it's marked as VALID along with its ancestors
    *
-   * @param blockRoot Transition block root
+   * @param nodeIdentity Transition node
    * @param latestValidHash Latest valid hash of execution block
    */
-  public void markNodeInvalid(final Bytes32 blockRoot, final Optional<Bytes32> latestValidHash) {
-    markNodeInvalid(blockRoot, latestValidHash, true);
+  public void markNodeInvalid(
+      final ForkChoiceNode nodeIdentity, final Optional<Bytes32> latestValidHash) {
+    markNodeInvalid(nodeIdentity, latestValidHash, true);
   }
 
   /**
@@ -467,25 +334,25 @@ public class ProtoArray {
    * node containing `latestValidHash` and its ancestors are marked as VALID. If such chain segment
    * is not found, no changes are applied.
    *
-   * @param blockRoot Parent of the node with INVALID execution block
+   * @param nodeIdentity Parent of the node with INVALID execution block
    * @param latestValidHash Latest valid hash of execution block
    */
   public void markParentChainInvalid(
-      final Bytes32 blockRoot, final Optional<Bytes32> latestValidHash) {
-    markNodeInvalid(blockRoot, latestValidHash, false);
+      final ForkChoiceNode nodeIdentity, final Optional<Bytes32> latestValidHash) {
+    markNodeInvalid(nodeIdentity, latestValidHash, false);
   }
 
   private void markNodeInvalid(
-      final Bytes32 blockRoot,
+      final ForkChoiceNode nodeIdentity,
       final Optional<Bytes32> latestValidHash,
       final boolean verifiedInvalidTransition) {
     if (!verifiedInvalidTransition && latestValidHash.isEmpty()) {
       // Couldn't find invalid chain segment with lack of data
       return;
     }
-    final Optional<Integer> maybeIndex = indices.get(blockRoot);
+    final Optional<Integer> maybeIndex = indices.get(nodeIdentity);
     if (maybeIndex.isEmpty()) {
-      LOG.debug("Couldn't update status for block {} because it was unknown", blockRoot);
+      LOG.debug("Couldn't update status for node {} because it was unknown", nodeIdentity);
       return;
     }
     final int index;
@@ -512,7 +379,7 @@ public class ProtoArray {
     }
 
     node.setValidationStatus(INVALID);
-    removeBlockRoot(node.getBlockRoot());
+    removeNode(node.getForkChoiceNode());
     markDescendantsAsInvalid(index);
     // Applying zero deltas causes the newly marked INVALID nodes to have their weight set to 0
     applyDeltas(new LongArrayList(Collections.nCopies(getTotalTrackedNodeCount(), 0L)));
@@ -553,7 +420,7 @@ public class ProtoArray {
       }
       if (invalidParents.contains((int) possibleDescendant.getParentIndex().get())) {
         possibleDescendant.setValidationStatus(INVALID);
-        removeBlockRoot(possibleDescendant.getBlockRoot());
+        removeNode(possibleDescendant.getForkChoiceNode());
         invalidParents.add(i);
       }
     }
@@ -614,14 +481,14 @@ public class ProtoArray {
    *   <li>The number of nodes in `this` is at least `this.pruneThreshold`.
    * </ul>
    */
-  public void maybePrune(final Bytes32 finalizedRoot) {
+  public void maybePrune(final ForkChoiceNode finalizedNode) {
     int finalizedIndex =
         indices
-            .get(finalizedRoot)
+            .get(finalizedNode)
             .orElseThrow(
                 () ->
                     new IllegalArgumentException(
-                        "ProtoArray: Finalized root is unknown " + finalizedRoot.toHexString()));
+                        "ProtoArray: Finalized node is unknown " + finalizedNode));
 
     if (finalizedIndex < pruneThreshold) {
       // Pruning at small numbers incurs more cost than benefit.
@@ -630,10 +497,7 @@ public class ProtoArray {
 
     // Remove the `indices` key/values for all the to-be-deleted nodes.
     for (int nodeIndex = 0; nodeIndex < finalizedIndex; nodeIndex++) {
-      Bytes32 root = getNodeByIndex(nodeIndex).getBlockRoot();
-      indices.remove(root);
-      indices.removeFullNode(root);
-      indices.removeEmptyNode(root);
+      indices.remove(getNodeByIndex(nodeIndex).getForkChoiceNode());
     }
 
     // Drop all the nodes prior to finalization.
@@ -880,23 +744,17 @@ public class ProtoArray {
   }
 
   /**
-   * Removes a block root from the lookup map. The actual node is not removed from the protoarray to
-   * avoid recalculating indices. As a result, looking up the block by root will not find it but it
-   * may still be "found" when iterating through all nodes or following links to parent or ancestor
+   * Removes a node from the lookup map. The actual node is not removed from the protoarray to avoid
+   * recalculating indices. As a result, looking up the node by identity will not find it but it may
+   * still be "found" when iterating through all nodes or following links to parent or ancestor
    * nodes.
-   *
-   * @param blockRoot the block root to remove from the lookup map.
    */
-  public void removeBlockRoot(final Bytes32 blockRoot) {
-    indices.remove(blockRoot);
-    indices.removeFullNode(blockRoot);
-    indices.removeEmptyNode(blockRoot);
+  public void removeNode(final ForkChoiceNode nodeIdentity) {
+    indices.remove(nodeIdentity);
   }
 
-  public void pullUpBlockCheckpoints(final Bytes32 blockRoot) {
-    getProtoNode(blockRoot).ifPresent(ProtoNode::pullUpCheckpoints);
-    indices.getEmptyNodeIndex(blockRoot).ifPresent(idx -> getNodeByIndex(idx).pullUpCheckpoints());
-    indices.getFullNodeIndex(blockRoot).ifPresent(idx -> getNodeByIndex(idx).pullUpCheckpoints());
+  public void pullUpCheckpoints(final ForkChoiceNode nodeIdentity) {
+    getNode(nodeIdentity).ifPresent(ProtoNode::pullUpCheckpoints);
   }
 
   private void applyDeltas(final LongList deltas) {
@@ -932,28 +790,8 @@ public class ProtoArray {
     }
   }
 
-  public Object2IntMap<Bytes32> getRootIndices() {
-    return indices.getRootIndices();
-  }
-
-  public Object2IntMap<Bytes32> getFullNodeIndices() {
-    return indices.getFullNodeIndices();
-  }
-
-  public Object2IntMap<Bytes32> getEmptyNodeIndices() {
-    return indices.getEmptyNodeIndices();
-  }
-
-  public boolean hasFullNode(final Bytes32 blockRoot) {
-    return indices.hasFullNode(blockRoot);
-  }
-
-  public Optional<Integer> getFullNodeIndex(final Bytes32 blockRoot) {
-    return indices.getFullNodeIndex(blockRoot);
-  }
-
-  public Optional<Integer> getEmptyNodeIndex(final Bytes32 blockRoot) {
-    return indices.getEmptyNodeIndex(blockRoot);
+  Object2IntMap<ForkChoiceNode> getNodeIndices() {
+    return indices.getNodeIndices();
   }
 
   ProtoNode getNodeByIndex(final int index) {

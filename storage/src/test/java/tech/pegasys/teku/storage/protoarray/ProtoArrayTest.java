@@ -20,6 +20,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static tech.pegasys.teku.infrastructure.unsigned.UInt64.ZERO;
 
 import it.unimi.dsi.fastutil.longs.LongList;
+import it.unimi.dsi.fastutil.objects.Object2IntMap;
+import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -35,7 +37,9 @@ import tech.pegasys.teku.spec.SpecMilestone;
 import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.config.SpecConfigGloas;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.StubVoteUpdater;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteUpdater;
@@ -61,14 +65,15 @@ class ProtoArrayTest {
   private final Bytes32 block3a = dataStructureUtil.randomBytes32();
   private final Bytes32 block4a = dataStructureUtil.randomBytes32();
 
-  private ProtoArray protoArray =
-      new ProtoArrayBuilder()
-          .spec(dataStructureUtil.getSpec())
-          .statusLog(statusLog)
-          .currentEpoch(ZERO)
-          .justifiedCheckpoint(GENESIS_CHECKPOINT)
-          .finalizedCheckpoint(GENESIS_CHECKPOINT)
-          .build();
+  private TestProtoArrayFacade protoArray =
+      new TestProtoArrayFacade(
+          new ProtoArrayBuilder()
+              .spec(dataStructureUtil.getSpec())
+              .statusLog(statusLog)
+              .currentEpoch(ZERO)
+              .justifiedCheckpoint(GENESIS_CHECKPOINT)
+              .finalizedCheckpoint(GENESIS_CHECKPOINT)
+              .build());
 
   @BeforeEach
   void setUp() {
@@ -83,13 +88,14 @@ class ProtoArrayTest {
     final Checkpoint justifiedCheckpoint = new Checkpoint(UInt64.ONE, justifiedRoot);
     final Checkpoint finalizedCheckpoint = new Checkpoint(UInt64.ONE, justifiedRoot);
     protoArray =
-        new ProtoArrayBuilder()
-            .spec(dataStructureUtil.getSpec())
-            .currentEpoch(ZERO)
-            .justifiedCheckpoint(justifiedCheckpoint)
-            .finalizedCheckpoint(finalizedCheckpoint)
-            .initialEpoch(UInt64.ZERO)
-            .build();
+        new TestProtoArrayFacade(
+            new ProtoArrayBuilder()
+                .spec(dataStructureUtil.getSpec())
+                .currentEpoch(ZERO)
+                .justifiedCheckpoint(justifiedCheckpoint)
+                .finalizedCheckpoint(finalizedCheckpoint)
+                .initialEpoch(UInt64.ZERO)
+                .build());
     // Justified block will have justified and finalized epoch of 0 which doesn't match the current
     // so would normally be not viable, but we should allow it anyway.
     addValidBlock(12, justifiedRoot, dataStructureUtil.randomBytes32());
@@ -628,7 +634,7 @@ class ProtoArrayTest {
 
     // When child's parent_block_hash matches FULL node's execution hash → FULL
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
-    assertThat(gloasModel.resolveParentIndex(protoArray, block1a, EXECUTION_BLOCK_HASH))
+    assertThat(protoArray.resolveParentIndex(block1a, EXECUTION_BLOCK_HASH))
         .isEqualTo(Optional.of(fullNodeIndex));
   }
 
@@ -640,7 +646,7 @@ class ProtoArrayTest {
 
     // When child's parent_block_hash does NOT match FULL node's execution hash → EMPTY
     final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
-    assertThat(gloasModel.resolveParentIndex(protoArray, block1a, Bytes32.ZERO))
+    assertThat(protoArray.resolveParentIndex(block1a, Bytes32.ZERO))
         .isEqualTo(Optional.of(emptyNodeIndex));
   }
 
@@ -651,7 +657,7 @@ class ProtoArrayTest {
 
     // No FULL exists, should resolve to EMPTY regardless of hash
     final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
-    assertThat(gloasModel.resolveParentIndex(protoArray, block1a, EXECUTION_BLOCK_HASH))
+    assertThat(protoArray.resolveParentIndex(block1a, EXECUTION_BLOCK_HASH))
         .isEqualTo(Optional.of(emptyNodeIndex));
   }
 
@@ -661,7 +667,7 @@ class ProtoArrayTest {
 
     // No FULL or EMPTY exists (pre-Gloas parent), should resolve to block node
     final int blockNodeIndex = protoArray.getIndexByRoot(block1a).orElseThrow();
-    assertThat(gloasModel.resolveParentIndex(protoArray, block1a, Bytes32.ZERO))
+    assertThat(protoArray.resolveParentIndex(block1a, Bytes32.ZERO))
         .isEqualTo(Optional.of(blockNodeIndex));
   }
 
@@ -676,7 +682,7 @@ class ProtoArrayTest {
     // block2a resolves parent via the Gloas model with matching hash → should attach to
     // FULL
     final Optional<Integer> resolvedParent =
-        gloasModel.resolveParentIndex(protoArray, block1a, EXECUTION_BLOCK_HASH);
+        protoArray.resolveParentIndex(block1a, EXECUTION_BLOCK_HASH);
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
     assertThat(resolvedParent).isEqualTo(Optional.of(fullNodeIndex));
 
@@ -697,8 +703,7 @@ class ProtoArrayTest {
 
     // block2a resolves parent via the Gloas model with non-matching hash → should attach to
     // EMPTY
-    final Optional<Integer> resolvedParent =
-        gloasModel.resolveParentIndex(protoArray, block1a, Bytes32.ZERO);
+    final Optional<Integer> resolvedParent = protoArray.resolveParentIndex(block1a, Bytes32.ZERO);
     final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
     assertThat(resolvedParent).isEqualTo(Optional.of(emptyNodeIndex));
 
@@ -1036,6 +1041,7 @@ class ProtoArrayTest {
       final ToIntFunction<Bytes32> ptcPresentVoteCountLookup,
       final ToIntFunction<Bytes32> ptcDataAvailableVoteCountLookup) {
     return new GloasHeadSelectionPolicy(
+        protoArray.blockNodeIndex(),
         currentSlot,
         proposerBoostRoot,
         payloadTimelyThreshold,
@@ -1126,5 +1132,209 @@ class ProtoArrayTest {
         Optional.empty(),
         UInt64.ZERO,
         UInt64.ZERO);
+  }
+
+  private class TestProtoArrayFacade {
+    private final ProtoArray protoArray;
+    private final BlockNodeVariantsIndex blockNodeIndex = new BlockNodeVariantsIndex();
+
+    private TestProtoArrayFacade(final ProtoArray protoArray) {
+      this.protoArray = protoArray;
+    }
+
+    private BlockNodeVariantsIndex blockNodeIndex() {
+      return blockNodeIndex;
+    }
+
+    private boolean contains(final Bytes32 blockRoot) {
+      return protoArray.containsNode(ForkChoiceNode.createBase(blockRoot));
+    }
+
+    private Optional<ProtoNode> getProtoNode(final Bytes32 blockRoot) {
+      return protoArray.getNode(ForkChoiceNode.createBase(blockRoot));
+    }
+
+    private Optional<Integer> getIndexByRoot(final Bytes32 blockRoot) {
+      return protoArray.getNodeIndex(ForkChoiceNode.createBase(blockRoot));
+    }
+
+    private Object2IntMap<Bytes32> getEmptyNodeIndices() {
+      return getProjectionIndices(ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY);
+    }
+
+    private Object2IntMap<Bytes32> getFullNodeIndices() {
+      return getProjectionIndices(ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL);
+    }
+
+    private Object2IntMap<Bytes32> getProjectionIndices(
+        final ForkChoicePayloadStatus payloadStatus) {
+      final Object2IntMap<Bytes32> indices = new Object2IntOpenHashMap<>();
+      blockNodeIndex
+          .variants()
+          .forEach(
+              variants ->
+                  variants
+                      .getNode(payloadStatus)
+                      .flatMap(protoArray::getNodeIndex)
+                      .ifPresent(index -> indices.put(variants.baseNode().blockRoot(), index)));
+      return indices;
+    }
+
+    private ProtoNode getNodeByIndex(final int index) {
+      return protoArray.getNodeByIndex(index);
+    }
+
+    private int getTotalTrackedNodeCount() {
+      return protoArray.getTotalTrackedNodeCount();
+    }
+
+    private ProtoNode findOptimisticHead(
+        final UInt64 currentEpoch,
+        final Checkpoint justifiedCheckpoint,
+        final Checkpoint finalizedCheckpoint) {
+      return protoArray.findOptimisticHead(currentEpoch, justifiedCheckpoint, finalizedCheckpoint);
+    }
+
+    private Optional<ProtoNode> findOptimisticallySyncedMergeTransitionBlock(
+        final Bytes32 blockRoot) {
+      return protoArray.findOptimisticallySyncedMergeTransitionBlock(
+          ForkChoiceNode.createBase(blockRoot));
+    }
+
+    private void applyScoreChanges(
+        final LongList deltas,
+        final UInt64 currentEpoch,
+        final Checkpoint justifiedCheckpoint,
+        final Checkpoint finalizedCheckpoint,
+        final HeadSelectionPolicy headSelectionPolicy) {
+      protoArray.applyScoreChanges(
+          deltas, currentEpoch, justifiedCheckpoint, finalizedCheckpoint, headSelectionPolicy);
+    }
+
+    private void markNodeInvalid(final Bytes32 blockRoot, final Optional<Bytes32> latestValidHash) {
+      protoArray.markNodeInvalid(ForkChoiceNode.createBase(blockRoot), latestValidHash);
+      pruneRemovedProjections();
+    }
+
+    private void markNodeValid(final Bytes32 blockRoot) {
+      blockNodeIndex
+          .getVariants(blockRoot)
+          .ifPresentOrElse(
+              variants -> variants.allNodes().forEach(protoArray::markNodeValid),
+              () -> protoArray.markNodeValid(ForkChoiceNode.createBase(blockRoot)));
+    }
+
+    private void markParentChainInvalid(
+        final Bytes32 blockRoot, final Optional<Bytes32> latestValidHash) {
+      protoArray.markParentChainInvalid(ForkChoiceNode.createBase(blockRoot), latestValidHash);
+      pruneRemovedProjections();
+    }
+
+    private void setInitialCanonicalBlockRoot(final Bytes32 blockRoot) {
+      protoArray.setInitialCanonicalBlockRoot(blockRoot);
+    }
+
+    private void setPruneThreshold(final int pruneThreshold) {
+      protoArray.setPruneThreshold(pruneThreshold);
+    }
+
+    private void maybePrune(final Bytes32 finalizedRoot) {
+      protoArray.maybePrune(ForkChoiceNode.createBase(finalizedRoot));
+      pruneRemovedProjections();
+    }
+
+    private void onBlock(
+        final UInt64 blockSlot,
+        final Bytes32 blockRoot,
+        final Bytes32 parentRoot,
+        final Bytes32 stateRoot,
+        final BlockCheckpoints checkpoints,
+        final UInt64 executionBlockNumber,
+        final Bytes32 executionBlockHash,
+        final boolean optimisticallyProcessed) {
+      onBlock(
+          blockSlot,
+          blockRoot,
+          parentRoot,
+          protoArray.containsNode(ForkChoiceNode.createBase(parentRoot))
+              ? Optional.of(
+                  protoArray.getNodeIndex(ForkChoiceNode.createBase(parentRoot)).orElseThrow())
+              : Optional.empty(),
+          stateRoot,
+          checkpoints,
+          executionBlockNumber,
+          executionBlockHash,
+          optimisticallyProcessed);
+    }
+
+    private void onBlock(
+        final UInt64 blockSlot,
+        final Bytes32 blockRoot,
+        final Bytes32 parentRoot,
+        final Optional<Integer> parentIndex,
+        final Bytes32 stateRoot,
+        final BlockCheckpoints checkpoints,
+        final UInt64 executionBlockNumber,
+        final Bytes32 executionBlockHash,
+        final boolean optimisticallyProcessed) {
+      protoArray.addNode(
+          ForkChoiceNode.createBase(blockRoot),
+          blockSlot,
+          blockRoot,
+          parentRoot,
+          parentIndex.map(protoArray::getNodeByIndex).map(ProtoNode::getForkChoiceNode),
+          stateRoot,
+          checkpoints,
+          executionBlockNumber,
+          executionBlockHash,
+          optimisticallyProcessed);
+      blockNodeIndex.putBaseNode(blockRoot, blockSlot, ForkChoiceNode.createBase(blockRoot));
+    }
+
+    private void createEmptyNode(final Bytes32 blockRoot) {
+      if (blockNodeIndex.getEmptyNode(blockRoot).isPresent()) {
+        return;
+      }
+      final Optional<ProtoNode> maybeBaseNode = getProtoNode(blockRoot);
+      if (maybeBaseNode.isEmpty()) {
+        return;
+      }
+
+      final ProtoNodeData baseNode = maybeBaseNode.get().getBlockData();
+      final ForkChoiceNode emptyNode = ForkChoiceNode.createEmpty(blockRoot);
+      protoArray.addNode(
+          emptyNode,
+          baseNode.getSlot(),
+          blockRoot,
+          baseNode.getParentRoot(),
+          Optional.of(ForkChoiceNode.createBase(blockRoot)),
+          baseNode.getStateRoot(),
+          baseNode.getCheckpoints(),
+          baseNode.getExecutionBlockNumber(),
+          baseNode.getExecutionBlockHash(),
+          baseNode.isOptimistic());
+      blockNodeIndex.attachEmptyNode(blockRoot, emptyNode);
+    }
+
+    private void onExecutionPayload(
+        final Bytes32 blockRoot,
+        final UInt64 executionBlockNumber,
+        final Bytes32 executionBlockHash) {
+      gloasModel.onExecutionPayload(
+          protoArray, blockNodeIndex, blockRoot, executionBlockNumber, executionBlockHash);
+    }
+
+    private Optional<Integer> resolveParentIndex(
+        final Bytes32 parentRoot, final Bytes32 childParentBlockHash) {
+      return gloasModel
+          .resolveParentNode(protoArray, blockNodeIndex, parentRoot, childParentBlockHash)
+          .flatMap(protoArray::getNodeIndex);
+    }
+
+    private void pruneRemovedProjections() {
+      blockNodeIndex.removeIf(
+          blockRoot ->
+              blockNodeIndex.getBaseNode(blockRoot).flatMap(protoArray::getNode).isEmpty());
+    }
   }
 }

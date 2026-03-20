@@ -20,6 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static tech.pegasys.teku.infrastructure.unsigned.UInt64.ONE;
@@ -87,20 +88,8 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
   private void addBlocksFromBuilder(final ChainBuilder chainBuilder, final ProtoArray protoArray) {
     chainBuilder
         .streamBlocksAndStates()
-        .filter(block -> !protoArray.contains(block.getRoot()))
-        .forEach(
-            blockAndState ->
-                protoArray.onBlock(
-                    blockAndState.getSlot(),
-                    blockAndState.getRoot(),
-                    blockAndState.getParentRoot(),
-                    blockAndState.getStateRoot(),
-                    spec.calculateBlockCheckpoints(blockAndState.getState()),
-                    blockAndState
-                        .getExecutionBlockNumber()
-                        .orElse(ProtoNode.NO_EXECUTION_BLOCK_NUMBER),
-                    blockAndState.getExecutionBlockHash().orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH),
-                    spec.isBlockProcessorOptimistic(blockAndState.getSlot())));
+        .filter(block -> !protoArray.containsNode(ForkChoiceNode.createBase(block.getRoot())))
+        .forEach(blockAndState -> addBlockToProtoArray(protoArray, blockAndState));
   }
 
   @Test
@@ -144,10 +133,13 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
 
   @Test
   void onPayloadExecution_shouldPenalizeNodeOnInvalidExecutionWithoutTransition() {
-    final ProtoArray protoArray = mock(ProtoArray.class);
+    final ChainBuilder chainBuilder = ChainBuilder.create(spec);
+    final SignedBlockAndState genesis = chainBuilder.generateGenesis();
+    final ProtoArray protoArray = spy(createProtoArray(genesis.getState()));
+    addBlockToProtoArray(protoArray, genesis);
     final ForkChoiceStrategy forkChoiceStrategy = ForkChoiceStrategy.initialize(spec, protoArray);
     forkChoiceStrategy.onExecutionPayloadResult(
-        dataStructureUtil.randomBytes32(),
+        genesis.getRoot(),
         PayloadStatus.invalid(Optional.of(dataStructureUtil.randomBytes32()), Optional.empty()),
         false);
     verify(protoArray, times(1)).markParentChainInvalid(any(), any());
@@ -175,10 +167,12 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
             .justifiedCheckpoint(anchorState.getCurrentJustifiedCheckpoint())
             .finalizedCheckpoint(anchorState.getFinalizedCheckpoint())
             .build();
-    protoArray.onBlock(
+    protoArray.addNode(
+        ForkChoiceNode.createBase(anchor.getRoot()),
         anchor.getBlockSlot(),
         anchor.getRoot(),
         anchor.getParentRoot(),
+        Optional.empty(),
         anchor.getStateRoot(),
         new BlockCheckpoints(
             anchor.getCheckpoint(),
@@ -274,7 +268,7 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
                     ProtoNodeValidationStatus.VALID,
                     spec.calculateBlockCheckpoints(head.getState()),
                     ZERO,
-                    ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL)));
+                    ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING)));
   }
 
   @Test
@@ -636,14 +630,25 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
     addBlockToProtoArray(protoArray, genesis);
     addBlockToProtoArray(protoArray, block1);
 
-    protoArray.createEmptyNode(block1.getRoot());
-    protoArray.onExecutionPayload(
+    addProjectedNodeToProtoArray(
+        protoArray,
+        block1,
+        ForkChoiceNode.createEmpty(block1.getRoot()),
+        ForkChoiceNode.createBase(block1.getRoot()));
+    addProjectedNodeToProtoArray(
+        protoArray,
+        block1,
+        ForkChoiceNode.createFull(block1.getRoot()),
+        ForkChoiceNode.createBase(block1.getRoot()),
         block1.getRoot(),
         block1.getExecutionBlockNumber().orElse(UInt64.ONE),
         block1.getExecutionBlockHash().orElse(dataStructureUtil.randomBytes32()));
 
     addBlockToProtoArray(
-        protoArray, block2, Optional.of(protoArray.getFullNodeIndices().getInt(block1.getRoot())));
+        protoArray,
+        block2,
+        Optional.of(
+            protoArray.getNodeIndex(ForkChoiceNode.createFull(block1.getRoot())).orElseThrow()));
 
     return new InternalPayloadTraversalFixture(
         ForkChoiceStrategy.initialize(spec, protoArray), genesis, block1, block2);
@@ -660,10 +665,14 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
 
   private void addBlockToProtoArray(
       final ProtoArray protoArray, final SignedBlockAndState blockAndState) {
-    protoArray.onBlock(
+    protoArray.addNode(
+        ForkChoiceNode.createBase(blockAndState.getRoot()),
         blockAndState.getSlot(),
         blockAndState.getRoot(),
         blockAndState.getParentRoot(),
+        protoArray.containsNode(ForkChoiceNode.createBase(blockAndState.getParentRoot()))
+            ? Optional.of(ForkChoiceNode.createBase(blockAndState.getParentRoot()))
+            : Optional.empty(),
         blockAndState.getStateRoot(),
         spec.calculateBlockCheckpoints(blockAndState.getState()),
         blockAndState.getExecutionBlockNumber().orElse(ProtoNode.NO_EXECUTION_BLOCK_NUMBER),
@@ -675,15 +684,52 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
       final ProtoArray protoArray,
       final SignedBlockAndState blockAndState,
       final Optional<Integer> parentIndex) {
-    protoArray.onBlock(
+    protoArray.addNode(
+        ForkChoiceNode.createBase(blockAndState.getRoot()),
         blockAndState.getSlot(),
         blockAndState.getRoot(),
         blockAndState.getParentRoot(),
-        parentIndex,
+        parentIndex.map(protoArray::getNodeByIndex).map(ProtoNode::getForkChoiceNode),
         blockAndState.getStateRoot(),
         spec.calculateBlockCheckpoints(blockAndState.getState()),
         blockAndState.getExecutionBlockNumber().orElse(ProtoNode.NO_EXECUTION_BLOCK_NUMBER),
         blockAndState.getExecutionBlockHash().orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH),
+        spec.isBlockProcessorOptimistic(blockAndState.getSlot()));
+  }
+
+  private void addProjectedNodeToProtoArray(
+      final ProtoArray protoArray,
+      final SignedBlockAndState blockAndState,
+      final ForkChoiceNode nodeIdentity,
+      final ForkChoiceNode parentNodeIdentity) {
+    addProjectedNodeToProtoArray(
+        protoArray,
+        blockAndState,
+        nodeIdentity,
+        parentNodeIdentity,
+        blockAndState.getRoot(),
+        blockAndState.getExecutionBlockNumber().orElse(ProtoNode.NO_EXECUTION_BLOCK_NUMBER),
+        blockAndState.getExecutionBlockHash().orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH));
+  }
+
+  private void addProjectedNodeToProtoArray(
+      final ProtoArray protoArray,
+      final SignedBlockAndState blockAndState,
+      final ForkChoiceNode nodeIdentity,
+      final ForkChoiceNode parentNodeIdentity,
+      final Bytes32 blockRoot,
+      final UInt64 executionBlockNumber,
+      final Bytes32 executionBlockHash) {
+    protoArray.addNode(
+        nodeIdentity,
+        blockAndState.getSlot(),
+        blockRoot,
+        blockAndState.getParentRoot(),
+        Optional.of(parentNodeIdentity),
+        blockAndState.getStateRoot(),
+        spec.calculateBlockCheckpoints(blockAndState.getState()),
+        executionBlockNumber,
+        executionBlockHash,
         spec.isBlockProcessorOptimistic(blockAndState.getSlot()));
   }
 

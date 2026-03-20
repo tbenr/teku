@@ -19,7 +19,6 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
-import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.storage.api.StoredBlockMetadata;
 
@@ -33,6 +32,7 @@ class ForkChoiceModelDefault implements ForkChoiceModel {
   @Override
   public void processBlock(
       final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
       final UInt64 blockSlot,
       final Bytes32 blockRoot,
       final Bytes32 parentRoot,
@@ -41,20 +41,25 @@ class ForkChoiceModelDefault implements ForkChoiceModel {
       final UInt64 executionBlockNumber,
       final Bytes32 executionBlockHash,
       final boolean optimisticallyProcessed) {
-    protoArray.onBlock(
+    final ForkChoiceNode baseNode = ForkChoiceNode.createBase(blockRoot);
+    protoArray.addNode(
+        baseNode,
         blockSlot,
         blockRoot,
         parentRoot,
+        blockNodeIndex.getBaseNode(parentRoot),
         stateRoot,
         checkpoints,
         executionBlockNumber,
         executionBlockHash,
         optimisticallyProcessed);
+    blockNodeIndex.putBaseNode(blockRoot, blockSlot, baseNode);
   }
 
   @Override
   public void onExecutionPayload(
       final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
       final Bytes32 blockRoot,
       final UInt64 executionBlockNumber,
       final Bytes32 executionBlockHash) {
@@ -64,11 +69,13 @@ class ForkChoiceModelDefault implements ForkChoiceModel {
   @Override
   public void rebuildTrackedBlock(
       final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
       final StoredBlockMetadata block,
       final Optional<SignedBeaconBlock> maybeBlock,
       final boolean optimisticallyProcessed) {
     processBlock(
         protoArray,
+        blockNodeIndex,
         block.getBlockSlot(),
         block.getBlockRoot(),
         block.getParentRoot(),
@@ -86,28 +93,28 @@ class ForkChoiceModelDefault implements ForkChoiceModel {
 
   @Override
   public HeadSelectionPolicy createHeadSelectionPolicy(
-      final UInt64 currentSlot, final Optional<Bytes32> proposerBoostRoot) {
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final UInt64 currentSlot,
+      final Optional<Bytes32> proposerBoostRoot) {
     return DefaultHeadSelectionPolicy.INSTANCE;
   }
 
   @Override
   public Optional<ProtoNodeData> getNodeData(
       final ProtoArray protoArray, final ForkChoiceNode node) {
-    return protoArray.getProtoNode(node.blockRoot()).map(ProtoNode::getBlockData);
+    return protoArray.getNode(node).map(ProtoNode::getBlockData);
   }
 
   @Override
-  public ForkChoiceNode resolveCanonicalNode(final Bytes32 blockRoot) {
-    return new ForkChoiceNode(blockRoot, ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING);
+  public ForkChoiceNode resolveBaseNode(
+      final BlockNodeVariantsIndex blockNodeIndex, final Bytes32 blockRoot) {
+    return blockNodeIndex.getBaseNode(blockRoot).orElse(ForkChoiceNode.createBase(blockRoot));
   }
 
   @Override
-  public ForkChoiceNode resolveExecutionNode(final ProtoArray protoArray, final Bytes32 blockRoot) {
-    return resolveCanonicalNode(blockRoot);
-  }
-
-  @Override
-  public ForkChoiceNode resolvePreferredNode(final ProtoArray protoArray, final Bytes32 blockRoot) {
-    return resolveCanonicalNode(blockRoot);
+  public ForkChoiceNode resolveExecutionNode(
+      final ProtoArray protoArray, final BlockNodeVariantsIndex blockNodeIndex, final Bytes32 blockRoot) {
+    return resolveBaseNode(blockNodeIndex, blockRoot);
   }
 }

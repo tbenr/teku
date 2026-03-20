@@ -80,6 +80,7 @@ import tech.pegasys.teku.spec.logic.versions.gloas.util.ForkChoiceUtilGloas;
 import tech.pegasys.teku.storage.api.StorageUpdateChannel;
 import tech.pegasys.teku.storage.api.StoredBlockMetadata;
 import tech.pegasys.teku.storage.api.VoteUpdateChannel;
+import tech.pegasys.teku.storage.protoarray.BlockNodeVariantsIndex;
 import tech.pegasys.teku.storage.protoarray.ForkChoiceModelFactory;
 import tech.pegasys.teku.storage.protoarray.ForkChoiceStrategy;
 import tech.pegasys.teku.storage.protoarray.ProtoArray;
@@ -372,6 +373,7 @@ class Store extends CacheableStore {
     final List<StoredBlockMetadata> blocks = new ArrayList<>(blockInfoByRoot.values());
     blocks.sort(Comparator.comparing(StoredBlockMetadata::getBlockSlot));
     final ForkChoiceModelFactory forkChoiceModelFactory = new ForkChoiceModelFactory(spec);
+    final BlockNodeVariantsIndex blockNodeIndex = new BlockNodeVariantsIndex();
     final ProtoArray protoArray =
         ProtoArray.builder()
             .spec(spec)
@@ -389,6 +391,7 @@ class Store extends CacheableStore {
       }
       forkChoiceModelFactory.rebuildTrackedBlock(
           protoArray,
+          blockNodeIndex,
           block,
           Optional.ofNullable(recoveredBlocks.get(block.getBlockRoot())),
           spec.isBlockProcessorOptimistic(block.getBlockSlot()));
