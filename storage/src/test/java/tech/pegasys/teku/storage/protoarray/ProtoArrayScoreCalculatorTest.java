@@ -690,6 +690,33 @@ public class ProtoArrayScoreCalculatorTest {
     }
   }
 
+  @Test
+  void computeDeltas_newlyEquivocatingVoteOnSameRootRemovesBalance() {
+    final UInt64 balance = UInt64.valueOf(42);
+    final Bytes32 root = getHash(1);
+
+    indices.put(root, 0);
+    oldBalances = List.of(balance);
+    newBalances = List.of(balance);
+
+    store.putVote(ZERO, new VoteTracker(root, root, UInt64.ONE, true, false));
+
+    final List<Long> deltas =
+        computeDeltas(
+            store,
+            indices.size(),
+            this::getIndex,
+            oldBalances,
+            newBalances,
+            oldProposerBoostRoot,
+            newProposerBoostRoot,
+            oldProposerBoostAmount,
+            newProposerBoostAmount);
+
+    assertThat(deltas).containsExactly(-balance.longValue());
+    assertThat(store.getVote(ZERO).isCurrentEquivocating()).isTrue();
+  }
+
   private ProtoArray createProtoArray() {
     return ProtoArray.builder()
         .spec(SPEC)

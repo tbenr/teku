@@ -121,6 +121,26 @@ class ProtoArrayTest {
   }
 
   @Test
+  void findOptimisticHead_shouldFollowBestDescendantChainWithoutScoreRecalculation() {
+    addValidBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+    addValidBlock(2, block2a, block1a);
+    addValidBlock(3, block3a, block2a);
+
+    assertThat(
+            protoArray
+                .getProtoNode(GENESIS_CHECKPOINT.getRoot())
+                .orElseThrow()
+                .getBestDescendantIndex())
+        .contains(protoArray.getIndexByRoot(block1a).orElseThrow());
+    assertThat(protoArray.getProtoNode(block1a).orElseThrow().getBestDescendantIndex())
+        .contains(protoArray.getIndexByRoot(block2a).orElseThrow());
+    assertThat(protoArray.getProtoNode(block2a).orElseThrow().getBestDescendantIndex())
+        .contains(protoArray.getIndexByRoot(block3a).orElseThrow());
+
+    assertHead(block3a);
+  }
+
+  @Test
   void findOptimisticHead_shouldExcludeInvalidBlocks() {
     addValidBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
     addOptimisticBlock(2, block2a, block1a);

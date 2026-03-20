@@ -131,6 +131,7 @@ class ProtoArrayScoreCalculator {
         validatorIndexInt < oldBalances.size() ? oldBalances.get(validatorIndexInt) : UInt64.ZERO;
     final UInt64 newBalance =
         validatorIndexInt < newBalances.size() ? newBalances.get(validatorIndexInt) : UInt64.ZERO;
+    final UInt64 effectiveNewBalance = vote.isNextEquivocating() ? UInt64.ZERO : newBalance;
 
     final Optional<ForkChoiceNode> currentNode =
         voteScoringResolver.resolveCurrentNode(vote, protoArray, blockNodeIndex);
@@ -139,12 +140,12 @@ class ProtoArrayScoreCalculator {
 
     if (!vote.getCurrentRoot().equals(vote.getNextRoot())
         || !currentNode.equals(nextNode)
-        || !oldBalance.equals(newBalance)) {
+        || !oldBalance.equals(effectiveNewBalance)) {
       if (vote.isNextEquivocating()) {
         subtractBalance(getIndexByNode, deltas, currentNode, oldBalance);
       } else {
         subtractBalance(getIndexByNode, deltas, currentNode, oldBalance);
-        addBalance(getIndexByNode, deltas, nextNode, newBalance);
+        addBalance(getIndexByNode, deltas, nextNode, effectiveNewBalance);
       }
       store.putVote(
           validatorIndex,

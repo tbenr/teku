@@ -275,6 +275,11 @@ public class ProtoArray {
     // updates the parent, not all the ancestors. When applyScoreChanges runs it propagates the
     // change back up and everything works, but we run findHead to determine if the new block should
     // become the best head so need to follow down the chain.
+    while (bestNode.getBestDescendantIndex().isPresent() && !bestNode.isInvalid()) {
+      bestDescendantIndex = bestNode.getBestDescendantIndex().get();
+      bestNode = getNodeByIndex(bestDescendantIndex);
+    }
+
     // Walk backwards to find the last valid node in the chain
     while (bestNode.isInvalid()) {
       final Optional<Integer> maybeParentIndex = bestNode.getParentIndex();
