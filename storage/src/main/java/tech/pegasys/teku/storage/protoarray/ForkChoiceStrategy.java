@@ -80,22 +80,8 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
   }
 
   public static ForkChoiceStrategy initialize(final Spec spec, final ProtoArray protoArray) {
-    final BlockNodeVariantsIndex blockNodeIndex = new BlockNodeVariantsIndex();
-    protoArray.getNodes().forEach(node -> registerNodeProjection(blockNodeIndex, node));
+    final BlockNodeVariantsIndex blockNodeIndex = BlockNodeVariantsIndex.fromProtoArray(protoArray);
     return new ForkChoiceStrategy(spec, protoArray, blockNodeIndex, new ArrayList<>());
-  }
-
-  private static void registerNodeProjection(
-      final BlockNodeVariantsIndex blockNodeIndex, final ProtoNode node) {
-    switch (node.getPayloadStatus()) {
-      case PAYLOAD_STATUS_PENDING ->
-          blockNodeIndex.putBaseNode(
-              node.getBlockRoot(), node.getBlockSlot(), node.getForkChoiceNode());
-      case PAYLOAD_STATUS_EMPTY ->
-          blockNodeIndex.attachEmptyNode(node.getBlockRoot(), node.getForkChoiceNode());
-      case PAYLOAD_STATUS_FULL ->
-          blockNodeIndex.attachFullNode(node.getBlockRoot(), node.getForkChoiceNode());
-    }
   }
 
   public ForkChoiceNode findHead(

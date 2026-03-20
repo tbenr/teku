@@ -34,6 +34,12 @@ public class BlockNodeVariantsIndex {
 
   private final Map<Bytes32, BlockNodeVariants> variantsByRoot = new LinkedHashMap<>();
 
+  static BlockNodeVariantsIndex fromProtoArray(final ProtoArray protoArray) {
+    final BlockNodeVariantsIndex blockNodeVariantsIndex = new BlockNodeVariantsIndex();
+    protoArray.getNodes().forEach(blockNodeVariantsIndex::registerNodeVariant);
+    return blockNodeVariantsIndex;
+  }
+
   boolean containsBlock(final Bytes32 blockRoot) {
     return variantsByRoot.containsKey(blockRoot);
   }
@@ -61,6 +67,15 @@ public class BlockNodeVariantsIndex {
   Optional<ForkChoiceNode> getNode(
       final Bytes32 blockRoot, final ForkChoicePayloadStatus payloadStatus) {
     return getVariants(blockRoot).flatMap(variants -> variants.getNode(payloadStatus));
+  }
+
+  void registerNodeVariant(final ProtoNode node) {
+    switch (node.getPayloadStatus()) {
+      case PAYLOAD_STATUS_PENDING ->
+          putBaseNode(node.getBlockRoot(), node.getBlockSlot(), node.getForkChoiceNode());
+      case PAYLOAD_STATUS_EMPTY -> attachEmptyNode(node.getBlockRoot(), node.getForkChoiceNode());
+      case PAYLOAD_STATUS_FULL -> attachFullNode(node.getBlockRoot(), node.getForkChoiceNode());
+    }
   }
 
   void putBaseNode(
