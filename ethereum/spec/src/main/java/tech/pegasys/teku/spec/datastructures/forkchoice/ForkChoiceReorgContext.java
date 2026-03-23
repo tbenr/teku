@@ -13,25 +13,22 @@
 
 package tech.pegasys.teku.spec.datastructures.forkchoice;
 
+import java.util.Optional;
+import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
+import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
+import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.EpochProcessingException;
+import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.SlotProcessingException;
 
-/** Read-only access to the fork choice vote store (store.latest_messages equivalent). */
-public interface VoteAccessor {
+/** Read-only runtime context for proposer reorg evaluation. */
+public interface ForkChoiceReorgContext {
 
-  VoteAccessor NOOP =
-      new VoteAccessor() {
-        @Override
-        public VoteTracker getVote(final UInt64 validatorIndex) {
-          return VoteTracker.DEFAULT;
-        }
+  ReadOnlyStore getStore();
 
-        @Override
-        public UInt64 getHighestVotedValidatorIndex() {
-          return UInt64.ZERO;
-        }
-      };
+  Optional<boolean[]> getBlockTimeliness(Bytes32 root);
 
-  VoteTracker getVote(UInt64 validatorIndex);
+  boolean isValidatorConnected(int validatorIndex, UInt64 slot);
 
-  UInt64 getHighestVotedValidatorIndex();
+  BeaconState processSlots(BeaconState state, UInt64 slot)
+      throws SlotProcessingException, EpochProcessingException;
 }

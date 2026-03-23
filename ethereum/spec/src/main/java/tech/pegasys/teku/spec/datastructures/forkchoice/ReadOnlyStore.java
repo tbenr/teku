@@ -154,6 +154,18 @@ public interface ReadOnlyStore extends TimeProvider {
   SafeFuture<Optional<BeaconState>> retrieveCheckpointState(
       Checkpoint checkpoint, BeaconState latestStateAtEpoch);
 
+  Optional<BeaconState> getJustifiedStateIfAvailable();
+
+  Optional<BeaconState> getCheckpointStateIfAvailable(Checkpoint checkpoint);
+
+  default VoteAccessor getVoteAccessor() {
+    return VoteAccessor.NOOP;
+  }
+
+  default Optional<ForkChoicePayloadStatus> getPayloadStatus(final Bytes32 root) {
+    return Optional.empty();
+  }
+
   // implements is_head_weak from fork-choice Consensus Spec
   boolean isHeadWeak(Bytes32 root);
 
@@ -166,6 +178,8 @@ public interface ReadOnlyStore extends TimeProvider {
   void computeBalanceThresholds(BeaconState justifiedState);
 
   UInt64 getReorgThreshold();
+
+  UInt64 getParentThreshold();
 
   // implements is_ffg_competitive from Consensus Spec
   Optional<Boolean> isFfgCompetitive(Bytes32 headRoot, Bytes32 parentRoot);

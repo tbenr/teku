@@ -487,6 +487,23 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
    */
   @Override
   public boolean isHeadWeak(
+      final ReadOnlyStore store, final Bytes32 root, final UInt64 reorgThreshold) {
+    final Optional<BeaconState> maybeJustifiedState = store.getJustifiedStateIfAvailable();
+    final Optional<BeaconState> maybeHeadState = store.getBlockStateIfAvailable(root);
+    if (maybeJustifiedState.isPresent() && maybeHeadState.isPresent()) {
+      return isHeadWeak(
+          store.getForkChoiceStrategy(),
+          root,
+          reorgThreshold,
+          store.getVoteAccessor(),
+          maybeHeadState.get(),
+          maybeJustifiedState.get());
+    }
+    return isHeadWeak(store.getForkChoiceStrategy(), root, reorgThreshold);
+  }
+
+  @Override
+  public boolean isHeadWeak(
       final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
       final Bytes32 root,
       final UInt64 reorgThreshold) {
@@ -523,6 +540,24 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
    *
    * <p>This is an implementation fallback, not a direct Python function from the Gloas spec.
    */
+  @Override
+  public boolean isParentStrong(
+      final ReadOnlyStore store, final Bytes32 parentRoot, final UInt64 parentThreshold) {
+    final Optional<BeaconState> maybeJustifiedState = store.getJustifiedStateIfAvailable();
+    if (maybeJustifiedState.isPresent()) {
+      final ForkChoicePayloadStatus parentPayloadStatus =
+          store.getPayloadStatus(parentRoot).orElse(PAYLOAD_STATUS_PENDING);
+      return isParentStrong(
+          store.getForkChoiceStrategy(),
+          parentRoot,
+          parentThreshold,
+          parentPayloadStatus,
+          store.getVoteAccessor(),
+          maybeJustifiedState.get());
+    }
+    return isParentStrong(store.getForkChoiceStrategy(), parentRoot, parentThreshold);
+  }
+
   @Override
   public boolean isParentStrong(
       final ReadOnlyForkChoiceStrategy forkChoiceStrategy,

@@ -76,7 +76,6 @@ import tech.pegasys.teku.spec.datastructures.state.CheckpointState;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.logic.common.helpers.BeaconStateAccessors;
 import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil;
-import tech.pegasys.teku.spec.logic.versions.gloas.util.ForkChoiceUtilGloas;
 import tech.pegasys.teku.storage.api.StorageUpdateChannel;
 import tech.pegasys.teku.storage.api.StoredBlockMetadata;
 import tech.pegasys.teku.storage.api.VoteUpdateChannel;
@@ -128,9 +127,21 @@ class Store extends CacheableStore {
   private final CachingTaskQueue<Bytes32, BeaconState> executionPayloadStates;
   private final Map<Bytes32, SignedExecutionPayloadEnvelope> executionPayloads;
 
-  private UInt64 reorgThreshold = UInt64.ZERO;
-  private UInt64 parentThreshold = UInt64.ZERO;
-  private volatile BeaconState cachedJustifiedState;
+  private volatile UInt64 reorgThreshold = UInt64.ZERO;
+  private volatile UInt64 parentThreshold = UInt64.ZERO;
+  private final VoteAccessor voteAccessor =
+      new VoteAccessor() {
+        @Override
+        public VoteTracker getVote(final UInt64 validatorIndex) {
+          final VoteTracker vote = Store.this.getVote(validatorIndex);
+          return vote != null ? vote : VoteTracker.DEFAULT;
+        }
+
+        @Override
+        public UInt64 getHighestVotedValidatorIndex() {
+          return highestVotedValidatorIndex;
+        }
+      };
 
   private Store(
       final MetricsSystem metricsSystem,
@@ -640,27 +651,7 @@ class Store extends CacheableStore {
   public boolean isHeadWeak(final Bytes32 root) {
     readLock.lock();
     try {
-      final boolean result;
-      final Optional<GloasContext> gloas = getGloasContext(root);
-      if (gloas.isPresent()) {
-        final GloasContext ctx = gloas.get();
-        final Optional<BeaconState> headState = getBlockStateIfAvailable(root);
-        if (headState.isPresent()) {
-          result =
-              ctx.forkChoiceUtil.isHeadWeak(
-                  forkChoiceStrategy,
-                  root,
-                  reorgThreshold,
-                  ctx.voteAccessor,
-                  headState.get(),
-                  ctx.justifiedState);
-        } else {
-          result = ctx.forkChoiceUtil.isHeadWeak(forkChoiceStrategy, root, reorgThreshold);
-        }
-      } else {
-        result =
-            getForkChoiceUtilForRoot(root).isHeadWeak(forkChoiceStrategy, root, reorgThreshold);
-      }
+      final boolean result = getForkChoiceUtilForRoot(root).isHeadWeak(this, root, reorgThreshold);
       LOG.trace("isHeadWeak {}: reorgThreshold: {}, result: {}", root, reorgThreshold, result);
       return result;
     } finally {
@@ -672,31 +663,8 @@ class Store extends CacheableStore {
   public boolean isParentStrong(final Bytes32 parentRoot) {
     readLock.lock();
     try {
-      final boolean result;
-      final Optional<GloasContext> gloas = getGloasContext(parentRoot);
-      // For Gloas, use the extended isParentStrong with payload-status-aware scoring
-      // when the justified state is cached. The payload status determination requires block
-      // body access which is async, so we use PENDING as a fallback (counts all votes).
-      if (gloas.isPresent()) {
-        final GloasContext ctx = gloas.get();
-        // Use the parent's stored payload status (resolved during onBlock of the child block)
-        final ForkChoicePayloadStatus parentPayloadStatus =
-            forkChoiceStrategy
-                .payloadStatus(parentRoot)
-                .orElse(ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING);
-        result =
-            ctx.forkChoiceUtil.isParentStrong(
-                forkChoiceStrategy,
-                parentRoot,
-                parentThreshold,
-                parentPayloadStatus,
-                ctx.voteAccessor,
-                ctx.justifiedState);
-      } else {
-        result =
-            getForkChoiceUtilForRoot(parentRoot)
-                .isParentStrong(forkChoiceStrategy, parentRoot, parentThreshold);
-      }
+      final boolean result =
+          getForkChoiceUtilForRoot(parentRoot).isParentStrong(this, parentRoot, parentThreshold);
       LOG.debug(
           "isParentStrong {}: parentThreshold: {}, result: {}",
           parentRoot,
@@ -706,32 +674,6 @@ class Store extends CacheableStore {
     } finally {
       readLock.unlock();
     }
-  }
-
-  private record GloasContext(
-      ForkChoiceUtilGloas forkChoiceUtil, VoteAccessor voteAccessor, BeaconState justifiedState) {}
-
-  private Optional<GloasContext> getGloasContext(final Bytes32 root) {
-    final ForkChoiceUtil forkChoiceUtil = getForkChoiceUtilForRoot(root);
-    if (forkChoiceUtil instanceof ForkChoiceUtilGloas gloasUtil && cachedJustifiedState != null) {
-      return Optional.of(new GloasContext(gloasUtil, createVoteAccessor(), cachedJustifiedState));
-    }
-    return Optional.empty();
-  }
-
-  private VoteAccessor createVoteAccessor() {
-    return new VoteAccessor() {
-      @Override
-      public VoteTracker getVote(final UInt64 validatorIndex) {
-        final VoteTracker vote = Store.this.getVote(validatorIndex);
-        return vote != null ? vote : VoteTracker.DEFAULT;
-      }
-
-      @Override
-      public UInt64 getHighestVotedValidatorIndex() {
-        return highestVotedValidatorIndex;
-      }
-    };
   }
 
   private ForkChoiceUtil getForkChoiceUtilForRoot(final Bytes32 root) {
@@ -749,6 +691,11 @@ class Store extends CacheableStore {
   }
 
   @Override
+  public UInt64 getParentThreshold() {
+    return parentThreshold;
+  }
+
+  @Override
   public void computeBalanceThresholds(final BeaconState justifiedState) {
     final SpecVersion specVersion = spec.atSlot(justifiedState.getSlot());
     final BeaconStateAccessors beaconStateAccessors = specVersion.beaconStateAccessors();
@@ -758,7 +705,26 @@ class Store extends CacheableStore {
     parentThreshold =
         beaconStateAccessors.calculateCommitteeFraction(
             justifiedState, specVersion.getConfig().getReorgParentWeightThreshold());
-    cachedJustifiedState = justifiedState;
+  }
+
+  @Override
+  public Optional<BeaconState> getJustifiedStateIfAvailable() {
+    return getCheckpointStateIfAvailable(justifiedCheckpoint);
+  }
+
+  @Override
+  public Optional<BeaconState> getCheckpointStateIfAvailable(final Checkpoint checkpoint) {
+    return checkpointStates.getIfAvailable(checkpoint.toSlotAndBlockRoot(spec));
+  }
+
+  @Override
+  public VoteAccessor getVoteAccessor() {
+    return voteAccessor;
+  }
+
+  @Override
+  public Optional<ForkChoicePayloadStatus> getPayloadStatus(final Bytes32 root) {
+    return forkChoiceStrategy.payloadStatus(root);
   }
 
   @Override

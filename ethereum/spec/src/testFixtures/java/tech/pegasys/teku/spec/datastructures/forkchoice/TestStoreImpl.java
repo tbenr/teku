@@ -297,6 +297,16 @@ public class TestStoreImpl implements MutableStore, VoteUpdater {
   }
 
   @Override
+  public Optional<BeaconState> getJustifiedStateIfAvailable() {
+    return Optional.ofNullable(checkpointStates.get(justifiedCheckpoint));
+  }
+
+  @Override
+  public Optional<BeaconState> getCheckpointStateIfAvailable(final Checkpoint checkpoint) {
+    return Optional.ofNullable(checkpointStates.get(checkpoint));
+  }
+
+  @Override
   public boolean isHeadWeak(final Bytes32 root) {
     return false;
   }
@@ -308,6 +318,11 @@ public class TestStoreImpl implements MutableStore, VoteUpdater {
 
   @Override
   public UInt64 getReorgThreshold() {
+    return UInt64.ZERO;
+  }
+
+  @Override
+  public UInt64 getParentThreshold() {
     return UInt64.ZERO;
   }
 

@@ -527,6 +527,11 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
   }
 
   @Override
+  public UInt64 getParentThreshold() {
+    return store.getParentThreshold();
+  }
+
+  @Override
   public void computeBalanceThresholds(final BeaconState justifiedState) {
     store.computeBalanceThresholds(justifiedState);
   }
@@ -541,6 +546,19 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
     return Optional.ofNullable(blockData.get(blockRoot))
         .map(SignedBlockAndState::getBlock)
         .or(() -> store.getBlockIfAvailable(blockRoot));
+  }
+
+  @Override
+  public Optional<BeaconState> getJustifiedStateIfAvailable() {
+    if (justifiedCheckpoint.isEmpty()) {
+      return store.getJustifiedStateIfAvailable();
+    }
+    return store.getCheckpointStateIfAvailable(justifiedCheckpoint.get());
+  }
+
+  @Override
+  public Optional<BeaconState> getCheckpointStateIfAvailable(final Checkpoint checkpoint) {
+    return store.getCheckpointStateIfAvailable(checkpoint);
   }
 
   @Override
