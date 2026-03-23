@@ -250,6 +250,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
    * @return true if proposer boost should be applied
    */
   // should_apply_proposer_boost
+  @Override
   public boolean shouldApplyProposerBoost(
       final Optional<Bytes32> proposerBoostRoot,
       final ReadOnlyForkChoiceStrategy forkChoiceStrategy,

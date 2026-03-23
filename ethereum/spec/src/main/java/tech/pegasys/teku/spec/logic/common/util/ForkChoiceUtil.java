@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.function.Predicate;
 import javax.annotation.CheckReturnValue;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
@@ -40,6 +41,7 @@ import tech.pegasys.teku.spec.datastructures.forkchoice.MutableStore;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
+import tech.pegasys.teku.spec.datastructures.forkchoice.VoteAccessor;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.operations.Attestation;
 import tech.pegasys.teku.spec.datastructures.operations.AttestationData;
@@ -802,6 +804,16 @@ public class ForkChoiceUtil {
   }
 
   public boolean shouldNotifyForkChoiceUpdatedOnBlock() {
+    return true;
+  }
+
+  public boolean shouldApplyProposerBoost(
+      final Optional<Bytes32> proposerBoostRoot,
+      final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
+      final UInt64 reorgThreshold,
+      final VoteAccessor voteAccessor,
+      final BeaconState justifiedState,
+      final Predicate<Bytes32> isProposerEquivocation) {
     return true;
   }
 
