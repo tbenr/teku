@@ -44,6 +44,7 @@ import tech.pegasys.teku.spec.datastructures.forkchoice.StubVoteUpdater;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteUpdater;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
+import tech.pegasys.teku.spec.executionlayer.ExecutionPayloadStatus;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 
 class ProtoArrayTest {
@@ -1024,6 +1025,37 @@ class ProtoArrayTest {
     assertThat(head.getBlockRoot()).isEqualTo(block2b);
   }
 
+  @Test
+  void gloas_onExecutionPayloadResult_invalid_shouldOnlyInvalidateFullNode() {
+    // Set up a Gloas block with base + EMPTY + FULL nodes (FULL stays optimistic)
+    addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+    protoArray.createEmptyNode(block1a);
+    protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
+
+    // Verify FULL node exists and is optimistic
+    assertThat(protoArray.getFullNodeIndices().containsKey(block1a)).isTrue();
+    final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
+    assertThat(protoArray.getNodeByIndex(fullNodeIndex).isOptimistic()).isTrue();
+
+    // Mark payload as INVALID via the Gloas model (verified transition)
+    gloasModel.onExecutionPayloadResult(
+        protoArray.protoArray(),
+        protoArray.blockNodeIndex(),
+        block1a,
+        ExecutionPayloadStatus.INVALID,
+        Optional.empty(),
+        true);
+
+    // FULL node should be invalid
+    assertThat(protoArray.getNodeByIndex(fullNodeIndex).isInvalid()).isTrue();
+
+    // Base + EMPTY nodes should remain in the tree (not invalidated)
+    assertThat(protoArray.contains(block1a)).isTrue();
+    assertThat(protoArray.getProtoNode(block1a).orElseThrow().isOptimistic()).isTrue();
+    final int emptyNodeIndex = protoArray.getEmptyNodeIndices().getInt(block1a);
+    assertThat(protoArray.getNodeByIndex(emptyNodeIndex).isOptimistic()).isTrue();
+  }
+
   private void assertHead(final Bytes32 expectedBlockHash) {
     final ProtoNode node = protoArray.getProtoNode(expectedBlockHash).orElseThrow();
     assertThat(
@@ -1160,6 +1192,10 @@ class ProtoArrayTest {
 
     private TestProtoArrayFacade(final ProtoArray protoArray) {
       this.protoArray = protoArray;
+    }
+
+    private ProtoArray protoArray() {
+      return protoArray;
     }
 
     private BlockNodeVariantsIndex blockNodeIndex() {

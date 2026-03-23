@@ -20,6 +20,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
+import tech.pegasys.teku.spec.executionlayer.ExecutionPayloadStatus;
 import tech.pegasys.teku.storage.api.StoredBlockMetadata;
 
 /**
@@ -120,6 +121,14 @@ interface ForkChoiceModel {
         .ifPresent(variants -> variants.allNodes().forEach(protoArray::removeNode));
     blockNodeIndex.remove(blockRoot);
   }
+
+  void onExecutionPayloadResult(
+      ProtoArray protoArray,
+      BlockNodeVariantsIndex blockNodeIndex,
+      Bytes32 blockRoot,
+      ExecutionPayloadStatus status,
+      Optional<Bytes32> latestValidHash,
+      boolean verifiedInvalidTransition);
 
   default void onPrunedBlocks(final BlockNodeVariantsIndex blockNodeIndex) {}
 }

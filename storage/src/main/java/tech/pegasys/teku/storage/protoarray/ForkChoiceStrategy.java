@@ -806,36 +806,32 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
           result.getFailureCause().orElseThrow());
       return;
     }
-    ExecutionPayloadStatus status = result.getStatus().orElseThrow();
+    final ExecutionPayloadStatus status = result.getStatus().orElseThrow();
     if (status.isNotValidated()) {
       return;
     }
     protoArrayLock.writeLock().lock();
     try {
-      if (status.isValid()) {
-        blockNodeIndex
-            .getVariants(blockRoot)
-            // TODO: i believe only FULL node becomes invalid
-            .ifPresent(variants -> variants.allNodes().forEach(protoArray::markNodeValid));
-      } else if (status.isInvalid()) {
-        if (verifiedInvalidTransition) {
-          LOG.warn("Payload for block root {} marked as invalid by Execution Client", blockRoot);
-          blockNodeIndex
-              .getBaseNode(blockRoot)
-              .ifPresent(node -> protoArray.markNodeInvalid(node, result.getLatestValidHash()));
-        } else {
-          LOG.warn(
-              "Payload for child of block root {} marked as invalid by Execution Client",
-              blockRoot);
-          blockNodeIndex
-              .getBaseNode(blockRoot)
-              .ifPresent(
-                  node -> protoArray.markParentChainInvalid(node, result.getLatestValidHash()));
-        }
+      getForkChoiceModelForRoot(blockRoot)
+          .ifPresent(
+              forkChoiceModel -> {
+                if (status.isInvalid()) {
+                  LOG.warn(
+                      "Payload for {} block root {} marked as invalid by Execution Client",
+                      verifiedInvalidTransition ? "" : "child of",
+                      blockRoot);
+                }
+                forkChoiceModel.onExecutionPayloadResult(
+                    protoArray,
+                    blockNodeIndex,
+                    blockRoot,
+                    status,
+                    result.getLatestValidHash(),
+                    verifiedInvalidTransition);
+              });
+      if (status.isInvalid()) {
         blockNodeIndex.removeIf(
             root -> blockNodeIndex.getBaseNode(root).flatMap(protoArray::getNode).isEmpty());
-      } else {
-        throw new IllegalArgumentException("Unknown payload validity status: " + status);
       }
     } finally {
       protoArrayLock.writeLock().unlock();

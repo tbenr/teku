@@ -19,6 +19,7 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
+import tech.pegasys.teku.spec.executionlayer.ExecutionPayloadStatus;
 import tech.pegasys.teku.storage.api.StoredBlockMetadata;
 
 /** Pre-Gloas single-node-per-block model. */
@@ -102,6 +103,29 @@ class ForkChoiceModelDefault implements ForkChoiceModel {
   public Optional<ProtoNodeData> getNodeData(
       final ProtoArray protoArray, final ForkChoiceNode node) {
     return protoArray.getNode(node).map(ProtoNode::getBlockData);
+  }
+
+  @Override
+  public void onExecutionPayloadResult(
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockRoot,
+      final ExecutionPayloadStatus status,
+      final Optional<Bytes32> latestValidHash,
+      final boolean verifiedInvalidTransition) {
+    if (status.isValid()) {
+      blockNodeIndex.getBaseNode(blockRoot).ifPresent(protoArray::markNodeValid);
+    } else if (status.isInvalid()) {
+      if (verifiedInvalidTransition) {
+        blockNodeIndex
+            .getBaseNode(blockRoot)
+            .ifPresent(node -> protoArray.markNodeInvalid(node, latestValidHash));
+      } else {
+        blockNodeIndex
+            .getBaseNode(blockRoot)
+            .ifPresent(node -> protoArray.markParentChainInvalid(node, latestValidHash));
+      }
+    }
   }
 
   @Override

@@ -21,6 +21,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
+import tech.pegasys.teku.spec.executionlayer.ExecutionPayloadStatus;
 import tech.pegasys.teku.storage.api.GloasForkChoiceRebuildData;
 import tech.pegasys.teku.storage.api.StoredBlockMetadata;
 
@@ -208,6 +209,36 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
         specConfig.getDataAvailabilityTimelyThreshold(),
         ptcVoteTracker::getPayloadPresentVoteCount,
         ptcVoteTracker::getDataAvailableVoteCount);
+  }
+
+  @Override
+  public void onExecutionPayloadResult(
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockRoot,
+      final ExecutionPayloadStatus status,
+      final Optional<Bytes32> latestValidHash,
+      final boolean verifiedInvalidTransition) {
+    if (status.isValid()) {
+      // Only the FULL node needs validation marking — base/EMPTY are already VALID from block
+      // import
+      blockNodeIndex.getFullNode(blockRoot).ifPresent(protoArray::markNodeValid);
+    } else if (status.isInvalid()) {
+      if (verifiedInvalidTransition) {
+        // In Gloas, an invalid execution payload only invalidates the FULL path.
+        // The beacon block (base + EMPTY) remains valid — the builder, not the proposer, is at
+        // fault.
+        blockNodeIndex
+            .getFullNode(blockRoot)
+            .ifPresent(node -> protoArray.markNodeInvalid(node, latestValidHash));
+      } else {
+        // Unverified: a child's payload was invalid, pointing at this parent.
+        // The base node is the correct anchor for parent-chain invalidation search.
+        blockNodeIndex
+            .getBaseNode(blockRoot)
+            .ifPresent(node -> protoArray.markParentChainInvalid(node, latestValidHash));
+      }
+    }
   }
 
   @Override
