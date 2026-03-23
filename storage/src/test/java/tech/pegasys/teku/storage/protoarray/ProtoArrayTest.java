@@ -216,16 +216,16 @@ class ProtoArrayTest {
     addValidBlock(2, block2a, block1a);
     addValidBlock(2, block2b, block1b);
 
-    voteUpdater.putVote(UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
-    voteUpdater.putVote(UInt64.ONE, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
-    voteUpdater.putVote(UInt64.valueOf(2), new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
+    voteUpdater.putVote(UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block1b));
+    voteUpdater.putVote(UInt64.ONE, new VoteTracker(Bytes32.ZERO, block1b));
+    voteUpdater.putVote(UInt64.valueOf(2), new VoteTracker(Bytes32.ZERO, block1b));
     applyScoreChanges();
 
     assertHead(block2b);
 
     // Validators 0 and 1 switch forks to chain a
-    voteUpdater.putVote(UInt64.ZERO, new VoteTracker(block1b, block2a, UInt64.ONE));
-    voteUpdater.putVote(UInt64.ONE, new VoteTracker(block1b, block2a, UInt64.ONE));
+    voteUpdater.putVote(UInt64.ZERO, new VoteTracker(block1b, block2a));
+    voteUpdater.putVote(UInt64.ONE, new VoteTracker(block1b, block2a));
     applyScoreChanges();
 
     // And our head should switch
@@ -239,16 +239,16 @@ class ProtoArrayTest {
     addOptimisticBlock(2, block2a, block1a);
     addOptimisticBlock(2, block2b, block1b);
 
-    voteUpdater.putVote(UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
-    voteUpdater.putVote(UInt64.ONE, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
-    voteUpdater.putVote(UInt64.valueOf(2), new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
+    voteUpdater.putVote(UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block1b));
+    voteUpdater.putVote(UInt64.ONE, new VoteTracker(Bytes32.ZERO, block1b));
+    voteUpdater.putVote(UInt64.valueOf(2), new VoteTracker(Bytes32.ZERO, block1b));
     applyScoreChanges();
 
     assertHead(block2b);
 
     // Validators 0 and 1 switch forks to chain a
-    voteUpdater.putVote(UInt64.ZERO, new VoteTracker(block1b, block2a, UInt64.ONE));
-    voteUpdater.putVote(UInt64.ONE, new VoteTracker(block1b, block2a, UInt64.ONE));
+    voteUpdater.putVote(UInt64.ZERO, new VoteTracker(block1b, block2a));
+    voteUpdater.putVote(UInt64.ONE, new VoteTracker(block1b, block2a));
     applyScoreChanges();
 
     // And our head should switch
@@ -262,9 +262,9 @@ class ProtoArrayTest {
     addOptimisticBlock(2, block2a, block1a);
     addOptimisticBlock(2, block2b, block1b);
 
-    voteUpdater.putVote(UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
-    voteUpdater.putVote(UInt64.ONE, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
-    voteUpdater.putVote(UInt64.valueOf(2), new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
+    voteUpdater.putVote(UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block1b));
+    voteUpdater.putVote(UInt64.ONE, new VoteTracker(Bytes32.ZERO, block1b));
+    voteUpdater.putVote(UInt64.valueOf(2), new VoteTracker(Bytes32.ZERO, block1b));
     applyScoreChanges();
 
     assertHead(block2b);
@@ -272,8 +272,8 @@ class ProtoArrayTest {
     protoArray.markNodeInvalid(block2a, Optional.empty());
 
     // Validators 0 and 1 switch forks to chain a
-    voteUpdater.putVote(UInt64.ZERO, new VoteTracker(block1b, block2a, UInt64.ONE));
-    voteUpdater.putVote(UInt64.ONE, new VoteTracker(block1b, block2a, UInt64.ONE));
+    voteUpdater.putVote(UInt64.ZERO, new VoteTracker(block1b, block2a));
+    voteUpdater.putVote(UInt64.ONE, new VoteTracker(block1b, block2a));
     applyScoreChanges();
 
     // Votes for 2a don't count because it's invalid so we stick with chain b.
@@ -287,16 +287,16 @@ class ProtoArrayTest {
     addOptimisticBlock(2, block2a, block1a);
     addOptimisticBlock(2, block2b, block1b);
 
-    voteUpdater.putVote(UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
-    voteUpdater.putVote(UInt64.ONE, new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
-    voteUpdater.putVote(UInt64.valueOf(2), new VoteTracker(Bytes32.ZERO, block1b, UInt64.ZERO));
+    voteUpdater.putVote(UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block1b));
+    voteUpdater.putVote(UInt64.ONE, new VoteTracker(Bytes32.ZERO, block1b));
+    voteUpdater.putVote(UInt64.valueOf(2), new VoteTracker(Bytes32.ZERO, block1b));
     applyScoreChanges();
 
     assertHead(block2b);
 
     // Validators 0 and 1 switch forks to chain a
-    voteUpdater.putVote(UInt64.ZERO, new VoteTracker(block1b, block2a, UInt64.ONE));
-    voteUpdater.putVote(UInt64.ONE, new VoteTracker(block1b, block2a, UInt64.ONE));
+    voteUpdater.putVote(UInt64.ZERO, new VoteTracker(block1b, block2a));
+    voteUpdater.putVote(UInt64.ONE, new VoteTracker(block1b, block2a));
     applyScoreChanges();
 
     // We switch to chain a because it has the greater weight now
@@ -754,8 +754,7 @@ class ProtoArrayTest {
     addValidBlockWithParentIndex(2, block2b, block1a, Optional.of(emptyNodeIndex));
 
     // Vote for block2a (FULL path child)
-    voteUpdater.putVote(
-        UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block2a, UInt64.ONE, false, false));
+    voteUpdater.putVote(UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block2a, false, false));
 
     // Apply deltas with Gloas tiebreaker — currentSlot far from block slot so tiebreaker
     // defaults to payload status ordering (FULL=2 > EMPTY=1)
@@ -972,10 +971,8 @@ class ProtoArrayTest {
 
     // Vote for block2a (EMPTY path child) — gives EMPTY path more weight
     // Need two votes so the balance list covers validator 0
-    voteUpdater.putVote(
-        UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block2a, UInt64.ONE, false, false));
-    voteUpdater.putVote(
-        UInt64.ONE, new VoteTracker(Bytes32.ZERO, block2a, UInt64.ONE, false, false));
+    voteUpdater.putVote(UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block2a, false, false));
+    voteUpdater.putVote(UInt64.ONE, new VoteTracker(Bytes32.ZERO, block2a, false, false));
 
     applyScoreChanges(createGloasHeadSelectionPolicy(UInt64.valueOf(100), Optional.empty()));
 
@@ -1003,16 +1000,12 @@ class ProtoArrayTest {
     addValidBlockWithParentIndex(6, block2b, block1a, Optional.of(fullNodeIndex));
 
     // Vote for EMPTY path child (more votes) — validators 0 and 1
-    voteUpdater.putVote(
-        UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block2a, UInt64.ONE, false, false));
-    voteUpdater.putVote(
-        UInt64.ONE, new VoteTracker(Bytes32.ZERO, block2a, UInt64.ONE, false, false));
+    voteUpdater.putVote(UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block2a, false, false));
+    voteUpdater.putVote(UInt64.ONE, new VoteTracker(Bytes32.ZERO, block2a, false, false));
     // Vote for FULL path child (less votes) — validator 2
-    voteUpdater.putVote(
-        UInt64.valueOf(2), new VoteTracker(Bytes32.ZERO, block2b, UInt64.ONE, false, false));
+    voteUpdater.putVote(UInt64.valueOf(2), new VoteTracker(Bytes32.ZERO, block2b, false, false));
     // Dummy vote to ensure balance list covers all validators above
-    voteUpdater.putVote(
-        UInt64.valueOf(3), new VoteTracker(Bytes32.ZERO, block2b, UInt64.ONE, false, false));
+    voteUpdater.putVote(UInt64.valueOf(3), new VoteTracker(Bytes32.ZERO, block2b, false, false));
 
     // currentSlot = 6 = block slot + 1 → effective weight is 0 for both EMPTY and FULL
     // No proposer boost → should_extend_payload = true → FULL wins tiebreaker

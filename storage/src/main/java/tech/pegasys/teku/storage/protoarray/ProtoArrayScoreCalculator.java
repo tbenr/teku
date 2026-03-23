@@ -152,7 +152,6 @@ class ProtoArrayScoreCalculator {
           new VoteTracker(
               vote.getNextRoot(),
               vote.getNextRoot(),
-              vote.getNextEpoch(),
               false,
               vote.isNextEquivocating(),
               vote.getNextSlot(),

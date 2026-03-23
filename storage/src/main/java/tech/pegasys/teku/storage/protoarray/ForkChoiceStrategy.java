@@ -318,7 +318,6 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
           new VoteTracker(
               vote.getCurrentRoot(),
               blockRoot,
-              targetEpoch,
               false,
               false,
               slot,

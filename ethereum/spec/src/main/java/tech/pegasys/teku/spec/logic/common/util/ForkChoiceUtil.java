@@ -753,7 +753,8 @@ public class ForkChoiceUtil {
    */
   public boolean shouldUpdateVote(
       final VoteTracker vote, final UInt64 targetEpoch, final UInt64 slot) {
-    return targetEpoch.isGreaterThan(vote.getNextEpoch()) || vote.equals(VoteTracker.DEFAULT);
+    return targetEpoch.isGreaterThan(miscHelpers.computeEpochAtSlot(vote.getNextSlot()))
+        || vote.equals(VoteTracker.DEFAULT);
   }
 
   /**

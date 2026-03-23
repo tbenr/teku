@@ -27,12 +27,10 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
  */
 public class VoteTracker {
 
-  public static final VoteTracker DEFAULT =
-      new VoteTracker(Bytes32.ZERO, Bytes32.ZERO, UInt64.ZERO);
+  public static final VoteTracker DEFAULT = new VoteTracker(Bytes32.ZERO, Bytes32.ZERO);
 
   private final Bytes32 currentRoot;
   private final Bytes32 nextRoot;
-  private final UInt64 nextEpoch;
   private final boolean nextEquivocating;
   private final boolean currentEquivocating;
 
@@ -42,20 +40,18 @@ public class VoteTracker {
   private final UInt64 currentSlot;
   private final boolean currentPayloadPresent;
 
-  public VoteTracker(final Bytes32 currentRoot, final Bytes32 nextRoot, final UInt64 nextEpoch) {
-    this(currentRoot, nextRoot, nextEpoch, false, false);
+  public VoteTracker(final Bytes32 currentRoot, final Bytes32 nextRoot) {
+    this(currentRoot, nextRoot, false, false);
   }
 
   public VoteTracker(
       final Bytes32 currentRoot,
       final Bytes32 nextRoot,
-      final UInt64 nextEpoch,
       final boolean nextEquivocating,
       final boolean currentEquivocating) {
     this(
         currentRoot,
         nextRoot,
-        nextEpoch,
         nextEquivocating,
         currentEquivocating,
         UInt64.ZERO,
@@ -67,7 +63,6 @@ public class VoteTracker {
   public VoteTracker(
       final Bytes32 currentRoot,
       final Bytes32 nextRoot,
-      final UInt64 nextEpoch,
       final boolean nextEquivocating,
       final boolean currentEquivocating,
       final UInt64 nextSlot,
@@ -76,7 +71,6 @@ public class VoteTracker {
       final boolean currentPayloadPresent) {
     this.currentRoot = currentRoot;
     this.nextRoot = nextRoot;
-    this.nextEpoch = nextEpoch;
     this.nextEquivocating = nextEquivocating;
     this.currentEquivocating = currentEquivocating;
     this.nextSlot = nextSlot;
@@ -91,10 +85,6 @@ public class VoteTracker {
 
   public Bytes32 getNextRoot() {
     return nextRoot;
-  }
-
-  public UInt64 getNextEpoch() {
-    return nextEpoch;
   }
 
   public UInt64 getNextSlot() {
@@ -129,7 +119,6 @@ public class VoteTracker {
     return new VoteTracker(
         currentRoot,
         nextRoot,
-        nextEpoch,
         true,
         false,
         nextSlot,
@@ -153,7 +142,6 @@ public class VoteTracker {
         && currentPayloadPresent == that.currentPayloadPresent
         && Objects.equals(currentRoot, that.currentRoot)
         && Objects.equals(nextRoot, that.nextRoot)
-        && Objects.equals(nextEpoch, that.nextEpoch)
         && Objects.equals(nextSlot, that.nextSlot)
         && Objects.equals(currentSlot, that.currentSlot);
   }
@@ -163,7 +151,6 @@ public class VoteTracker {
     return Objects.hash(
         currentRoot,
         nextRoot,
-        nextEpoch,
         nextEquivocating,
         currentEquivocating,
         nextSlot,
@@ -177,7 +164,6 @@ public class VoteTracker {
     return MoreObjects.toStringHelper(this)
         .add("currentRoot", currentRoot)
         .add("nextRoot", nextRoot)
-        .add("nextEpoch", nextEpoch)
         .add("nextEquivocating", nextEquivocating)
         .add("currentEquivocating", currentEquivocating)
         .add("nextSlot", nextSlot)
