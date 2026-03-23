@@ -504,11 +504,16 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       final UInt64 validatorIndex,
       final boolean payloadPresent,
       final boolean blobDataAvailable) {
-    getForkChoiceModelForRoot(blockRoot)
-        .ifPresent(
-            forkChoiceModel ->
-                forkChoiceModel.onPtcVote(
-                    blockRoot, validatorIndex, payloadPresent, blobDataAvailable));
+    protoArrayLock.readLock().lock();
+    try {
+      getForkChoiceModelForRoot(blockRoot)
+          .ifPresent(
+              forkChoiceModel ->
+                  forkChoiceModel.onPtcVote(
+                      blockRoot, validatorIndex, payloadPresent, blobDataAvailable));
+    } finally {
+      protoArrayLock.readLock().unlock();
+    }
   }
 
   @Override
