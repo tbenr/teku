@@ -13,9 +13,8 @@
 
 package tech.pegasys.teku.storage.protoarray;
 
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.LinkedHashMap;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Predicate;
@@ -32,7 +31,7 @@ import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
  */
 public class BlockNodeVariantsIndex {
 
-  private final Map<Bytes32, BlockNodeVariants> variantsByRoot = new LinkedHashMap<>();
+  private final Map<Bytes32, BlockNodeVariants> variantsByRoot = new HashMap<>();
 
   static BlockNodeVariantsIndex fromProtoArray(final ProtoArray protoArray) {
     final BlockNodeVariantsIndex blockNodeVariantsIndex = new BlockNodeVariantsIndex();
@@ -104,16 +103,7 @@ public class BlockNodeVariantsIndex {
   }
 
   void removeIf(final Predicate<Bytes32> removeBlockRoot) {
-    final Collection<Bytes32> removedRoots = new ArrayList<>();
-    variantsByRoot
-        .keySet()
-        .forEach(
-            root -> {
-              if (removeBlockRoot.test(root)) {
-                removedRoots.add(root);
-              }
-            });
-    removedRoots.forEach(variantsByRoot::remove);
+    variantsByRoot.keySet().removeIf(removeBlockRoot);
   }
 
   Collection<BlockNodeVariants> variants() {
