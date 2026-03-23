@@ -115,7 +115,7 @@ public class ForkChoiceTestExecutor implements TestExecutor {
           .put("fork_choice/withholding", new ForkChoiceTestExecutor())
           .put("sync/optimistic", new ForkChoiceTestExecutor())
           .put("fork_choice/should_override_forkchoice_update", new ForkChoiceTestExecutor())
-          .put("fork_choice/get_proposer_head", new ForkChoiceTestExecutor("basic_is_parent_root"))
+          .put("fork_choice/get_proposer_head", new ForkChoiceTestExecutor())
           .put("fork_choice/deposit_with_reorg", new ForkChoiceTestExecutor())
           .put("fork_choice/base", new ForkChoiceTestExecutor())
           // Fork choice generated test types
