@@ -35,7 +35,22 @@ public class BlockNodeVariantsIndex {
 
   static BlockNodeVariantsIndex fromProtoArray(final ProtoArray protoArray) {
     final BlockNodeVariantsIndex blockNodeVariantsIndex = new BlockNodeVariantsIndex();
-    protoArray.getNodes().forEach(blockNodeVariantsIndex::registerNodeVariant);
+    protoArray
+        .getNodes()
+        .forEach(
+            node -> {
+              switch (node.getPayloadStatus()) {
+                case PAYLOAD_STATUS_PENDING ->
+                    blockNodeVariantsIndex.putBaseNode(
+                        node.getBlockRoot(), node.getBlockSlot(), node.getForkChoiceNode());
+                case PAYLOAD_STATUS_EMPTY ->
+                    blockNodeVariantsIndex.attachEmptyNode(
+                        node.getBlockRoot(), node.getForkChoiceNode());
+                case PAYLOAD_STATUS_FULL ->
+                    blockNodeVariantsIndex.attachFullNode(
+                        node.getBlockRoot(), node.getForkChoiceNode());
+              }
+            });
     return blockNodeVariantsIndex;
   }
 
@@ -66,15 +81,6 @@ public class BlockNodeVariantsIndex {
   Optional<ForkChoiceNode> getNode(
       final Bytes32 blockRoot, final ForkChoicePayloadStatus payloadStatus) {
     return getVariants(blockRoot).flatMap(variants -> variants.getNode(payloadStatus));
-  }
-
-  void registerNodeVariant(final ProtoNode node) {
-    switch (node.getPayloadStatus()) {
-      case PAYLOAD_STATUS_PENDING ->
-          putBaseNode(node.getBlockRoot(), node.getBlockSlot(), node.getForkChoiceNode());
-      case PAYLOAD_STATUS_EMPTY -> attachEmptyNode(node.getBlockRoot(), node.getForkChoiceNode());
-      case PAYLOAD_STATUS_FULL -> attachFullNode(node.getBlockRoot(), node.getForkChoiceNode());
-    }
   }
 
   void putBaseNode(
