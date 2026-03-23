@@ -454,7 +454,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
    * @param justifiedState for effective balances and attestation score
    * @return true if the head is weak
    */
-  public boolean isHeadWeak(
+  private boolean isHeadWeak(
       final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
       final Bytes32 root,
       final UInt64 reorgThreshold,
@@ -499,16 +499,9 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
           maybeHeadState.get(),
           maybeJustifiedState.get());
     }
-    return isHeadWeak(store.getForkChoiceStrategy(), root, reorgThreshold);
-  }
-
-  @Override
-  public boolean isHeadWeak(
-      final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
-      final Bytes32 root,
-      final UInt64 reorgThreshold) {
     // Fallback: use protoarray weight (correct for PENDING, but missing equivocating weight)
-    final UInt64 attestationScore = forkChoiceStrategy.getWeight(root).orElse(UInt64.ZERO);
+    final UInt64 attestationScore =
+        store.getForkChoiceStrategy().getWeight(root).orElse(UInt64.ZERO);
     return attestationScore.isLessThan(reorgThreshold);
   }
 
@@ -520,7 +513,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
    * <p>The Java signature carries `parentPayloadStatus` explicitly because the protoarray stores
    * the EMPTY/FULL/PENDING split as node identity rather than recomputing it inside the helper.
    */
-  public boolean isParentStrong(
+  private boolean isParentStrong(
       final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
       final Bytes32 parentRoot,
       final UInt64 parentThreshold,
@@ -555,15 +548,9 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
           store.getVoteAccessor(),
           maybeJustifiedState.get());
     }
-    return isParentStrong(store.getForkChoiceStrategy(), parentRoot, parentThreshold);
-  }
-
-  @Override
-  public boolean isParentStrong(
-      final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
-      final Bytes32 parentRoot,
-      final UInt64 parentThreshold) {
-    final UInt64 attestationScore = forkChoiceStrategy.getWeight(parentRoot).orElse(UInt64.ZERO);
+    // fallback with no equivocation
+    final UInt64 attestationScore =
+        store.getForkChoiceStrategy().getWeight(parentRoot).orElse(UInt64.ZERO);
     return attestationScore.isGreaterThan(parentThreshold);
   }
 

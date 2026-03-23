@@ -766,14 +766,8 @@ public class ForkChoiceUtil {
    */
   public boolean isHeadWeak(
       final ReadOnlyStore store, final Bytes32 root, final UInt64 reorgThreshold) {
-    return isHeadWeak(store.getForkChoiceStrategy(), root, reorgThreshold);
-  }
-
-  public boolean isHeadWeak(
-      final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
-      final Bytes32 root,
-      final UInt64 reorgThreshold) {
-    return forkChoiceStrategy
+    return store
+        .getForkChoiceStrategy()
         .getBlockData(root)
         .map(blockData -> blockData.getWeight().isLessThan(reorgThreshold))
         .orElse(false);
@@ -791,14 +785,8 @@ public class ForkChoiceUtil {
    */
   public boolean isParentStrong(
       final ReadOnlyStore store, final Bytes32 parentRoot, final UInt64 parentThreshold) {
-    return isParentStrong(store.getForkChoiceStrategy(), parentRoot, parentThreshold);
-  }
-
-  public boolean isParentStrong(
-      final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
-      final Bytes32 parentRoot,
-      final UInt64 parentThreshold) {
-    return forkChoiceStrategy
+    return store
+        .getForkChoiceStrategy()
         .getBlockData(parentRoot)
         .map(blockData -> blockData.getWeight().isGreaterThan(parentThreshold))
         .orElse(true);
