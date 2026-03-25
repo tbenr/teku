@@ -162,8 +162,14 @@ public class StoredBlockMetadata {
                     .getOptionalSignedExecutionPayloadBid()
                     .map(SignedExecutionPayloadBid::getMessage))
         .map(
-            bid ->
-                new GloasForkChoiceRebuildData(
-                    bid.getParentBlockHash(), bid.getBlockHash(), Optional.empty()));
+            bid -> {
+              // this is to
+              final Optional<UInt64> payloadBlockNumber =
+                  bid.getParentBlockHash().isZero() && bid.getBlockHash().isZero()
+                      ? Optional.of(UInt64.ZERO)
+                      : Optional.empty();
+              return new GloasForkChoiceRebuildData(
+                  bid.getParentBlockHash(), bid.getBlockHash(), payloadBlockNumber);
+            });
   }
 }

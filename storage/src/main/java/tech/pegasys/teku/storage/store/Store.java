@@ -265,7 +265,7 @@ class Store extends CacheableStore {
             config.getCheckpointStateCacheSize());
     final CachingTaskQueue<Bytes32, StateAndBlockSummary> blockStateTaskQueue =
         CachingTaskQueue.create(
-            asyncRunner, metricsSystem, "memory_states", config.getStateCacheSize());
+            asyncRunner, metricsSystem, "memory_states", 265); // config.getStateCacheSize());
     final Optional<Map<Bytes32, StateAndBlockSummary>> maybeEpochStates =
         config.getEpochStateCacheSize() > 0
             ? Optional.of(LimitedMap.createSynchronizedLRU(config.getEpochStateCacheSize()))
