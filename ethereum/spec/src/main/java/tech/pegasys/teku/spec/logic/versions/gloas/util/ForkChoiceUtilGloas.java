@@ -20,7 +20,6 @@ import static tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayload
 
 import it.unimi.dsi.fastutil.ints.IntList;
 import java.util.Optional;
-import java.util.function.Predicate;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
@@ -237,16 +236,15 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
    *
    * <p>Spec reference: should_apply_proposer_boost
    *
-   * <p>Implementation note: the proposer-equivocation branch is intentionally delegated to the
-   * caller-provided predicate instead of reproducing the full Python bookkeeping inline here.
+   * <p>Implementation note: the proposer-equivocation branch is intentionally not implemented yet.
+   * The current code records both block timeliness flags, but it does not yet consume the PTC
+   * timeliness bit here to suppress proposer boost on same-proposer equivocations.
    *
    * @param proposerBoostRoot the current proposer boost root, empty if none
    * @param forkChoiceStrategy the fork choice strategy for looking up block data
    * @param reorgThreshold the threshold for the head weakness check
    * @param voteAccessor read-only access to validator votes for attestation score computation
    * @param justifiedState the justified checkpoint state for balance lookups
-   * @param isProposerEquivocation predicate that checks if the parent block has a PTC-timely
-   *     equivocating block at the same slot from the same proposer
    * @return true if proposer boost should be applied
    */
   // should_apply_proposer_boost
@@ -256,8 +254,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
       final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
       final UInt64 reorgThreshold,
       final VoteAccessor voteAccessor,
-      final BeaconState justifiedState,
-      final Predicate<Bytes32> isProposerEquivocation) {
+      final BeaconState justifiedState) {
     if (proposerBoostRoot.isEmpty()) {
       return false;
     }
@@ -285,8 +282,11 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
       return true;
     }
     // Parent is weak and from the previous slot.
-    // Suppress proposer boost if there are PTC-timely equivocating blocks from the same proposer.
-    return !isProposerEquivocation.test(parentRoot);
+    // TODO: implement the Gloas equivocation suppression branch from should_apply_proposer_boost
+    // using recorded PTC timeliness instead of routing a predicate through ForkChoice.
+    // The complication is that we need to have a good interaction with gossip datastructures to
+    // detect equivocations. Spec should probably be updated.
+    return true;
   }
 
   /**

@@ -251,12 +251,7 @@ class ForkChoiceUtilGloasTest {
     final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.empty(),
-                strategy,
-                UInt64.valueOf(100),
-                mockVoteAccessor,
-                justifiedState,
-                root -> false))
+                Optional.empty(), strategy, UInt64.valueOf(100), mockVoteAccessor, justifiedState))
         .isFalse();
   }
 
@@ -275,8 +270,7 @@ class ForkChoiceUtilGloasTest {
                 strategy,
                 UInt64.valueOf(100),
                 mockVoteAccessor,
-                justifiedState,
-                root -> false))
+                justifiedState))
         .isTrue();
   }
 
@@ -293,12 +287,7 @@ class ForkChoiceUtilGloasTest {
     // So we set reorgThreshold to 0 → not weak
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.of(boostRoot),
-                strategy,
-                UInt64.ZERO,
-                mockVoteAccessor,
-                justifiedState,
-                root -> false))
+                Optional.of(boostRoot), strategy, UInt64.ZERO, mockVoteAccessor, justifiedState))
         .isTrue();
   }
 
@@ -319,31 +308,28 @@ class ForkChoiceUtilGloasTest {
                 strategy,
                 UInt64.valueOf(100),
                 mockVoteAccessor,
-                justifiedState,
-                root -> false))
+                justifiedState))
         .isTrue();
   }
 
   @Test
-  void shouldApplyProposerBoost_returnsFalse_whenParentIsWeakAndEquivocation() {
+  void shouldApplyProposerBoost_returnsTrue_whenParentIsWeakAndEquivocationBranchIsDeferred() {
     final Bytes32 boostRoot = dataStructureUtil.randomBytes32();
     final Bytes32 parentRoot = dataStructureUtil.randomBytes32();
     final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
     when(strategy.blockParentRoot(boostRoot)).thenReturn(Optional.of(parentRoot));
     when(strategy.blockSlot(boostRoot)).thenReturn(Optional.of(gloasSlot.plus(1)));
     when(strategy.blockSlot(parentRoot)).thenReturn(Optional.of(gloasSlot)); // consecutive
-    // Parent attestation score = 0 (all votes DEFAULT) < reorgThreshold → parent IS weak
-
-    // Equivocation detected → boost suppressed
+    // Parent attestation score = 0 (all votes DEFAULT) < reorgThreshold → parent IS weak.
+    // The equivocation suppression branch is intentionally not implemented yet.
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
                 Optional.of(boostRoot),
                 strategy,
                 UInt64.valueOf(100),
                 mockVoteAccessor,
-                justifiedState,
-                root -> true))
-        .isFalse();
+                justifiedState))
+        .isTrue();
   }
 
   // Helper methods to create blocks with specific properties

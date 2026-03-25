@@ -18,7 +18,6 @@ import java.util.List;
 import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.TreeMap;
-import java.util.function.Predicate;
 import javax.annotation.CheckReturnValue;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
@@ -813,8 +812,7 @@ public class ForkChoiceUtil {
       final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
       final UInt64 reorgThreshold,
       final VoteAccessor voteAccessor,
-      final BeaconState justifiedState,
-      final Predicate<Bytes32> isProposerEquivocation) {
+      final BeaconState justifiedState) {
     return true;
   }
 

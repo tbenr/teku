@@ -421,8 +421,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
           forkChoiceStrategy,
           recentChainData.getStore().getReorgThreshold(),
           transaction,
-          justifiedState,
-          this::isProposerEquivocation)) {
+          justifiedState)) {
         effectiveProposerBoostRoot = Optional.empty();
       }
     }
@@ -859,17 +858,6 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
               }
             })
         .orElse(true);
-  }
-
-  /**
-   * Checks if there is a proposer equivocation at the given parent's slot. A proposer equivocation
-   * exists if there is another PTC-timely block at the same slot from the same proposer.
-   *
-   * <p>Spec reference: equivocation check in should_apply_proposer_boost
-   */
-  private boolean isProposerEquivocation(final Bytes32 parentRoot) {
-    // NOOP. Requires interaction with gossip structures to detect equivocations
-    return false;
   }
 
   private Optional<List<BlobSidecar>> extractBlobSidecarsFromValidationResults(
