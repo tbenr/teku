@@ -406,7 +406,6 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
    * Gloas `is_head_weak(...)` override.
    *
    * @param headSlot the slot of the head block
-   * @param forkChoiceStrategy for block data access
    * @param voteAccessor read-only access to validator votes
    * @param headState the head block's state (for committee computation)
    * @param justifiedState for effective balances
@@ -414,7 +413,6 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
    */
   UInt64 computeEquivocatingCommitteeWeight(
       final UInt64 headSlot,
-      final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
       final VoteAccessor voteAccessor,
       final BeaconState headState,
       final BeaconState justifiedState) {
@@ -444,8 +442,8 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
    * <p>Spec reference: is_head_weak (Gloas override)
    *
    * <p>Implementation note: the equivocating-committee term is computed by {@link
-   * #computeEquivocatingCommitteeWeight(UInt64, ReadOnlyForkChoiceStrategy, VoteAccessor,
-   * BeaconState, BeaconState)} so the spec function is split across two Java helpers.
+   * #computeEquivocatingCommitteeWeight(UInt64, VoteAccessor, BeaconState, BeaconState)} so the
+   * spec function is split across two Java helpers.
    *
    * @param forkChoiceStrategy the fork choice strategy
    * @param root the head block root
@@ -472,7 +470,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
     if (maybeHeadSlot.isPresent()) {
       final UInt64 equivocatingWeight =
           computeEquivocatingCommitteeWeight(
-              maybeHeadSlot.get(), forkChoiceStrategy, voteAccessor, headState, justifiedState);
+              maybeHeadSlot.get(), voteAccessor, headState, justifiedState);
       headWeight = headWeight.plus(equivocatingWeight);
     }
 
