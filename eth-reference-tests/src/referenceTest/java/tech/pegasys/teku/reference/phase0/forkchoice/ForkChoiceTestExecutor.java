@@ -19,6 +19,7 @@ import static tech.pegasys.teku.infrastructure.async.SafeFutureAssert.safeJoin;
 import static tech.pegasys.teku.infrastructure.time.TimeUtilities.secondsToMillis;
 import static tech.pegasys.teku.reference.BlsSetting.IGNORED;
 import static tech.pegasys.teku.reference.TestDataUtils.loadYaml;
+import static tech.pegasys.teku.spec.datastructures.util.AttestationProcessingResult.Status.DEFER_FORK_CHOICE_PROCESSING;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -355,6 +356,9 @@ public class ForkChoiceTestExecutor implements TestExecutor {
         forkChoice.onAttestation(ValidatableAttestation.from(spec, attestation));
     assertThat(result).isCompleted();
     AttestationProcessingResult processingResult = safeJoin(result);
+    if (!valid && processingResult.getStatus().equals(DEFER_FORK_CHOICE_PROCESSING)) {
+      LOG.info("Invalid attestation for but it is deferred!");
+    }
     assertThat(processingResult.isSuccessful())
         .withFailMessage(processingResult.getInvalidReason())
         .isEqualTo(valid);

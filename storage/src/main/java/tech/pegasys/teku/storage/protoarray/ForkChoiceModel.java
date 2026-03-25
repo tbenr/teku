@@ -50,7 +50,7 @@ interface ForkChoiceModel {
       UInt64 executionBlockNumber,
       Bytes32 executionBlockHash);
 
-  void rebuildTrackedBlock(
+  void rebuildBlockNodesFromMetadata(
       ProtoArray protoArray,
       BlockNodeVariantsIndex blockNodeIndex,
       StoredBlockMetadata block,

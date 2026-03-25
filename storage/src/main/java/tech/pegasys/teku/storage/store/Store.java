@@ -396,7 +396,7 @@ class Store extends CacheableStore {
         throw new IllegalStateException(
             "Incompatible database version detected. The data in this database is too old to be read by Teku. A re-sync will be required.");
       }
-      forkChoiceModelFactory.rebuildTrackedBlock(
+      forkChoiceModelFactory.rebuildBlockNodesFromMetadata(
           protoArray, blockNodeIndex, block, spec.isBlockProcessorOptimistic(block.getBlockSlot()));
     }
 

@@ -144,7 +144,7 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
   }
 
   @Override
-  public void rebuildTrackedBlock(
+  public void rebuildBlockNodesFromMetadata(
       final ProtoArray protoArray,
       final BlockNodeVariantsIndex blockNodeIndex,
       final StoredBlockMetadata block,

@@ -42,13 +42,13 @@ public class ForkChoiceModelFactory {
         : defaultModel;
   }
 
-  public void rebuildTrackedBlock(
+  public void rebuildBlockNodesFromMetadata(
       final ProtoArray protoArray,
       final BlockNodeVariantsIndex blockNodeIndex,
       final StoredBlockMetadata block,
       final boolean optimisticallyProcessed) {
     forSlot(block.getBlockSlot())
-        .rebuildTrackedBlock(protoArray, blockNodeIndex, block, optimisticallyProcessed);
+        .rebuildBlockNodesFromMetadata(protoArray, blockNodeIndex, block, optimisticallyProcessed);
   }
 
   void onPrunedBlocks(final BlockNodeVariantsIndex blockNodeIndex) {
