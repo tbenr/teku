@@ -110,7 +110,7 @@ public class BlockManager extends Service
         blockValidator.initiateBroadcastValidation(block, broadcastValidationLevel);
 
     final SafeFuture<BlockImportResult> importResult =
-        doImportBlock(block, Optional.empty(), blockBroadcastValidator, origin, Optional.empty());
+        doImportBlock(block, Optional.empty(), blockBroadcastValidator, origin);
 
     // we want to intercept any early import exceptions happening before the consensus validation is
     // completed
@@ -150,14 +150,16 @@ public class BlockManager extends Service
     validationResult.thenAccept(
         result -> {
           switch (result.code()) {
-            case ACCEPT, SAVE_FOR_FUTURE ->
-                doImportBlock(
-                        block,
-                        blockImportPerformance,
-                        BlockBroadcastValidator.NOOP,
-                        Optional.of(RemoteOrigin.GOSSIP),
-                        arrivalTimestamp)
-                    .finish(err -> LOG.error("Failed to process received block.", err));
+            case ACCEPT, SAVE_FOR_FUTURE -> {
+              arrivalTimestamp.ifPresent(
+                  timestamp -> recentChainData.setBlockTimelinessFromArrivalTime(block, timestamp));
+              doImportBlock(
+                      block,
+                      blockImportPerformance,
+                      BlockBroadcastValidator.NOOP,
+                      Optional.of(RemoteOrigin.GOSSIP))
+                  .finish(err -> LOG.error("Failed to process received block.", err));
+            }
 
             // block failed gossip validation, let's drop it from the pool, so it won't be served
             // via RPC anymore. This should not be done on ignore result (i.e. duplicate blocks
@@ -202,12 +204,7 @@ public class BlockManager extends Service
 
   private void importBlockIgnoringResult(final SignedBeaconBlock block) {
     // we don't care about origin here because flow calls this function for retries only
-    doImportBlock(
-            block,
-            Optional.empty(),
-            BlockBroadcastValidator.NOOP,
-            Optional.empty(),
-            Optional.empty())
+    doImportBlock(block, Optional.empty(), BlockBroadcastValidator.NOOP, Optional.empty())
         .finishStackTrace();
   }
 
@@ -215,18 +212,12 @@ public class BlockManager extends Service
       final SignedBeaconBlock block,
       final Optional<BlockImportPerformance> blockImportPerformance,
       final BlockBroadcastValidator blockBroadcastValidator,
-      final Optional<RemoteOrigin> origin,
-      final Optional<UInt64> arrivalTimestamp) {
+      final Optional<RemoteOrigin> origin) {
     return handleInvalidBlock(block)
         .or(() -> handleKnownBlock(block))
         .orElseGet(
             () ->
-                handleBlockImport(
-                        block,
-                        blockImportPerformance,
-                        blockBroadcastValidator,
-                        origin,
-                        arrivalTimestamp)
+                handleBlockImport(block, blockImportPerformance, blockBroadcastValidator, origin)
                     .thenPeek(
                         result -> lateBlockImportCheck(blockImportPerformance, block, result)));
   }
@@ -268,13 +259,12 @@ public class BlockManager extends Service
       final SignedBeaconBlock block,
       final Optional<BlockImportPerformance> blockImportPerformance,
       final BlockBroadcastValidator blockBroadcastValidator,
-      final Optional<RemoteOrigin> origin,
-      final Optional<UInt64> arrivalTimestamp) {
+      final Optional<RemoteOrigin> origin) {
     blockEventsListener.onNewBlock(block, origin);
     preImportBlockSubscribers.deliver(l -> l.onNewBlock(block, origin));
 
     return blockImporter
-        .importBlock(block, blockImportPerformance, blockBroadcastValidator, arrivalTimestamp)
+        .importBlock(block, blockImportPerformance, blockBroadcastValidator)
         .thenPeek(
             result -> {
               if (result.isSuccessful()) {

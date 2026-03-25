@@ -58,6 +58,15 @@ class BlockTimelinessTracker {
     blockTimeliness.put(block.getRoot(), timeliness);
   }
 
+  public void setBlockTimelinessIfAbsentFromArrivalTime(
+      final SignedBeaconBlock block, final UInt64 arrivalTimeMillis) {
+    if (blockTimeliness.containsKey(block.getRoot())) {
+      return;
+    }
+    blockTimeliness.put(
+        block.getRoot(), computeBlockTimelinessFromArrivalTime(block, arrivalTimeMillis));
+  }
+
   public boolean[] computeBlockTimelinessFromArrivalTime(
       final SignedBeaconBlock block, final UInt64 arrivalTimeMillis) {
     final UInt64 genesisTimeMillis = genesisTimeMillisSupplier.get();

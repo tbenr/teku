@@ -218,17 +218,6 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
       final Optional<BlockImportPerformance> blockImportPerformance,
       final BlockBroadcastValidator blockBroadcastValidator,
       final ExecutionLayerChannel executionLayer) {
-    return onBlock(
-        block, blockImportPerformance, blockBroadcastValidator, executionLayer, Optional.empty());
-  }
-
-  /** Import a block to the store using the supplied arrival time for timeliness checks. */
-  public SafeFuture<BlockImportResult> onBlock(
-      final SignedBeaconBlock block,
-      final Optional<BlockImportPerformance> blockImportPerformance,
-      final BlockBroadcastValidator blockBroadcastValidator,
-      final ExecutionLayerChannel executionLayer,
-      final Optional<UInt64> arrivalTime) {
     final ForkChoiceUtil forkChoiceUtil = spec.atSlot(block.getSlot()).getForkChoiceUtil();
     return forkChoiceUtil
         .retrievePreStateRequiredOnBlock(recentChainData.getStore(), block)
@@ -241,8 +230,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
                     blockImportPerformance,
                     blockBroadcastValidator,
                     executionLayer,
-                    forkChoiceUtil,
-                    arrivalTime));
+                    forkChoiceUtil));
   }
 
   /** Import an execution payload to the store. */
@@ -483,8 +471,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
       final Optional<BlockImportPerformance> blockImportPerformance,
       final BlockBroadcastValidator blockBroadcastValidator,
       final ExecutionLayerChannel executionLayer,
-      final ForkChoiceUtil forkChoiceUtil,
-      final Optional<UInt64> arrivalTime) {
+      final ForkChoiceUtil forkChoiceUtil) {
     if (blockSlotState.isEmpty()) {
       return SafeFuture.completedFuture(BlockImportResult.FAILED_UNKNOWN_PARENT);
     }
@@ -572,8 +559,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
                           indexedAttestationCache,
                           postState,
                           payloadResult,
-                          dataAndValidationResult,
-                          arrivalTime),
+                          dataAndValidationResult),
                   forkChoiceExecutor);
             });
   }
@@ -649,8 +635,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
       final CapturingIndexedAttestationCache indexedAttestationCache,
       final BeaconState postState,
       final PayloadValidationResult payloadValidationResult,
-      final DataAndValidationResult<?> dataAndValidationResult,
-      final Optional<UInt64> arrivalTime) {
+      final DataAndValidationResult<?> dataAndValidationResult) {
     blockImportPerformance.ifPresent(BlockImportPerformance::beginImporting);
     final PayloadStatus payloadResult = payloadValidationResult.getStatus();
     if (payloadResult.hasInvalidStatus()) {
@@ -724,8 +709,12 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
         earliestBlobSidecarsSlot);
 
     final boolean[] blockTimeliness =
-        recentChainData.computeBlockTimelinessFromArrivalTime(
-            block, arrivalTime.orElseGet(() -> recentChainData.getStore().getTimeInMillis()));
+        recentChainData
+            .getBlockTimeliness(block.getRoot())
+            .orElseGet(
+                () ->
+                    recentChainData.computeBlockTimelinessFromArrivalTime(
+                        block, recentChainData.getStore().getTimeInMillis()));
 
     final boolean shouldUpdateProposerBoostRoot =
         shouldUpdateProposerBoostRoot(block, transaction, blockTimeliness);
@@ -736,7 +725,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     blockImportPerformance.ifPresent(BlockImportPerformance::transactionReady);
     // Note: not using thenRun here because we want to ensure each step is on the event thread
     transaction.commit().join();
-    recentChainData.setBlockTimeliness(block, blockTimeliness);
+    recentChainData.setBlockTimelinessIfEmpty(block);
     blockImportPerformance.ifPresent(BlockImportPerformance::transactionCommitted);
     forkChoiceStrategy.onExecutionPayloadResult(block.getRoot(), payloadResult, true);
 

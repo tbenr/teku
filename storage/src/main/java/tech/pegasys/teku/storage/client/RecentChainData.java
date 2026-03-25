@@ -824,7 +824,8 @@ public abstract class RecentChainData
   }
 
   public void setBlockTimelinessIfEmpty(final SignedBeaconBlock block) {
-    blockTimelinessTracker.setBlockTimelinessFromArrivalTime(block, store.getTimeInMillis());
+    blockTimelinessTracker.setBlockTimelinessIfAbsentFromArrivalTime(
+        block, store.getTimeInMillis());
   }
 
   @Override

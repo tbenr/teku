@@ -356,17 +356,14 @@ public class BlockManagerTest {
         localChain.chainBuilder().generateBlockAtSlot(nextNextSlot).getBlock();
 
     final SafeFuture<BlockImportResult> blockImportResult = new SafeFuture<>();
-    when(blockImporter.importBlock(
-            eq(nextNextBlock), eq(Optional.empty()), any(), eq(Optional.empty())))
+    when(blockImporter.importBlock(eq(nextNextBlock), eq(Optional.empty()), any()))
         .thenReturn(blockImportResult)
         .thenReturn(new SafeFuture<>());
 
     incrementSlot();
     incrementSlot();
     assertThatBlockImport(nextNextBlock).isNotCompleted();
-    ignoreFuture(
-        verify(blockImporter)
-            .importBlock(eq(nextNextBlock), eq(Optional.empty()), any(), eq(Optional.empty())));
+    ignoreFuture(verify(blockImporter).importBlock(eq(nextNextBlock), eq(Optional.empty()), any()));
 
     // Before nextNextBlock imports, it's parent becomes available
     when(localRecentChainData.containsBlock(nextNextBlock.getParentRoot())).thenReturn(true);
@@ -375,7 +372,7 @@ public class BlockManagerTest {
     blockImportResult.complete(BlockImportResult.FAILED_UNKNOWN_PARENT);
     ignoreFuture(
         verify(blockImporter, times(2))
-            .importBlock(eq(nextNextBlock), eq(Optional.empty()), any(), eq(Optional.empty())));
+            .importBlock(eq(nextNextBlock), eq(Optional.empty()), any()));
 
     assertThat(pendingBlocks.contains(nextNextBlock)).isFalse();
   }
@@ -835,7 +832,7 @@ public class BlockManagerTest {
   }
 
   @Test
-  void validateAndImportBlock_shouldRecordTimelinessOnlyAfterSuccessfulImport() {
+  void validateAndImportBlock_shouldRecordTimelinessAfterGossipValidationForDeferredImport() {
     final SignedBeaconBlock parentBlock =
         localChain.chainBuilder().generateBlockAtSlot(incrementSlot()).getBlock();
     final SignedBeaconBlock childBlock =
@@ -847,13 +844,15 @@ public class BlockManagerTest {
     final Optional<UInt64> arrivalTime = Optional.of(timeProvider.getTimeInMillis());
     assertThat(blockManager.validateAndImportBlock(childBlock, arrivalTime))
         .isCompletedWithValueMatching(InternalValidationResult::isAccept);
-    assertThat(localRecentChainData.getBlockTimeliness(childBlock.getRoot())).isEmpty();
+    assertThat(localRecentChainData.getBlockTimeliness(childBlock.getRoot())).isPresent();
+    final boolean wasLateAtFirstReceipt = localRecentChainData.isBlockLate(childBlock.getRoot());
 
     timeProvider.advanceTimeByMillis(5_000);
     assertImportBlockSuccessfully(parentBlock);
 
     assertThat(localRecentChainData.getBlockTimeliness(childBlock.getRoot())).isPresent();
-    assertThat(localRecentChainData.isBlockLate(childBlock.getRoot())).isFalse();
+    assertThat(localRecentChainData.isBlockLate(childBlock.getRoot()))
+        .isEqualTo(wasLateAtFirstReceipt);
   }
 
   @Test

@@ -86,6 +86,19 @@ class BlockTimelinessTrackerTest {
   }
 
   @Test
+  void shouldNotOverwriteExistingTimelinessWhenSettingIfAbsent() {
+    tracker.setBlockTimelinessFromArrivalTime(
+        signedBlockAndState.getBlock(), computeTime(slot, 2100));
+
+    tracker.setBlockTimelinessIfAbsentFromArrivalTime(
+        signedBlockAndState.getBlock(), computeTime(slot, 500));
+
+    assertThat(tracker.getBlockTimeliness(signedBlockAndState.getRoot()))
+        .isPresent()
+        .hasValueSatisfying(timeliness -> assertThat(timeliness[0]).isFalse());
+  }
+
+  @Test
   void shouldReturnEmptyForUnknownBlock() {
     assertThat(tracker.getBlockTimeliness(signedBlockAndState.getRoot())).isEmpty();
     assertThat(tracker.isBlockLate(signedBlockAndState.getRoot())).isFalse();
