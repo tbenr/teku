@@ -23,6 +23,7 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil;
+import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil.BlockTimeliness;
 
 /** Runtime storage for record_block_timeliness. */
 class BlockTimelinessTracker {
@@ -30,12 +31,12 @@ class BlockTimelinessTracker {
 
   private final Spec spec;
   private final Supplier<UInt64> genesisTimeMillisSupplier;
-  private final Map<Bytes32, boolean[]> blockTimeliness;
+  private final Map<Bytes32, BlockTimeliness> blockTimeliness;
 
   BlockTimelinessTracker(
       final Spec spec,
       final Supplier<UInt64> genesisTimeMillisSupplier,
-      final Map<Bytes32, boolean[]> blockTimeliness) {
+      final Map<Bytes32, BlockTimeliness> blockTimeliness) {
     this.spec = spec;
     this.genesisTimeMillisSupplier = genesisTimeMillisSupplier;
     this.blockTimeliness = blockTimeliness;
@@ -43,16 +44,16 @@ class BlockTimelinessTracker {
 
   public void setBlockTimelinessFromArrivalTime(
       final SignedBeaconBlock block, final UInt64 arrivalTimeMillis) {
-    final boolean[] existing = blockTimeliness.get(block.getRoot());
-    if (existing != null && existing[ForkChoiceUtil.ATTESTATION_TIMELINESS_INDEX]) {
+    final BlockTimeliness existing = blockTimeliness.get(block.getRoot());
+    if (existing != null && existing.isTimelyAttestation()) {
       return;
     }
     setBlockTimeliness(block, computeBlockTimelinessFromArrivalTime(block, arrivalTimeMillis));
   }
 
-  public void setBlockTimeliness(final SignedBeaconBlock block, final boolean[] timeliness) {
-    final boolean[] existing = blockTimeliness.get(block.getRoot());
-    if (existing != null && existing[ForkChoiceUtil.ATTESTATION_TIMELINESS_INDEX]) {
+  public void setBlockTimeliness(final SignedBeaconBlock block, final BlockTimeliness timeliness) {
+    final BlockTimeliness existing = blockTimeliness.get(block.getRoot());
+    if (existing != null && existing.isTimelyAttestation()) {
       return;
     }
     blockTimeliness.put(block.getRoot(), timeliness);
@@ -67,7 +68,7 @@ class BlockTimelinessTracker {
         block.getRoot(), computeBlockTimelinessFromArrivalTime(block, arrivalTimeMillis));
   }
 
-  public boolean[] computeBlockTimelinessFromArrivalTime(
+  public BlockTimeliness computeBlockTimelinessFromArrivalTime(
       final SignedBeaconBlock block, final UInt64 arrivalTimeMillis) {
     final UInt64 genesisTimeMillis = genesisTimeMillisSupplier.get();
     final UInt64 computedSlot =
@@ -79,7 +80,7 @@ class BlockTimelinessTracker {
           root,
           block.getSlot(),
           computedSlot);
-      return new boolean[] {false};
+      return new BlockTimeliness(false, false);
     }
     final UInt64 slotStartTimeMillis =
         spec.computeTimeMillisAtSlot(computedSlot, genesisTimeMillis);
@@ -90,7 +91,7 @@ class BlockTimelinessTracker {
         block.getMessage().getSlot(), computedSlot, millisIntoSlot);
   }
 
-  public Optional<boolean[]> getBlockTimeliness(final Bytes32 root) {
+  public Optional<BlockTimeliness> getBlockTimeliness(final Bytes32 root) {
     return Optional.ofNullable(blockTimeliness.get(root));
   }
 

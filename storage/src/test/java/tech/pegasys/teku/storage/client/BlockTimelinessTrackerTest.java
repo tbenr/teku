@@ -48,7 +48,7 @@ class BlockTimelinessTrackerTest {
 
     assertThat(tracker.getBlockTimeliness(signedBlockAndState.getRoot()))
         .isPresent()
-        .hasValueSatisfying(timeliness -> assertThat(timeliness[0]).isTrue());
+        .hasValueSatisfying(timeliness -> assertThat(timeliness.isTimelyAttestation()).isTrue());
     assertThat(tracker.isBlockLate(signedBlockAndState.getRoot())).isFalse();
   }
 
@@ -61,7 +61,7 @@ class BlockTimelinessTrackerTest {
 
     assertThat(tracker.getBlockTimeliness(signedBlockAndState.getRoot()))
         .isPresent()
-        .hasValueSatisfying(timeliness -> assertThat(timeliness[0]).isTrue());
+        .hasValueSatisfying(timeliness -> assertThat(timeliness.isTimelyAttestation()).isTrue());
   }
 
   @Test
@@ -71,7 +71,7 @@ class BlockTimelinessTrackerTest {
 
     assertThat(tracker.getBlockTimeliness(signedBlockAndState.getRoot()))
         .isPresent()
-        .hasValueSatisfying(timeliness -> assertThat(timeliness[0]).isFalse());
+        .hasValueSatisfying(timeliness -> assertThat(timeliness.isTimelyAttestation()).isFalse());
     assertThat(tracker.isBlockLate(signedBlockAndState.getRoot())).isTrue();
   }
 
@@ -82,7 +82,7 @@ class BlockTimelinessTrackerTest {
 
     assertThat(tracker.getBlockTimeliness(signedBlockAndState.getRoot()))
         .isPresent()
-        .hasValueSatisfying(timeliness -> assertThat(timeliness[0]).isFalse());
+        .hasValueSatisfying(timeliness -> assertThat(timeliness.isTimelyAttestation()).isFalse());
   }
 
   @Test
@@ -95,7 +95,7 @@ class BlockTimelinessTrackerTest {
 
     assertThat(tracker.getBlockTimeliness(signedBlockAndState.getRoot()))
         .isPresent()
-        .hasValueSatisfying(timeliness -> assertThat(timeliness[0]).isFalse());
+        .hasValueSatisfying(timeliness -> assertThat(timeliness.isTimelyAttestation()).isFalse());
   }
 
   @Test

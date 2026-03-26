@@ -75,6 +75,7 @@ import tech.pegasys.teku.spec.logic.common.statetransition.results.BlockImportRe
 import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult;
 import tech.pegasys.teku.spec.logic.common.util.AsyncBLSSignatureVerifier;
 import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil;
+import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil.BlockTimeliness;
 import tech.pegasys.teku.statetransition.attestation.DeferredAttestations;
 import tech.pegasys.teku.statetransition.block.BlockImportPerformance;
 import tech.pegasys.teku.statetransition.util.DebugDataDumper;
@@ -707,7 +708,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
         blobSidecars,
         earliestBlobSidecarsSlot);
 
-    final boolean[] blockTimeliness =
+    final BlockTimeliness blockTimeliness =
         recentChainData
             .getBlockTimeliness(block.getRoot())
             .orElseGet(
@@ -823,7 +824,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
   private boolean shouldUpdateProposerBoostRoot(
       final SignedBeaconBlock block,
       final StoreTransaction transaction,
-      final boolean[] blockTimeliness) {
+      final BlockTimeliness blockTimeliness) {
     // is_first_block
     if (transaction.getProposerBoostRoot().isPresent()) {
       return false;

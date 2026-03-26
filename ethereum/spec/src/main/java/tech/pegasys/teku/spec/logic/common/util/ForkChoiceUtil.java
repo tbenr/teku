@@ -661,8 +661,6 @@ public class ForkChoiceUtil {
         .isLessThanOrEqualTo(getCurrentSlot(store));
   }
 
-  public static final int ATTESTATION_TIMELINESS_INDEX = 0;
-
   /**
    * Computes block timeliness based on the arrival time relative to the slot start.
    *
@@ -674,11 +672,11 @@ public class ForkChoiceUtil {
    * @return boolean array of timeliness values. Pre-Gloas: single element (attestation deadline).
    *     Gloas: two elements (attestation deadline, PTC deadline).
    */
-  public boolean[] computeBlockTimeliness(
+  public BlockTimeliness computeBlockTimeliness(
       final UInt64 blockSlot, final UInt64 currentSlot, final int millisIntoSlot) {
     final int timelinessLimit = getAttestationDueMillis();
     final boolean isTimely = blockSlot.equals(currentSlot) && timelinessLimit > millisIntoSlot;
-    return new boolean[] {isTimely};
+    return new BlockTimeliness(isTimely, false);
   }
 
   /**
@@ -689,11 +687,11 @@ public class ForkChoiceUtil {
    * @param blockTimeliness the timeliness array for the block, or null if unknown
    * @return true if the block is late, false if timely or unknown (conservative default)
    */
-  public static boolean isHeadLate(final boolean[] blockTimeliness) {
+  public static boolean isHeadLate(final BlockTimeliness blockTimeliness) {
     if (blockTimeliness == null) {
       return false;
     }
-    return !blockTimeliness[ATTESTATION_TIMELINESS_INDEX];
+    return !blockTimeliness.isTimelyAttestation;
   }
 
   @VisibleForTesting
@@ -844,4 +842,6 @@ public class ForkChoiceUtil {
   public Optional<ForkChoiceUtilGloas> toVersionGloas() {
     return Optional.empty();
   }
+
+  public record BlockTimeliness(boolean isTimelyAttestation, boolean isTimelyPtc) {}
 }

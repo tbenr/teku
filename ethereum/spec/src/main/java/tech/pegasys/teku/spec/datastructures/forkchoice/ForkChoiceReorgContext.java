@@ -19,13 +19,14 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.EpochProcessingException;
 import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.SlotProcessingException;
+import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil.BlockTimeliness;
 
 /** Read-only runtime context for proposer reorg evaluation. */
 public interface ForkChoiceReorgContext {
 
   ReadOnlyStore getStore();
 
-  Optional<boolean[]> getBlockTimeliness(Bytes32 root);
+  Optional<BlockTimeliness> getBlockTimeliness(Bytes32 root);
 
   boolean isValidatorConnected(int validatorIndex, UInt64 slot);
 

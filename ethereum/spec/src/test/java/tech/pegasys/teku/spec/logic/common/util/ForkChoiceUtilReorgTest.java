@@ -39,6 +39,7 @@ import tech.pegasys.teku.spec.logic.common.helpers.MiscHelpers;
 import tech.pegasys.teku.spec.logic.common.statetransition.epoch.EpochProcessor;
 import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.EpochProcessingException;
 import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.SlotProcessingException;
+import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil.BlockTimeliness;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 
 class ForkChoiceUtilReorgTest {
@@ -243,7 +244,7 @@ class ForkChoiceUtilReorgTest {
 
   private static class TestForkChoiceReorgContext implements ForkChoiceReorgContext {
     private final ReadOnlyStore store;
-    private final Map<Bytes32, boolean[]> blockTimeliness = new HashMap<>();
+    private final Map<Bytes32, BlockTimeliness> blockTimeliness = new HashMap<>();
     private boolean validatorConnected = true;
 
     private TestForkChoiceReorgContext(final ReadOnlyStore store) {
@@ -256,7 +257,7 @@ class ForkChoiceUtilReorgTest {
     }
 
     @Override
-    public Optional<boolean[]> getBlockTimeliness(final Bytes32 root) {
+    public Optional<BlockTimeliness> getBlockTimeliness(final Bytes32 root) {
       return Optional.ofNullable(blockTimeliness.get(root));
     }
 
@@ -272,7 +273,7 @@ class ForkChoiceUtilReorgTest {
     }
 
     private void setBlockTimeliness(final Bytes32 root, final boolean isTimely) {
-      blockTimeliness.put(root, new boolean[] {isTimely});
+      blockTimeliness.put(root, new BlockTimeliness(isTimely, false));
     }
   }
 

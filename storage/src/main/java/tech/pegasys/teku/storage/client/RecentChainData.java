@@ -68,6 +68,7 @@ import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.EpochProce
 import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.SlotProcessingException;
 import tech.pegasys.teku.spec.logic.common.util.BeaconStateUtil;
 import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil;
+import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil.BlockTimeliness;
 import tech.pegasys.teku.spec.logic.versions.fulu.helpers.BlobParameters;
 import tech.pegasys.teku.storage.api.ChainHeadChannel;
 import tech.pegasys.teku.storage.api.FinalizedCheckpointChannel;
@@ -814,11 +815,7 @@ public abstract class RecentChainData
     blockTimelinessTracker.setBlockTimelinessFromArrivalTime(block, arrivalTime);
   }
 
-  public void setBlockTimeliness(final SignedBeaconBlock block, final boolean[] timeliness) {
-    blockTimelinessTracker.setBlockTimeliness(block, timeliness);
-  }
-
-  public boolean[] computeBlockTimelinessFromArrivalTime(
+  public BlockTimeliness computeBlockTimelinessFromArrivalTime(
       final SignedBeaconBlock block, final UInt64 arrivalTime) {
     return blockTimelinessTracker.computeBlockTimelinessFromArrivalTime(block, arrivalTime);
   }
@@ -829,7 +826,7 @@ public abstract class RecentChainData
   }
 
   @Override
-  public Optional<boolean[]> getBlockTimeliness(final Bytes32 root) {
+  public Optional<BlockTimeliness> getBlockTimeliness(final Bytes32 root) {
     return blockTimelinessTracker.getBlockTimeliness(root);
   }
 

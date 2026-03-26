@@ -54,9 +54,6 @@ import tech.pegasys.teku.spec.logic.versions.gloas.statetransition.epoch.EpochPr
  * the exact spec functions involved.
  */
 public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
-
-  public static final int PTC_TIMELINESS_INDEX = 1;
-
   public ForkChoiceUtilGloas(
       final SpecConfigGloas specConfig,
       final BeaconStateAccessorsGloas beaconStateAccessors,
@@ -145,7 +142,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
    * get_payload_attestation_due_ms().
    */
   @Override
-  public boolean[] computeBlockTimeliness(
+  public BlockTimeliness computeBlockTimeliness(
       final UInt64 blockSlot, final UInt64 currentSlot, final int millisIntoSlot) {
     final int attestationTimelinessLimit = getAttestationDueMillis();
     final int ptcTimelinessLimit = getPayloadAttestationDueMillis().orElseThrow();
@@ -153,7 +150,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
         blockSlot.equals(currentSlot) && attestationTimelinessLimit > millisIntoSlot;
     final boolean isTimelyPtc =
         blockSlot.equals(currentSlot) && ptcTimelinessLimit > millisIntoSlot;
-    return new boolean[] {isTimelyAttestation, isTimelyPtc};
+    return new BlockTimeliness(isTimelyAttestation, isTimelyPtc);
   }
 
   // Checking of blob data availability is delayed until the processing of the execution payload

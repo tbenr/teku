@@ -39,6 +39,7 @@ import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteAccessor;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
+import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil.BlockTimeliness;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 
 class ForkChoiceUtilGloasTest {
@@ -62,6 +63,41 @@ class ForkChoiceUtilGloasTest {
     when(mockVoteAccessor.getVote(ArgumentMatchers.any())).thenReturn(VoteTracker.DEFAULT);
     when(mockVoteAccessor.getHighestVotedValidatorIndex()).thenReturn(UInt64.ZERO);
     justifiedState = dataStructureUtil.randomBeaconState(gloasSlot);
+  }
+
+  @Test
+  void
+      computeBlockTimeliness_shouldMarkBlockTimelyForAttestationsAndPtcBeforeAttestationDeadline() {
+    final int millisIntoSlot = forkChoiceUtil.getAttestationDueMillis() - 1;
+
+    assertThat(forkChoiceUtil.computeBlockTimeliness(gloasSlot, gloasSlot, millisIntoSlot))
+        .isEqualTo(new BlockTimeliness(true, true));
+  }
+
+  @Test
+  void computeBlockTimeliness_shouldKeepPtcTimelyAfterAttestationDeadlineButBeforePtcDeadline() {
+    final int attestationDueMillis = forkChoiceUtil.getAttestationDueMillis();
+    final int ptcDueMillis = forkChoiceUtil.getPayloadAttestationDueMillis().orElseThrow();
+
+    assertThat(attestationDueMillis).isLessThan(ptcDueMillis);
+
+    assertThat(forkChoiceUtil.computeBlockTimeliness(gloasSlot, gloasSlot, attestationDueMillis))
+        .isEqualTo(new BlockTimeliness(false, true));
+  }
+
+  @Test
+  void computeBlockTimeliness_shouldMarkBlockLateForAttestationsAndPtcAtPtcDeadline() {
+    final int ptcDueMillis = forkChoiceUtil.getPayloadAttestationDueMillis().orElseThrow();
+
+    assertThat(forkChoiceUtil.computeBlockTimeliness(gloasSlot, gloasSlot, ptcDueMillis))
+        .isEqualTo(new BlockTimeliness(false, false));
+  }
+
+  @Test
+  void
+      computeBlockTimeliness_shouldMarkBlockLateForAttestationsAndPtcWhenBlockIsNotFromCurrentSlot() {
+    assertThat(forkChoiceUtil.computeBlockTimeliness(gloasSlot, gloasSlot.plus(1), 0))
+        .isEqualTo(new BlockTimeliness(false, false));
   }
 
   @Test
