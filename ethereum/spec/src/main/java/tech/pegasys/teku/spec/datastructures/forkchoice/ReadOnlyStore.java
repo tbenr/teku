@@ -158,9 +158,7 @@ public interface ReadOnlyStore extends TimeProvider {
 
   Optional<BeaconState> getCheckpointStateIfAvailable(Checkpoint checkpoint);
 
-  default VoteAccessor getVoteAccessor() {
-    return VoteAccessor.NOOP;
-  }
+  VoteTracker getVote(UInt64 validatorIndex);
 
   default Optional<ForkChoicePayloadStatus> getPayloadStatus(final Bytes32 root) {
     return Optional.empty();

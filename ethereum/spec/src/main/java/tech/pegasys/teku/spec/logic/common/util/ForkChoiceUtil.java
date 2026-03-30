@@ -40,7 +40,6 @@ import tech.pegasys.teku.spec.datastructures.forkchoice.MutableStore;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
-import tech.pegasys.teku.spec.datastructures.forkchoice.VoteAccessor;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.operations.Attestation;
 import tech.pegasys.teku.spec.datastructures.operations.AttestationData;
@@ -809,7 +808,6 @@ public class ForkChoiceUtil {
       final Optional<Bytes32> proposerBoostRoot,
       final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
       final UInt64 reorgThreshold,
-      final VoteAccessor voteAccessor,
       final BeaconState justifiedState) {
     return true;
   }

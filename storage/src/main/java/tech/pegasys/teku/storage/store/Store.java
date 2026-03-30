@@ -65,7 +65,6 @@ import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecution
 import tech.pegasys.teku.spec.datastructures.execution.SlotAndExecutionPayloadSummary;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
-import tech.pegasys.teku.spec.datastructures.forkchoice.VoteAccessor;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteUpdater;
 import tech.pegasys.teku.spec.datastructures.hashtree.HashTree;
@@ -129,19 +128,6 @@ class Store extends CacheableStore {
 
   private volatile UInt64 reorgThreshold = UInt64.ZERO;
   private volatile UInt64 parentThreshold = UInt64.ZERO;
-  private final VoteAccessor voteAccessor =
-      new VoteAccessor() {
-        @Override
-        public VoteTracker getVote(final UInt64 validatorIndex) {
-          final VoteTracker vote = Store.this.getVote(validatorIndex);
-          return vote != null ? vote : VoteTracker.DEFAULT;
-        }
-
-        @Override
-        public UInt64 getHighestVotedValidatorIndex() {
-          return highestVotedValidatorIndex;
-        }
-      };
 
   private Store(
       final MetricsSystem metricsSystem,
@@ -718,11 +704,6 @@ class Store extends CacheableStore {
   }
 
   @Override
-  public VoteAccessor getVoteAccessor() {
-    return voteAccessor;
-  }
-
-  @Override
   public Optional<ForkChoicePayloadStatus> getPayloadStatus(final Bytes32 root) {
     return forkChoiceStrategy.payloadStatus(root);
   }
@@ -968,13 +949,15 @@ class Store extends CacheableStore {
     }
   }
 
-  VoteTracker getVote(final UInt64 validatorIndex) {
+  @Override
+  public VoteTracker getVote(final UInt64 validatorIndex) {
     readVotesLock.lock();
     try {
       if (validatorIndex.intValue() >= votes.length) {
-        return null;
+        return VoteTracker.DEFAULT;
       }
-      return votes[validatorIndex.intValue()];
+      final VoteTracker vote = votes[validatorIndex.intValue()];
+      return vote != null ? vote : VoteTracker.DEFAULT;
     } finally {
       readVotesLock.unlock();
     }

@@ -19,12 +19,10 @@ import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 
-public interface VoteUpdater extends VoteAccessor {
+public interface VoteUpdater {
 
-  @Override
   VoteTracker getVote(final UInt64 validatorIndex);
 
-  @Override
   UInt64 getHighestVotedValidatorIndex();
 
   void putVote(UInt64 validatorIndex, VoteTracker vote);

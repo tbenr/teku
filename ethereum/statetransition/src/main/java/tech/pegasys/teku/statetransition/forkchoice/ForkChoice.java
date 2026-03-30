@@ -421,7 +421,6 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
           effectiveProposerBoostRoot,
           forkChoiceStrategy,
           recentChainData.getStore().getReorgThreshold(),
-          transaction,
           justifiedState)) {
         effectiveProposerBoostRoot = Optional.empty();
       }
