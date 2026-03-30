@@ -271,6 +271,11 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
     // using recorded PTC timeliness instead of routing a predicate through ForkChoice.
     // The complication is that we need to have a good interaction with gossip datastructures to
     // detect equivocations. Spec should probably be updated.
+    // NOTE: there is no point in implementing the following check without implementing
+    // equivocation.
+    // # Apply proposer boost if `parent` is not weak
+    //    if not is_head_weak(store, parent_root):
+    //        return True
     return true;
   }
 
