@@ -418,7 +418,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
           spec.atSlot(recentChainData.getCurrentSlot().orElse(justifiedState.getSlot()))
               .getForkChoiceUtil();
       if (!currentForkChoiceUtil.shouldApplyProposerBoost(
-          effectiveProposerBoostRoot,
+          effectiveProposerBoostRoot.get(),
           forkChoiceStrategy,
           recentChainData.getStore().getReorgThreshold(),
           justifiedState)) {

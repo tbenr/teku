@@ -805,7 +805,7 @@ public class ForkChoiceUtil {
   }
 
   public boolean shouldApplyProposerBoost(
-      final Optional<Bytes32> proposerBoostRoot,
+      final Bytes32 proposerBoostRoot,
       final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
       final UInt64 reorgThreshold,
       final BeaconState justifiedState) {

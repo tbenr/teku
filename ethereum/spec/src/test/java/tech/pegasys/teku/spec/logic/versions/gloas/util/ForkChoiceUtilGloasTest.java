@@ -279,12 +279,14 @@ class ForkChoiceUtilGloasTest {
   }
 
   @Test
-  void shouldApplyProposerBoost_returnsFalse_whenNoProposerBoostRoot() {
+  void shouldApplyProposerBoost_returnsTrue_whenProposerBoostRootIsUnknown() {
+    final Bytes32 boostRoot = dataStructureUtil.randomBytes32();
     final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
+    when(strategy.blockParentRoot(boostRoot)).thenReturn(Optional.empty());
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.empty(), strategy, UInt64.valueOf(100), justifiedState))
-        .isFalse();
+                boostRoot, strategy, UInt64.valueOf(100), justifiedState))
+        .isTrue();
   }
 
   @Test
@@ -298,7 +300,7 @@ class ForkChoiceUtilGloasTest {
 
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.of(boostRoot), strategy, UInt64.valueOf(100), justifiedState))
+                boostRoot, strategy, UInt64.valueOf(100), justifiedState))
         .isTrue();
   }
 
@@ -313,7 +315,7 @@ class ForkChoiceUtilGloasTest {
     // The weak-parent branch is currently deferred together with proposer equivocation handling.
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.of(boostRoot), strategy, UInt64.ZERO, justifiedState))
+                boostRoot, strategy, UInt64.ZERO, justifiedState))
         .isTrue();
   }
 
@@ -329,7 +331,7 @@ class ForkChoiceUtilGloasTest {
     // No equivocation → boost applies
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.of(boostRoot), strategy, UInt64.valueOf(100), justifiedState))
+                boostRoot, strategy, UInt64.valueOf(100), justifiedState))
         .isTrue();
   }
 
@@ -344,7 +346,7 @@ class ForkChoiceUtilGloasTest {
     // The equivocation suppression branch is intentionally not implemented yet.
     assertThat(
             forkChoiceUtil.shouldApplyProposerBoost(
-                Optional.of(boostRoot), strategy, UInt64.valueOf(100), justifiedState))
+                boostRoot, strategy, UInt64.valueOf(100), justifiedState))
         .isTrue();
   }
 

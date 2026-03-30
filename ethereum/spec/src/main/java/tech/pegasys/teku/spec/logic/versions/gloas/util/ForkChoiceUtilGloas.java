@@ -248,16 +248,12 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
   // should_apply_proposer_boost
   @Override
   public boolean shouldApplyProposerBoost(
-      final Optional<Bytes32> proposerBoostRoot,
+      final Bytes32 proposerBoostRoot,
       final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
       final UInt64 reorgThreshold,
       final BeaconState justifiedState) {
-    if (proposerBoostRoot.isEmpty()) {
-      return false;
-    }
-    final Bytes32 boostRoot = proposerBoostRoot.get();
-    final Optional<Bytes32> maybeParentRoot = forkChoiceStrategy.blockParentRoot(boostRoot);
-    final Optional<UInt64> maybeBlockSlot = forkChoiceStrategy.blockSlot(boostRoot);
+    final Optional<Bytes32> maybeParentRoot = forkChoiceStrategy.blockParentRoot(proposerBoostRoot);
+    final Optional<UInt64> maybeBlockSlot = forkChoiceStrategy.blockSlot(proposerBoostRoot);
     if (maybeParentRoot.isEmpty() || maybeBlockSlot.isEmpty()) {
       return true;
     }
@@ -440,8 +436,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
     final Optional<UInt64> maybeHeadSlot = forkChoiceStrategy.blockSlot(root);
     if (maybeHeadSlot.isPresent()) {
       final UInt64 equivocatingWeight =
-          computeEquivocatingCommitteeWeight(
-              maybeHeadSlot.get(), store, headState, justifiedState);
+          computeEquivocatingCommitteeWeight(maybeHeadSlot.get(), store, headState, justifiedState);
       headWeight = headWeight.plus(equivocatingWeight);
     }
 
@@ -505,11 +500,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
       final ForkChoicePayloadStatus parentPayloadStatus =
           store.getPayloadStatus(parentRoot).orElse(PAYLOAD_STATUS_PENDING);
       return isParentStrong(
-          store,
-          parentRoot,
-          parentThreshold,
-          parentPayloadStatus,
-          maybeJustifiedState.get());
+          store, parentRoot, parentThreshold, parentPayloadStatus, maybeJustifiedState.get());
     }
     // fallback with no equivocation
     final UInt64 attestationScore =
