@@ -530,6 +530,15 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
 
   @Override
   public Optional<Bytes32> getAncestor(final Bytes32 blockRoot, final UInt64 slot) {
+    return getAncestorProtoNode(blockRoot, slot).map(ProtoNode::getBlockRoot);
+  }
+
+  @Override
+  public Optional<ForkChoiceNode> getAncestorNode(final Bytes32 blockRoot, final UInt64 slot) {
+    return getAncestorProtoNode(blockRoot, slot).map(ProtoNode::getForkChoiceNode);
+  }
+
+  private Optional<ProtoNode> getAncestorProtoNode(final Bytes32 blockRoot, final UInt64 slot) {
     protoArrayLock.readLock().lock();
     try {
       // Note: This code could be more succinct if currentNode were an Optional and we used flatMap
@@ -549,31 +558,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
         }
         currentNode = protoArray.getNodes().get(parentIndex.get());
       }
-      return Optional.of(currentNode.getBlockRoot());
-    } finally {
-      protoArrayLock.readLock().unlock();
-    }
-  }
-
-  @Override
-  public Optional<ForkChoicePayloadStatus> getAncestorPayloadStatus(
-      final Bytes32 blockRoot, final UInt64 slot) {
-    protoArrayLock.readLock().lock();
-    try {
-      final Optional<ProtoNode> startingNode =
-          blockNodeIndex.getBaseNode(blockRoot).flatMap(protoArray::getNode);
-      if (startingNode.isEmpty()) {
-        return Optional.empty();
-      }
-      ProtoNode currentNode = startingNode.get();
-      while (currentNode.getBlockSlot().isGreaterThan(slot)) {
-        final Optional<Integer> parentIndex = currentNode.getParentIndex();
-        if (parentIndex.isEmpty()) {
-          return Optional.empty();
-        }
-        currentNode = protoArray.getNodes().get(parentIndex.get());
-      }
-      return Optional.of(currentNode.getPayloadStatus());
+      return Optional.of(currentNode);
     } finally {
       protoArrayLock.readLock().unlock();
     }

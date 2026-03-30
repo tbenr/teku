@@ -31,6 +31,14 @@ public interface ReadOnlyForkChoiceStrategy {
 
   Optional<Bytes32> getAncestor(Bytes32 blockRoot, UInt64 slot);
 
+  /**
+   * Walks the parent chain from blockRoot to find the ancestor node at the given slot.
+   *
+   * <p>This mirrors the Gloas {@code get_ancestor(...)} helper, which returns a full {@link
+   * ForkChoiceNode} identity.
+   */
+  Optional<ForkChoiceNode> getAncestorNode(Bytes32 blockRoot, UInt64 slot);
+
   Optional<SlotAndBlockRoot> findCommonAncestor(Bytes32 blockRoot1, Bytes32 blockRoot2);
 
   List<Bytes32> getBlockRootsAtSlot(UInt64 slot);
@@ -87,20 +95,4 @@ public interface ReadOnlyForkChoiceStrategy {
   Optional<UInt64> getWeight(Bytes32 blockRoot);
 
   Optional<ForkChoicePayloadStatus> payloadStatus(Bytes32 blockRoot);
-
-  /**
-   * Walks the parent chain from blockRoot to find the ancestor at the given slot and returns its
-   * payload status. Unlike {@link #getAncestor(Bytes32, UInt64)} which returns the block root, this
-   * returns the payload status of the node at the target slot, which may be a FULL node if the path
-   * goes through a FULL node in the three-state tree.
-   *
-   * <p>This is the payload-status-aware counterpart of the Gloas `get_ancestor(...)` walk used by
-   * `is_supporting_vote(...)`:
-   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#modified-get_ancestor
-   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#new-is_supporting_vote
-   */
-  default Optional<ForkChoicePayloadStatus> getAncestorPayloadStatus(
-      final Bytes32 blockRoot, final UInt64 slot) {
-    return payloadStatus(blockRoot);
-  }
 }

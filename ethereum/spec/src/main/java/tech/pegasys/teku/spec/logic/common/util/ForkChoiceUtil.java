@@ -34,6 +34,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.BeaconBlockBody;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceReorgContext;
 import tech.pegasys.teku.spec.datastructures.forkchoice.MutableStore;
@@ -79,7 +80,7 @@ public class ForkChoiceUtil {
     this.miscHelpers = miscHelpers;
   }
 
-  private UInt64 getCurrentSlot(final ReadOnlyStore store) {
+  protected UInt64 getCurrentSlot(final ReadOnlyStore store) {
     return miscHelpers.computeSlotAtTime(store.getGenesisTime(), store.getTimeSeconds());
   }
 
@@ -102,6 +103,11 @@ public class ForkChoiceUtil {
   public Optional<Bytes32> getAncestor(
       final ReadOnlyForkChoiceStrategy forkChoiceStrategy, final Bytes32 root, final UInt64 slot) {
     return forkChoiceStrategy.getAncestor(root, slot);
+  }
+
+  public Optional<ForkChoiceNode> getAncestorNode(
+      final ReadOnlyForkChoiceStrategy forkChoiceStrategy, final Bytes32 root, final UInt64 slot) {
+    return getAncestor(forkChoiceStrategy, root, slot).map(ForkChoiceNode::createBase);
   }
 
   public NavigableMap<UInt64, Bytes32> getAncestors(

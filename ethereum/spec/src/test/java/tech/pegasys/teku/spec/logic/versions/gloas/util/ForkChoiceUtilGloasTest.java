@@ -33,6 +33,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.blockbody.BeaconBlockBody;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.gloas.BeaconBlockBodyGloas;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
@@ -256,6 +257,49 @@ class ForkChoiceUtilGloasTest {
     assertThat(
             forkChoiceUtil.isSupportingVote(
                 root, ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL, root, slot, false, strategy))
+        .isFalse();
+  }
+
+  @Test
+  void isSupportingVote_shouldSupportAncestorVoteWhenAncestorNodeMatches() {
+    final Bytes32 nodeRoot = dataStructureUtil.randomBytes32();
+    final Bytes32 voteRoot = dataStructureUtil.randomBytes32();
+    final UInt64 slot = UInt64.valueOf(47);
+    final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
+    when(strategy.blockSlot(nodeRoot)).thenReturn(Optional.of(slot));
+    when(strategy.getAncestorNode(voteRoot, slot))
+        .thenReturn(Optional.of(ForkChoiceNode.createFull(nodeRoot)));
+
+    assertThat(
+            forkChoiceUtil.isSupportingVote(
+                nodeRoot,
+                ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL,
+                voteRoot,
+                slot.plus(1),
+                true,
+                strategy))
+        .isTrue();
+  }
+
+  @Test
+  void isSupportingVote_shouldNotSupportAncestorVoteForDifferentRootEvenIfStatusMatches() {
+    final Bytes32 nodeRoot = dataStructureUtil.randomBytes32();
+    final Bytes32 otherRoot = dataStructureUtil.randomBytes32();
+    final Bytes32 voteRoot = dataStructureUtil.randomBytes32();
+    final UInt64 slot = UInt64.valueOf(47);
+    final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
+    when(strategy.blockSlot(nodeRoot)).thenReturn(Optional.of(slot));
+    when(strategy.getAncestorNode(voteRoot, slot))
+        .thenReturn(Optional.of(ForkChoiceNode.createFull(otherRoot)));
+
+    assertThat(
+            forkChoiceUtil.isSupportingVote(
+                nodeRoot,
+                ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL,
+                voteRoot,
+                slot.plus(1),
+                true,
+                strategy))
         .isFalse();
   }
 

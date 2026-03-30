@@ -30,6 +30,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.gloas.BeaconBlockBodyGloas;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.MutableStore;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
@@ -318,23 +319,23 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
           : nodePayloadStatus == PAYLOAD_STATUS_EMPTY;
     } else {
       // Ancestor vote: check if the node is an ancestor of the vote via modified get_ancestor.
-      final Optional<Bytes32> ancestorRoot = forkChoiceStrategy.getAncestor(voteRoot, blockSlot);
-      if (ancestorRoot.isEmpty() || !nodeRoot.equals(ancestorRoot.get())) {
+      final Optional<ForkChoiceNode> ancestorNode =
+          getAncestorNode(forkChoiceStrategy, voteRoot, blockSlot);
+      if (ancestorNode.isEmpty() || !nodeRoot.equals(ancestorNode.get().blockRoot())) {
         return false;
       }
       // For PENDING, any payload status matches (the node hasn't been resolved yet)
       if (nodePayloadStatus == PAYLOAD_STATUS_PENDING) {
         return true;
       }
-      // Walk the vote's parent chain to find the payload status at the ancestor's slot.
-      // With FULL nodes in protoarray, a FULL-descendant path walks through the FULL node,
-      // while an EMPTY-descendant path walks through the block node (PENDING).
-      final ForkChoicePayloadStatus ancestorStatus =
-          forkChoiceStrategy
-              .getAncestorPayloadStatus(voteRoot, blockSlot)
-              .orElse(PAYLOAD_STATUS_PENDING);
-      return nodePayloadStatus == ancestorStatus;
+      return nodePayloadStatus == ancestorNode.get().payloadStatus();
     }
+  }
+
+  @Override
+  public Optional<ForkChoiceNode> getAncestorNode(
+      final ReadOnlyForkChoiceStrategy forkChoiceStrategy, final Bytes32 root, final UInt64 slot) {
+    return forkChoiceStrategy.getAncestorNode(root, slot);
   }
 
   private UInt64 getNodeAttestationWeight(
@@ -353,14 +354,12 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
       return nodeWeight;
     }
 
-    final UInt64 currentSlot =
-        miscHelpers.computeSlotAtTime(store.getGenesisTime(), store.getTimeSeconds());
     final boolean receivesProposerBoost =
         isSupportingVote(
             nodeRoot,
             nodePayloadStatus,
             maybeBoostRoot.get(),
-            currentSlot,
+            getCurrentSlot(store),
             false,
             forkChoiceStrategy);
     if (!receivesProposerBoost) {
