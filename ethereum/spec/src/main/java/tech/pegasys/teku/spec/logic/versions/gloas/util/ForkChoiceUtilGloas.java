@@ -391,6 +391,9 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
     final UInt64 committeesPerSlot =
         beaconStateAccessors.getCommitteeCountPerSlot(headState, epoch);
 
+    // TODO: we could optimize this by tracking a cumulative equivocating weight per slot,
+    //  so we can lookup this fast without recompute the sum all the time.
+
     long equivocatingWeight = 0;
     for (UInt64 index = UInt64.ZERO;
         index.isLessThan(committeesPerSlot);
