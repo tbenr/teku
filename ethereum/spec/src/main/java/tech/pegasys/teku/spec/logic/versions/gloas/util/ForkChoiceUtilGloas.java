@@ -280,58 +280,6 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
     return true;
   }
 
-  /**
-   * Checks whether a vote (LatestMessage) supports a ForkChoiceNode.
-   *
-   * <p>Spec reference: is_supporting_vote
-   *
-   * @param nodeRoot the root of the fork choice node
-   * @param nodePayloadStatus the payload status of the fork choice node
-   * @param voteRoot the root the validator voted for
-   * @param voteSlot the slot of the vote
-   * @param votePayloadPresent whether the vote signals payload presence
-   * @param forkChoiceStrategy for ancestor lookups
-   * @return true if the vote supports the node
-   */
-  boolean isSupportingVote(
-      final Bytes32 nodeRoot,
-      final ForkChoicePayloadStatus nodePayloadStatus,
-      final Bytes32 voteRoot,
-      final UInt64 voteSlot,
-      final boolean votePayloadPresent,
-      final ReadOnlyForkChoiceStrategy forkChoiceStrategy) {
-    final Optional<UInt64> maybeBlockSlot = forkChoiceStrategy.blockSlot(nodeRoot);
-    if (maybeBlockSlot.isEmpty()) {
-      return false;
-    }
-    final UInt64 blockSlot = maybeBlockSlot.get();
-
-    if (nodeRoot.equals(voteRoot)) {
-      // Direct vote for this root
-      if (nodePayloadStatus == PAYLOAD_STATUS_PENDING) {
-        return true;
-      }
-      if (voteSlot.isLessThanOrEqualTo(blockSlot)) {
-        return false;
-      }
-      return votePayloadPresent
-          ? nodePayloadStatus == PAYLOAD_STATUS_FULL
-          : nodePayloadStatus == PAYLOAD_STATUS_EMPTY;
-    } else {
-      // Ancestor vote: check if the node is an ancestor of the vote via modified get_ancestor.
-      final Optional<ForkChoiceNode> ancestorNode =
-          getAncestorNode(forkChoiceStrategy, voteRoot, blockSlot);
-      if (ancestorNode.isEmpty() || !nodeRoot.equals(ancestorNode.get().blockRoot())) {
-        return false;
-      }
-      // For PENDING, any payload status matches (the node hasn't been resolved yet)
-      if (nodePayloadStatus == PAYLOAD_STATUS_PENDING) {
-        return true;
-      }
-      return nodePayloadStatus == ancestorNode.get().payloadStatus();
-    }
-  }
-
   @Override
   public Optional<ForkChoiceNode> getAncestorNode(
       final ReadOnlyForkChoiceStrategy forkChoiceStrategy, final Bytes32 root, final UInt64 slot) {

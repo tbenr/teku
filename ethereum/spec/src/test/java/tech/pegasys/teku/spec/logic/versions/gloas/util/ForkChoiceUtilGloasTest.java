@@ -244,66 +244,6 @@ class ForkChoiceUtilGloasTest {
   }
 
   @Test
-  void isSupportingVote_shouldNotSupportResolvedNodeForDirectVoteAtBlockSlot() {
-    final Bytes32 root = dataStructureUtil.randomBytes32();
-    final UInt64 slot = UInt64.valueOf(47);
-    final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
-    when(strategy.blockSlot(root)).thenReturn(Optional.of(slot));
-
-    assertThat(
-            forkChoiceUtil.isSupportingVote(
-                root, ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY, root, slot, false, strategy))
-        .isFalse();
-    assertThat(
-            forkChoiceUtil.isSupportingVote(
-                root, ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL, root, slot, false, strategy))
-        .isFalse();
-  }
-
-  @Test
-  void isSupportingVote_shouldSupportAncestorVoteWhenAncestorNodeMatches() {
-    final Bytes32 nodeRoot = dataStructureUtil.randomBytes32();
-    final Bytes32 voteRoot = dataStructureUtil.randomBytes32();
-    final UInt64 slot = UInt64.valueOf(47);
-    final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
-    when(strategy.blockSlot(nodeRoot)).thenReturn(Optional.of(slot));
-    when(strategy.getAncestorNode(voteRoot, slot))
-        .thenReturn(Optional.of(ForkChoiceNode.createFull(nodeRoot)));
-
-    assertThat(
-            forkChoiceUtil.isSupportingVote(
-                nodeRoot,
-                ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL,
-                voteRoot,
-                slot.plus(1),
-                true,
-                strategy))
-        .isTrue();
-  }
-
-  @Test
-  void isSupportingVote_shouldNotSupportAncestorVoteForDifferentRootEvenIfStatusMatches() {
-    final Bytes32 nodeRoot = dataStructureUtil.randomBytes32();
-    final Bytes32 otherRoot = dataStructureUtil.randomBytes32();
-    final Bytes32 voteRoot = dataStructureUtil.randomBytes32();
-    final UInt64 slot = UInt64.valueOf(47);
-    final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
-    when(strategy.blockSlot(nodeRoot)).thenReturn(Optional.of(slot));
-    when(strategy.getAncestorNode(voteRoot, slot))
-        .thenReturn(Optional.of(ForkChoiceNode.createFull(otherRoot)));
-
-    assertThat(
-            forkChoiceUtil.isSupportingVote(
-                nodeRoot,
-                ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL,
-                voteRoot,
-                slot.plus(1),
-                true,
-                strategy))
-        .isFalse();
-  }
-
-  @Test
   void isBlockStatusFull_shouldReturnTrue_whenBlockIsFull() {
     final SignedBeaconBlock currentBlock = dataStructureUtil.randomSignedBeaconBlock();
     final ReadOnlyStore store = mock(ReadOnlyStore.class);
