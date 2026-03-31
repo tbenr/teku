@@ -819,7 +819,12 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     return ExecutionPayloadImportResult.successful(signedEnvelope);
   }
 
-  // from consensus-specs/fork-choice:
+  /**
+   * Local implementation of Gloas {@code update_proposer_boost_root(store, root)}.
+   *
+   * <p>Spec reference:
+   * https://github.com/ethereum/consensus-specs/blob/master/specs/gloas/fork-choice.md#modified-update_proposer_boost_root
+   */
   private boolean shouldUpdateProposerBoostRoot(
       final SignedBeaconBlock block,
       final StoreTransaction transaction,

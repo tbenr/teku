@@ -139,8 +139,8 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
   /**
    * Computes dual block timeliness for Gloas: attestation deadline and PTC deadline.
    *
-   * <p>Spec reference: record_block_timeliness(store, block, timeliness) plus
-   * get_payload_attestation_due_ms().
+   * <p>Spec reference: modified {@code record_block_timeliness(store, root)} plus new {@code
+   * get_payload_attestation_due_ms()}.
    */
   @Override
   public BlockTimeliness computeBlockTimeliness(
