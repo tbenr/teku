@@ -398,7 +398,6 @@ class ForkChoiceUtilGloasTest {
   void isHeadWeak_shouldIgnoreAppliedProposerBoostWhenUsingProtoArrayWeight() {
     final Bytes32 headRoot = dataStructureUtil.randomBytes32();
     final Bytes32 boostRoot = dataStructureUtil.randomBytes32();
-    final UInt64 currentSlot = gloasSlot.plus(1);
     final UInt64 proposerBoostAmount = spec.getProposerBoostAmount(justifiedState);
     final BeaconState headState = dataStructureUtil.randomBeaconState(gloasSlot);
     final ProtoNodeData headNode = mock(ProtoNodeData.class);
@@ -411,12 +410,11 @@ class ForkChoiceUtilGloasTest {
     when(store.getBlockStateIfAvailable(headRoot)).thenReturn(Optional.of(headState));
     when(store.getVote(ArgumentMatchers.any())).thenReturn(VoteTracker.DEFAULT);
     when(store.getProposerBoostRoot()).thenReturn(Optional.of(boostRoot));
-    when(store.getGenesisTime()).thenReturn(UInt64.ZERO);
-    when(store.getTimeSeconds()).thenReturn(spec.computeTimeAtSlot(currentSlot, UInt64.ZERO));
     when(strategy.getBlockData(headRoot, ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING))
         .thenReturn(Optional.of(headNode));
     when(strategy.blockSlot(headRoot)).thenReturn(Optional.of(gloasSlot));
-    when(strategy.getAncestor(boostRoot, gloasSlot)).thenReturn(Optional.of(headRoot));
+    when(strategy.getAncestorNode(boostRoot, gloasSlot))
+        .thenReturn(Optional.of(ForkChoiceNode.createBase(headRoot)));
 
     assertThat(forkChoiceUtil.isHeadWeak(store, headRoot, UInt64.ONE)).isTrue();
   }
@@ -425,7 +423,6 @@ class ForkChoiceUtilGloasTest {
   void isParentStrong_shouldIgnoreAppliedProposerBoostWhenUsingProtoArrayWeight() {
     final Bytes32 parentRoot = dataStructureUtil.randomBytes32();
     final Bytes32 boostRoot = dataStructureUtil.randomBytes32();
-    final UInt64 currentSlot = gloasSlot.plus(1);
     final UInt64 proposerBoostAmount = spec.getProposerBoostAmount(justifiedState);
     final ProtoNodeData parentNode = mock(ProtoNodeData.class);
     final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
@@ -438,14 +435,37 @@ class ForkChoiceUtilGloasTest {
     when(store.getPayloadStatus(parentRoot))
         .thenReturn(Optional.of(ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING));
     when(store.getProposerBoostRoot()).thenReturn(Optional.of(boostRoot));
-    when(store.getGenesisTime()).thenReturn(UInt64.ZERO);
-    when(store.getTimeSeconds()).thenReturn(spec.computeTimeAtSlot(currentSlot, UInt64.ZERO));
     when(strategy.getBlockData(parentRoot, ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING))
         .thenReturn(Optional.of(parentNode));
     when(strategy.blockSlot(parentRoot)).thenReturn(Optional.of(gloasSlot));
-    when(strategy.getAncestor(boostRoot, gloasSlot)).thenReturn(Optional.of(parentRoot));
+    when(strategy.getAncestorNode(boostRoot, gloasSlot))
+        .thenReturn(Optional.of(ForkChoiceNode.createBase(parentRoot)));
 
     assertThat(forkChoiceUtil.isParentStrong(store, parentRoot, UInt64.ZERO)).isFalse();
+  }
+
+  @Test
+  void isParentStrong_shouldNotSubtractProposerBoostFromResolvedNodeWeight() {
+    final Bytes32 parentRoot = dataStructureUtil.randomBytes32();
+    final UInt64 proposerBoostAmount = spec.getProposerBoostAmount(justifiedState);
+    final UInt64 attestationWeight = proposerBoostAmount.plus(1);
+    final ProtoNodeData parentNode = mock(ProtoNodeData.class);
+    final ReadOnlyForkChoiceStrategy strategy = mock(ReadOnlyForkChoiceStrategy.class);
+    final ReadOnlyStore store = mock(ReadOnlyStore.class);
+
+    when(parentNode.getWeight()).thenReturn(attestationWeight);
+    when(store.getForkChoiceStrategy()).thenReturn(strategy);
+    when(store.getJustifiedStateIfAvailable()).thenReturn(Optional.of(justifiedState));
+    when(store.getPayloadStatus(parentRoot))
+        .thenReturn(Optional.of(ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY));
+    when(store.getProposerBoostRoot()).thenReturn(Optional.of(parentRoot));
+    when(strategy.getBlockData(parentRoot, ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY))
+        .thenReturn(Optional.of(parentNode));
+    when(strategy.blockSlot(parentRoot)).thenReturn(Optional.of(gloasSlot));
+    when(strategy.getAncestorNode(parentRoot, gloasSlot))
+        .thenReturn(Optional.of(ForkChoiceNode.createBase(parentRoot)));
+
+    assertThat(forkChoiceUtil.isParentStrong(store, parentRoot, proposerBoostAmount)).isTrue();
   }
 
   // Helper methods to create blocks with specific properties

@@ -338,6 +338,18 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
     return forkChoiceStrategy.getAncestorNode(root, slot);
   }
 
+  /**
+   * Returns the node's attestation weight for the Gloas late-reorg checks.
+   *
+   * <p>This helper is used by {@code isHeadWeak(...)} and {@code isParentStrong(...)}. Those spec
+   * helpers are defined in terms of unboosted attestation score, while protoarray stores the
+   * boosted fork-choice weight used for head selection.
+   *
+   * <p>To avoid rescanning all validator votes on each query, we start from the node weight already
+   * maintained in protoarray and, when the queried node is on the boosted chain, subtract the
+   * proposer-boost component back out. The result is the effective attestation-only weight for the
+   * specific node identity.
+   */
   private UInt64 getNodeAttestationWeight(
       final ReadOnlyStore store,
       final Bytes32 nodeRoot,
@@ -355,19 +367,27 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
     }
 
     final boolean receivesProposerBoost =
-        isSupportingVote(
-            nodeRoot,
-            nodePayloadStatus,
-            maybeBoostRoot.get(),
-            getCurrentSlot(store),
-            false,
-            forkChoiceStrategy);
+        protoArrayWeightIncludesProposerBoost(
+            forkChoiceStrategy, nodeRoot, nodePayloadStatus, maybeBoostRoot.get());
     if (!receivesProposerBoost) {
       return nodeWeight;
     }
 
     final UInt64 proposerBoostAmount = beaconStateAccessors.getProposerBoostAmount(justifiedState);
     return nodeWeight.minusMinZero(proposerBoostAmount);
+  }
+
+  private boolean protoArrayWeightIncludesProposerBoost(
+      final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
+      final Bytes32 nodeRoot,
+      final ForkChoicePayloadStatus nodePayloadStatus,
+      final Bytes32 proposerBoostRoot) {
+    return forkChoiceStrategy
+        .blockSlot(nodeRoot)
+        .flatMap(nodeSlot -> getAncestorNode(forkChoiceStrategy, proposerBoostRoot, nodeSlot))
+        .filter(
+            ancestorNode -> ancestorNode.equals(new ForkChoiceNode(nodeRoot, nodePayloadStatus)))
+        .isPresent();
   }
 
   /**
