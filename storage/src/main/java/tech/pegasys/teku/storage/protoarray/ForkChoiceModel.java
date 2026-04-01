@@ -28,6 +28,10 @@ import tech.pegasys.teku.storage.api.StoredBlockMetadata;
  *
  * <p>This is the block/payload variants layer that maps beacon blocks onto node identities, while
  * {@link ProtoArray} remains a milestone-agnostic node engine.
+ *
+ * <p>The model also owns the fork-aware vote routing and child-comparison rules so the milestone
+ * split stays concentrated in one place rather than being spread across extra resolver/policy
+ * types.
  */
 interface ForkChoiceModel {
 
@@ -56,9 +60,25 @@ interface ForkChoiceModel {
       StoredBlockMetadata block,
       boolean optimisticallyProcessed);
 
-  VoteScoringResolver getVoteScoringResolver();
+  /** Resolves a latest-message vote onto a concrete node identity. */
+  Optional<ForkChoiceNode> resolveVoteNode(
+      Bytes32 voteRoot,
+      UInt64 voteSlot,
+      boolean payloadPresent,
+      ProtoArray protoArray,
+      BlockNodeVariantsIndex blockNodeIndex);
 
-  HeadSelectionPolicy createHeadSelectionPolicy(
+  /**
+   * Compares two viable siblings from the same parent.
+   *
+   * <p>A positive value means the candidate should replace the current best child. A negative value
+   * means the current best child should remain. Zero falls back to ProtoArray's historic
+   * weight/root ordering.
+   */
+  int compareViableChildren(
+      ProtoNode candidateChild,
+      ProtoNode currentBestChild,
+      ProtoNode parent,
       ProtoArray protoArray,
       BlockNodeVariantsIndex blockNodeIndex,
       UInt64 currentSlot,
@@ -66,14 +86,8 @@ interface ForkChoiceModel {
 
   Optional<ProtoNodeData> getNodeData(ProtoArray protoArray, ForkChoiceNode node);
 
-  default Optional<ProtoNodeData> getBlockData(
-      final ProtoArray protoArray,
-      final BlockNodeVariantsIndex blockNodeIndex,
-      final Bytes32 blockRoot) {
-    return blockNodeIndex
-        .getBaseNode(blockRoot)
-        .flatMap(nodeIdentity -> getNodeData(protoArray, nodeIdentity));
-  }
+  Optional<ProtoNodeData> getBlockData(
+      ProtoArray protoArray, BlockNodeVariantsIndex blockNodeIndex, Bytes32 blockRoot);
 
   /**
    * Returns whether the supplied node is a valid head candidate for this fork-aware model.
@@ -81,46 +95,27 @@ interface ForkChoiceModel {
    * <p>Pre-Gloas head candidates are the base nodes. In Gloas, the structural base node is never a
    * head and only the EMPTY/FULL children are valid terminal heads.
    */
-  default boolean isHeadCandidate(final ProtoNode node) {
-    return node.getPayloadStatus() == ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING;
-  }
+  boolean isHeadCandidate(ProtoNode node);
 
   ForkChoiceNode resolveBaseNode(BlockNodeVariantsIndex blockNodeIndex, Bytes32 blockRoot);
 
   ForkChoiceNode resolveExecutionNode(
       ProtoArray protoArray, BlockNodeVariantsIndex blockNodeIndex, Bytes32 blockRoot);
 
-  default Optional<ForkChoicePayloadStatus> payloadStatus(
-      final ProtoArray protoArray,
-      final BlockNodeVariantsIndex blockNodeIndex,
-      final Bytes32 blockRoot) {
-    return getBlockData(protoArray, blockNodeIndex, blockRoot).map(ProtoNodeData::getPayloadStatus);
-  }
+  Optional<ForkChoicePayloadStatus> payloadStatus(
+      ProtoArray protoArray, BlockNodeVariantsIndex blockNodeIndex, Bytes32 blockRoot);
 
-  default void pullUpBlockCheckpoints(
-      final ProtoArray protoArray,
-      final BlockNodeVariantsIndex blockNodeIndex,
-      final Bytes32 blockRoot) {
-    blockNodeIndex
-        .getVariants(blockRoot)
-        .ifPresent(variants -> variants.allNodes().forEach(protoArray::pullUpCheckpoints));
-  }
+  void pullUpBlockCheckpoints(
+      ProtoArray protoArray, BlockNodeVariantsIndex blockNodeIndex, Bytes32 blockRoot);
 
-  default void onPtcVote(
-      final Bytes32 blockRoot,
-      final UInt64 validatorIndex,
-      final boolean payloadPresent,
-      final boolean blobDataAvailable) {}
+  void onPtcVote(
+      Bytes32 blockRoot,
+      UInt64 validatorIndex,
+      boolean payloadPresent,
+      boolean blobDataAvailable);
 
-  default void onRemovedBlockRoot(
-      final ProtoArray protoArray,
-      final BlockNodeVariantsIndex blockNodeIndex,
-      final Bytes32 blockRoot) {
-    blockNodeIndex
-        .getVariants(blockRoot)
-        .ifPresent(variants -> variants.allNodes().forEach(protoArray::removeNode));
-    blockNodeIndex.remove(blockRoot);
-  }
+  void onRemovedBlockRoot(
+      ProtoArray protoArray, BlockNodeVariantsIndex blockNodeIndex, Bytes32 blockRoot);
 
   void onExecutionPayloadResult(
       ProtoArray protoArray,
@@ -128,7 +123,8 @@ interface ForkChoiceModel {
       Bytes32 blockRoot,
       ExecutionPayloadStatus status,
       Optional<Bytes32> latestValidHash,
-      boolean verifiedInvalidTransition);
+      boolean verifiedInvalidTransition,
+      HeadSelectionContext headSelectionContext);
 
-  default void onPrunedBlocks(final BlockNodeVariantsIndex blockNodeIndex) {}
+  void onPrunedBlocks(BlockNodeVariantsIndex blockNodeIndex);
 }

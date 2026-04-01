@@ -33,47 +33,6 @@ class ProtoArrayScoreCalculator {
   static LongList computeDeltas(
       final VoteUpdater store,
       final int protoArraySize,
-      final Function<Bytes32, Optional<Integer>> getBaseNodeIndexByRoot,
-      final List<UInt64> oldBalances,
-      final List<UInt64> newBalances,
-      final Optional<Bytes32> previousProposerBoostRoot,
-      final Optional<Bytes32> newProposerBoostRoot,
-      final UInt64 previousBoostAmount,
-      final UInt64 newBoostAmount) {
-    return computeDeltas(
-        store,
-        protoArraySize,
-        node -> getBaseNodeIndexByRoot.apply(node.blockRoot()),
-        previousProposerBoostRoot.map(ForkChoiceNode::createBase),
-        newProposerBoostRoot.map(ForkChoiceNode::createBase),
-        oldBalances,
-        newBalances,
-        previousBoostAmount,
-        newBoostAmount,
-        null,
-        null,
-        new VoteScoringResolver() {
-          @Override
-          public Optional<ForkChoiceNode> resolveCurrentNode(
-              final VoteTracker vote,
-              final ProtoArray ignoredProtoArray,
-              final BlockNodeVariantsIndex ignoredBlockNodeVariantsIndex) {
-            return Optional.of(ForkChoiceNode.createBase(vote.getCurrentRoot()));
-          }
-
-          @Override
-          public Optional<ForkChoiceNode> resolveNextNode(
-              final VoteTracker vote,
-              final ProtoArray ignoredProtoArray,
-              final BlockNodeVariantsIndex ignoredBlockNodeVariantsIndex) {
-            return Optional.of(ForkChoiceNode.createBase(vote.getNextRoot()));
-          }
-        });
-  }
-
-  static LongList computeDeltas(
-      final VoteUpdater store,
-      final int protoArraySize,
       final Function<ForkChoiceNode, Optional<Integer>> getIndexByNode,
       final Optional<ForkChoiceNode> previousProposerBoostNode,
       final Optional<ForkChoiceNode> newProposerBoostNode,
@@ -83,7 +42,7 @@ class ProtoArrayScoreCalculator {
       final UInt64 newBoostAmount,
       final ProtoArray protoArray,
       final BlockNodeVariantsIndex blockNodeIndex,
-      final VoteScoringResolver voteScoringResolver) {
+      final ForkChoiceModel forkChoiceModel) {
     final LongList deltas = new LongArrayList(Collections.nCopies(protoArraySize, 0L));
 
     UInt64.rangeClosed(UInt64.ZERO, store.getHighestVotedValidatorIndex())
@@ -97,7 +56,7 @@ class ProtoArrayScoreCalculator {
                     validatorIndex,
                     protoArray,
                     blockNodeIndex,
-                    voteScoringResolver,
+                    forkChoiceModel,
                     getIndexByNode));
 
     previousProposerBoostNode.ifPresent(
@@ -115,7 +74,7 @@ class ProtoArrayScoreCalculator {
       final UInt64 validatorIndex,
       final ProtoArray protoArray,
       final BlockNodeVariantsIndex blockNodeIndex,
-      final VoteScoringResolver voteScoringResolver,
+      final ForkChoiceModel forkChoiceModel,
       final Function<ForkChoiceNode, Optional<Integer>> getIndexByNode) {
     final VoteTracker vote = store.getVote(validatorIndex);
 
@@ -134,9 +93,19 @@ class ProtoArrayScoreCalculator {
     final UInt64 effectiveNewBalance = vote.isNextEquivocating() ? UInt64.ZERO : newBalance;
 
     final Optional<ForkChoiceNode> currentNode =
-        voteScoringResolver.resolveCurrentNode(vote, protoArray, blockNodeIndex);
+        forkChoiceModel.resolveVoteNode(
+            vote.getCurrentRoot(),
+            vote.getCurrentSlot(),
+            vote.isCurrentPayloadPresent(),
+            protoArray,
+            blockNodeIndex);
     final Optional<ForkChoiceNode> nextNode =
-        voteScoringResolver.resolveNextNode(vote, protoArray, blockNodeIndex);
+        forkChoiceModel.resolveVoteNode(
+            vote.getNextRoot(),
+            vote.getNextSlot(),
+            vote.isNextPayloadPresent(),
+            protoArray,
+            blockNodeIndex);
 
     if (!vote.getCurrentRoot().equals(vote.getNextRoot())
         || !currentNode.equals(nextNode)

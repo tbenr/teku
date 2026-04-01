@@ -386,7 +386,12 @@ class Store extends CacheableStore {
           protoArray, blockNodeIndex, block, spec.isBlockProcessorOptimistic(block.getBlockSlot()));
     }
 
-    initialCanonicalBlockRoot.ifPresent(protoArray::setInitialCanonicalBlockRoot);
+    initialCanonicalBlockRoot.ifPresent(
+        blockRoot ->
+            protoArray.setInitialCanonicalBlockRoot(
+                blockRoot,
+                forkChoiceModelFactory.createHeadSelectionContext(
+                    spec.computeStartSlotAtEpoch(currentEpoch), blockNodeIndex, Optional.empty())));
 
     return protoArray;
   }

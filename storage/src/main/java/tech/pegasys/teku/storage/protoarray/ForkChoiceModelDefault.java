@@ -18,6 +18,7 @@ import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.executionlayer.ExecutionPayloadStatus;
 import tech.pegasys.teku.storage.api.StoredBlockMetadata;
@@ -86,17 +87,25 @@ class ForkChoiceModelDefault implements ForkChoiceModel {
   }
 
   @Override
-  public VoteScoringResolver getVoteScoringResolver() {
-    return DefaultVoteScoringResolver.INSTANCE;
+  public Optional<ForkChoiceNode> resolveVoteNode(
+      final Bytes32 voteRoot,
+      final UInt64 voteSlot,
+      final boolean payloadPresent,
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex) {
+    return blockNodeIndex.getBaseNode(voteRoot);
   }
 
   @Override
-  public HeadSelectionPolicy createHeadSelectionPolicy(
+  public int compareViableChildren(
+      final ProtoNode candidateChild,
+      final ProtoNode currentBestChild,
+      final ProtoNode parent,
       final ProtoArray protoArray,
       final BlockNodeVariantsIndex blockNodeIndex,
       final UInt64 currentSlot,
       final Optional<Bytes32> proposerBoostRoot) {
-    return DefaultHeadSelectionPolicy.INSTANCE;
+    return 0;
   }
 
   @Override
@@ -106,24 +115,41 @@ class ForkChoiceModelDefault implements ForkChoiceModel {
   }
 
   @Override
+  public Optional<ProtoNodeData> getBlockData(
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockRoot) {
+    return blockNodeIndex
+        .getBaseNode(blockRoot)
+        .flatMap(nodeIdentity -> getNodeData(protoArray, nodeIdentity));
+  }
+
+  @Override
+  public boolean isHeadCandidate(final ProtoNode node) {
+    return node.getPayloadStatus() == ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING;
+  }
+
+  @Override
   public void onExecutionPayloadResult(
       final ProtoArray protoArray,
       final BlockNodeVariantsIndex blockNodeIndex,
       final Bytes32 blockRoot,
       final ExecutionPayloadStatus status,
       final Optional<Bytes32> latestValidHash,
-      final boolean verifiedInvalidTransition) {
+      final boolean verifiedInvalidTransition,
+      final HeadSelectionContext headSelectionContext) {
     if (status.isValid()) {
       blockNodeIndex.getBaseNode(blockRoot).ifPresent(protoArray::markNodeValid);
     } else if (status.isInvalid()) {
       if (verifiedInvalidTransition) {
         blockNodeIndex
             .getBaseNode(blockRoot)
-            .ifPresent(node -> protoArray.markNodeInvalid(node, latestValidHash));
+            .ifPresent(node -> protoArray.markNodeInvalid(node, latestValidHash, headSelectionContext));
       } else {
         blockNodeIndex
             .getBaseNode(blockRoot)
-            .ifPresent(node -> protoArray.markParentChainInvalid(node, latestValidHash));
+            .ifPresent(
+                node -> protoArray.markParentChainInvalid(node, latestValidHash, headSelectionContext));
       }
     }
   }
@@ -140,5 +166,48 @@ class ForkChoiceModelDefault implements ForkChoiceModel {
       final BlockNodeVariantsIndex blockNodeIndex,
       final Bytes32 blockRoot) {
     return resolveBaseNode(blockNodeIndex, blockRoot);
+  }
+
+  @Override
+  public Optional<ForkChoicePayloadStatus> payloadStatus(
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockRoot) {
+    return getBlockData(protoArray, blockNodeIndex, blockRoot).map(ProtoNodeData::getPayloadStatus);
+  }
+
+  @Override
+  public void pullUpBlockCheckpoints(
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockRoot) {
+    blockNodeIndex
+        .getVariants(blockRoot)
+        .ifPresent(variants -> variants.allNodes().forEach(protoArray::pullUpCheckpoints));
+  }
+
+  @Override
+  public void onPtcVote(
+      final Bytes32 blockRoot,
+      final UInt64 validatorIndex,
+      final boolean payloadPresent,
+      final boolean blobDataAvailable) {
+    // No-op
+  }
+
+  @Override
+  public void onRemovedBlockRoot(
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockRoot) {
+    blockNodeIndex
+        .getVariants(blockRoot)
+        .ifPresent(variants -> variants.allNodes().forEach(protoArray::removeNode));
+    blockNodeIndex.remove(blockRoot);
+  }
+
+  @Override
+  public void onPrunedBlocks(final BlockNodeVariantsIndex blockNodeIndex) {
+    // No-op
   }
 }

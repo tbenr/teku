@@ -25,7 +25,6 @@ import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
-import java.util.function.ToIntFunction;
 import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -54,10 +53,11 @@ class ProtoArrayTest {
       new DataStructureUtil(TestSpecFactory.createMinimalPhase0());
   private final VoteUpdater voteUpdater = new StubVoteUpdater();
   private final StatusLogger statusLog = mock(StatusLogger.class);
+  private final SpecConfigGloas gloasSpecConfig =
+      SpecConfigGloas.required(
+          TestSpecFactory.createMinimalGloas().forMilestone(SpecMilestone.GLOAS).getConfig());
   private final ForkChoiceModelGloas gloasModel =
-      new ForkChoiceModelGloas(
-          SpecConfigGloas.required(
-              TestSpecFactory.createMinimalGloas().forMilestone(SpecMilestone.GLOAS).getConfig()));
+      new ForkChoiceModelGloas(gloasSpecConfig);
 
   private final Bytes32 block1a = dataStructureUtil.randomBytes32();
   private final Bytes32 block1b = dataStructureUtil.randomBytes32();
@@ -758,7 +758,7 @@ class ProtoArrayTest {
 
     // Apply deltas with Gloas tiebreaker — currentSlot far from block slot so tiebreaker
     // defaults to payload status ordering (FULL=2 > EMPTY=1)
-    applyScoreChanges(createGloasHeadSelectionPolicy(UInt64.valueOf(100), Optional.empty()));
+    applyScoreChanges(gloasModel, UInt64.valueOf(100), Optional.empty());
 
     // block2a should be head (FULL path wins via tiebreaker)
     final ProtoNode head =
@@ -800,7 +800,9 @@ class ProtoArrayTest {
         UInt64.valueOf(5),
         finalized,
         finalized,
-        DefaultHeadSelectionPolicy.INSTANCE);
+        ForkChoiceModelDefault.INSTANCE,
+        UInt64.valueOf(5),
+        Optional.empty());
     protoArray.setPruneThreshold(0);
     protoArray.maybePrune(block2a);
 
@@ -821,7 +823,7 @@ class ProtoArrayTest {
     protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
     protoArray.markNodeValid(block1a);
 
-    applyScoreChanges(createGloasHeadSelectionPolicy(UInt64.valueOf(100), Optional.empty()));
+    applyScoreChanges(gloasModel, UInt64.valueOf(100), Optional.empty());
 
     // FULL should be bestChild of block1a (PENDING node)
     final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
@@ -838,7 +840,7 @@ class ProtoArrayTest {
     protoArray.onExecutionPayload(block1a, EXECUTION_BLOCK_NUMBER, EXECUTION_BLOCK_HASH);
     protoArray.markNodeValid(block1a);
 
-    applyScoreChanges(createGloasHeadSelectionPolicy(UInt64.valueOf(6), Optional.empty()));
+    applyScoreChanges(gloasModel, UInt64.valueOf(6), Optional.empty());
 
     final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
@@ -860,7 +862,7 @@ class ProtoArrayTest {
     addValidBlockWithParentIndex(
         6, block2a, block1a, Optional.of(fullNodeIndex), EXECUTION_BLOCK_HASH);
 
-    applyScoreChanges(createGloasHeadSelectionPolicy(UInt64.valueOf(6), Optional.of(block2a)));
+    applyScoreChanges(gloasModel, UInt64.valueOf(6), Optional.of(block2a));
 
     // FULL wins: is_parent_node_full(block1a) = true → should_extend_payload = true
     final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
@@ -882,13 +884,7 @@ class ProtoArrayTest {
 
     // threshold = 5, ptcVoteCount = 6 → timely (6 > 5)
     applyScoreChanges(
-        createGloasHeadSelectionPolicy(
-            UInt64.valueOf(6),
-            Optional.of(block2a),
-            5,
-            5,
-            root -> root.equals(block1a) ? 6 : 0,
-            root -> root.equals(block1a) ? 6 : 0));
+        createGloasModel(5, 5, block1a, 6, 6), UInt64.valueOf(6), Optional.of(block2a));
 
     final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
     final int fullNodeIndex = protoArray.getFullNodeIndices().getInt(block1a);
@@ -910,13 +906,7 @@ class ProtoArrayTest {
     addValidBlockWithParentIndex(6, block2a, block1a, Optional.of(emptyNodeIndex));
 
     applyScoreChanges(
-        createGloasHeadSelectionPolicy(
-            UInt64.valueOf(6),
-            Optional.of(block2a),
-            5,
-            5,
-            root -> root.equals(block1a) ? 6 : 0,
-            __ -> 0));
+        createGloasModel(5, 5, block1a, 6, 0), UInt64.valueOf(6), Optional.of(block2a));
 
     final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
     assertThat(block1aNode.getBestChildIndex()).isEqualTo(Optional.of(emptyNodeIndex));
@@ -939,13 +929,7 @@ class ProtoArrayTest {
 
     // threshold = 5, ptcVoteCount = 3 → NOT timely (3 ≤ 5)
     applyScoreChanges(
-        createGloasHeadSelectionPolicy(
-            UInt64.valueOf(6),
-            Optional.of(block2a),
-            5,
-            5,
-            root -> root.equals(block1a) ? 3 : 0,
-            __ -> 0));
+        createGloasModel(5, 5, block1a, 3, 0), UInt64.valueOf(6), Optional.of(block2a));
 
     // FULL still wins because is_parent_node_full(block1a) = true
     final ProtoNode block1aNode = protoArray.getProtoNode(block1a).orElseThrow();
@@ -974,7 +958,7 @@ class ProtoArrayTest {
     voteUpdater.putVote(UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block2a, false, false));
     voteUpdater.putVote(UInt64.ONE, new VoteTracker(Bytes32.ZERO, block2a, false, false));
 
-    applyScoreChanges(createGloasHeadSelectionPolicy(UInt64.valueOf(100), Optional.empty()));
+    applyScoreChanges(gloasModel, UInt64.valueOf(100), Optional.empty());
 
     // EMPTY path wins by weight, even though tiebreaker would favor FULL
     final ProtoNode head =
@@ -1009,7 +993,7 @@ class ProtoArrayTest {
 
     // currentSlot = 6 = block slot + 1 → effective weight is 0 for both EMPTY and FULL
     // No proposer boost → should_extend_payload = true → FULL wins tiebreaker
-    applyScoreChanges(createGloasHeadSelectionPolicy(UInt64.valueOf(6), Optional.empty()));
+    applyScoreChanges(gloasModel, UInt64.valueOf(6), Optional.empty());
 
     // Even though EMPTY path has more votes, at previous slot both have effectiveWeight 0,
     // so tiebreaker decides → FULL wins
@@ -1037,7 +1021,9 @@ class ProtoArrayTest {
         block1a,
         ExecutionPayloadStatus.INVALID,
         Optional.empty(),
-        true);
+        true,
+        new HeadSelectionContext(
+            gloasModel, protoArray.blockNodeIndex(), UInt64.ZERO, Optional.empty()));
 
     // FULL node should be invalid
     assertThat(protoArray.getNodeByIndex(fullNodeIndex).isInvalid()).isTrue();
@@ -1061,38 +1047,44 @@ class ProtoArrayTest {
   }
 
   private void applyScoreChanges() {
-    applyScoreChanges(DefaultHeadSelectionPolicy.INSTANCE);
+    applyScoreChanges(ForkChoiceModelDefault.INSTANCE, UInt64.valueOf(5), Optional.empty());
   }
 
-  private void applyScoreChanges(final HeadSelectionPolicy headSelectionPolicy) {
+  private void applyScoreChanges(
+      final ForkChoiceModel forkChoiceModel,
+      final UInt64 currentSlot,
+      final Optional<Bytes32> proposerBoostRoot) {
     protoArray.applyScoreChanges(
         computeDeltas(),
         UInt64.valueOf(5),
         GENESIS_CHECKPOINT,
         GENESIS_CHECKPOINT,
-        headSelectionPolicy);
+        forkChoiceModel,
+        currentSlot,
+        proposerBoostRoot);
   }
 
-  private GloasHeadSelectionPolicy createGloasHeadSelectionPolicy(
-      final UInt64 currentSlot, final Optional<Bytes32> proposerBoostRoot) {
-    return createGloasHeadSelectionPolicy(currentSlot, proposerBoostRoot, 0, 0, __ -> 0, __ -> 0);
-  }
-
-  private GloasHeadSelectionPolicy createGloasHeadSelectionPolicy(
-      final UInt64 currentSlot,
-      final Optional<Bytes32> proposerBoostRoot,
+  private ForkChoiceModelGloas createGloasModel(
       final int payloadTimelyThreshold,
       final int dataAvailabilityTimelyThreshold,
-      final ToIntFunction<Bytes32> ptcPresentVoteCountLookup,
-      final ToIntFunction<Bytes32> ptcDataAvailableVoteCountLookup) {
-    return new GloasHeadSelectionPolicy(
-        protoArray.blockNodeIndex(),
-        currentSlot,
-        proposerBoostRoot,
+      final Bytes32 blockRoot,
+      final int payloadPresentVoteCount,
+      final int dataAvailableVoteCount) {
+    final PtcVoteTracker ptcVoteTracker = new PtcVoteTracker();
+    for (int validatorIndex = 0;
+        validatorIndex < Math.max(payloadPresentVoteCount, dataAvailableVoteCount);
+        validatorIndex++) {
+      ptcVoteTracker.recordVote(
+          blockRoot,
+          UInt64.valueOf(validatorIndex),
+          validatorIndex < payloadPresentVoteCount,
+          validatorIndex < dataAvailableVoteCount);
+    }
+    return new ForkChoiceModelGloas(
+        gloasSpecConfig,
         payloadTimelyThreshold,
         dataAvailabilityTimelyThreshold,
-        ptcPresentVoteCountLookup,
-        ptcDataAvailableVoteCountLookup);
+        ptcVoteTracker);
   }
 
   private void addValidBlock(final long slot, final Bytes32 blockRoot, final Bytes32 parentRoot) {
@@ -1170,18 +1162,24 @@ class ProtoArrayTest {
     return ProtoArrayScoreCalculator.computeDeltas(
         voteUpdater,
         protoArray.getTotalTrackedNodeCount(),
-        protoArray::getIndexByRoot,
-        balances,
-        balances,
+        protoArray.protoArray()::getNodeIndex,
         Optional.empty(),
         Optional.empty(),
+        balances,
+        balances,
         UInt64.ZERO,
-        UInt64.ZERO);
+        UInt64.ZERO,
+        protoArray.protoArray(),
+        protoArray.blockNodeIndex(),
+        ForkChoiceModelDefault.INSTANCE);
   }
 
   private class TestProtoArrayFacade {
     private final ProtoArray protoArray;
     private final BlockNodeVariantsIndex blockNodeIndex = new BlockNodeVariantsIndex();
+    private HeadSelectionContext lastHeadSelectionContext =
+        new HeadSelectionContext(
+            ForkChoiceModelDefault.INSTANCE, blockNodeIndex, UInt64.ZERO, Optional.empty());
 
     private TestProtoArrayFacade(final ProtoArray protoArray) {
       this.protoArray = protoArray;
@@ -1241,7 +1239,8 @@ class ProtoArrayTest {
         final UInt64 currentEpoch,
         final Checkpoint justifiedCheckpoint,
         final Checkpoint finalizedCheckpoint) {
-      return protoArray.findOptimisticHead(currentEpoch, justifiedCheckpoint, finalizedCheckpoint);
+      return protoArray.findOptimisticHead(
+          currentEpoch, justifiedCheckpoint, finalizedCheckpoint, lastHeadSelectionContext);
     }
 
     private Optional<ProtoNode> findOptimisticallySyncedMergeTransitionBlock(
@@ -1255,13 +1254,26 @@ class ProtoArrayTest {
         final UInt64 currentEpoch,
         final Checkpoint justifiedCheckpoint,
         final Checkpoint finalizedCheckpoint,
-        final HeadSelectionPolicy headSelectionPolicy) {
+        final ForkChoiceModel forkChoiceModel,
+        final UInt64 currentSlot,
+        final Optional<Bytes32> proposerBoostRoot) {
       protoArray.applyScoreChanges(
-          deltas, currentEpoch, justifiedCheckpoint, finalizedCheckpoint, headSelectionPolicy);
+          deltas,
+          currentEpoch,
+          justifiedCheckpoint,
+          finalizedCheckpoint,
+          new HeadSelectionContext(
+              forkChoiceModel, blockNodeIndex, currentSlot, proposerBoostRoot));
+      lastHeadSelectionContext =
+          new HeadSelectionContext(forkChoiceModel, blockNodeIndex, currentSlot, proposerBoostRoot);
     }
 
     private void markNodeInvalid(final Bytes32 blockRoot, final Optional<Bytes32> latestValidHash) {
-      protoArray.markNodeInvalid(ForkChoiceNode.createBase(blockRoot), latestValidHash);
+      protoArray.markNodeInvalid(
+          ForkChoiceNode.createBase(blockRoot),
+          latestValidHash,
+          new HeadSelectionContext(
+              ForkChoiceModelDefault.INSTANCE, blockNodeIndex, UInt64.ZERO, Optional.empty()));
       pruneRemovedProjections();
     }
 
@@ -1275,12 +1287,16 @@ class ProtoArrayTest {
 
     private void markParentChainInvalid(
         final Bytes32 blockRoot, final Optional<Bytes32> latestValidHash) {
-      protoArray.markParentChainInvalid(ForkChoiceNode.createBase(blockRoot), latestValidHash);
+      protoArray.markParentChainInvalid(
+          ForkChoiceNode.createBase(blockRoot),
+          latestValidHash,
+          new HeadSelectionContext(
+              ForkChoiceModelDefault.INSTANCE, blockNodeIndex, UInt64.ZERO, Optional.empty()));
       pruneRemovedProjections();
     }
 
     private void setInitialCanonicalBlockRoot(final Bytes32 blockRoot) {
-      protoArray.setInitialCanonicalBlockRoot(blockRoot);
+      protoArray.setInitialCanonicalBlockRoot(blockRoot, lastHeadSelectionContext);
     }
 
     private void setPruneThreshold(final int pruneThreshold) {
@@ -1290,6 +1306,19 @@ class ProtoArrayTest {
     private void maybePrune(final Bytes32 finalizedRoot) {
       protoArray.maybePrune(ForkChoiceNode.createBase(finalizedRoot));
       pruneRemovedProjections();
+    }
+
+    private void updateParentBestChildAndDescendantForBlockVariants(final Bytes32 blockRoot) {
+      blockNodeIndex
+          .getVariants(blockRoot)
+          .ifPresent(
+              variants ->
+                  variants
+                      .allNodes()
+                      .forEach(
+                          nodeIdentity ->
+                              protoArray.updateBestChildAndDescendantOfParent(
+                                  nodeIdentity, lastHeadSelectionContext)));
     }
 
     private void onBlock(
@@ -1338,6 +1367,7 @@ class ProtoArrayTest {
           executionBlockHash,
           optimisticallyProcessed);
       blockNodeIndex.putBaseNode(blockRoot, blockSlot, ForkChoiceNode.createBase(blockRoot));
+      updateParentBestChildAndDescendantForBlockVariants(blockRoot);
     }
 
     private void createEmptyNode(final Bytes32 blockRoot) {
@@ -1363,6 +1393,7 @@ class ProtoArrayTest {
           baseNode.getExecutionBlockHash(),
           baseNode.isOptimistic());
       blockNodeIndex.attachEmptyNode(blockRoot, emptyNode);
+      updateParentBestChildAndDescendantForBlockVariants(blockRoot);
     }
 
     private void onExecutionPayload(
@@ -1371,6 +1402,7 @@ class ProtoArrayTest {
         final Bytes32 executionBlockHash) {
       gloasModel.onExecutionPayload(
           protoArray, blockNodeIndex, blockRoot, executionBlockNumber, executionBlockHash);
+      updateParentBestChildAndDescendantForBlockVariants(blockRoot);
     }
 
     private Optional<Integer> resolveParentIndex(

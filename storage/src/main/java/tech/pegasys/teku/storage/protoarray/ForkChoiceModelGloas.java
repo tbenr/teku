@@ -14,6 +14,8 @@
 package tech.pegasys.teku.storage.protoarray;
 
 import java.util.Optional;
+
+import com.google.common.annotations.VisibleForTesting;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.config.SpecConfigGloas;
@@ -38,11 +40,26 @@ import tech.pegasys.teku.storage.api.StoredBlockMetadata;
  */
 class ForkChoiceModelGloas implements ForkChoiceModel {
 
-  private final SpecConfigGloas specConfig;
-  private final PtcVoteTracker ptcVoteTracker = new PtcVoteTracker();
+  private final int payloadTimelyThreshold;
+  private final int dataAvailabilityTimelyThreshold;
+  private final PtcVoteTracker ptcVoteTracker;
 
   ForkChoiceModelGloas(final SpecConfigGloas specConfig) {
-    this.specConfig = specConfig;
+    this(
+        specConfig,
+        specConfig.getPayloadTimelyThreshold(),
+        specConfig.getDataAvailabilityTimelyThreshold(),
+        new PtcVoteTracker());
+  }
+
+  ForkChoiceModelGloas(
+      final SpecConfigGloas specConfig,
+      final int payloadTimelyThreshold,
+      final int dataAvailabilityTimelyThreshold,
+      final PtcVoteTracker ptcVoteTracker) {
+    this.payloadTimelyThreshold = payloadTimelyThreshold;
+    this.dataAvailabilityTimelyThreshold = dataAvailabilityTimelyThreshold;
+    this.ptcVoteTracker = ptcVoteTracker;
   }
 
   @Override
@@ -89,6 +106,7 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
     blockNodeIndex.attachEmptyNode(blockRoot, emptyNode);
   }
 
+  @VisibleForTesting
   Optional<ForkChoiceNode> resolveParentNode(
       final ProtoArray protoArray,
       final BlockNodeVariantsIndex blockNodeIndex,
@@ -191,24 +209,127 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
   }
 
   @Override
-  public VoteScoringResolver getVoteScoringResolver() {
-    return GloasVoteScoringResolver.INSTANCE;
+  public Optional<ForkChoiceNode> resolveVoteNode(
+      final Bytes32 voteRoot,
+      final UInt64 voteSlot,
+      final boolean payloadPresent,
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex) {
+    final Optional<ForkChoiceNode> maybeBaseNode = blockNodeIndex.getBaseNode(voteRoot);
+    if (maybeBaseNode.isEmpty()) {
+      return Optional.empty();
+    }
+
+    final Optional<UInt64> blockSlot =
+        protoArray.getNode(maybeBaseNode.get()).map(ProtoNode::getBlockSlot);
+    if (blockSlot.isPresent() && voteSlot.isLessThanOrEqualTo(blockSlot.get())) {
+      return maybeBaseNode;
+    }
+    if (payloadPresent) {
+      return blockNodeIndex.getFullNode(voteRoot).or(() -> maybeBaseNode);
+    }
+    return blockNodeIndex.getEmptyNode(voteRoot).or(() -> maybeBaseNode);
   }
 
   @Override
-  public HeadSelectionPolicy createHeadSelectionPolicy(
+  public int compareViableChildren(
+      final ProtoNode candidateChild,
+      final ProtoNode currentBestChild,
+      final ProtoNode parent,
       final ProtoArray protoArray,
       final BlockNodeVariantsIndex blockNodeIndex,
       final UInt64 currentSlot,
       final Optional<Bytes32> proposerBoostRoot) {
-    return new GloasHeadSelectionPolicy(
-        blockNodeIndex,
-        currentSlot,
-        proposerBoostRoot,
-        specConfig.getPayloadTimelyThreshold(),
-        specConfig.getDataAvailabilityTimelyThreshold(),
-        ptcVoteTracker::getPayloadPresentVoteCount,
-        ptcVoteTracker::getDataAvailableVoteCount);
+    // Spec mapping: the extra Gloas sort key in modified get_head only applies to the EMPTY/FULL
+    // children returned by get_node_children(parent_root).
+    if (!candidateChild.getBlockRoot().equals(parent.getBlockRoot())
+        || !currentBestChild.getBlockRoot().equals(parent.getBlockRoot())) {
+      return 0;
+    }
+
+    final UInt64 candidateEffectiveWeight = effectiveWeight(candidateChild, currentSlot);
+    final UInt64 currentEffectiveWeight = effectiveWeight(currentBestChild, currentSlot);
+    final int weightComparison = candidateEffectiveWeight.compareTo(currentEffectiveWeight);
+    if (weightComparison != 0) {
+      return weightComparison;
+    }
+
+    return Integer.compare(
+        computePayloadStatusTiebreaker(
+            candidateChild, protoArray, blockNodeIndex, currentSlot, proposerBoostRoot),
+        computePayloadStatusTiebreaker(
+            currentBestChild, protoArray, blockNodeIndex, currentSlot, proposerBoostRoot));
+  }
+
+  private UInt64 effectiveWeight(final ProtoNode node, final UInt64 currentSlot) {
+    if (node.getPayloadStatus() == ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING
+        || !node.getBlockSlot().plus(1).equals(currentSlot)) {
+      return node.getWeight();
+    }
+    return UInt64.ZERO;
+  }
+
+  private int computePayloadStatusTiebreaker(
+      final ProtoNode node,
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final UInt64 currentSlot,
+      final Optional<Bytes32> proposerBoostRoot) {
+    if (node.getPayloadStatus() == ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING
+        || !node.getBlockSlot().plus(1).equals(currentSlot)) {
+      return node.getPayloadStatus().getValue();
+    }
+    if (node.getPayloadStatus() == ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY) {
+      return 1;
+    }
+    return shouldExtendPayload(blockNodeIndex, node.getBlockRoot(), protoArray, proposerBoostRoot)
+        ? 2
+        : 0;
+  }
+
+  private boolean shouldExtendPayload(
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockRoot,
+      final ProtoArray protoArray,
+      final Optional<Bytes32> proposerBoostRoot) {
+    if (isPayloadTimely(blockNodeIndex, blockRoot)
+        && isPayloadDataAvailable(blockNodeIndex, blockRoot)) {
+      return true;
+    }
+    if (proposerBoostRoot.isEmpty()) {
+      return true;
+    }
+    final Optional<ProtoNode> proposerNode =
+        blockNodeIndex.getBaseNode(proposerBoostRoot.get()).flatMap(protoArray::getNode);
+    if (proposerNode.isEmpty()) {
+      return true;
+    }
+    if (!proposerNode.get().getParentRoot().equals(blockRoot)) {
+      return true;
+    }
+    return blockNodeIndex
+        .getFullNode(blockRoot)
+        .flatMap(protoArray::getNode)
+        .map(
+            fullNode ->
+                fullNode.getExecutionBlockHash().equals(proposerNode.get().getExecutionBlockHash()))
+        .orElse(false);
+  }
+
+  private boolean isPayloadTimely(
+      final BlockNodeVariantsIndex blockNodeIndex, final Bytes32 blockRoot) {
+    if (blockNodeIndex.getFullNode(blockRoot).isEmpty()) {
+      return false;
+    }
+    return ptcVoteTracker.getPayloadPresentVoteCount(blockRoot) > payloadTimelyThreshold;
+  }
+
+  private boolean isPayloadDataAvailable(
+      final BlockNodeVariantsIndex blockNodeIndex, final Bytes32 blockRoot) {
+    if (blockNodeIndex.getFullNode(blockRoot).isEmpty()) {
+      return false;
+    }
+    return ptcVoteTracker.getDataAvailableVoteCount(blockRoot) > dataAvailabilityTimelyThreshold;
   }
 
   @Override
@@ -218,7 +339,8 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
       final Bytes32 blockRoot,
       final ExecutionPayloadStatus status,
       final Optional<Bytes32> latestValidHash,
-      final boolean verifiedInvalidTransition) {
+      final boolean verifiedInvalidTransition,
+      final HeadSelectionContext headSelectionContext) {
     if (status.isValid()) {
       // Only the FULL node needs validation marking — base/EMPTY are already VALID from block
       // import
@@ -230,13 +352,14 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
         // fault.
         blockNodeIndex
             .getFullNode(blockRoot)
-            .ifPresent(node -> protoArray.markNodeInvalid(node, latestValidHash));
+            .ifPresent(node -> protoArray.markNodeInvalid(node, latestValidHash, headSelectionContext));
       } else {
         // Unverified: a child's payload was invalid, pointing at this parent.
         // The base node is the correct anchor for parent-chain invalidation search.
         blockNodeIndex
             .getBaseNode(blockRoot)
-            .ifPresent(node -> protoArray.markParentChainInvalid(node, latestValidHash));
+            .ifPresent(
+                node -> protoArray.markParentChainInvalid(node, latestValidHash, headSelectionContext));
       }
     }
   }
@@ -245,6 +368,16 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
   public Optional<ProtoNodeData> getNodeData(
       final ProtoArray protoArray, final ForkChoiceNode node) {
     return protoArray.getNode(node).map(ProtoNode::getBlockData);
+  }
+
+  @Override
+  public Optional<ProtoNodeData> getBlockData(
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockRoot) {
+    return blockNodeIndex
+        .getBaseNode(blockRoot)
+        .flatMap(nodeIdentity -> getNodeData(protoArray, nodeIdentity));
   }
 
   @Override
@@ -289,6 +422,16 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
   }
 
   @Override
+  public void pullUpBlockCheckpoints(
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockRoot) {
+    blockNodeIndex
+        .getVariants(blockRoot)
+        .ifPresent(variants -> variants.allNodes().forEach(protoArray::pullUpCheckpoints));
+  }
+
+  @Override
   public void onPtcVote(
       final Bytes32 blockRoot,
       final UInt64 validatorIndex,
@@ -303,7 +446,10 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
       final ProtoArray protoArray,
       final BlockNodeVariantsIndex blockNodeIndex,
       final Bytes32 blockRoot) {
-    ForkChoiceModel.super.onRemovedBlockRoot(protoArray, blockNodeIndex, blockRoot);
+    blockNodeIndex
+        .getVariants(blockRoot)
+        .ifPresent(variants -> variants.allNodes().forEach(protoArray::removeNode));
+    blockNodeIndex.remove(blockRoot);
     ptcVoteTracker.remove(blockRoot);
   }
 

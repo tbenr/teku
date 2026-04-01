@@ -13,6 +13,8 @@
 
 package tech.pegasys.teku.storage.protoarray;
 
+import java.util.Optional;
+import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.SpecMilestone;
@@ -36,10 +38,17 @@ public class ForkChoiceModelFactory {
             : defaultModel;
   }
 
-  ForkChoiceModel forSlot(final UInt64 slot) {
+  public ForkChoiceModel forSlot(final UInt64 slot) {
     return spec.atSlot(slot).getMilestone().isGreaterThanOrEqualTo(SpecMilestone.GLOAS)
         ? gloasModel
         : defaultModel;
+  }
+
+  public HeadSelectionContext createHeadSelectionContext(
+      final UInt64 currentSlot,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Optional<Bytes32> proposerBoostRoot) {
+    return new HeadSelectionContext(this, blockNodeIndex, currentSlot, proposerBoostRoot);
   }
 
   public void rebuildBlockNodesFromMetadata(

@@ -54,7 +54,6 @@ public class ProtoArray {
   // When starting from genesis, this value is zero (genesis epoch)
   private final UInt64 initialEpoch;
   private final StatusLogger statusLog;
-  private HeadSelectionPolicy headSelectionPolicy = DefaultHeadSelectionPolicy.INSTANCE;
 
   /**
    * Lists all the known nodes. It is guaranteed that a node will be after its parent in the list.
@@ -163,11 +162,20 @@ public class ProtoArray {
 
     indices.add(nodeIdentity, nodeIndex);
     nodes.add(node);
-
-    updateBestDescendantOfParent(node, nodeIndex);
   }
 
-  public void setInitialCanonicalBlockRoot(final Bytes32 initialCanonicalBlockRoot) {
+  public void updateBestChildAndDescendantOfParent(
+      final ForkChoiceNode nodeIdentity, final HeadSelectionContext headSelectionContext) {
+    getNodeIndex(nodeIdentity)
+        .ifPresent(
+            nodeIndex ->
+                updateBestChildAndDescendantOfParent(
+                    getNodeByIndex(nodeIndex), nodeIndex, headSelectionContext));
+  }
+
+  public void setInitialCanonicalBlockRoot(
+      final Bytes32 initialCanonicalBlockRoot,
+      final HeadSelectionContext headSelectionContext) {
     final Optional<ProtoNode> initialCanonicalProtoNode =
         getNode(ForkChoiceNode.createBase(initialCanonicalBlockRoot));
     if (initialCanonicalProtoNode.isEmpty()) {
@@ -175,7 +183,9 @@ public class ProtoArray {
       return;
     }
 
-    applyToNodes(this::updateBestDescendantOfParent);
+    applyToNodes(
+        (protoNode, nodeIndex) ->
+            updateBestChildAndDescendantOfParent(protoNode, nodeIndex, headSelectionContext));
 
     // let's peak the best descendant of the initial canonical block root
     ProtoNode node =
@@ -193,7 +203,9 @@ public class ProtoArray {
       node = parent;
     }
 
-    applyToNodes(this::updateBestDescendantOfParent);
+    applyToNodes(
+        (protoNode, nodeIndex) ->
+            updateBestChildAndDescendantOfParent(protoNode, nodeIndex, headSelectionContext));
   }
 
   /**
@@ -208,8 +220,9 @@ public class ProtoArray {
   public ProtoNode findOptimisticHead(
       final UInt64 currentEpoch,
       final Checkpoint justifiedCheckpoint,
-      final Checkpoint finalizedCheckpoint) {
-    return findHead(currentEpoch, justifiedCheckpoint, finalizedCheckpoint)
+      final Checkpoint finalizedCheckpoint,
+      final HeadSelectionContext headSelectionContext) {
+    return findHead(currentEpoch, justifiedCheckpoint, finalizedCheckpoint, headSelectionContext)
         .orElseThrow(fatalException("Finalized block was found to be invalid."));
   }
 
@@ -245,7 +258,8 @@ public class ProtoArray {
   private Optional<ProtoNode> findHead(
       final UInt64 currentEpoch,
       final Checkpoint justifiedCheckpoint,
-      final Checkpoint finalizedCheckpoint) {
+      final Checkpoint finalizedCheckpoint,
+      final HeadSelectionContext headSelectionContext) {
     if (!this.currentEpoch.equals(currentEpoch)
         || !this.justifiedCheckpoint.equals(justifiedCheckpoint)
         || !this.finalizedCheckpoint.equals(finalizedCheckpoint)) {
@@ -253,7 +267,9 @@ public class ProtoArray {
       this.justifiedCheckpoint = justifiedCheckpoint;
       this.finalizedCheckpoint = finalizedCheckpoint;
       // Justified or finalized epoch changed so we have to re-evaluate all best descendants.
-      applyToNodes(this::updateBestDescendantOfParent);
+      applyToNodes(
+          (node, nodeIndex) ->
+              updateBestChildAndDescendantOfParent(node, nodeIndex, headSelectionContext));
     }
     int justifiedIndex =
         indices
@@ -329,8 +345,10 @@ public class ProtoArray {
    * @param latestValidHash Latest valid hash of execution block
    */
   public void markNodeInvalid(
-      final ForkChoiceNode nodeIdentity, final Optional<Bytes32> latestValidHash) {
-    markNodeInvalid(nodeIdentity, latestValidHash, true);
+      final ForkChoiceNode nodeIdentity,
+      final Optional<Bytes32> latestValidHash,
+      final HeadSelectionContext headSelectionContext) {
+    markNodeInvalid(nodeIdentity, latestValidHash, true, headSelectionContext);
   }
 
   /**
@@ -343,14 +361,17 @@ public class ProtoArray {
    * @param latestValidHash Latest valid hash of execution block
    */
   public void markParentChainInvalid(
-      final ForkChoiceNode nodeIdentity, final Optional<Bytes32> latestValidHash) {
-    markNodeInvalid(nodeIdentity, latestValidHash, false);
+      final ForkChoiceNode nodeIdentity,
+      final Optional<Bytes32> latestValidHash,
+      final HeadSelectionContext headSelectionContext) {
+    markNodeInvalid(nodeIdentity, latestValidHash, false, headSelectionContext);
   }
 
   private void markNodeInvalid(
       final ForkChoiceNode nodeIdentity,
       final Optional<Bytes32> latestValidHash,
-      final boolean verifiedInvalidTransition) {
+      final boolean verifiedInvalidTransition,
+      final HeadSelectionContext headSelectionContext) {
     if (!verifiedInvalidTransition && latestValidHash.isEmpty()) {
       // Couldn't find invalid chain segment with lack of data
       return;
@@ -387,7 +408,9 @@ public class ProtoArray {
     removeNode(node.getForkChoiceNode());
     markDescendantsAsInvalid(index);
     // Applying zero deltas causes the newly marked INVALID nodes to have their weight set to 0
-    applyDeltas(new LongArrayList(Collections.nCopies(getTotalTrackedNodeCount(), 0L)));
+    applyDeltas(
+        new LongArrayList(Collections.nCopies(getTotalTrackedNodeCount(), 0L)),
+        headSelectionContext);
   }
 
   private boolean nodeHasExecutionHash(final int nodeIndex, final Bytes32 executionHash) {
@@ -458,7 +481,7 @@ public class ProtoArray {
       final UInt64 currentEpoch,
       final Checkpoint justifiedCheckpoint,
       final Checkpoint finalizedCheckpoint,
-      final HeadSelectionPolicy headSelectionPolicy) {
+      final HeadSelectionContext headSelectionContext) {
     checkArgument(
         deltas.size() == getTotalTrackedNodeCount(),
         "ProtoArray: Invalid delta length expected %s but got %s",
@@ -468,9 +491,8 @@ public class ProtoArray {
     this.currentEpoch = currentEpoch;
     this.justifiedCheckpoint = justifiedCheckpoint;
     this.finalizedCheckpoint = finalizedCheckpoint;
-    this.headSelectionPolicy = headSelectionPolicy;
 
-    applyDeltas(deltas);
+    applyDeltas(deltas, headSelectionContext);
   }
 
   public int getTotalTrackedNodeCount() {
@@ -563,7 +585,10 @@ public class ProtoArray {
    * </ul>
    */
   @SuppressWarnings("StatementWithEmptyBody")
-  private void maybeUpdateBestChildAndDescendant(final int parentIndex, final int childIndex) {
+  private void maybeUpdateBestChildAndDescendant(
+      final int parentIndex,
+      final int childIndex,
+      final HeadSelectionContext headSelectionContext) {
     ProtoNode child = getNodeByIndex(childIndex);
     ProtoNode parent = getNodeByIndex(parentIndex);
 
@@ -593,31 +618,12 @@ public class ProtoArray {
                   // The best child leads to a viable head, but the child doesn't.
                   // No change.
                 } else {
-                  final int policyDecision =
-                      headSelectionPolicy.compareChildren(
-                          child, bestChild, parent, ProtoArray.this);
-                  if (policyDecision > 0) {
+                  final int childComparison =
+                      headSelectionContext.compareViableChildren(child, bestChild, parent, this);
+                  if (childComparison > 0) {
                     changeToChild(parent, childIndex);
-                  } else if (policyDecision < 0) {
-                    // No change.
-                  } else if (child.getWeight().equals(bestChild.getWeight())) {
-                    // Tie-breaker of equal weights by root.
-                    if (child
-                            .getBlockRoot()
-                            .toHexString()
-                            .compareTo(bestChild.getBlockRoot().toHexString())
-                        >= 0) {
-                      changeToChild(parent, childIndex);
-                    } else {
-                      // No change.
-                    }
                   } else {
-                    // Choose the winner by weight.
-                    if (child.getWeight().compareTo(bestChild.getWeight()) >= 0) {
-                      changeToChild(parent, childIndex);
-                    } else {
-                      // No change.
-                    }
+                    // No change.
                   }
                 }
               }
@@ -762,14 +768,22 @@ public class ProtoArray {
     getNode(nodeIdentity).ifPresent(ProtoNode::pullUpCheckpoints);
   }
 
-  private void applyDeltas(final LongList deltas) {
+  private void applyDeltas(
+      final LongList deltas, final HeadSelectionContext headSelectionContext) {
     applyToNodes((node, nodeIndex) -> applyDelta(deltas, node, nodeIndex));
-    applyToNodes(this::updateBestDescendantOfParent);
+    applyToNodes(
+        (node, nodeIndex) ->
+            updateBestChildAndDescendantOfParent(node, nodeIndex, headSelectionContext));
   }
 
-  private void updateBestDescendantOfParent(final ProtoNode node, final int nodeIndex) {
+  private void updateBestChildAndDescendantOfParent(
+      final ProtoNode node,
+      final int nodeIndex,
+      final HeadSelectionContext headSelectionContext) {
     node.getParentIndex()
-        .ifPresent(parentIndex -> maybeUpdateBestChildAndDescendant(parentIndex, nodeIndex));
+        .ifPresent(
+            parentIndex ->
+                maybeUpdateBestChildAndDescendant(parentIndex, nodeIndex, headSelectionContext));
   }
 
   private void applyDelta(final LongList deltas, final ProtoNode node, final int nodeIndex) {

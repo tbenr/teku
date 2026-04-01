@@ -21,15 +21,19 @@ import static tech.pegasys.teku.storage.protoarray.ProtoArrayTestUtil.getHash;
 
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongList;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.Test;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
+import tech.pegasys.teku.spec.SpecMilestone;
 import tech.pegasys.teku.spec.TestSpecFactory;
+import tech.pegasys.teku.spec.config.SpecConfigGloas;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
@@ -51,10 +55,70 @@ public class ProtoArrayScoreCalculatorTest {
   private UInt64 oldProposerBoostAmount = ZERO;
   private UInt64 newProposerBoostAmount = ZERO;
   private final VoteUpdater store = createStoreToManipulateVotes();
+  private final ForkChoiceModelGloas gloasModel =
+      new ForkChoiceModelGloas(
+          SpecConfigGloas.required(
+              TestSpecFactory.createMinimalGloas().forMilestone(SpecMilestone.GLOAS).getConfig()));
 
   private Optional<Integer> getIndex(final Bytes32 root) {
     final int index = indices.getOrDefault(root, -1);
     return index >= 0 ? Optional.of(index) : Optional.empty();
+  }
+
+  private LongList computeDeltas(
+      final VoteUpdater store,
+      final int protoArraySize,
+      final Function<Bytes32, Optional<Integer>> getBaseNodeIndexByRoot,
+      final List<UInt64> oldBalances,
+      final List<UInt64> newBalances,
+      final Optional<Bytes32> previousProposerBoostRoot,
+      final Optional<Bytes32> newProposerBoostRoot,
+      final UInt64 previousBoostAmount,
+      final UInt64 newBoostAmount) {
+    final BlockNodeVariantsIndex blockNodeIndex = new BlockNodeVariantsIndex();
+    indices.forEach(
+        (root, __) -> blockNodeIndex.putBaseNode(root, ZERO, ForkChoiceNode.createBase(root)));
+    return ProtoArrayScoreCalculator.computeDeltas(
+        store,
+        protoArraySize,
+        node -> getBaseNodeIndexByRoot.apply(node.blockRoot()),
+        previousProposerBoostRoot.map(ForkChoiceNode::createBase),
+        newProposerBoostRoot.map(ForkChoiceNode::createBase),
+        oldBalances,
+        newBalances,
+        previousBoostAmount,
+        newBoostAmount,
+        createProtoArray(),
+        blockNodeIndex,
+        ForkChoiceModelDefault.INSTANCE);
+  }
+
+  private LongList computeDeltas(
+      final VoteUpdater store,
+      final int protoArraySize,
+      final Function<ForkChoiceNode, Optional<Integer>> getIndexByNode,
+      final Optional<ForkChoiceNode> previousProposerBoostNode,
+      final Optional<ForkChoiceNode> newProposerBoostNode,
+      final List<UInt64> oldBalances,
+      final List<UInt64> newBalances,
+      final UInt64 previousBoostAmount,
+      final UInt64 newBoostAmount,
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final ForkChoiceModel forkChoiceModel) {
+    return ProtoArrayScoreCalculator.computeDeltas(
+        store,
+        protoArraySize,
+        getIndexByNode,
+        previousProposerBoostNode,
+        newProposerBoostNode,
+        oldBalances,
+        newBalances,
+        previousBoostAmount,
+        newBoostAmount,
+        protoArray,
+        blockNodeIndex,
+        forkChoiceModel);
   }
 
   @Test
@@ -545,7 +609,7 @@ public class ProtoArrayScoreCalculatorTest {
             newProposerBoostAmount,
             protoArray,
             blockNodeIndex,
-            GloasVoteScoringResolver.INSTANCE);
+            gloasModel);
 
     assertThat(deltas).containsExactly(balance.longValue(), 0L);
   }
@@ -576,7 +640,7 @@ public class ProtoArrayScoreCalculatorTest {
             newProposerBoostAmount,
             protoArray,
             blockNodeIndex,
-            GloasVoteScoringResolver.INSTANCE);
+            gloasModel);
 
     assertThat(deltas).containsExactly(balance.longValue(), 0L);
   }
@@ -608,7 +672,7 @@ public class ProtoArrayScoreCalculatorTest {
             newProposerBoostAmount,
             protoArray,
             blockNodeIndex,
-            GloasVoteScoringResolver.INSTANCE);
+            gloasModel);
 
     assertThat(deltas).containsExactly(0L, 0L, balance.longValue());
   }

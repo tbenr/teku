@@ -58,6 +58,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
 
   private Optional<ForkChoiceNode> proposerBoostNode = Optional.empty();
   private UInt64 proposerBoostAmount = UInt64.ZERO;
+  private HeadSelectionContext headSelectionContext;
 
   private ForkChoiceStrategy(
       final Spec spec,
@@ -69,6 +70,9 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
     this.blockNodeIndex = blockNodeIndex;
     this.forkChoiceModelFactory = new ForkChoiceModelFactory(spec);
     this.balances = balances;
+    this.headSelectionContext =
+        forkChoiceModelFactory.createHeadSelectionContext(
+            UInt64.ZERO, blockNodeIndex, Optional.empty());
   }
 
   private ForkChoiceModel getForkChoiceModel(final UInt64 slot) {
@@ -101,7 +105,8 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       final Checkpoint justifiedCheckpoint,
       final Checkpoint finalizedCheckpoint) {
     final ProtoNode bestNode =
-        protoArray.findOptimisticHead(currentEpoch, justifiedCheckpoint, finalizedCheckpoint);
+        protoArray.findOptimisticHead(
+            currentEpoch, justifiedCheckpoint, finalizedCheckpoint, headSelectionContext);
     return new ForkChoiceNode(bestNode.getBlockRoot(), bestNode.getPayloadStatus());
   }
 
@@ -132,6 +137,9 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
     balancesLock.writeLock().lock();
     try {
       final ForkChoiceModel forkChoiceModel = getForkChoiceModel(currentSlot);
+      final HeadSelectionContext headSelectionContext =
+          forkChoiceModelFactory.createHeadSelectionContext(
+              currentSlot, blockNodeIndex, proposerBoostRoot);
       final Optional<ForkChoiceNode> nextProposerBoostNode =
           proposerBoostRoot.flatMap(blockNodeIndex::getBaseNode);
       LongList deltas =
@@ -147,18 +155,18 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
               proposerBoostAmount,
               protoArray,
               blockNodeIndex,
-              forkChoiceModel.getVoteScoringResolver());
+              forkChoiceModel);
 
       protoArray.applyScoreChanges(
           deltas,
           currentEpoch,
           justifiedCheckpoint,
           finalizedCheckpoint,
-          forkChoiceModel.createHeadSelectionPolicy(
-              protoArray, blockNodeIndex, currentSlot, proposerBoostRoot));
+          headSelectionContext);
       balances = justifiedStateEffectiveBalances;
       this.proposerBoostNode = nextProposerBoostNode;
       this.proposerBoostAmount = proposerBoostAmount;
+      this.headSelectionContext = headSelectionContext;
 
       return findHeadImpl(currentEpoch, justifiedCheckpoint, finalizedCheckpoint);
     } finally {
@@ -245,7 +253,8 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
     protoArrayLock.readLock().lock();
     try {
       final ProtoNode headNode =
-          protoArray.findOptimisticHead(currentEpoch, justifiedCheckpoint, finalizedCheckpoint);
+          protoArray.findOptimisticHead(
+              currentEpoch, justifiedCheckpoint, finalizedCheckpoint, headSelectionContext);
       final UInt64 headExecutionBlockNumber = headNode.getExecutionBlockNumber();
       final Bytes32 headExecutionBlockHash = headNode.getExecutionBlockHash();
       final Bytes32 justifiedExecutionHash =
@@ -485,6 +494,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       getForkChoiceModel(blockSlot)
           .onExecutionPayload(
               protoArray, blockNodeIndex, blockRoot, executionBlockNumber, executionBlockHash);
+      updateParentBestChildAndDescendantForBlockVariants(blockRoot);
     } finally {
       protoArrayLock.writeLock().unlock();
     }
@@ -769,6 +779,20 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
             executionBlockNumber,
             executionBlockHash,
             spec.isBlockProcessorOptimistic(blockSlot));
+    updateParentBestChildAndDescendantForBlockVariants(blockRoot);
+  }
+
+  private void updateParentBestChildAndDescendantForBlockVariants(final Bytes32 blockRoot) {
+    blockNodeIndex
+        .getVariants(blockRoot)
+        .ifPresent(
+            variants ->
+                variants
+                    .allNodes()
+                    .forEach(
+                        nodeIdentity ->
+                            protoArray.updateBestChildAndDescendantOfParent(
+                                nodeIdentity, headSelectionContext)));
   }
 
   private Optional<ProtoNodeData> getExecutionNodeData(final Bytes32 blockRoot) {
@@ -816,7 +840,8 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
                     blockRoot,
                     status,
                     result.getLatestValidHash(),
-                    verifiedInvalidTransition);
+                    verifiedInvalidTransition,
+                    headSelectionContext);
               });
       if (status.isInvalid()) {
         blockNodeIndex.removeIf(
