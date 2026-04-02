@@ -418,11 +418,15 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
   }
 
   /**
-   * Fallback isHeadWeak without extended data. Uses protoarray weight as approximation.
+   * Returns whether the current head is weak using only immediately-available Gloas inputs.
    *
-   * <p>Called from shouldApplyProposerBoost where vote data may not be available.
+   * <p>The spec score needs both the justified state and the head state. If either state is
+   * missing, Teku conservatively returns {@code false} instead of approximating with protoarray
+   * base weight, because that value may still include proposer boost and omits the extra
+   * equivocating-committee term.
    *
-   * <p>This is an implementation fallback, not a direct Python function from the Gloas spec.
+   * <p>Returning {@code false} here suppresses the late-reorg override, so transient internal state
+   * unavailability keeps the current head instead of encouraging a reorg to the parent.
    */
   @Override
   public boolean isHeadWeak(
@@ -433,11 +437,35 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
       return isHeadWeak(
           store, root, reorgThreshold, maybeHeadState.get(), maybeJustifiedState.get());
     }
-    // Fallback: use protoarray weight (may still include proposer boost and misses equivocating
-    // weight)
-    final UInt64 attestationScore =
-        store.getForkChoiceStrategy().getWeight(root).orElse(UInt64.ZERO);
-    return attestationScore.isLessThan(reorgThreshold);
+    // Fail closed for late-reorg decisions: missing state means "do not treat the head as weak".
+    return false;
+  }
+
+  /**
+   * Determines whether the parent selected by {@code head} is strong using the child-aware Gloas
+   * payload-status rules.
+   *
+   * <p>If the justified state or the parent payload status is not immediately available, Teku
+   * returns {@code false}. That suppresses the late-reorg override rather than risking a false
+   * positive that would incorrectly prefer the parent.
+   */
+  @Override
+  public boolean isParentStrong(
+      final ReadOnlyStore store, final SignedBeaconBlock head, final UInt64 parentThreshold) {
+    final Optional<BeaconState> maybeJustifiedState = store.getJustifiedStateIfAvailable();
+    final Optional<ForkChoicePayloadStatus> maybeParentPayloadStatus =
+        getParentPayloadStatusIfAvailable(store, head.getMessage().getBlock());
+    if (maybeJustifiedState.isPresent() && maybeParentPayloadStatus.isPresent()) {
+      return isParentStrong(
+          store,
+          head.getParentRoot(),
+          parentThreshold,
+          maybeParentPayloadStatus.get(),
+          maybeJustifiedState.get());
+    }
+    // Fail closed for late-reorg decisions: missing inputs mean "do not treat the parent as
+    // strong".
+    return false;
   }
 
   /**
@@ -456,29 +484,6 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
       final BeaconState justifiedState) {
     final UInt64 attestationScore =
         getNodeAttestationWeight(store, parentRoot, parentPayloadStatus, justifiedState);
-    return attestationScore.isGreaterThan(parentThreshold);
-  }
-
-  /**
-   * Fallback isParentStrong without extended data. Uses protoarray weight as approximation.
-   *
-   * <p>Called when vote data or payload status is not available.
-   *
-   * <p>This is an implementation fallback, not a direct Python function from the Gloas spec.
-   */
-  @Override
-  public boolean isParentStrong(
-      final ReadOnlyStore store, final Bytes32 parentRoot, final UInt64 parentThreshold) {
-    final Optional<BeaconState> maybeJustifiedState = store.getJustifiedStateIfAvailable();
-    if (maybeJustifiedState.isPresent()) {
-      final ForkChoicePayloadStatus parentPayloadStatus =
-          store.getPayloadStatus(parentRoot).orElse(PAYLOAD_STATUS_PENDING);
-      return isParentStrong(
-          store, parentRoot, parentThreshold, parentPayloadStatus, maybeJustifiedState.get());
-    }
-    // fallback with no equivocation
-    final UInt64 attestationScore =
-        store.getForkChoiceStrategy().getWeight(parentRoot).orElse(UInt64.ZERO);
     return attestationScore.isGreaterThan(parentThreshold);
   }
 
@@ -502,28 +507,36 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
               if (parentBlock.isEmpty()) {
                 throw new IllegalStateException("Parent block not found: " + block.getParentRoot());
               }
-              final Optional<Bytes32> messageBlockHash =
-                  parentBlock
-                      .get()
-                      .getBody()
-                      .toVersionGloas()
-                      .map(
-                          bodyGloas ->
-                              bodyGloas.getSignedExecutionPayloadBid().getMessage().getBlockHash());
-              // if the parent block is pre-Gloas, we'd use the block state, there would be no
-              // payload state
-              if (messageBlockHash.isEmpty()) {
-                return PAYLOAD_STATUS_EMPTY;
-              }
-              final Bytes32 parentBlockHash =
-                  BeaconBlockBodyGloas.required(block.getBody())
-                      .getSignedExecutionPayloadBid()
-                      .getMessage()
-                      .getParentBlockHash();
-              return parentBlockHash.equals(messageBlockHash.get())
-                  ? PAYLOAD_STATUS_FULL
-                  : PAYLOAD_STATUS_EMPTY;
+              return getParentPayloadStatus(block, parentBlock.get());
             });
+  }
+
+  private Optional<ForkChoicePayloadStatus> getParentPayloadStatusIfAvailable(
+      final ReadOnlyStore store, final BeaconBlock block) {
+    return store
+        .getBlockIfAvailable(block.getParentRoot())
+        .map(parentBlock -> getParentPayloadStatus(block, parentBlock.getMessage().getBlock()));
+  }
+
+  private ForkChoicePayloadStatus getParentPayloadStatus(
+      final BeaconBlock block, final BeaconBlock parentBlock) {
+    final Optional<Bytes32> messageBlockHash =
+        parentBlock
+            .getBody()
+            .toVersionGloas()
+            .map(bodyGloas -> bodyGloas.getSignedExecutionPayloadBid().getMessage().getBlockHash());
+    // If the parent is pre-Gloas there is no execution-state branch, so the child builds on EMPTY.
+    if (messageBlockHash.isEmpty()) {
+      return PAYLOAD_STATUS_EMPTY;
+    }
+    final Bytes32 parentBlockHash =
+        BeaconBlockBodyGloas.required(block.getBody())
+            .getSignedExecutionPayloadBid()
+            .getMessage()
+            .getParentBlockHash();
+    return parentBlockHash.equals(messageBlockHash.get())
+        ? PAYLOAD_STATUS_FULL
+        : PAYLOAD_STATUS_EMPTY;
   }
 
   /**

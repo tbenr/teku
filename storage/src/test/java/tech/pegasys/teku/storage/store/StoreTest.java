@@ -112,92 +112,6 @@ class StoreTest extends AbstractStoreTest {
   }
 
   @Test
-  public void isHeadWeak_withoutNodeData() {
-    processChainHeadWithMockForkChoiceStrategy(
-        (store, blockAndState) -> {
-          final Bytes32 root = blockAndState.getRoot();
-          store.computeBalanceThresholds(justifiedState(store));
-          assertThat(store.isHeadWeak(root)).isFalse();
-        });
-  }
-
-  @Test
-  public void isHeadWeak_withSufficientWeightIsFalse() {
-    processChainHeadWithMockForkChoiceStrategy(
-        (store, blockAndState) -> {
-          final Bytes32 root = blockAndState.getRoot();
-          setProtoNodeDataForBlock(blockAndState, UInt64.valueOf("2400000001"), UInt64.MAX_VALUE);
-          store.computeBalanceThresholds(justifiedState(store));
-          assertThat(store.isHeadWeak(root)).isFalse();
-        });
-  }
-
-  @Test
-  public void isHeadWeak_Boundary() {
-    processChainHeadWithMockForkChoiceStrategy(
-        (store, blockAndState) -> {
-          final Bytes32 root = blockAndState.getRoot();
-          setProtoNodeDataForBlock(blockAndState, UInt64.valueOf("2399999999"), UInt64.MAX_VALUE);
-          store.computeBalanceThresholds(justifiedState(store));
-          assertThat(store.isHeadWeak(root)).isTrue();
-        });
-  }
-
-  @Test
-  public void isHeadWeak_withLowWeightIsTrue() {
-    processChainHeadWithMockForkChoiceStrategy(
-        (store, blockAndState) -> {
-          final Bytes32 root = blockAndState.getRoot();
-          setProtoNodeDataForBlock(blockAndState, UInt64.valueOf("1000000000"), UInt64.MAX_VALUE);
-          store.computeBalanceThresholds(justifiedState(store));
-          assertThat(store.isHeadWeak(root)).isTrue();
-        });
-  }
-
-  @Test
-  public void isParentStrong_withoutNodeData() {
-    processChainHeadWithMockForkChoiceStrategy(
-        (store, blockAndState) -> {
-          final Bytes32 root = blockAndState.getBlock().getParentRoot();
-          store.computeBalanceThresholds(justifiedState(store));
-          assertThat(store.isParentStrong(root)).isTrue();
-        });
-  }
-
-  @Test
-  public void isParentStrong_withSufficientWeight() {
-    processChainHeadWithMockForkChoiceStrategy(
-        (store, blockAndState) -> {
-          final Bytes32 root = blockAndState.getBlock().getParentRoot();
-          setProtoNodeDataForBlock(blockAndState, UInt64.ZERO, UInt64.valueOf("19200000001"));
-          store.computeBalanceThresholds(justifiedState(store));
-          assertThat(store.isParentStrong(root)).isTrue();
-        });
-  }
-
-  @Test
-  public void isParentStrong_wityBoundaryWeight() {
-    processChainHeadWithMockForkChoiceStrategy(
-        (store, blockAndState) -> {
-          final Bytes32 root = blockAndState.getBlock().getParentRoot();
-          setProtoNodeDataForBlock(blockAndState, UInt64.ZERO, UInt64.valueOf("19200000000"));
-          store.computeBalanceThresholds(justifiedState(store));
-          assertThat(store.isParentStrong(root)).isFalse();
-        });
-  }
-
-  @Test
-  public void isParentStrong_wityZeroWeight() {
-    processChainHeadWithMockForkChoiceStrategy(
-        (store, blockAndState) -> {
-          final Bytes32 root = blockAndState.getBlock().getParentRoot();
-          setProtoNodeDataForBlock(blockAndState, UInt64.ZERO, UInt64.ZERO);
-          store.computeBalanceThresholds(justifiedState(store));
-          assertThat(store.isParentStrong(root)).isFalse();
-        });
-  }
-
-  @Test
   public void isFfgCompetitive_checkpointMatches() {
     final BlockCheckpoints headBlockCheckpoint = mock(BlockCheckpoints.class);
     final BlockCheckpoints parentBlockCheckpoint = mock(BlockCheckpoints.class);
@@ -449,38 +363,6 @@ class StoreTest extends AbstractStoreTest {
     when(dummyForkChoiceStrategy.getBlockData(parentRoot)).thenReturn(Optional.of(parentNodeData));
   }
 
-  private void setProtoNodeDataForBlock(
-      final SignedBlockAndState blockAndState, final UInt64 headValue, final UInt64 parentValue) {
-    final Bytes32 root = blockAndState.getRoot();
-    final Bytes32 parentRoot = blockAndState.getParentRoot();
-    final ProtoNodeData protoNodeData =
-        new ProtoNodeData(
-            UInt64.ONE,
-            root,
-            blockAndState.getParentRoot(),
-            blockAndState.getStateRoot(),
-            UInt64.ZERO,
-            Bytes32.random(),
-            ProtoNodeValidationStatus.VALID,
-            null,
-            headValue,
-            ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING);
-    final ProtoNodeData parentNodeData =
-        new ProtoNodeData(
-            UInt64.ZERO,
-            parentRoot,
-            Bytes32.random(),
-            blockAndState.getStateRoot(),
-            UInt64.ZERO,
-            Bytes32.random(),
-            ProtoNodeValidationStatus.VALID,
-            null,
-            parentValue,
-            ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING);
-    when(dummyForkChoiceStrategy.getBlockData(root)).thenReturn(Optional.of(protoNodeData));
-    when(dummyForkChoiceStrategy.getBlockData(parentRoot)).thenReturn(Optional.of(parentNodeData));
-  }
-
   @Test
   public void epochStatesCacheMostRecentlyAddedStates() {
     final int cacheSize = 2;
@@ -721,10 +603,6 @@ class StoreTest extends AbstractStoreTest {
     }
   }
 
-  private BeaconState justifiedState(final UpdatableStore store) {
-    return safeJoin(store.retrieveCheckpointState(store.getJustifiedCheckpoint())).orElseThrow();
-  }
-
   private void testApplyChangesWhenTransactionCommits(final boolean withInterleavedTransaction) {
     final UpdatableStore store = createGenesisStore();
     final UInt64 epoch3 = UInt64.valueOf(4);
@@ -738,6 +616,8 @@ class StoreTest extends AbstractStoreTest {
     final Checkpoint checkpoint1 = chainBuilder.getCurrentCheckpointForEpoch(UInt64.valueOf(1));
     final Checkpoint checkpoint2 = chainBuilder.getCurrentCheckpointForEpoch(UInt64.valueOf(2));
     final Checkpoint checkpoint3 = chainBuilder.getCurrentCheckpointForEpoch(UInt64.valueOf(3));
+    final BeaconState expectedJustifiedState =
+        chainBuilder.getBlockAndState(checkpoint2.getRoot()).orElseThrow().getState();
 
     // Start transaction
     final StubStorageUpdateChannelWithDelays updateChannel =
@@ -822,6 +702,9 @@ class StoreTest extends AbstractStoreTest {
     assertThat(store.getFinalizedCheckpoint()).isEqualTo(checkpoint1);
     assertThat(store.getJustifiedCheckpoint()).isEqualTo(checkpoint2);
     assertThat(store.getBestJustifiedCheckpoint()).isEqualTo(checkpoint3);
+    assertThat(store.retrieveCheckpointState(checkpoint2))
+        .isCompletedWithValue(Optional.of(expectedJustifiedState));
+    assertThat(store.getJustifiedStateIfAvailable()).contains(expectedJustifiedState);
     // Extra checks for finalized checkpoint
     final SafeFuture<CheckpointState> finalizedCheckpointState =
         store.retrieveFinalizedCheckpointAndState();

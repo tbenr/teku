@@ -518,16 +518,6 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
   }
 
   @Override
-  public boolean isHeadWeak(final Bytes32 root) {
-    return store.isHeadWeak(root);
-  }
-
-  @Override
-  public boolean isParentStrong(final Bytes32 parentRoot) {
-    return store.isParentStrong(parentRoot);
-  }
-
-  @Override
   public UInt64 getReorgThreshold() {
     return store.getReorgThreshold();
   }

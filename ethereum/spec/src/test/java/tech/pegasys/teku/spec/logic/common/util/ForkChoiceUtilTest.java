@@ -21,6 +21,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Optional;
@@ -37,19 +38,32 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.kzg.KZG;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.SpecMilestone;
+import tech.pegasys.teku.spec.SpecVersion;
 import tech.pegasys.teku.spec.TestSpecFactory;
+import tech.pegasys.teku.spec.config.SpecConfig;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceReorgContext;
 import tech.pegasys.teku.spec.datastructures.forkchoice.MutableStore;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
+import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeValidationStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
 import tech.pegasys.teku.spec.datastructures.forkchoice.TestStoreFactory;
 import tech.pegasys.teku.spec.datastructures.forkchoice.TestStoreImpl;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
+import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
+import tech.pegasys.teku.spec.logic.common.helpers.BeaconStateAccessors;
+import tech.pegasys.teku.spec.logic.common.helpers.MiscHelpers;
 import tech.pegasys.teku.spec.logic.common.statetransition.availability.AvailabilityChecker;
 import tech.pegasys.teku.spec.logic.common.statetransition.availability.AvailabilityCheckerFactory;
+import tech.pegasys.teku.spec.logic.common.statetransition.epoch.EpochProcessor;
+import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.EpochProcessingException;
+import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.SlotProcessingException;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 import tech.pegasys.teku.spec.util.RandomChainBuilder;
 import tech.pegasys.teku.spec.util.RandomChainBuilderForkChoiceStrategy;
@@ -60,6 +74,8 @@ class ForkChoiceUtilTest {
   private final RandomChainBuilder chainBuilder = new RandomChainBuilder(dataStructureUtil);
   private final RandomChainBuilderForkChoiceStrategy forkChoiceStrategy =
       new RandomChainBuilderForkChoiceStrategy(chainBuilder);
+  private final UInt64 slot = UInt64.ONE;
+  private final int millisPerSlot = spec.getGenesisSpecConfig().getSlotDurationMillis();
 
   private final ForkChoiceUtil forkChoiceUtil = spec.getGenesisSpec().getForkChoiceUtil();
 
@@ -379,6 +395,246 @@ class ForkChoiceUtilTest {
     assertThat(forkChoiceUtil.getProposerReorgCutoffMillis()).isEqualTo(1000);
   }
 
+  @Test
+  void isProposingOnTime_shouldBeTrueAtSlotStart() {
+    final ReorgTestSetup setup = new ReorgTestSetup();
+    when(setup.store.getTimeInMillis()).thenReturn(setup.genesisTimeMillis.plus(millisPerSlot));
+
+    assertThat(setup.baseForkChoiceUtil.isProposingOnTime(setup.store, slot)).isTrue();
+  }
+
+  @Test
+  void isProposingOnTime_shouldBeFalseAfterCutoff() {
+    final ReorgTestSetup setup = new ReorgTestSetup();
+    when(setup.store.getTimeInMillis())
+        .thenReturn(setup.genesisTimeMillis.plus(millisPerSlot + 1001));
+
+    assertThat(setup.baseForkChoiceUtil.isProposingOnTime(setup.store, slot)).isFalse();
+  }
+
+  @Test
+  void getProposerHead_shouldShortCircuitWhenHeadIsTimely() {
+    final ReorgTestSetup setup = new ReorgTestSetup();
+    setup.withHeadBlock();
+    setup.context.setBlockTimeliness(setup.signedBlockAndState.getRoot(), true);
+
+    assertThat(
+            setup.harness.getProposerHead(
+                setup.context, setup.signedBlockAndState.getRoot(), UInt64.ONE))
+        .isEqualTo(setup.signedBlockAndState.getRoot());
+  }
+
+  @Test
+  void getProposerHead_shouldShortCircuitWhenProposerBoostIsActive() {
+    final ReorgTestSetup setup = new ReorgTestSetup();
+    setup.withHeadBlock();
+    setup.context.setBlockTimeliness(setup.signedBlockAndState.getRoot(), false);
+    when(setup.store.getProposerBoostRoot())
+        .thenReturn(Optional.of(dataStructureUtil.randomBytes32()));
+
+    assertThat(
+            setup.harness.getProposerHead(
+                setup.context, setup.signedBlockAndState.getRoot(), UInt64.ONE))
+        .isEqualTo(setup.signedBlockAndState.getRoot());
+  }
+
+  @Test
+  void getProposerHead_shouldReturnParentWhenHeadIsWeakAndParentStrong() {
+    final ReorgTestSetup setup = new ReorgTestSetup();
+    setup.withHeadBlock();
+    setup.context.setBlockTimeliness(setup.signedBlockAndState.getRoot(), false);
+    setup.withStableForkChoice();
+    setup.withFfgCompetitive();
+    setup.withParentSlot(Optional.of(UInt64.ZERO));
+    setup.harness.headWeak = true;
+    setup.harness.parentStrong = true;
+
+    assertThat(
+            setup.harness.getProposerHead(
+                setup.context, setup.signedBlockAndState.getRoot(), UInt64.valueOf(2)))
+        .isEqualTo(setup.signedBlockAndState.getParentRoot());
+  }
+
+  @Test
+  void getProposerHead_shouldKeepHeadWhenParentIsWeak() {
+    final ReorgTestSetup setup = new ReorgTestSetup();
+    setup.withHeadBlock();
+    setup.context.setBlockTimeliness(setup.signedBlockAndState.getRoot(), false);
+    setup.withStableForkChoice();
+    setup.withFfgCompetitive();
+    setup.withParentSlot(Optional.of(UInt64.ZERO));
+    setup.harness.headWeak = true;
+    setup.harness.parentStrong = false;
+
+    assertThat(
+            setup.harness.getProposerHead(
+                setup.context, setup.signedBlockAndState.getRoot(), UInt64.valueOf(2)))
+        .isEqualTo(setup.signedBlockAndState.getRoot());
+  }
+
+  @Test
+  void shouldOverrideForkChoiceUpdate_shouldReturnFalseWhenHeadIsTimely() {
+    final ReorgTestSetup setup = new ReorgTestSetup();
+    setup.withHeadBlock();
+    setup.context.setBlockTimeliness(setup.signedBlockAndState.getRoot(), true);
+
+    assertThat(
+            setup.harness.shouldOverrideForkChoiceUpdate(
+                setup.context, setup.signedBlockAndState.getRoot()))
+        .isFalse();
+  }
+
+  @Test
+  void shouldOverrideForkChoiceUpdate_shouldReturnFalseWhenParentSlotMissing() {
+    final ReorgTestSetup setup = new ReorgTestSetup();
+    setup.withHeadBlock();
+    setup.context.setBlockTimeliness(setup.signedBlockAndState.getRoot(), false);
+    setup.withCurrentSlot(UInt64.ONE);
+    setup.withStableForkChoice();
+    setup.withFfgCompetitive();
+
+    assertThat(
+            setup.harness.shouldOverrideForkChoiceUpdate(
+                setup.context, setup.signedBlockAndState.getRoot()))
+        .isFalse();
+  }
+
+  @Test
+  void shouldOverrideForkChoiceUpdate_shouldReturnTrueWhenAllChecksPass() {
+    final ReorgTestSetup setup = new ReorgTestSetup();
+    setup.withHeadBlock();
+    setup.context.setBlockTimeliness(setup.signedBlockAndState.getRoot(), false);
+    setup.withCurrentSlot(UInt64.valueOf(2));
+    setup.withStableForkChoice();
+    setup.withFfgCompetitive();
+    setup.withParentSlot(Optional.of(UInt64.ZERO));
+    setup.harness.headWeak = true;
+    setup.harness.parentStrong = true;
+    when(setup.store.getBlockStateIfAvailable(any()))
+        .thenReturn(Optional.of(setup.signedBlockAndState.getState()));
+    setup.context.validatorConnected = true;
+
+    assertThat(
+            setup.harness.shouldOverrideForkChoiceUpdate(
+                setup.context, setup.signedBlockAndState.getRoot()))
+        .isTrue();
+  }
+
+  @Test
+  void shouldOverrideFcuCheckProposerPreState_shouldReturnFalseWhenParentStateMissing() {
+    final ReorgTestSetup setup = new ReorgTestSetup();
+    when(setup.store.getBlockStateIfAvailable(any())).thenReturn(Optional.empty());
+
+    assertThat(
+            setup.harness.shouldOverrideFcuCheckProposerPreState(
+                setup.context, UInt64.valueOf(2), dataStructureUtil.randomBytes32()))
+        .isFalse();
+  }
+
+  @Test
+  void shouldOverrideFcuCheckProposerPreState_shouldReturnFalseWhenValidatorDisconnected() {
+    final ReorgTestSetup setup = new ReorgTestSetup();
+    when(setup.store.getBlockStateIfAvailable(any()))
+        .thenReturn(Optional.of(setup.signedBlockAndState.getState()));
+    setup.context.validatorConnected = false;
+
+    assertThat(
+            setup.harness.shouldOverrideFcuCheckProposerPreState(
+                setup.context, UInt64.valueOf(2), dataStructureUtil.randomBytes32()))
+        .isFalse();
+  }
+
+  @Test
+  void isHeadWeak_shouldReturnFalseWhenNodeDataMissing() {
+    final ReorgTestSetup setup = new ReorgTestSetup();
+
+    assertThat(
+            setup.baseForkChoiceUtil.isHeadWeak(
+                setup.store, setup.signedBlockAndState.getRoot(), UInt64.ONE))
+        .isFalse();
+  }
+
+  @Test
+  void isHeadWeak_shouldReturnFalseWhenWeightEqualsThreshold() {
+    final ReorgTestSetup setup = new ReorgTestSetup();
+    final UInt64 threshold = UInt64.valueOf(2);
+    setup.withBlockWeight(setup.signedBlockAndState.getRoot(), threshold);
+
+    assertThat(
+            setup.baseForkChoiceUtil.isHeadWeak(
+                setup.store, setup.signedBlockAndState.getRoot(), threshold))
+        .isFalse();
+  }
+
+  @Test
+  void isHeadWeak_shouldReturnFalseWhenWeightExceedsThreshold() {
+    final ReorgTestSetup setup = new ReorgTestSetup();
+    final UInt64 threshold = UInt64.valueOf(2);
+    setup.withBlockWeight(setup.signedBlockAndState.getRoot(), threshold.plus(1));
+
+    assertThat(
+            setup.baseForkChoiceUtil.isHeadWeak(
+                setup.store, setup.signedBlockAndState.getRoot(), threshold))
+        .isFalse();
+  }
+
+  @Test
+  void isHeadWeak_shouldReturnTrueWhenWeightBelowThreshold() {
+    final ReorgTestSetup setup = new ReorgTestSetup();
+    final UInt64 threshold = UInt64.valueOf(2);
+    setup.withBlockWeight(setup.signedBlockAndState.getRoot(), UInt64.ONE);
+
+    assertThat(
+            setup.baseForkChoiceUtil.isHeadWeak(
+                setup.store, setup.signedBlockAndState.getRoot(), threshold))
+        .isTrue();
+  }
+
+  @Test
+  void isParentStrong_shouldReturnTrueWhenNodeDataMissing() {
+    final ReorgTestSetup setup = new ReorgTestSetup();
+
+    assertThat(
+            setup.baseForkChoiceUtil.isParentStrong(
+                setup.store, setup.signedBlockAndState.getBlock(), UInt64.ONE))
+        .isTrue();
+  }
+
+  @Test
+  void isParentStrong_shouldReturnTrueWhenWeightExceedsThreshold() {
+    final ReorgTestSetup setup = new ReorgTestSetup();
+    final UInt64 threshold = UInt64.ONE;
+    setup.withBlockWeight(setup.signedBlockAndState.getParentRoot(), threshold.plus(1));
+
+    assertThat(
+            setup.baseForkChoiceUtil.isParentStrong(
+                setup.store, setup.signedBlockAndState.getBlock(), threshold))
+        .isTrue();
+  }
+
+  @Test
+  void isParentStrong_shouldReturnFalseWhenWeightEqualsThreshold() {
+    final ReorgTestSetup setup = new ReorgTestSetup();
+    final UInt64 threshold = UInt64.ONE;
+    setup.withBlockWeight(setup.signedBlockAndState.getParentRoot(), threshold);
+
+    assertThat(
+            setup.baseForkChoiceUtil.isParentStrong(
+                setup.store, setup.signedBlockAndState.getBlock(), threshold))
+        .isFalse();
+  }
+
+  @Test
+  void isParentStrong_shouldReturnFalseWhenWeightIsZero() {
+    final ReorgTestSetup setup = new ReorgTestSetup();
+    setup.withBlockWeight(setup.signedBlockAndState.getParentRoot(), UInt64.ZERO);
+
+    assertThat(
+            setup.baseForkChoiceUtil.isParentStrong(
+                setup.store, setup.signedBlockAndState.getBlock(), UInt64.ONE))
+        .isFalse();
+  }
+
   private ReadOnlyStore mockStore(
       final long currentSlot, final Bytes32... blocksWithNonDefaultPayloads) {
     final ReadOnlyStore store = mock(ReadOnlyStore.class);
@@ -404,6 +660,155 @@ class ForkChoiceUtilTest {
         .toVersionBellatrix()
         .orElseThrow()
         .getSafeSlotsToImportOptimistically();
+  }
+
+  private class ReorgTestSetup {
+    private final SignedBlockAndState signedBlockAndState =
+        dataStructureUtil.randomSignedBlockAndState(slot);
+    private final UInt64 genesisTime = signedBlockAndState.getState().getGenesisTime();
+    private final UInt64 genesisTimeMillis = genesisTime.times(1000);
+    private final ForkChoiceUtil baseForkChoiceUtil;
+    private final ForkChoiceUtilHarness harness;
+    private final ReadOnlyStore store = mock(ReadOnlyStore.class);
+    private final ReadOnlyForkChoiceStrategy forkChoiceStrategy =
+        mock(ReadOnlyForkChoiceStrategy.class);
+    private final TestForkChoiceReorgContext context = new TestForkChoiceReorgContext(store);
+
+    private ReorgTestSetup() {
+      final SpecVersion specVersion = spec.atSlot(slot);
+      baseForkChoiceUtil = specVersion.getForkChoiceUtil();
+      harness =
+          new ForkChoiceUtilHarness(
+              specVersion.getConfig(),
+              specVersion.beaconStateAccessors(),
+              specVersion.getEpochProcessor(),
+              specVersion.getAttestationUtil(),
+              specVersion.miscHelpers());
+
+      when(store.getForkChoiceStrategy()).thenReturn(forkChoiceStrategy);
+      when(store.getGenesisTime()).thenReturn(genesisTime);
+      when(store.getGenesisTimeMillis()).thenReturn(genesisTimeMillis);
+      when(store.getTimeInMillis()).thenReturn(genesisTimeMillis);
+      when(store.getTimeSeconds()).thenReturn(genesisTime);
+      when(store.getFinalizedCheckpoint())
+          .thenReturn(dataStructureUtil.randomCheckpoint(UInt64.ZERO));
+      when(store.getProposerBoostRoot()).thenReturn(Optional.empty());
+      when(store.getBlockIfAvailable(any())).thenReturn(Optional.empty());
+      when(store.getBlockStateIfAvailable(any())).thenReturn(Optional.empty());
+      when(store.isFfgCompetitive(any(), any())).thenReturn(Optional.empty());
+      when(store.getReorgThreshold()).thenReturn(UInt64.ONE);
+      when(store.getParentThreshold()).thenReturn(UInt64.ONE);
+      when(forkChoiceStrategy.blockSlot(any())).thenReturn(Optional.empty());
+    }
+
+    private void withHeadBlock() {
+      when(store.getBlockIfAvailable(any())).thenReturn(signedBlockAndState.getSignedBeaconBlock());
+    }
+
+    private void withParentSlot(final Optional<UInt64> maybeSlot) {
+      when(forkChoiceStrategy.blockSlot(signedBlockAndState.getParentRoot())).thenReturn(maybeSlot);
+    }
+
+    private void withFfgCompetitive() {
+      when(store.isFfgCompetitive(any(), any())).thenReturn(Optional.of(true));
+    }
+
+    private void withStableForkChoice() {
+      when(store.getFinalizedCheckpoint())
+          .thenReturn(dataStructureUtil.randomCheckpoint(UInt64.ZERO));
+      when(store.getProposerBoostRoot()).thenReturn(Optional.empty());
+    }
+
+    private void withCurrentSlot(final UInt64 currentSlot) {
+      final UInt64 currentTimeMillis = genesisTimeMillis.plus(currentSlot.times(millisPerSlot));
+      when(store.getTimeInMillis()).thenReturn(currentTimeMillis);
+      when(store.getTimeSeconds()).thenReturn(currentTimeMillis.dividedBy(1000));
+    }
+
+    private void withBlockWeight(final Bytes32 root, final UInt64 weight) {
+      when(forkChoiceStrategy.getBlockData(root))
+          .thenReturn(Optional.of(createProtoNodeData(root, weight)));
+    }
+
+    private ProtoNodeData createProtoNodeData(final Bytes32 root, final UInt64 weight) {
+      return new ProtoNodeData(
+          slot,
+          root,
+          signedBlockAndState.getParentRoot(),
+          signedBlockAndState.getStateRoot(),
+          UInt64.ZERO,
+          Bytes32.random(),
+          ProtoNodeValidationStatus.VALID,
+          null,
+          weight,
+          ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING);
+    }
+  }
+
+  private static class TestForkChoiceReorgContext implements ForkChoiceReorgContext {
+    private final ReadOnlyStore store;
+    private final Map<Bytes32, ForkChoiceUtil.BlockTimeliness> blockTimeliness = new HashMap<>();
+    private boolean validatorConnected = true;
+
+    private TestForkChoiceReorgContext(final ReadOnlyStore store) {
+      this.store = store;
+    }
+
+    @Override
+    public ReadOnlyStore getStore() {
+      return store;
+    }
+
+    @Override
+    public Optional<ForkChoiceUtil.BlockTimeliness> getBlockTimeliness(final Bytes32 root) {
+      return Optional.ofNullable(blockTimeliness.get(root));
+    }
+
+    @Override
+    public boolean isValidatorConnected(final int validatorIndex, final UInt64 slot) {
+      return validatorConnected;
+    }
+
+    @Override
+    public BeaconState processSlots(final BeaconState state, final UInt64 slot)
+        throws SlotProcessingException, EpochProcessingException {
+      return state;
+    }
+
+    private void setBlockTimeliness(final Bytes32 root, final boolean isTimely) {
+      blockTimeliness.put(root, new ForkChoiceUtil.BlockTimeliness(isTimely, false));
+    }
+  }
+
+  private static class ForkChoiceUtilHarness extends ForkChoiceUtil {
+    private boolean headWeak;
+    private boolean parentStrong;
+
+    private ForkChoiceUtilHarness(
+        final SpecConfig specConfig,
+        final BeaconStateAccessors beaconStateAccessors,
+        final EpochProcessor epochProcessor,
+        final AttestationUtil attestationUtil,
+        final MiscHelpers miscHelpers) {
+      super(specConfig, beaconStateAccessors, epochProcessor, attestationUtil, miscHelpers);
+    }
+
+    @Override
+    public boolean isHeadWeak(
+        final ReadOnlyStore store, final Bytes32 root, final UInt64 reorgThreshold) {
+      return headWeak;
+    }
+
+    @Override
+    public boolean isParentStrong(
+        final ReadOnlyStore store, final SignedBeaconBlock head, final UInt64 parentThreshold) {
+      return parentStrong;
+    }
+
+    @Override
+    protected int getProposerIndex(final BeaconState proposerPreState, final UInt64 proposalSlot) {
+      return 1;
+    }
   }
 
   private Map<UInt64, Bytes32> getRootsForBlocks(final int... blockNumbers) {

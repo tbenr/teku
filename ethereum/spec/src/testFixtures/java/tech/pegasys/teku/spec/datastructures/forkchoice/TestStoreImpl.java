@@ -307,16 +307,6 @@ public class TestStoreImpl implements MutableStore, VoteUpdater {
   }
 
   @Override
-  public boolean isHeadWeak(final Bytes32 root) {
-    return false;
-  }
-
-  @Override
-  public boolean isParentStrong(final Bytes32 parentRoot) {
-    return false;
-  }
-
-  @Override
   public UInt64 getReorgThreshold() {
     return UInt64.ZERO;
   }

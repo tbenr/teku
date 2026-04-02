@@ -75,7 +75,6 @@ import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.CheckpointState;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.logic.common.helpers.BeaconStateAccessors;
-import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil;
 import tech.pegasys.teku.storage.api.StorageUpdateChannel;
 import tech.pegasys.teku.storage.api.StoredBlockMetadata;
 import tech.pegasys.teku.storage.api.VoteUpdateChannel;
@@ -665,44 +664,6 @@ class Store extends CacheableStore {
   }
 
   @Override
-  public boolean isHeadWeak(final Bytes32 root) {
-    readLock.lock();
-    try {
-      final boolean result = getForkChoiceUtilForRoot(root).isHeadWeak(this, root, reorgThreshold);
-      LOG.trace("isHeadWeak {}: reorgThreshold: {}, result: {}", root, reorgThreshold, result);
-      return result;
-    } finally {
-      readLock.unlock();
-    }
-  }
-
-  @Override
-  public boolean isParentStrong(final Bytes32 parentRoot) {
-    readLock.lock();
-    try {
-      final boolean result =
-          getForkChoiceUtilForRoot(parentRoot).isParentStrong(this, parentRoot, parentThreshold);
-      LOG.debug(
-          "isParentStrong {}: parentThreshold: {}, result: {}",
-          parentRoot,
-          parentThreshold,
-          result);
-      return result;
-    } finally {
-      readLock.unlock();
-    }
-  }
-
-  private ForkChoiceUtil getForkChoiceUtilForRoot(final Bytes32 root) {
-    final UInt64 slot =
-        forkChoiceStrategy
-            .blockSlot(root)
-            .orElseGet(
-                () -> spec.getCurrentSlotFromTimeMillis(timeMillis, secondsToMillis(genesisTime)));
-    return spec.atSlot(slot).getForkChoiceUtil();
-  }
-
-  @Override
   public UInt64 getReorgThreshold() {
     return reorgThreshold;
   }
@@ -726,7 +687,7 @@ class Store extends CacheableStore {
 
   @Override
   public Optional<BeaconState> getJustifiedStateIfAvailable() {
-    return getCheckpointStateIfAvailable(justifiedCheckpoint);
+    return getCheckpointStateIfAvailable(getJustifiedCheckpoint());
   }
 
   @Override

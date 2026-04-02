@@ -210,8 +210,7 @@ public class ForkChoiceUtil {
     }
 
     final boolean isHeadWeak = isHeadWeak(store, headRoot, store.getReorgThreshold());
-    final boolean isParentStrong =
-        isParentStrong(store, head.getParentRoot(), store.getParentThreshold());
+    final boolean isParentStrong = isParentStrong(store, head, store.getParentThreshold());
     return isHeadWeak && isParentStrong ? head.getParentRoot() : headRoot;
   }
 
@@ -260,8 +259,7 @@ public class ForkChoiceUtil {
     }
     if (currentSlot.isGreaterThan(head.getSlot())) {
       final boolean isHeadWeak = isHeadWeak(store, headRoot, store.getReorgThreshold());
-      final boolean isParentStrong =
-          isParentStrong(store, head.getParentRoot(), store.getParentThreshold());
+      final boolean isParentStrong = isParentStrong(store, head, store.getParentThreshold());
       return isHeadWeak && isParentStrong;
     }
     return true;
@@ -779,20 +777,24 @@ public class ForkChoiceUtil {
   }
 
   /**
-   * Determines if the parent block is strong (its weight exceeds the parent threshold).
+   * Determines if the parent block selected by {@code head} is strong.
    *
    * <p>Spec reference: is_parent_strong
    *
+   * <p>Pre-Gloas forks evaluate the parent by root alone. Gloas overrides this form because the
+   * spec chooses the parent node identity from the child block's payload linkage rather than from
+   * the parent root alone.
+   *
    * @param store the fork choice store for accessing weights and fork-aware state
-   * @param parentRoot the root of the parent block
+   * @param head the child block whose parent is being evaluated
    * @param parentThreshold the threshold above which a parent is considered strong
-   * @return true if the parent weight is greater than the parent threshold
+   * @return true if the relevant parent node weight is greater than the parent threshold
    */
   public boolean isParentStrong(
-      final ReadOnlyStore store, final Bytes32 parentRoot, final UInt64 parentThreshold) {
+      final ReadOnlyStore store, final SignedBeaconBlock head, final UInt64 parentThreshold) {
     return store
         .getForkChoiceStrategy()
-        .getBlockData(parentRoot)
+        .getBlockData(head.getParentRoot())
         .map(blockData -> blockData.getWeight().isGreaterThan(parentThreshold))
         .orElse(true);
   }
