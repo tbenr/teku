@@ -109,10 +109,7 @@ interface ForkChoiceModel {
       ProtoArray protoArray, BlockNodeVariantsIndex blockNodeIndex, Bytes32 blockRoot);
 
   void onPtcVote(
-      Bytes32 blockRoot,
-      UInt64 validatorIndex,
-      boolean payloadPresent,
-      boolean blobDataAvailable);
+      Bytes32 blockRoot, UInt64 validatorIndex, boolean payloadPresent, boolean blobDataAvailable);
 
   void onRemovedBlockRoot(
       ProtoArray protoArray, BlockNodeVariantsIndex blockNodeIndex, Bytes32 blockRoot);

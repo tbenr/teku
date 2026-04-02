@@ -19,9 +19,9 @@ import static tech.pegasys.teku.storage.protoarray.ProtoArrayScoreCalculator.com
 import static tech.pegasys.teku.storage.protoarray.ProtoArrayTestUtil.createStoreToManipulateVotes;
 import static tech.pegasys.teku.storage.protoarray.ProtoArrayTestUtil.getHash;
 
+import it.unimi.dsi.fastutil.longs.LongList;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
-import it.unimi.dsi.fastutil.longs.LongList;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;

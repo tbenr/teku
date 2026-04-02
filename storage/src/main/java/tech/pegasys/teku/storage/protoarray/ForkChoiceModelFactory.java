@@ -18,30 +18,32 @@ import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.SpecMilestone;
-import tech.pegasys.teku.spec.SpecVersion;
 import tech.pegasys.teku.spec.config.SpecConfigGloas;
 import tech.pegasys.teku.storage.api.StoredBlockMetadata;
 
 /** Centralizes the storage-layer milestone split for forkchoice models. */
 public class ForkChoiceModelFactory {
 
-  private final Spec spec;
   private final ForkChoiceModel defaultModel = ForkChoiceModelDefault.INSTANCE;
   private final ForkChoiceModel gloasModel;
+  private final UInt64 firstGloasSlot;
 
   public ForkChoiceModelFactory(final Spec spec) {
-    this.spec = spec;
-    final SpecVersion gloasSpec = spec.forMilestone(SpecMilestone.GLOAS);
-    this.gloasModel =
-        gloasSpec != null
-            ? new ForkChoiceModelGloas(SpecConfigGloas.required(gloasSpec.getConfig()))
-            : defaultModel;
+    if (spec.isMilestoneSupported(SpecMilestone.GLOAS)) {
+      gloasModel =
+          new ForkChoiceModelGloas(
+              SpecConfigGloas.required(spec.forMilestone(SpecMilestone.GLOAS).getConfig()));
+      firstGloasSlot =
+          spec.computeStartSlotAtEpoch(
+              spec.getForkSchedule().getFork(SpecMilestone.GLOAS).getEpoch());
+    } else {
+      gloasModel = defaultModel;
+      firstGloasSlot = UInt64.MAX_VALUE;
+    }
   }
 
-  public ForkChoiceModel forSlot(final UInt64 slot) {
-    return spec.atSlot(slot).getMilestone().isGreaterThanOrEqualTo(SpecMilestone.GLOAS)
-        ? gloasModel
-        : defaultModel;
+  ForkChoiceModel forSlot(final UInt64 slot) {
+    return slot.isGreaterThanOrEqualTo(firstGloasSlot) ? gloasModel : defaultModel;
   }
 
   public HeadSelectionContext createHeadSelectionContext(

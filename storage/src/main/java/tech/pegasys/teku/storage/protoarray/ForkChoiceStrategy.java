@@ -158,11 +158,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
               forkChoiceModel);
 
       protoArray.applyScoreChanges(
-          deltas,
-          currentEpoch,
-          justifiedCheckpoint,
-          finalizedCheckpoint,
-          headSelectionContext);
+          deltas, currentEpoch, justifiedCheckpoint, finalizedCheckpoint, headSelectionContext);
       balances = justifiedStateEffectiveBalances;
       this.proposerBoostNode = nextProposerBoostNode;
       this.proposerBoostAmount = proposerBoostAmount;

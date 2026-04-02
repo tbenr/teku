@@ -174,8 +174,7 @@ public class ProtoArray {
   }
 
   public void setInitialCanonicalBlockRoot(
-      final Bytes32 initialCanonicalBlockRoot,
-      final HeadSelectionContext headSelectionContext) {
+      final Bytes32 initialCanonicalBlockRoot, final HeadSelectionContext headSelectionContext) {
     final Optional<ProtoNode> initialCanonicalProtoNode =
         getNode(ForkChoiceNode.createBase(initialCanonicalBlockRoot));
     if (initialCanonicalProtoNode.isEmpty()) {
@@ -768,8 +767,7 @@ public class ProtoArray {
     getNode(nodeIdentity).ifPresent(ProtoNode::pullUpCheckpoints);
   }
 
-  private void applyDeltas(
-      final LongList deltas, final HeadSelectionContext headSelectionContext) {
+  private void applyDeltas(final LongList deltas, final HeadSelectionContext headSelectionContext) {
     applyToNodes((node, nodeIndex) -> applyDelta(deltas, node, nodeIndex));
     applyToNodes(
         (node, nodeIndex) ->
@@ -777,9 +775,7 @@ public class ProtoArray {
   }
 
   private void updateBestChildAndDescendantOfParent(
-      final ProtoNode node,
-      final int nodeIndex,
-      final HeadSelectionContext headSelectionContext) {
+      final ProtoNode node, final int nodeIndex, final HeadSelectionContext headSelectionContext) {
     node.getParentIndex()
         .ifPresent(
             parentIndex ->

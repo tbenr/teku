@@ -13,9 +13,8 @@
 
 package tech.pegasys.teku.storage.protoarray;
 
-import java.util.Optional;
-
 import com.google.common.annotations.VisibleForTesting;
+import java.util.Optional;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.config.SpecConfigGloas;
@@ -352,14 +351,16 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
         // fault.
         blockNodeIndex
             .getFullNode(blockRoot)
-            .ifPresent(node -> protoArray.markNodeInvalid(node, latestValidHash, headSelectionContext));
+            .ifPresent(
+                node -> protoArray.markNodeInvalid(node, latestValidHash, headSelectionContext));
       } else {
         // Unverified: a child's payload was invalid, pointing at this parent.
         // The base node is the correct anchor for parent-chain invalidation search.
         blockNodeIndex
             .getBaseNode(blockRoot)
             .ifPresent(
-                node -> protoArray.markParentChainInvalid(node, latestValidHash, headSelectionContext));
+                node ->
+                    protoArray.markParentChainInvalid(node, latestValidHash, headSelectionContext));
       }
     }
   }

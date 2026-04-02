@@ -56,8 +56,7 @@ class ProtoArrayTest {
   private final SpecConfigGloas gloasSpecConfig =
       SpecConfigGloas.required(
           TestSpecFactory.createMinimalGloas().forMilestone(SpecMilestone.GLOAS).getConfig());
-  private final ForkChoiceModelGloas gloasModel =
-      new ForkChoiceModelGloas(gloasSpecConfig);
+  private final ForkChoiceModelGloas gloasModel = new ForkChoiceModelGloas(gloasSpecConfig);
 
   private final Bytes32 block1a = dataStructureUtil.randomBytes32();
   private final Bytes32 block1b = dataStructureUtil.randomBytes32();
@@ -1081,10 +1080,7 @@ class ProtoArrayTest {
           validatorIndex < dataAvailableVoteCount);
     }
     return new ForkChoiceModelGloas(
-        gloasSpecConfig,
-        payloadTimelyThreshold,
-        dataAvailabilityTimelyThreshold,
-        ptcVoteTracker);
+        gloasSpecConfig, payloadTimelyThreshold, dataAvailabilityTimelyThreshold, ptcVoteTracker);
   }
 
   private void addValidBlock(final long slot, final Bytes32 blockRoot, final Bytes32 parentRoot) {

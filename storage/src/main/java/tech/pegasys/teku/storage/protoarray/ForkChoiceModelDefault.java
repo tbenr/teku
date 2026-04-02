@@ -144,12 +144,14 @@ class ForkChoiceModelDefault implements ForkChoiceModel {
       if (verifiedInvalidTransition) {
         blockNodeIndex
             .getBaseNode(blockRoot)
-            .ifPresent(node -> protoArray.markNodeInvalid(node, latestValidHash, headSelectionContext));
+            .ifPresent(
+                node -> protoArray.markNodeInvalid(node, latestValidHash, headSelectionContext));
       } else {
         blockNodeIndex
             .getBaseNode(blockRoot)
             .ifPresent(
-                node -> protoArray.markParentChainInvalid(node, latestValidHash, headSelectionContext));
+                node ->
+                    protoArray.markParentChainInvalid(node, latestValidHash, headSelectionContext));
       }
     }
   }
