@@ -184,10 +184,19 @@ public class BlockGossipValidator {
                 blobKzgCommitmentsCount, maxBlobsPerBlock));
       }
     }
-    return gossipValidationHelper
-        .getParentStateInBlockEpoch(parentBlockSlot, block.getParentRoot(), block.getSlot())
+
+    return spec.atSlot(block.getSlot())
+        .getForkChoiceUtil()
+        .retrievePreStateRequiredOnBlock(
+            gossipValidationHelper.getRecentChainData().getStore(), block)
         .thenApply(
             maybeParentState -> performStatefulValidation(block, maybeParentState, markAsReceived));
+
+    //    return gossipValidationHelper
+    //        .getParentStateInBlockEpoch(parentBlockSlot, block.getParentRoot(), block.getSlot())
+    //        .thenApply(
+    //            maybeParentState -> performStatefulValidation(block, maybeParentState,
+    // markAsReceived));
   }
 
   private InternalValidationResult performStatefulValidation(

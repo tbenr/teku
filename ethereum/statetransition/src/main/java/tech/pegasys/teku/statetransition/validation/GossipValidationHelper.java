@@ -249,4 +249,8 @@ public class GossipValidationHelper {
         recentChainData.getExecutionBlockHashForBlockRoot(blockRoot);
     return maybeBlockHash.isPresent() && blockHash.equals(maybeBlockHash.get());
   }
+
+  public RecentChainData getRecentChainData() {
+    return recentChainData;
+  }
 }

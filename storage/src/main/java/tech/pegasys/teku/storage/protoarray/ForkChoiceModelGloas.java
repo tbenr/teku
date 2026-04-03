@@ -77,17 +77,24 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
     // The parent choice follows get_parent_payload_status / is_parent_node_full and the node
     // layout follows get_node_children with a base PENDING node plus an immediate EMPTY child.
     final ForkChoiceNode baseNode = ForkChoiceNode.createBase(blockRoot);
+    Optional<ForkChoiceNode> parentNode =
+        resolveParentNode(protoArray, blockNodeIndex, parentRoot, executionBlockHash);
+
+    // the node is optimistic only if it builds on top of optimistic node.
+    // In gloas we start being optimistic from a FULL block
+    final boolean isParentOptimistic =
+        parentNode.flatMap(protoArray::getNode).map(ProtoNode::isOptimistic).orElse(false);
     protoArray.addNode(
         baseNode,
         blockSlot,
         blockRoot,
         parentRoot,
-        resolveParentNode(protoArray, blockNodeIndex, parentRoot, executionBlockHash),
+        parentNode,
         stateRoot,
         checkpoints,
         executionBlockNumber,
         executionBlockHash,
-        optimisticallyProcessed);
+        isParentOptimistic);
     blockNodeIndex.putBaseNode(blockRoot, blockSlot, baseNode);
 
     final ForkChoiceNode emptyNode = ForkChoiceNode.createEmpty(blockRoot);
@@ -101,7 +108,7 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
         checkpoints,
         executionBlockNumber,
         executionBlockHash,
-        optimisticallyProcessed);
+        isParentOptimistic);
     blockNodeIndex.attachEmptyNode(blockRoot, emptyNode);
   }
 
@@ -156,7 +163,8 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
         baseNode.getCheckpoints(),
         executionBlockNumber,
         executionBlockHash,
-        baseNode.isOptimistic());
+        // is optimistic until we get an VAILD execution result
+        true);
     blockNodeIndex.attachFullNode(blockRoot, fullNode);
   }
 
