@@ -535,13 +535,10 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
                   }
                 });
 
-    final SafeFuture<PayloadValidationResult> payloadValidationFuture =
+    final SafeFuture<Optional<PayloadValidationResult>> payloadValidationFuture =
         payloadExecutor
-            .getExecutionResult()
-            .thenPeek(
-                __ ->
-                    blockImportPerformance.ifPresent(
-                        BlockImportPerformance::executionResultReceived));
+            .getExecutionResult().thenPeek(
+                        result -> result.flatMap(__ -> blockImportPerformance).ifPresent(BlockImportPerformance::executionResultReceived));
 
     return blockBroadcastValidator
         .getResult()
@@ -638,39 +635,41 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
       final ForkChoiceUtil forkChoiceUtil,
       final CapturingIndexedAttestationCache indexedAttestationCache,
       final BeaconState postState,
-      final PayloadValidationResult payloadValidationResult,
+      final Optional<PayloadValidationResult> payloadValidationResult,
       final DataAndValidationResult<?> dataAndValidationResult) {
     blockImportPerformance.ifPresent(BlockImportPerformance::beginImporting);
-    final PayloadStatus payloadResult = payloadValidationResult.getStatus();
-    if (payloadResult.hasInvalidStatus()) {
-      final BlockImportResult result =
-          BlockImportResult.failedStateTransition(
-              new IllegalStateException(
-                  "Invalid ExecutionPayload: "
-                      + payloadResult.getValidationError().orElse("No reason provided")));
-      reportInvalidBlock(block, result);
-      payloadValidationResult
-          .getInvalidTransitionBlockRoot()
-          .ifPresentOrElse(
-              invalidTransitionBlockRoot ->
-                  getForkChoiceStrategy()
-                      .onExecutionPayloadResult(invalidTransitionBlockRoot, payloadResult, true),
-              () ->
-                  getForkChoiceStrategy()
-                      .onExecutionPayloadResult(block.getParentRoot(), payloadResult, false));
-      return result;
-    }
+    final Optional<PayloadStatus> payloadResult = payloadValidationResult.map(PayloadValidationResult::getStatus);
+    if(payloadResult.isPresent()) {
+      if (payloadResult.get().hasInvalidStatus()) {
+        final BlockImportResult result =
+                BlockImportResult.failedStateTransition(
+                        new IllegalStateException(
+                                "Invalid ExecutionPayload: "
+                                        + payloadResult.get().getValidationError().orElse("No reason provided")));
+        reportInvalidBlock(block, result);
+        payloadValidationResult.get()
+                .getInvalidTransitionBlockRoot()
+                .ifPresentOrElse(
+                        invalidTransitionBlockRoot ->
+                                getForkChoiceStrategy()
+                                        .onExecutionPayloadResult(invalidTransitionBlockRoot, payloadResult.get(), true),
+                        () ->
+                                getForkChoiceStrategy()
+                                        .onExecutionPayloadResult(block.getParentRoot(), payloadResult.get(), false));
+        return result;
+      }
 
-    if (payloadResult.hasNotValidatedStatus()
-        && !spec.atSlot(block.getSlot())
-            .getForkChoiceUtil()
-            .canOptimisticallyImport(recentChainData.getStore(), block)) {
-      return BlockImportResult.FAILED_EXECUTION_PAYLOAD_EXECUTION_SYNCING;
-    }
+      if (payloadResult.get().hasNotValidatedStatus()
+              && !spec.atSlot(block.getSlot())
+              .getForkChoiceUtil()
+              .canOptimisticallyImport(recentChainData.getStore(), block)) {
+        return BlockImportResult.FAILED_EXECUTION_PAYLOAD_EXECUTION_SYNCING;
+      }
 
-    if (payloadResult.hasFailedExecution()) {
-      return BlockImportResult.failedExecutionPayloadExecution(
-          payloadResult.getFailureCause().orElseThrow());
+      if (payloadResult.get().hasFailedExecution()) {
+        return BlockImportResult.failedExecutionPayloadExecution(
+                payloadResult.get().getFailureCause().orElseThrow());
+      }
     }
 
     switch (dataAndValidationResult.validationResult()) {
@@ -708,7 +707,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
         transaction,
         block,
         postState,
-        payloadResult.hasNotValidatedStatus(),
+        payloadResult.map(PayloadStatus::hasNotValidatedStatus).orElse(false),
         blobSidecars,
         earliestBlobSidecarsSlot);
 
@@ -731,7 +730,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     transaction.commit().join();
     recentChainData.setBlockTimelinessIfEmpty(block);
     blockImportPerformance.ifPresent(BlockImportPerformance::transactionCommitted);
-    forkChoiceStrategy.onExecutionPayloadResult(block.getRoot(), payloadResult, true);
+    payloadResult.ifPresent(result -> forkChoiceStrategy.onExecutionPayloadResult(block.getRoot(), result, true));
 
     final UInt64 currentEpoch = spec.computeEpochAtSlot(spec.getCurrentSlot(transaction));
 
@@ -748,7 +747,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     }
 
     final BlockImportResult result;
-    if (payloadResult.hasValidStatus()) {
+    if (payloadResult.map(PayloadStatus::hasValidStatus).orElse(true)) {
       result = BlockImportResult.successful(block);
     } else {
       result = BlockImportResult.optimisticallySuccessful(block);
@@ -781,6 +780,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
       return result;
     }
 
+    // TODO! NO! this must handle optimistic import (see block import)
     if (payloadStatus.hasNotValidatedStatus()) {
       return ExecutionPayloadImportResult.FAILED_EXECUTION_SYNCING;
     }
@@ -804,10 +804,13 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
 
     final StoreTransaction transaction = recentChainData.startStoreTransaction();
 
-    forkChoiceUtil.applyExecutionPayloadToStore(transaction, signedEnvelope, postState);
+    // probably we can avoid going via forkChoiceUtil, we can directly to store (this is anyway will be triggered at GLOAS only)
+    forkChoiceUtil.applyExecutionPayloadToStore(transaction, signedEnvelope, payloadStatus.hasNotValidatedStatus(), postState);
 
     // Note: not using thenRun here because we want to ensure each step is on the event thread
     transaction.commit().join();
+
+    // TODO! the update in forkchoice strategy must go through applyExecutionPayloadToStore
 
     final ForkChoiceStrategy forkChoiceStrategy = getForkChoiceStrategy();
     // Create the FULL node in the fork choice tree. Per spec on_execution_payload, this makes
@@ -819,7 +822,19 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
         signedEnvelope.getMessage().getPayload().getBlockNumber(),
         signedEnvelope.getMessage().getPayload().getBlockHash());
 
-    processHead().finishError(LOG);
+    //processHead().finishError(LOG);
+
+    //TODO we should do something similar to updateForkChoiceForImportedBlock, to update our head if this PAYLOAD extends our PENDING head
+    // the only thing that can happen here is extend or not extend our current head.
+    // We need to investigate the late block reorg flow (again, compare updateForkChoiceForImportedBlock), but ATM i don't
+    // believe we have to do anything here: we don't complete any reorg with execution payloads.
+
+    // COMPLETELY UNRELATED: to "fix" forkchoice notifier to a certain head, i believe that when we do the
+    // state selection (head selection) we should notify the forkchoicenotifier about that so it will use it
+    // as the anchor to run FCUwith payload. This should fix our edgecases when head could change in the meantime and
+    // we break block production. maybe GLOAS could be worse in this cose payload processing can change our head closer
+    // to next slot rising the chance that those kind of things can happen.
+
 
     return ExecutionPayloadImportResult.successful(signedEnvelope);
   }

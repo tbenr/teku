@@ -84,6 +84,7 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
     // In gloas we start being optimistic from a FULL block
     final boolean isParentOptimistic =
         parentNode.flatMap(protoArray::getNode).map(ProtoNode::isOptimistic).orElse(false);
+    System.out.println("isParentOptimistic: " + isParentOptimistic);
     protoArray.addNode(
         baseNode,
         blockSlot,
@@ -141,6 +142,7 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
       final Bytes32 blockRoot,
       final UInt64 executionBlockNumber,
       final Bytes32 executionBlockHash) {
+    System.out.println("onExecutionPayload blockRoot: " + blockRoot + " executionBlockNumber: " + executionBlockNumber);
     // Spec mapping: on_execution_payload(store, signed_execution_payload_envelope)
     if (blockNodeIndex.getFullNode(blockRoot).isPresent()) {
       return;
@@ -348,6 +350,7 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
       final Optional<Bytes32> latestValidHash,
       final boolean verifiedInvalidTransition,
       final HeadSelectionContext headSelectionContext) {
+    System.out.println("onExecutionPayloadResult status " + status + " latestValidHash " + latestValidHash + " blockRoot " + blockRoot);
     if (status.isValid()) {
       // Only the FULL node needs validation marking — base/EMPTY are already VALID from block
       // import

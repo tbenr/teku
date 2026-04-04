@@ -141,6 +141,7 @@ public class SyncStateTracker extends Service
     }
 
     if (currentState != previousState) {
+      LOG.info("Sync state changed from {} to {}", currentState, previousState);
       isSyncingGauge.set(currentState.isSyncing() ? 1.0 : 0.0);
       subscribers.deliver(SyncStateSubscriber::onSyncStateChange, currentState);
     }

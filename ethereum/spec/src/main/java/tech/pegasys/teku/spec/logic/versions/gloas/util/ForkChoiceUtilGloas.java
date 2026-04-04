@@ -123,6 +123,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
   public void applyExecutionPayloadToStore(
       final MutableStore store,
       final SignedExecutionPayloadEnvelope signedEnvelope,
+      final boolean isBlockOptimistic,
       final BeaconState postState) {
     // Spec mapping: on_execution_payload(store, signed_execution_payload_envelope)
     // Add new execution payload to store

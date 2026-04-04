@@ -139,6 +139,7 @@ public class ProtoArray {
       final UInt64 executionBlockNumber,
       final Bytes32 executionBlockHash,
       final boolean optimisticallyProcessed) {
+    LOG.info("Adding node {} optimistic: {}", nodeIdentity,  optimisticallyProcessed);
     if (indices.contains(nodeIdentity)) {
       return;
     }
@@ -315,6 +316,7 @@ public class ProtoArray {
   }
 
   public void markNodeValid(final ForkChoiceNode nodeIdentity) {
+    LOG.info("Marking node {} as valid", nodeIdentity);
     final Optional<ProtoNode> maybeNode = getNode(nodeIdentity);
     if (maybeNode.isEmpty()) {
       // Most likely just pruned prior to the validation result being received.
