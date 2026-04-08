@@ -355,7 +355,9 @@ public class TestStoreImpl implements MutableStore, VoteUpdater {
 
   @Override
   public void putExecutionPayloadAndState(
-      final SignedExecutionPayloadEnvelope executionPayload, final BeaconState state) {
+      final SignedExecutionPayloadEnvelope executionPayload,
+      final BeaconState state,
+      final boolean isOptimistic) {
     final Bytes32 beaconBlockRoot = executionPayload.getBeaconBlockRoot();
     executionPayloads.put(beaconBlockRoot, executionPayload);
     executionPayloadStates.put(beaconBlockRoot, state);

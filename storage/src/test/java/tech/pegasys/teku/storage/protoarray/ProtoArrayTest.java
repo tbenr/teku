@@ -1397,7 +1397,7 @@ class ProtoArrayTest {
         final UInt64 executionBlockNumber,
         final Bytes32 executionBlockHash) {
       gloasModel.onExecutionPayload(
-          protoArray, blockNodeIndex, blockRoot, executionBlockNumber, executionBlockHash);
+          protoArray, blockNodeIndex, blockRoot, executionBlockNumber, executionBlockHash, true);
       updateParentBestChildAndDescendantForBlockVariants(blockRoot);
     }
 

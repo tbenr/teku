@@ -114,10 +114,12 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
 
   @Override
   public void putExecutionPayloadAndState(
-      final SignedExecutionPayloadEnvelope executionPayload, final BeaconState state) {
+      final SignedExecutionPayloadEnvelope executionPayload,
+      final BeaconState state,
+      final boolean isOptimistic) {
     executionPayloadData.put(
         executionPayload.getBeaconBlockRoot(),
-        new SignedExecutionPayloadAndState(executionPayload, state));
+        new SignedExecutionPayloadAndState(executionPayload, state, isOptimistic));
   }
 
   private boolean needToUpdateEarliestBlobSidecarSlot(

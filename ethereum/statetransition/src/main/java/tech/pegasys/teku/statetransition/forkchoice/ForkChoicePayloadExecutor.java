@@ -29,20 +29,23 @@ import tech.pegasys.teku.storage.client.RecentChainData;
 
 class ForkChoicePayloadExecutor implements OptimisticExecutionPayloadExecutor {
   private static final Logger LOG = LogManager.getLogger();
-  private static final ForkChoicePayloadExecutor GLOAS = new ForkChoicePayloadExecutor(null,null,null) {
-    private static final SafeFuture<Optional<PayloadValidationResult>> PAYLOAD_VALIDATION_FUTURE =
-        SafeFuture.completedFuture(Optional.empty());
-    @Override
-    public boolean optimisticallyExecute(final Optional<ExecutionPayloadHeader> latestExecutionPayloadHeader,
-                                         final NewPayloadRequest payloadToExecute) {
-      return true;
-    }
+  private static final ForkChoicePayloadExecutor GLOAS =
+      new ForkChoicePayloadExecutor(null, null, null) {
+        private static final SafeFuture<Optional<PayloadValidationResult>>
+            PAYLOAD_VALIDATION_FUTURE = SafeFuture.completedFuture(Optional.empty());
 
-    @Override
-    public SafeFuture<Optional<PayloadValidationResult>> getExecutionResult() {
-      return PAYLOAD_VALIDATION_FUTURE;
-    }
-  };
+        @Override
+        public boolean optimisticallyExecute(
+            final Optional<ExecutionPayloadHeader> latestExecutionPayloadHeader,
+            final NewPayloadRequest payloadToExecute) {
+          return true;
+        }
+
+        @Override
+        public SafeFuture<Optional<PayloadValidationResult>> getExecutionResult() {
+          return PAYLOAD_VALIDATION_FUTURE;
+        }
+      };
 
   private final ExecutionLayerChannel executionLayer;
   private final SignedBeaconBlock block;
@@ -64,7 +67,7 @@ class ForkChoicePayloadExecutor implements OptimisticExecutionPayloadExecutor {
       final RecentChainData recentChainData,
       final SignedBeaconBlock block,
       final ExecutionLayerChannel executionLayer) {
-    if(block.getMessage().getBody().toVersionGloas().isPresent()) {
+    if (block.getMessage().getBody().toVersionGloas().isPresent()) {
       return GLOAS;
     }
     return new ForkChoicePayloadExecutor(
@@ -72,8 +75,13 @@ class ForkChoicePayloadExecutor implements OptimisticExecutionPayloadExecutor {
   }
 
   public SafeFuture<Optional<PayloadValidationResult>> getExecutionResult() {
-    return result.or(() -> Optional.of(
-        SafeFuture.completedFuture(new PayloadValidationResult(PayloadStatus.VALID)))).get().thenApply(Optional::of);
+    return result
+        .or(
+            () ->
+                Optional.of(
+                    SafeFuture.completedFuture(new PayloadValidationResult(PayloadStatus.VALID))))
+        .get()
+        .thenApply(Optional::of);
   }
 
   @Override

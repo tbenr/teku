@@ -178,7 +178,8 @@ class StoreTransactionUpdates {
             hotBlocks.values(),
             tx.pulledUpBlockCheckpoints,
             prunedHotBlockRoots,
-            store.getFinalizedCheckpoint());
+            store.getFinalizedCheckpoint(),
+            hotExecutionPayloadAndStates);
   }
 
   private StateAndBlockSummary blockAndStateAsSummary(final SignedBlockAndState blockAndState) {

@@ -433,6 +433,8 @@ public abstract class RecentChainData
     bestBlockInitialized.complete(null);
   }
 
+  // TODO: GLOAS: we should detect payload reorg (next proposer reorging just the payload).
+  // There will no actions attached but just a nice Reorg log.
   private Optional<ReorgContext> computeReorgContext(
       final ReadOnlyForkChoiceStrategy forkChoiceStrategy,
       final Optional<ChainHead> originalChainHead,

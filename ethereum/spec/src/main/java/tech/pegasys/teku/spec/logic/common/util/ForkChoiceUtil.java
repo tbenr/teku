@@ -562,14 +562,6 @@ public class ForkChoiceUtil {
     return store.retrieveBlockState(slotAndBlockRoot);
   }
 
-  public void applyExecutionPayloadToStore(
-      final MutableStore store,
-      final SignedExecutionPayloadEnvelope signedEnvelope,
-      final boolean isBlockOptimistic,
-      final BeaconState postState) {
-    // NO-OP until Gloas
-  }
-
   private UInt64 getFinalizedCheckpointStartSlot(final ReadOnlyStore store) {
     final UInt64 finalizedEpoch = store.getFinalizedCheckpoint().getEpoch();
     return miscHelpers.computeStartSlotAtEpoch(finalizedEpoch);

@@ -141,8 +141,8 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
       final BlockNodeVariantsIndex blockNodeIndex,
       final Bytes32 blockRoot,
       final UInt64 executionBlockNumber,
-      final Bytes32 executionBlockHash) {
-    System.out.println("onExecutionPayload blockRoot: " + blockRoot + " executionBlockNumber: " + executionBlockNumber);
+      final Bytes32 executionBlockHash,
+      final boolean isOptimistic) {
     // Spec mapping: on_execution_payload(store, signed_execution_payload_envelope)
     if (blockNodeIndex.getFullNode(blockRoot).isPresent()) {
       return;
@@ -165,8 +165,7 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
         baseNode.getCheckpoints(),
         executionBlockNumber,
         executionBlockHash,
-        // is optimistic until we get an VAILD execution result
-        true);
+        isOptimistic);
     blockNodeIndex.attachFullNode(blockRoot, fullNode);
   }
 
@@ -214,7 +213,8 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
                     blockNodeIndex,
                     block.getBlockRoot(),
                     rebuildPayload.executionBlockNumber(),
-                    rebuildPayload.executionBlockHash()));
+                    rebuildPayload.executionBlockHash(),
+                    optimisticallyProcessed));
   }
 
   @Override
@@ -350,7 +350,13 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
       final Optional<Bytes32> latestValidHash,
       final boolean verifiedInvalidTransition,
       final HeadSelectionContext headSelectionContext) {
-    System.out.println("onExecutionPayloadResult status " + status + " latestValidHash " + latestValidHash + " blockRoot " + blockRoot);
+    System.out.println(
+        "onExecutionPayloadResult status "
+            + status
+            + " latestValidHash "
+            + latestValidHash
+            + " blockRoot "
+            + blockRoot);
     if (status.isValid()) {
       // Only the FULL node needs validation marking — base/EMPTY are already VALID from block
       // import

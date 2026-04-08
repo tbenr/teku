@@ -28,7 +28,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
-
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -91,7 +90,8 @@ public class ExecutionLayerChannelStub implements ExecutionLayerChannel {
       new ClientVersion("SB", ExecutionLayerChannel.STUB_ENDPOINT_PREFIX, "0.0.0", Bytes4.ZERO);
 
   static {
-    LoggingConfigurator.setAllLevels(ExecutionLayerChannelStub.class.getCanonicalName(), Level.DEBUG);
+    LoggingConfigurator.setAllLevels(
+        ExecutionLayerChannelStub.class.getCanonicalName(), Level.DEBUG);
   }
 
   private final TimeProvider timeProvider;

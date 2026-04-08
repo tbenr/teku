@@ -63,7 +63,7 @@ public class ExecutionPayloadProposalTestUtil {
                         .getSignedExecutionPayloadEnvelopeSchema()
                         .create(executionPayload, signature);
                 return new SignedExecutionPayloadAndState(
-                    signedExecutionPayload, blockAndState.getState());
+                    signedExecutionPayload, blockAndState.getState(), false);
               });
     }
     return spec.createNewUnsignedExecutionPayload(
@@ -85,7 +85,7 @@ public class ExecutionPayloadProposalTestUtil {
                                 .getSignedExecutionPayloadEnvelopeSchema()
                                 .create(executionPayloadAndState.executionPayload(), signature);
                         return new SignedExecutionPayloadAndState(
-                            signedExecutionPayload, executionPayloadAndState.state());
+                            signedExecutionPayload, executionPayloadAndState.state(), false);
                       });
             });
   }

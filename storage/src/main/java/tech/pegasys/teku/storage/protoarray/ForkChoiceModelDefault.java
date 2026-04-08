@@ -63,7 +63,8 @@ class ForkChoiceModelDefault implements ForkChoiceModel {
       final BlockNodeVariantsIndex blockNodeIndex,
       final Bytes32 blockRoot,
       final UInt64 executionBlockNumber,
-      final Bytes32 executionBlockHash) {
+      final Bytes32 executionBlockHash,
+      final boolean isOptimistic) {
     // No-op
   }
 

@@ -31,6 +31,7 @@ import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockAndCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
+import tech.pegasys.teku.spec.datastructures.epbs.SignedExecutionPayloadAndState;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
@@ -484,12 +485,18 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       final Bytes32 blockRoot,
       final UInt64 blockSlot,
       final UInt64 executionBlockNumber,
-      final Bytes32 executionBlockHash) {
+      final Bytes32 executionBlockHash,
+      final boolean isOptimistic) {
     protoArrayLock.writeLock().lock();
     try {
       getForkChoiceModel(blockSlot)
           .onExecutionPayload(
-              protoArray, blockNodeIndex, blockRoot, executionBlockNumber, executionBlockHash);
+              protoArray,
+              blockNodeIndex,
+              blockRoot,
+              executionBlockNumber,
+              executionBlockHash,
+              isOptimistic);
       updateParentBestChildAndDescendantForBlockVariants(blockRoot);
     } finally {
       protoArrayLock.writeLock().unlock();
@@ -666,6 +673,15 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       final Collection<Bytes32> pulledUpBlocks,
       final Map<Bytes32, UInt64> removedBlockRoots,
       final Checkpoint finalizedCheckpoint) {
+    applyUpdate(newBlocks, pulledUpBlocks, removedBlockRoots, finalizedCheckpoint, Map.of());
+  }
+
+  public void applyUpdate(
+      final Collection<BlockAndCheckpoints> newBlocks,
+      final Collection<Bytes32> pulledUpBlocks,
+      final Map<Bytes32, UInt64> removedBlockRoots,
+      final Checkpoint finalizedCheckpoint,
+      final Map<Bytes32, SignedExecutionPayloadAndState> executionPayloads) {
     protoArrayLock.writeLock().lock();
     try {
       newBlocks.stream()
@@ -693,6 +709,19 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
                                       .map(ProtoNode::getExecutionBlockNumber))
                           .orElse(ProtoNode.NO_EXECUTION_BLOCK_NUMBER),
                       block.getExecutionBlockHash().orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH)));
+      executionPayloads.forEach(
+          (blockRoot, payloadAndState) -> {
+            final var envelope = payloadAndState.executionPayload();
+            getForkChoiceModel(payloadAndState.getSlot())
+                .onExecutionPayload(
+                    protoArray,
+                    blockNodeIndex,
+                    blockRoot,
+                    envelope.getMessage().getPayload().getBlockNumber(),
+                    envelope.getMessage().getPayload().getBlockHash(),
+                    payloadAndState.isOptimistic());
+            updateParentBestChildAndDescendantForBlockVariants(blockRoot);
+          });
       removedBlockRoots.forEach(
           (root, blockSlot) -> {
             getForkChoiceModel(blockSlot).onRemovedBlockRoot(protoArray, blockNodeIndex, root);

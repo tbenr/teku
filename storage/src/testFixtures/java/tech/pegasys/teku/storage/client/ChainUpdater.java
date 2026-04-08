@@ -360,7 +360,10 @@ public class ChainUpdater {
 
   public void saveExecutionPayload(final SignedExecutionPayloadAndState executionPayload) {
     final StoreTransaction tx = recentChainData.startStoreTransaction();
-    tx.putExecutionPayloadAndState(executionPayload.executionPayload(), executionPayload.state());
+    tx.putExecutionPayloadAndState(
+        executionPayload.executionPayload(),
+        executionPayload.state(),
+        executionPayload.isOptimistic());
     assertThat(tx.commit()).isCompleted();
   }
 

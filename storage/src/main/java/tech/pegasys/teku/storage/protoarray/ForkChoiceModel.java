@@ -52,7 +52,8 @@ interface ForkChoiceModel {
       BlockNodeVariantsIndex blockNodeIndex,
       Bytes32 blockRoot,
       UInt64 executionBlockNumber,
-      Bytes32 executionBlockHash);
+      Bytes32 executionBlockHash,
+      boolean isOptimistic);
 
   void rebuildBlockNodesFromMetadata(
       ProtoArray protoArray,

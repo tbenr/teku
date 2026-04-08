@@ -22,7 +22,7 @@ import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
  * Helper datastructure that holds a signed execution payload envelope with its corresponding state
  */
 public record SignedExecutionPayloadAndState(
-    SignedExecutionPayloadEnvelope executionPayload, BeaconState state) {
+    SignedExecutionPayloadEnvelope executionPayload, BeaconState state, boolean isOptimistic) {
   public UInt64 getSlot() {
     return executionPayload.getMessage().getSlot();
   }

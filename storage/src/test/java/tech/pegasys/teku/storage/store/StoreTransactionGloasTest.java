@@ -65,7 +65,9 @@ public class StoreTransactionGloasTest extends AbstractStoreTest {
         maybeExecutionPayloadAndState.get();
     final UpdatableStore.StoreTransaction tx = store.startTransaction(storageUpdateChannel);
     tx.putExecutionPayloadAndState(
-        executionPayloadAndState.executionPayload(), executionPayloadAndState.state());
+        executionPayloadAndState.executionPayload(),
+        executionPayloadAndState.state(),
+        executionPayloadAndState.isOptimistic());
 
     final Optional<BeaconState> result =
         tx.getExecutionPayloadStateIfAvailable(blockAndState.getRoot());

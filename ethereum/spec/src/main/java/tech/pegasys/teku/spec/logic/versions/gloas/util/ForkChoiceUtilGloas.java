@@ -32,7 +32,6 @@ import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.gloas.Bea
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
-import tech.pegasys.teku.spec.datastructures.forkchoice.MutableStore;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
@@ -117,17 +116,6 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
               }
               return store.retrieveBlockState(slotAndBlockRoot);
             });
-  }
-
-  @Override
-  public void applyExecutionPayloadToStore(
-      final MutableStore store,
-      final SignedExecutionPayloadEnvelope signedEnvelope,
-      final boolean isBlockOptimistic,
-      final BeaconState postState) {
-    // Spec mapping: on_execution_payload(store, signed_execution_payload_envelope)
-    // Add new execution payload to store
-    store.putExecutionPayloadAndState(signedEnvelope, postState);
   }
 
   @Override

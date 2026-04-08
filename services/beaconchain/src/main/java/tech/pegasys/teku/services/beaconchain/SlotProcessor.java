@@ -157,7 +157,7 @@ public class SlotProcessor {
     }
 
     if (isSlotPayloadAttestationDue(calculatedSlot, currentTimeMillis, nodeSlotStartTimeMillis)) {
-      processSlotPayloadAttestation();
+      processSlotPayloadAttestation(performanceRecord);
       if (miscHelpers.shouldIncrementNodeSlotWhenPayloadAttestationsAreDue()) {
         nodeSlot.inc();
       }
@@ -346,11 +346,16 @@ public class SlotProcessor {
                     p2pNetwork.getPeerCount()));
   }
 
-  // TODO-GLOAS: make use of TickProcessingPerformance and forkChoiceTrigger similar to
-  // processSlotAttestation
-  private void processSlotPayloadAttestation() {
+  private void processSlotPayloadAttestation(
+      final Optional<TickProcessingPerformance> performanceRecord) {
+    // I don't believe we should trigger FC via forkChoiceTrigger. When payload arrives it can only
+    // switch our head to FULL,
+    // which is already done when we import it. The only missing part is to make sure we notify the
+    // EL. so just call forkchoice notifier,
+    // which will eventually trigger block building on top of the current FULL payload.
     onTickSlotPayloadAttestation = nodeSlot.getValue();
     forkChoiceNotifier.onPayloadAttestationsDue(onTickSlotPayloadAttestation);
+    performanceRecord.ifPresent(TickProcessingPerformance::forkChoiceNotifierUpdated);
   }
 
   @VisibleForTesting
