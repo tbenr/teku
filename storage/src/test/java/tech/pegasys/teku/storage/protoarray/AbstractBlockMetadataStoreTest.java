@@ -13,6 +13,7 @@
 
 package tech.pegasys.teku.storage.protoarray;
 
+import static java.util.Collections.emptyList;
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.emptySet;
 import static java.util.stream.Collectors.toList;
@@ -66,7 +67,8 @@ abstract class AbstractBlockMetadataStoreTest {
     final BlockAndCheckpoints block3 =
         BlockAndCheckpoints.fromBlockAndState(spec, chainBuilder.generateBlockAtSlot(3));
 
-    store.applyUpdate(List.of(block1, block2, block3), emptySet(), emptyMap(), genesisCheckpoint);
+    store.applyUpdate(
+        List.of(block1, block2, block3), emptyList(), emptySet(), emptyMap(), genesisCheckpoint);
 
     chainBuilder
         .streamBlocksAndStates()
@@ -85,6 +87,7 @@ abstract class AbstractBlockMetadataStoreTest {
 
     store.applyUpdate(
         List.of(block1, block2, block3),
+        emptyList(),
         emptySet(),
         Map.of(genesis.getRoot(), UInt64.ZERO, block1.getRoot(), block1.getSlot()),
         new Checkpoint(UInt64.ONE, block2.getRoot()));
@@ -128,6 +131,7 @@ abstract class AbstractBlockMetadataStoreTest {
             .streamBlocksAndStates()
             .map(blockAndState -> BlockAndCheckpoints.fromBlockAndState(spec, blockAndState))
             .collect(toList()),
+        emptyList(),
         emptySet(),
         emptyMap(),
         genesisCheckpoint);
@@ -177,6 +181,7 @@ abstract class AbstractBlockMetadataStoreTest {
             .streamBlocksAndStates()
             .map(blockAndState -> BlockAndCheckpoints.fromBlockAndState(spec, blockAndState))
             .collect(toList()),
+        emptyList(),
         emptySet(),
         emptyMap(),
         genesisCheckpoint);

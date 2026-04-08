@@ -41,6 +41,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.Eth1Data;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
+import tech.pegasys.teku.spec.datastructures.epbs.SignedExecutionPayloadAndState;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
@@ -231,6 +232,7 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
         List.of(
             BlockAndCheckpoints.fromBlockAndState(spec, bestBlock),
             BlockAndCheckpoints.fromBlockAndState(spec, forkBlock)),
+        emptyList(),
         emptySet(),
         emptyMap(),
         storageSystem.recentChainData().getFinalizedCheckpoint().orElseThrow());
@@ -346,6 +348,7 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
     final ForkChoiceStrategy strategy = getProtoArray(storageSystem);
     strategy.applyUpdate(
         emptyList(),
+        emptyList(),
         emptySet(),
         Map.of(block2.getRoot(), block2.getSlot()),
         storageSystem.recentChainData().getFinalizedCheckpoint().orElseThrow());
@@ -366,6 +369,7 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
         List.of(
             BlockAndCheckpoints.fromBlockAndState(spec, block1),
             BlockAndCheckpoints.fromBlockAndState(spec, block2)),
+        emptyList(),
         emptySet(),
         emptyMap(),
         storageSystem.recentChainData().getFinalizedCheckpoint().orElseThrow());
@@ -388,7 +392,7 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
 
     // Not pruned because threshold isn't reached.
     strategy.applyUpdate(
-        emptyList(), emptySet(), emptyMap(), new Checkpoint(ONE, block2.getRoot()));
+        emptyList(), emptyList(), emptySet(), emptyMap(), new Checkpoint(ONE, block2.getRoot()));
     assertThat(strategy.contains(block1.getRoot())).isTrue();
     assertThat(strategy.contains(block2.getRoot())).isTrue();
     assertThat(strategy.contains(block3.getRoot())).isTrue();
@@ -396,7 +400,7 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
 
     // Prune when threshold is exceeded
     strategy.applyUpdate(
-        emptyList(), emptySet(), emptyMap(), new Checkpoint(ONE, block3.getRoot()));
+        emptyList(), emptyList(), emptySet(), emptyMap(), new Checkpoint(ONE, block3.getRoot()));
     assertThat(strategy.contains(block1.getRoot())).isFalse();
     assertThat(strategy.contains(block2.getRoot())).isFalse();
     assertThat(strategy.contains(block3.getRoot())).isTrue();
@@ -412,7 +416,8 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
     final SignedBeaconBlock finalizedBlock = storageSystem.chainBuilder().getBlockAtSlot(4);
     final Checkpoint finalizedCheckpoint = new Checkpoint(UInt64.ONE, finalizedBlock.getRoot());
     forkChoiceStrategy.setPruneThreshold(0);
-    forkChoiceStrategy.applyUpdate(emptyList(), emptySet(), emptyMap(), finalizedCheckpoint);
+    forkChoiceStrategy.applyUpdate(
+        emptyList(), emptyList(), emptySet(), emptyMap(), finalizedCheckpoint);
 
     // Check that all blocks prior to latest finalized have been pruned
     final List<SignedBlockAndState> allBlocks =
@@ -442,6 +447,7 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
     final UInt64 block3Epoch = spec.computeEpochAtSlot(block3.getSlot());
 
     strategy.applyUpdate(
+        emptyList(),
         emptyList(),
         emptySet(),
         Map.of(block1.getRoot(), block1.getSlot(), block2.getRoot(), block2.getSlot()),
@@ -537,6 +543,33 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
                 .orElseThrow()
                 .executionBlockHash(block1.getRoot()))
         .isEqualTo(block1.getExecutionBlockHash());
+  }
+
+  @Test
+  void executionBlockMetadata_shouldUseParentFullPayloadForUnresolvedGloasBlock() {
+    final Spec gloasSpec = TestSpecFactory.createMinimalGloas();
+    final StorageSystem storageSystem = initStorageSystem(gloasSpec);
+    final ChainUpdater chainUpdater = storageSystem.chainUpdater();
+
+    final SignedBlockAndState block1 = storageSystem.chainBuilder().generateBlockAtSlot(1);
+    chainUpdater.saveBlock(block1);
+
+    final SignedExecutionPayloadAndState payload1 =
+        storageSystem
+            .chainBuilder()
+            .getExecutionPayloadAndStateAtSlot(block1.getSlot())
+            .orElseThrow();
+    chainUpdater.saveExecutionPayload(payload1);
+
+    final SignedBlockAndState block2 = storageSystem.chainBuilder().generateBlockAtSlot(2);
+    chainUpdater.saveBlock(block2);
+
+    final ReadOnlyForkChoiceStrategy strategy =
+        storageSystem.recentChainData().getForkChoiceStrategy().orElseThrow();
+    assertThat(strategy.executionBlockNumber(block2.getRoot()))
+        .contains(payload1.executionPayload().getMessage().getPayload().getBlockNumber());
+    assertThat(strategy.executionBlockHash(block2.getRoot()))
+        .contains(payload1.executionPayload().getMessage().getPayload().getBlockHash());
   }
 
   @Test

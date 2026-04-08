@@ -43,8 +43,8 @@ interface ForkChoiceModel {
       Bytes32 parentRoot,
       Bytes32 stateRoot,
       BlockCheckpoints checkpoints,
-      UInt64 executionBlockNumber,
-      Bytes32 executionBlockHash,
+      Optional<UInt64> executionBlockNumber,
+      Optional<Bytes32> executionBlockHash,
       boolean optimisticallyProcessed);
 
   void onExecutionPayload(

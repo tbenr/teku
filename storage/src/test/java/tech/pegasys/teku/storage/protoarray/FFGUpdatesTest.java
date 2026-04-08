@@ -300,8 +300,8 @@ public class FFGUpdatesTest {
             new Checkpoint(finalizedEpoch, Bytes32.ZERO),
             new Checkpoint(justifiedEpoch, Bytes32.ZERO),
             new Checkpoint(finalizedEpoch, Bytes32.ZERO)),
-        ProtoNode.NO_EXECUTION_BLOCK_NUMBER,
-        ProtoNode.NO_EXECUTION_BLOCK_HASH);
+        Optional.empty(),
+        Optional.empty());
   }
 
   private UInt64 unsigned(final int i) {

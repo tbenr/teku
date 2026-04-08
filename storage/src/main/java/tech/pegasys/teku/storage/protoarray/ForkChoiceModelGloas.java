@@ -70,27 +70,44 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
       final Bytes32 parentRoot,
       final Bytes32 stateRoot,
       final BlockCheckpoints checkpoints,
-      final UInt64 executionBlockNumber,
-      final Bytes32 executionBlockHash,
+      final Optional<UInt64> maybeExecutionBlockNumber,
+      final Optional<Bytes32> maybeExecutionBlockHash,
       final boolean optimisticallyProcessed) {
     // Spec mapping: modified on_block(store, signed_block)
     // The parent choice follows get_parent_payload_status / is_parent_node_full and the node
     // layout follows get_node_children with a base PENDING node plus an immediate EMPTY child.
+    // In Gloas, maybeExecutionBlockHash does not represent this block's eventual payload block
+    // hash. During block import it carries the bid's parent_block_hash, which is used to resolve
+    // whether the new node builds on the parent's FULL or EMPTY variant. The execution block
+    // number/hash stored on the new base/EMPTY nodes are inherited from the resolved parent, while
+    // this block's own payload block number/hash are only attached later by onExecutionPayload(...)
+    // when the FULL node is created.
     final ForkChoiceNode baseNode = ForkChoiceNode.createBase(blockRoot);
-    Optional<ForkChoiceNode> parentNode =
-        resolveParentNode(protoArray, blockNodeIndex, parentRoot, executionBlockHash);
+    final Optional<ProtoNode> parentProtoNode =
+        resolveParentNode(
+            protoArray,
+            blockNodeIndex,
+            parentRoot,
+            maybeExecutionBlockHash.orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH));
+    final UInt64 executionBlockNumber =
+        parentProtoNode
+            .map(ProtoNode::getExecutionBlockNumber)
+            .orElse(ProtoNode.NO_EXECUTION_BLOCK_NUMBER);
+    final Bytes32 executionBlockHash =
+        parentProtoNode
+            .map(ProtoNode::getExecutionBlockHash)
+            .orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH);
 
     // the node is optimistic only if it builds on top of optimistic node.
     // In gloas we start being optimistic from a FULL block
-    final boolean isParentOptimistic =
-        parentNode.flatMap(protoArray::getNode).map(ProtoNode::isOptimistic).orElse(false);
+    final boolean isParentOptimistic = parentProtoNode.map(ProtoNode::isOptimistic).orElse(false);
     System.out.println("isParentOptimistic: " + isParentOptimistic);
     protoArray.addNode(
         baseNode,
         blockSlot,
         blockRoot,
         parentRoot,
-        parentNode,
+        parentProtoNode.map(ProtoNode::getForkChoiceNode),
         stateRoot,
         checkpoints,
         executionBlockNumber,
@@ -114,7 +131,7 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
   }
 
   @VisibleForTesting
-  Optional<ForkChoiceNode> resolveParentNode(
+  Optional<ProtoNode> resolveParentNode(
       final ProtoArray protoArray,
       final BlockNodeVariantsIndex blockNodeIndex,
       final Bytes32 parentRoot,
@@ -128,11 +145,14 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
       final Optional<ProtoNode> maybeFullNode = protoArray.getNode(fullNode.get());
       if (maybeFullNode.isPresent()
           && maybeFullNode.get().getExecutionBlockHash().equals(childParentBlockHash)) {
-        return fullNode;
+        return maybeFullNode;
       }
     }
 
-    return blockNodeIndex.getEmptyNode(parentRoot).or(() -> blockNodeIndex.getBaseNode(parentRoot));
+    return blockNodeIndex
+        .getEmptyNode(parentRoot)
+        .or(() -> blockNodeIndex.getBaseNode(parentRoot))
+        .flatMap(protoArray::getNode);
   }
 
   @Override
@@ -177,12 +197,11 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
       final boolean optimisticallyProcessed) {
     // Recovery replays the same modified on_block logic as live import so the EMPTY/FULL layout
     // matches the Gloas store model after restart.
-    final Bytes32 parentBlockHash =
+    final Optional<Bytes32> parentBlockHash =
         block
             .getGloasForkChoiceRebuildData()
-            .map(GloasForkChoiceRebuildData::payloadParentBlockHash)
-            .orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH);
-    final UInt64 executionBlockNumber =
+            .map(GloasForkChoiceRebuildData::payloadParentBlockHash);
+    final Optional<UInt64> executionBlockNumber =
         block
             .getExecutionBlockNumber()
             .or(
@@ -190,8 +209,7 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
                     blockNodeIndex
                         .getBaseNode(block.getParentRoot())
                         .flatMap(protoArray::getNode)
-                        .map(ProtoNode::getExecutionBlockNumber))
-            .orElse(ProtoNode.NO_EXECUTION_BLOCK_NUMBER);
+                        .map(ProtoNode::getExecutionBlockNumber));
     processBlock(
         protoArray,
         blockNodeIndex,

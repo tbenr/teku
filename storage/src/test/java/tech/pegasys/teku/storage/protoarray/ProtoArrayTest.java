@@ -1405,7 +1405,7 @@ class ProtoArrayTest {
         final Bytes32 parentRoot, final Bytes32 childParentBlockHash) {
       return gloasModel
           .resolveParentNode(protoArray, blockNodeIndex, parentRoot, childParentBlockHash)
-          .flatMap(protoArray::getNodeIndex);
+          .flatMap(node -> protoArray.getNodeIndex(node.getForkChoiceNode()));
     }
 
     private void pruneRemovedProjections() {

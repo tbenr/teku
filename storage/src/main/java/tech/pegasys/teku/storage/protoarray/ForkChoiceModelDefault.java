@@ -39,8 +39,8 @@ class ForkChoiceModelDefault implements ForkChoiceModel {
       final Bytes32 parentRoot,
       final Bytes32 stateRoot,
       final BlockCheckpoints checkpoints,
-      final UInt64 executionBlockNumber,
-      final Bytes32 executionBlockHash,
+      final Optional<UInt64> executionBlockNumber,
+      final Optional<Bytes32> executionBlockHash,
       final boolean optimisticallyProcessed) {
     final ForkChoiceNode baseNode = ForkChoiceNode.createBase(blockRoot);
     protoArray.addNode(
@@ -51,8 +51,8 @@ class ForkChoiceModelDefault implements ForkChoiceModel {
         blockNodeIndex.getBaseNode(parentRoot),
         stateRoot,
         checkpoints,
-        executionBlockNumber,
-        executionBlockHash,
+        executionBlockNumber.orElse(ProtoNode.NO_EXECUTION_BLOCK_NUMBER),
+        executionBlockHash.orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH),
         optimisticallyProcessed);
     blockNodeIndex.putBaseNode(blockRoot, blockSlot, baseNode);
   }
@@ -82,8 +82,8 @@ class ForkChoiceModelDefault implements ForkChoiceModel {
         block.getParentRoot(),
         block.getStateRoot(),
         block.getCheckpointEpochs().orElseThrow(),
-        block.getExecutionBlockNumber().orElse(ProtoNode.NO_EXECUTION_BLOCK_NUMBER),
-        block.getExecutionBlockHash().orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH),
+        block.getExecutionBlockNumber(),
+        block.getExecutionBlockHash(),
         optimisticallyProcessed);
   }
 

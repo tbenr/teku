@@ -176,10 +176,10 @@ class StoreTransactionUpdates {
         .getForkChoiceStrategy()
         .applyUpdate(
             hotBlocks.values(),
+            hotExecutionPayloadAndStates.values(),
             tx.pulledUpBlockCheckpoints,
             prunedHotBlockRoots,
-            store.getFinalizedCheckpoint(),
-            hotExecutionPayloadAndStates);
+            store.getFinalizedCheckpoint());
   }
 
   private StateAndBlockSummary blockAndStateAsSummary(final SignedBlockAndState blockAndState) {

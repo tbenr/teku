@@ -765,8 +765,6 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     return result;
   }
 
-  // TODO-GLOAS: https://github.com/Consensys/teku/issues/9878 it requires potentially more
-  // validations and more interactions with the store (e.g. onExecutionPayloadResult)
   private ExecutionPayloadImportResult importExecutionPayloadAndState(
       final SignedExecutionPayloadEnvelope signedEnvelope,
       final BeaconState postState,

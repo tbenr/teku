@@ -670,18 +670,10 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
   @Override
   public void applyUpdate(
       final Collection<BlockAndCheckpoints> newBlocks,
+      final Collection<SignedExecutionPayloadAndState> executionPayloads,
       final Collection<Bytes32> pulledUpBlocks,
       final Map<Bytes32, UInt64> removedBlockRoots,
       final Checkpoint finalizedCheckpoint) {
-    applyUpdate(newBlocks, pulledUpBlocks, removedBlockRoots, finalizedCheckpoint, Map.of());
-  }
-
-  public void applyUpdate(
-      final Collection<BlockAndCheckpoints> newBlocks,
-      final Collection<Bytes32> pulledUpBlocks,
-      final Map<Bytes32, UInt64> removedBlockRoots,
-      final Checkpoint finalizedCheckpoint,
-      final Map<Bytes32, SignedExecutionPayloadAndState> executionPayloads) {
     protoArrayLock.writeLock().lock();
     try {
       newBlocks.stream()
@@ -694,33 +686,20 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
                       block.getParentRoot(),
                       block.getStateRoot(),
                       block.getBlockCheckpoints(),
-                      block
-                          .getExecutionBlockNumber()
-                          .or(
-                              () ->
-                                  // TODO-GLOAS: https://github.com/Consensys/teku/issues/9878 this
-                                  // is just a workaround for devnet-0, but it doesn't affect
-                                  // mainnet
-                                  // in Gloas, use the block number from the parent, because the
-                                  // payload is processed later
-                                  blockNodeIndex
-                                      .getBaseNode(block.getParentRoot())
-                                      .flatMap(protoArray::getNode)
-                                      .map(ProtoNode::getExecutionBlockNumber))
-                          .orElse(ProtoNode.NO_EXECUTION_BLOCK_NUMBER),
-                      block.getExecutionBlockHash().orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH)));
+                      block.getExecutionBlockNumber(),
+                      block.getExecutionBlockHash()));
       executionPayloads.forEach(
-          (blockRoot, payloadAndState) -> {
+          payloadAndState -> {
             final var envelope = payloadAndState.executionPayload();
             getForkChoiceModel(payloadAndState.getSlot())
                 .onExecutionPayload(
                     protoArray,
                     blockNodeIndex,
-                    blockRoot,
+                    envelope.getBeaconBlockRoot(),
                     envelope.getMessage().getPayload().getBlockNumber(),
                     envelope.getMessage().getPayload().getBlockHash(),
                     payloadAndState.isOptimistic());
-            updateParentBestChildAndDescendantForBlockVariants(blockRoot);
+            updateParentBestChildAndDescendantForBlockVariants(envelope.getBeaconBlockRoot());
           });
       removedBlockRoots.forEach(
           (root, blockSlot) -> {
@@ -790,8 +769,8 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       final Bytes32 parentRoot,
       final Bytes32 stateRoot,
       final BlockCheckpoints checkpoints,
-      final UInt64 executionBlockNumber,
-      final Bytes32 executionBlockHash) {
+      final Optional<UInt64> executionBlockNumber,
+      final Optional<Bytes32> executionBlockHash) {
     getForkChoiceModel(blockSlot)
         .processBlock(
             protoArray,

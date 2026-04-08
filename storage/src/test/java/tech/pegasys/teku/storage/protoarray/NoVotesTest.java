@@ -202,8 +202,8 @@ public class NoVotesTest {
             new Checkpoint(finalizedEpoch, Bytes32.ZERO),
             new Checkpoint(justifiedEpoch, Bytes32.ZERO),
             new Checkpoint(finalizedEpoch, Bytes32.ZERO)),
-        ProtoNode.NO_EXECUTION_BLOCK_NUMBER,
-        ProtoNode.NO_EXECUTION_BLOCK_HASH);
+        Optional.empty(),
+        Optional.empty());
   }
 
   private Bytes32 applyPendingVotes(
