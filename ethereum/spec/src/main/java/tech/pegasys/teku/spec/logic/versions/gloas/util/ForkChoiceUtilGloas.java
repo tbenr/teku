@@ -37,7 +37,6 @@ import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrate
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
-import tech.pegasys.teku.spec.logic.common.statetransition.availability.AvailabilityChecker;
 import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil;
 import tech.pegasys.teku.spec.logic.versions.fulu.util.ForkChoiceUtilFulu;
 import tech.pegasys.teku.spec.logic.versions.gloas.helpers.BeaconStateAccessorsGloas;
@@ -143,23 +142,6 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
     return new BlockTimeliness(isTimelyAttestation, isTimelyPtc);
   }
 
-  // Checking of blob data availability is delayed until the processing of the execution payload
-  @Override
-  public AvailabilityChecker<?> createAvailabilityChecker(final SignedBeaconBlock block) {
-    // Spec mapping: the Gloas block path does not finalize data availability until the matching
-    // execution payload path is processed.
-    return AvailabilityChecker.NOOP_DATACOLUMN_SIDECAR;
-  }
-
-  // TODO-GLOAS: https://github.com/Consensys/teku/issues/10311 add a real data availability check
-  // (not required for devnet-0)
-  @Override
-  public AvailabilityChecker<?> createAvailabilityChecker(
-      final SignedExecutionPayloadEnvelope executionPayload) {
-    // Spec mapping: this hook exists for the data-availability checks used by
-    // is_payload_data_available(store, root), but the current branch intentionally keeps a no-op.
-    return AvailabilityChecker.NOOP_DATACOLUMN_SIDECAR;
-  }
   @Override
   public boolean shouldNotifyForkChoiceUpdatedOnBlock() {
     return false;

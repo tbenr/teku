@@ -83,7 +83,7 @@ class ForkChoicePayloadExecutorTest {
     verify(executionLayer, never()).engineNewPayload(any(), any());
     assertThat(result).isTrue();
     assertThat(payloadExecutor.getExecutionResult())
-        .isCompletedWithValue(new PayloadValidationResult(PayloadStatus.VALID));
+        .isCompletedWithValue(Optional.of(new PayloadValidationResult(PayloadStatus.VALID)));
   }
 
   @Test
@@ -114,7 +114,9 @@ class ForkChoicePayloadExecutorTest {
     verify(executionLayer).engineNewPayload(payloadRequest, UInt64.ZERO);
     assertThat(execution).isTrue();
     assertThat(payloadExecutor.getExecutionResult())
-        .isCompletedWithValueMatching(result -> result.getStatus().hasFailedExecution());
+        .isCompletedWithValueMatching(
+            result ->
+                result.map(PayloadValidationResult::getStatus).orElseThrow().hasFailedExecution());
   }
 
   @Test
@@ -132,7 +134,9 @@ class ForkChoicePayloadExecutorTest {
     verify(executionLayer).engineNewPayload(payloadRequest, UInt64.ZERO);
     assertThat(execution).isTrue();
     assertThat(payloadExecutor.getExecutionResult())
-        .isCompletedWithValueMatching(result -> result.getStatus().hasFailedExecution());
+        .isCompletedWithValueMatching(
+            result ->
+                result.map(PayloadValidationResult::getStatus).orElseThrow().hasFailedExecution());
   }
 
   @Test
@@ -149,15 +153,16 @@ class ForkChoicePayloadExecutorTest {
     verify(transitionValidator, never()).verifyTransitionBlock(defaultPayloadHeader, block);
     assertThat(execution).isTrue();
     assertThat(payloadExecutor.getExecutionResult())
-        .isCompletedWithValue(new PayloadValidationResult(expectedResult));
+        .isCompletedWithValue(Optional.of(new PayloadValidationResult(expectedResult)));
   }
 
   @Test
   void shouldReturnValidImmediatelyWhenNoPayloadExecuted() {
     final ForkChoicePayloadExecutor payloadExecutor = createPayloadExecutor();
 
-    final SafeFuture<PayloadValidationResult> result = payloadExecutor.getExecutionResult();
-    assertThat(result).isCompletedWithValue(PayloadValidationResult.VALID);
+    final SafeFuture<Optional<PayloadValidationResult>> result =
+        payloadExecutor.getExecutionResult();
+    assertThat(result).isCompletedWithValue(Optional.of(PayloadValidationResult.VALID));
   }
 
   @Test
@@ -167,12 +172,13 @@ class ForkChoicePayloadExecutorTest {
     final ForkChoicePayloadExecutor payloadExecutor = createPayloadExecutor();
     payloadExecutor.optimisticallyExecute(Optional.of(payloadHeader), payloadRequest);
 
-    final SafeFuture<PayloadValidationResult> result = payloadExecutor.getExecutionResult();
+    final SafeFuture<Optional<PayloadValidationResult>> result =
+        payloadExecutor.getExecutionResult();
     assertThat(result).isNotCompleted();
 
     this.executionResult.complete(VALID);
 
-    assertThat(result).isCompletedWithValue(PayloadValidationResult.VALID);
+    assertThat(result).isCompletedWithValue(Optional.of(PayloadValidationResult.VALID));
   }
 
   private ForkChoicePayloadExecutor createPayloadExecutor() {
