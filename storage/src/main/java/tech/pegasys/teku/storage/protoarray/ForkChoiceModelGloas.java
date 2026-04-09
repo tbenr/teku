@@ -39,6 +39,7 @@ import tech.pegasys.teku.storage.api.StoredBlockMetadata;
  */
 class ForkChoiceModelGloas implements ForkChoiceModel {
 
+  private final UInt64 firstGloasSlot;
   private final int payloadTimelyThreshold;
   private final int dataAvailabilityTimelyThreshold;
   private final PtcVoteTracker ptcVoteTracker;
@@ -56,6 +57,7 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
       final int payloadTimelyThreshold,
       final int dataAvailabilityTimelyThreshold,
       final PtcVoteTracker ptcVoteTracker) {
+    this.firstGloasSlot = specConfig.getGloasForkEpoch().times(specConfig.getSlotsPerEpoch());
     this.payloadTimelyThreshold = payloadTimelyThreshold;
     this.dataAvailabilityTimelyThreshold = dataAvailabilityTimelyThreshold;
     this.ptcVoteTracker = ptcVoteTracker;
@@ -101,7 +103,6 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
     // the node is optimistic only if it builds on top of optimistic node.
     // In gloas we start being optimistic from a FULL block
     final boolean isParentOptimistic = parentProtoNode.map(ProtoNode::isOptimistic).orElse(false);
-    System.out.println("isParentOptimistic: " + isParentOptimistic);
     protoArray.addNode(
         baseNode,
         blockSlot,
@@ -138,8 +139,10 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
       final Bytes32 childParentBlockHash) {
     // Spec mapping: get_parent_payload_status(store, block)
     // FULL wins only when the child bid's parent_block_hash matches the parent's FULL execution
-    // block hash. Otherwise we attach to EMPTY, falling back to the base node for pre-Gloas
-    // parents that have no EMPTY/FULL variants.
+    // block hash. Otherwise we attach to EMPTY. The only cases where the structural base node is a
+    // valid fallback are the fork boundary where the parent is pre-Gloas and the base-only anchor
+    // node at the root of the protoarray. A completely missing parent is only valid while
+    // rebuilding the very first anchor node into an empty protoarray.
     final Optional<ForkChoiceNode> fullNode = blockNodeIndex.getFullNode(parentRoot);
     if (fullNode.isPresent()) {
       final Optional<ProtoNode> maybeFullNode = protoArray.getNode(fullNode.get());
@@ -149,10 +152,27 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
       }
     }
 
-    return blockNodeIndex
-        .getEmptyNode(parentRoot)
-        .or(() -> blockNodeIndex.getBaseNode(parentRoot))
-        .flatMap(protoArray::getNode);
+    final Optional<ProtoNode> emptyNode =
+        blockNodeIndex.getEmptyNode(parentRoot).flatMap(protoArray::getNode);
+    if (emptyNode.isPresent()) {
+      return emptyNode;
+    }
+
+    final Optional<ProtoNode> baseNode =
+        blockNodeIndex.getBaseNode(parentRoot).flatMap(protoArray::getNode);
+    if (baseNode.isPresent()
+        && (baseNode.get().getBlockSlot().isLessThan(firstGloasSlot)
+            || baseNode.get().getParentIndex().isEmpty())) {
+      return baseNode;
+    }
+    if (protoArray.getTotalTrackedNodeCount() == 0) {
+      return Optional.empty();
+    }
+
+    throw new IllegalStateException(
+        String.format(
+            "Missing GLOAS parent variants for parent root %s at or after slot %s",
+            parentRoot, firstGloasSlot));
   }
 
   @Override

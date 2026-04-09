@@ -682,13 +682,30 @@ class ProtoArrayTest {
   }
 
   @Test
-  void resolveParentIndex_shouldFallbackToPending() {
+  void resolveParentIndex_shouldThrowWhenPostGloasParentHasNoVariants() {
     addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
 
-    // No FULL or EMPTY exists (pre-Gloas parent), should resolve to block node
-    final int blockNodeIndex = protoArray.getIndexByRoot(block1a).orElseThrow();
-    assertThat(protoArray.resolveParentIndex(block1a, Bytes32.ZERO))
-        .isEqualTo(Optional.of(blockNodeIndex));
+    assertThatThrownBy(() -> protoArray.resolveParentIndex(block1a, Bytes32.ZERO))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("Missing GLOAS parent variants");
+  }
+
+  @Test
+  void resolveParentIndex_shouldFallbackToBaseForPreGloasParent() {
+    final SpecConfigGloas delayedGloasSpecConfig =
+        SpecConfigGloas.required(
+            TestSpecFactory.createMinimalWithGloasForkEpoch(UInt64.ONE)
+                .forMilestone(SpecMilestone.GLOAS)
+                .getConfig());
+    final ForkChoiceModelGloas delayedGloasModel = new ForkChoiceModelGloas(delayedGloasSpecConfig);
+    addOptimisticBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+
+    assertThat(
+            delayedGloasModel
+                .resolveParentNode(
+                    protoArray.protoArray(), protoArray.blockNodeIndex(), block1a, Bytes32.ZERO)
+                .map(ProtoNode::getForkChoiceNode))
+        .contains(ForkChoiceNode.createBase(block1a));
   }
 
   @Test
