@@ -44,16 +44,14 @@ class BlockTimelinessTracker {
 
   public void setBlockTimelinessFromArrivalTime(
       final SignedBeaconBlock block, final UInt64 arrivalTimeMillis) {
-    final BlockTimeliness existing = blockTimeliness.get(block.getRoot());
-    if (existing != null && existing.isTimelyAttestation()) {
+    if (blockTimeliness.get(block.getRoot()) != null) {
       return;
     }
     setBlockTimeliness(block, computeBlockTimelinessFromArrivalTime(block, arrivalTimeMillis));
   }
 
   public void setBlockTimeliness(final SignedBeaconBlock block, final BlockTimeliness timeliness) {
-    final BlockTimeliness existing = blockTimeliness.get(block.getRoot());
-    if (existing != null && existing.isTimelyAttestation()) {
+    if (blockTimeliness.get(block.getRoot()) != null) {
       return;
     }
     blockTimeliness.put(block.getRoot(), timeliness);

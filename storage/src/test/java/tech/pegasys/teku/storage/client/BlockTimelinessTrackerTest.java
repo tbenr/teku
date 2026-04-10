@@ -22,6 +22,7 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
+import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 
 class BlockTimelinessTrackerTest {
@@ -65,6 +66,18 @@ class BlockTimelinessTrackerTest {
   }
 
   @Test
+  void shouldKeepFirstLateObservation() {
+    tracker.setBlockTimelinessFromArrivalTime(
+        signedBlockAndState.getBlock(), computeTime(slot, 2100));
+    tracker.setBlockTimelinessFromArrivalTime(
+        signedBlockAndState.getBlock(), computeTime(slot, 500));
+
+    assertThat(tracker.getBlockTimeliness(signedBlockAndState.getRoot()))
+        .isPresent()
+        .hasValueSatisfying(timeliness -> assertThat(timeliness.isTimelyAttestation()).isFalse());
+  }
+
+  @Test
   void shouldReportLateBlock() {
     tracker.setBlockTimelinessFromArrivalTime(
         signedBlockAndState.getBlock(), computeTime(slot, 2100));
@@ -92,6 +105,19 @@ class BlockTimelinessTrackerTest {
 
     tracker.setBlockTimelinessIfAbsentFromArrivalTime(
         signedBlockAndState.getBlock(), computeTime(slot, 500));
+
+    assertThat(tracker.getBlockTimeliness(signedBlockAndState.getRoot()))
+        .isPresent()
+        .hasValueSatisfying(timeliness -> assertThat(timeliness.isTimelyAttestation()).isFalse());
+  }
+
+  @Test
+  void shouldNotOverwriteExistingTimelinessWhenSettingDirectly() {
+    tracker.setBlockTimelinessFromArrivalTime(
+        signedBlockAndState.getBlock(), computeTime(slot, 2100));
+
+    tracker.setBlockTimeliness(
+        signedBlockAndState.getBlock(), new ForkChoiceUtil.BlockTimeliness(true, false));
 
     assertThat(tracker.getBlockTimeliness(signedBlockAndState.getRoot()))
         .isPresent()
