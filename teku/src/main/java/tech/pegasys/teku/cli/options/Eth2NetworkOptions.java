@@ -166,6 +166,28 @@ public class Eth2NetworkOptions {
       Eth2NetworkConfiguration.DEFAULT_PREPARE_BLOCK_PRODUCTION_ENABLED;
 
   @Option(
+      names = {"--Xlate-block-publishing-enabled"},
+      paramLabel = "<BOOLEAN>",
+      description = "late-block-publishing.",
+      arity = "0..1",
+      fallbackValue = "true",
+      showDefaultValue = Visibility.ALWAYS,
+      hidden = true)
+  private boolean lateBlockPublishingEnabled =
+      Eth2NetworkConfiguration.DEFAULT_LATE_BLOCK_PUBLISHING;
+
+  @Option(
+      names = {"--Xlate-payload-publishing-enabled"},
+      paramLabel = "<BOOLEAN>",
+      description = "late-payload-publishing.",
+      arity = "0..1",
+      fallbackValue = "true",
+      showDefaultValue = Visibility.ALWAYS,
+      hidden = true)
+  private boolean latePayloadPublishingEnabled =
+      Eth2NetworkConfiguration.DEFAULT_LATE_PAYLOAD_PUBLISHING;
+
+  @Option(
       names = {"--Xfork-choice-updated-always-send-payload-attributes"},
       paramLabel = "<BOOLEAN>",
       description =
@@ -578,6 +600,8 @@ public class Eth2NetworkOptions {
             aggregatingAttestationPoolV2BlockAggregationTimeLimit)
         .aggregatingAttestationPoolV2TotalBlockAggregationTimeLimit(
             aggregatingAttestationPoolV2TotalBlockAggregationTimeLimit)
+        .lateBlockPublishingEnabled(lateBlockPublishingEnabled)
+        .latePayloadPublishingEnabled(latePayloadPublishingEnabled)
         .epochsStoreBlobs(epochsStoreBlobs)
         .attestationWaitLimitMillis(attestationWaitlimitMillis)
         .forkChoiceUpdatedAlwaysSendPayloadAttributes(forkChoiceUpdatedAlwaysSendPayloadAttributes)

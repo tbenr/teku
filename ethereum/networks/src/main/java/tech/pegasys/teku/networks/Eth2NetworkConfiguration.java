@@ -65,6 +65,8 @@ public class Eth2NetworkConfiguration {
   public static final boolean DEFAULT_QUARTZ_SCHEDULER_ENABLED = true;
 
   public static final boolean DEFAULT_PREPARE_BLOCK_PRODUCTION_ENABLED = true;
+  public static final boolean DEFAULT_LATE_BLOCK_PUBLISHING = false;
+  public static final boolean DEFAULT_LATE_PAYLOAD_PUBLISHING = false;
 
   public static final boolean DEFAULT_AGGREGATING_ATTESTATION_POOL_PROFILING_ENABLED = false;
   public static final int
@@ -151,6 +153,8 @@ public class Eth2NetworkConfiguration {
   private final int asyncP2pMaxQueue;
   private final boolean forkChoiceLateBlockReorgEnabled;
   private final boolean prepareBlockProductionEnabled;
+  private final boolean lateBlockPublishingEnabled;
+  private final boolean latePayloadPublishingEnabled;
   private final boolean forkChoiceUpdatedAlwaysSendPayloadAttributes;
   private final int pendingAttestationsMaxQueue;
   private final boolean rustKzgEnabled;
@@ -193,6 +197,8 @@ public class Eth2NetworkConfiguration {
       final int asyncBeaconChainMaxQueue,
       final boolean forkChoiceLateBlockReorgEnabled,
       final boolean prepareBlockProductionEnabled,
+      final boolean lateBlockPublishingEnabled,
+      final boolean latePayloadPublishingEnabled,
       final boolean forkChoiceUpdatedAlwaysSendPayloadAttributes,
       final int pendingAttestationsMaxQueue,
       final boolean rustKzgEnabled,
@@ -236,6 +242,8 @@ public class Eth2NetworkConfiguration {
     this.asyncBeaconChainMaxQueue = asyncBeaconChainMaxQueue;
     this.forkChoiceLateBlockReorgEnabled = forkChoiceLateBlockReorgEnabled;
     this.prepareBlockProductionEnabled = prepareBlockProductionEnabled;
+    this.lateBlockPublishingEnabled = lateBlockPublishingEnabled;
+    this.latePayloadPublishingEnabled = latePayloadPublishingEnabled;
     this.forkChoiceUpdatedAlwaysSendPayloadAttributes =
         forkChoiceUpdatedAlwaysSendPayloadAttributes;
     this.pendingAttestationsMaxQueue = pendingAttestationsMaxQueue;
@@ -391,6 +399,14 @@ public class Eth2NetworkConfiguration {
 
   public int getPendingAttestationsMaxQueue() {
     return pendingAttestationsMaxQueue;
+  }
+
+  public boolean isLateBlockPublishingEnabled() {
+    return lateBlockPublishingEnabled;
+  }
+
+  public boolean isLatePayloadPublishingEnabled() {
+    return latePayloadPublishingEnabled;
   }
 
   public boolean isForkChoiceUpdatedAlwaysSendPayloadAttributes() {
@@ -549,6 +565,8 @@ public class Eth2NetworkConfiguration {
     private Spec spec;
     private boolean forkChoiceLateBlockReorgEnabled = DEFAULT_FORK_CHOICE_LATE_BLOCK_REORG_ENABLED;
     private boolean prepareBlockProductionEnabled = DEFAULT_PREPARE_BLOCK_PRODUCTION_ENABLED;
+    private boolean lateBlockPublishingEnabled = DEFAULT_LATE_BLOCK_PUBLISHING;
+    private boolean latePayloadPublishingEnabled = DEFAULT_LATE_PAYLOAD_PUBLISHING;
     private boolean forkChoiceUpdatedAlwaysSendPayloadAttributes =
         DEFAULT_FORK_CHOICE_UPDATED_ALWAYS_SEND_PAYLOAD_ATTRIBUTES;
     private OptionalInt pendingAttestationsMaxQueue = OptionalInt.empty();
@@ -659,6 +677,8 @@ public class Eth2NetworkConfiguration {
           asyncBeaconChainMaxQueue.orElse(DEFAULT_ASYNC_BEACON_CHAIN_MAX_QUEUE),
           forkChoiceLateBlockReorgEnabled,
           resolvePrepareBlockProductionAbility(prepareBlockProductionEnabled),
+          lateBlockPublishingEnabled,
+          latePayloadPublishingEnabled,
           forkChoiceUpdatedAlwaysSendPayloadAttributes,
           pendingAttestationsMaxQueue.orElse(DEFAULT_MAX_QUEUE_PENDING_ATTESTATIONS),
           rustKzgEnabled,
@@ -1305,6 +1325,16 @@ public class Eth2NetworkConfiguration {
 
     public Builder forkChoiceLateBlockReorgEnabled(final boolean forkChoiceLateBlockReorgEnabled) {
       this.forkChoiceLateBlockReorgEnabled = forkChoiceLateBlockReorgEnabled;
+      return this;
+    }
+
+    public Builder lateBlockPublishingEnabled(final boolean lateBlockPublishingEnabled) {
+      this.lateBlockPublishingEnabled = lateBlockPublishingEnabled;
+      return this;
+    }
+
+    public Builder latePayloadPublishingEnabled(final boolean latePayloadPublishingEnabled) {
+      this.latePayloadPublishingEnabled = latePayloadPublishingEnabled;
       return this;
     }
 

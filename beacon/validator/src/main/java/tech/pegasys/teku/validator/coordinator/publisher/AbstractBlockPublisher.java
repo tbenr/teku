@@ -18,13 +18,18 @@ import static tech.pegasys.teku.spec.logic.common.statetransition.results.BlockI
 
 import com.google.common.base.Suppliers;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
 import java.util.function.Supplier;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import tech.pegasys.teku.ethereum.performance.trackers.BlockPublishingPerformance;
 import tech.pegasys.teku.infrastructure.async.AsyncRunner;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
+import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.networking.eth2.gossip.BlockGossipChannel;
+import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
@@ -42,8 +47,22 @@ import tech.pegasys.teku.validator.coordinator.DutyMetrics;
 public abstract class AbstractBlockPublisher implements BlockPublisher {
   private static final Logger LOG = LogManager.getLogger();
 
+  static final List<BiFunction<Spec, UInt64, Integer>> DELAYS_MILLIS =
+      List.of(
+          (spec, slot) -> spec.atSlot(slot).getForkChoiceUtil().getAttestationDueMillis(),
+          (spec, slot) -> spec.atSlot(slot).getForkChoiceUtil().getAttestationDueMillis() + 1_000,
+          (spec, slot) -> spec.atSlot(slot).getForkChoiceUtil().getAggregateDueMillis(),
+          (spec, slot) -> spec.atSlot(slot).getConfig().getSlotDurationMillis() - 50,
+          (spec, slot) -> spec.atSlot(slot).getConfig().getSlotDurationMillis(),
+          (spec, slot) -> spec.atSlot(slot).getConfig().getSlotDurationMillis() + 1_500);
+
+  static final AtomicInteger LAST_DELAY_INDEX = new AtomicInteger(0);
+
   private final AsyncRunner asyncRunner;
 
+  private final Spec spec;
+
+  private final boolean isLateBlockPublishingEnabled;
   private final boolean gossipBlobsAfterBlock;
 
   protected final BlockFactory blockFactory;
@@ -58,12 +77,34 @@ public abstract class AbstractBlockPublisher implements BlockPublisher {
       final BlockImportChannel blockImportChannel,
       final DutyMetrics dutyMetrics,
       final boolean gossipBlobsAfterBlock) {
+    this(
+        asyncRunner,
+        null,
+        blockFactory,
+        blockGossipChannel,
+        blockImportChannel,
+        dutyMetrics,
+        gossipBlobsAfterBlock,
+        false);
+  }
+
+  public AbstractBlockPublisher(
+      final AsyncRunner asyncRunner,
+      final Spec spec,
+      final BlockFactory blockFactory,
+      final BlockGossipChannel blockGossipChannel,
+      final BlockImportChannel blockImportChannel,
+      final DutyMetrics dutyMetrics,
+      final boolean gossipBlobsAfterBlock,
+      final boolean isLateBlockPublishingEnabled) {
     this.asyncRunner = asyncRunner;
+    this.spec = spec;
     this.blockFactory = blockFactory;
     this.blockImportChannel = blockImportChannel;
     this.blockGossipChannel = blockGossipChannel;
     this.dutyMetrics = dutyMetrics;
     this.gossipBlobsAfterBlock = gossipBlobsAfterBlock;
+    this.isLateBlockPublishingEnabled = isLateBlockPublishingEnabled;
   }
 
   @Override
@@ -110,10 +151,11 @@ public abstract class AbstractBlockPublisher implements BlockPublisher {
           final BlockPublishingPerformance blockPublishingPerformance) {
 
     if (broadcastValidationLevel == BroadcastValidationLevel.NOT_REQUIRED) {
-      // when broadcast validation is disabled, we can publish the block (and blob sidecars)
-      // immediately and then import
-      publishBlockAndBlobs(block, blobSidecars, blockPublishingPerformance);
-
+      // when broadcast validation is disabled, we can import immediately and publish the block
+      // (and blob sidecars) without waiting for validation
+      delayBlockPublishing(block)
+          .thenRun(() -> publishBlockAndBlobs(block, blobSidecars, blockPublishingPerformance))
+          .finishError(LOG);
       importBlobSidecars(blobSidecars.get(), blockPublishingPerformance);
       return importBlock(block, broadcastValidationLevel, blockPublishingPerformance);
     }
@@ -137,8 +179,11 @@ public abstract class AbstractBlockPublisher implements BlockPublisher {
         .thenAccept(
             broadcastValidationResult -> {
               if (broadcastValidationResult == BroadcastValidationResult.SUCCESS) {
-                publishBlockAndBlobs(block, blobSidecars, blockPublishingPerformance);
-                LOG.debug("Block (and blob sidecars) publishing initiated");
+                delayBlockPublishing(block)
+                    .thenRun(
+                        () -> publishBlockAndBlobs(block, blobSidecars, blockPublishingPerformance))
+                    .finishError(LOG);
+                LOG.debug("Block (and blob sidecars) publishing scheduled");
               } else {
                 LOG.warn(
                     "Block (and blob sidecars) publishing skipped due to broadcast validation result {} for slot {}",
@@ -164,14 +209,19 @@ public abstract class AbstractBlockPublisher implements BlockPublisher {
           final BlockPublishingPerformance blockPublishingPerformance) {
 
     if (broadcastValidationLevel == BroadcastValidationLevel.NOT_REQUIRED) {
-      // when broadcast validation is disabled, we can publish the block (and data column sidecars)
-      // immediately and then import
-      publishBlockAndDataColumnSidecars(block, dataColumnSidecars, blockPublishingPerformance);
+      // when broadcast validation is disabled, we can import immediately and publish the block
+      // (and data column sidecars) without waiting for validation
+      delayBlockPublishing(block)
+          .thenRun(
+              () ->
+                  publishBlockAndDataColumnSidecars(
+                      block, dataColumnSidecars, blockPublishingPerformance))
+          .finishError(LOG);
       return importBlock(block, broadcastValidationLevel, blockPublishingPerformance);
     }
 
     // when broadcast validation is enabled, we need to wait for the validation to complete before
-    // publishing the block (and blob sidecars)
+    // publishing the block (and data column sidecars)
 
     final SafeFuture<BlockImportAndBroadcastValidationResults>
         blockImportAndBroadcastValidationResults =
@@ -182,9 +232,13 @@ public abstract class AbstractBlockPublisher implements BlockPublisher {
         .thenAccept(
             broadcastValidationResult -> {
               if (broadcastValidationResult == BroadcastValidationResult.SUCCESS) {
-                publishBlockAndDataColumnSidecars(
-                    block, dataColumnSidecars, blockPublishingPerformance);
-                LOG.debug("Block (and data column sidecars) publishing initiated");
+                delayBlockPublishing(block)
+                    .thenRun(
+                        () ->
+                            publishBlockAndDataColumnSidecars(
+                                block, dataColumnSidecars, blockPublishingPerformance))
+                    .finishError(LOG);
+                LOG.debug("Block (and data column sidecars) publishing scheduled");
               } else {
                 LOG.warn(
                     "Block (and data column sidecars) publishing skipped due to broadcast validation result {} for slot {}",
@@ -200,6 +254,23 @@ public abstract class AbstractBlockPublisher implements BlockPublisher {
                     err));
 
     return blockImportAndBroadcastValidationResults;
+  }
+
+  private SafeFuture<Void> delayBlockPublishing(final SignedBeaconBlock block) {
+    if (!isLateBlockPublishingEnabled) {
+      return SafeFuture.COMPLETE;
+    }
+
+    final UInt64 slot = block.getSlot();
+    final int delayMillis =
+        DELAYS_MILLIS
+            .get(LAST_DELAY_INDEX.getAndUpdate(i -> (i + 1) % DELAYS_MILLIS.size()))
+            .apply(spec, slot);
+    LOG.info("delaying block publishing for slot {} by {} millis", slot, delayMillis);
+    return new SafeFuture<Void>()
+        .orTimeout(delayMillis, TimeUnit.MILLISECONDS)
+        .exceptionally(ignore -> null)
+        .toVoid();
   }
 
   private void publishBlockAndBlobs(

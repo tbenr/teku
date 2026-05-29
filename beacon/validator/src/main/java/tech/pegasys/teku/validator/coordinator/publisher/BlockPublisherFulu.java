@@ -25,6 +25,7 @@ import tech.pegasys.teku.infrastructure.async.AsyncRunner;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.networking.eth2.gossip.BlockGossipChannel;
 import tech.pegasys.teku.networking.eth2.gossip.DataColumnSidecarGossipChannel;
+import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.statetransition.blobs.RemoteOrigin;
@@ -61,6 +62,39 @@ public class BlockPublisherFulu extends BlockPublisherPhase0 {
         blockImportChannel,
         dutyMetrics,
         gossipBlobsAfterBlock);
+    this.dataColumnSidecarGossipChannel = dataColumnSidecarGossipChannel;
+    this.custodyGroupCountManager = custodyGroupCountManager;
+    this.dasPublishWithholdColumnsEverySlots = dasPublishWithholdColumnsEverySlots;
+    dasPublishWithholdColumnsEverySlots.ifPresent(
+        withholdColumnCountValue ->
+            LOG.warn(
+                "NOTE: Software is running in development mode. "
+                    + "Every {} slots non-custodied dataColumnSidecars will "
+                    + "be withheld on block publishing",
+                withholdColumnCountValue));
+  }
+
+  public BlockPublisherFulu(
+      final AsyncRunner asyncRunner,
+      final Spec spec,
+      final BlockFactory blockFactory,
+      final BlockImportChannel blockImportChannel,
+      final BlockGossipChannel blockGossipChannel,
+      final DataColumnSidecarGossipChannel dataColumnSidecarGossipChannel,
+      final DutyMetrics dutyMetrics,
+      final CustodyGroupCountManager custodyGroupCountManager,
+      final OptionalInt dasPublishWithholdColumnsEverySlots,
+      final boolean gossipBlobsAfterBlock,
+      final boolean isLateBlockPublishingEnabled) {
+    super(
+        asyncRunner,
+        spec,
+        blockFactory,
+        blockGossipChannel,
+        blockImportChannel,
+        dutyMetrics,
+        gossipBlobsAfterBlock,
+        isLateBlockPublishingEnabled);
     this.dataColumnSidecarGossipChannel = dataColumnSidecarGossipChannel;
     this.custodyGroupCountManager = custodyGroupCountManager;
     this.dasPublishWithholdColumnsEverySlots = dasPublishWithholdColumnsEverySlots;

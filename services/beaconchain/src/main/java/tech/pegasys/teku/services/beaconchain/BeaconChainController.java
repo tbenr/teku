@@ -1794,7 +1794,8 @@ public class BeaconChainController extends Service implements BeaconChainControl
             dutyMetrics,
             custodyGroupCountManager,
             beaconConfig.p2pConfig().getDasPublishWithholdColumnsEverySlots(),
-            beaconConfig.p2pConfig().isGossipBlobsAfterBlockEnabled());
+            beaconConfig.p2pConfig().isGossipBlobsAfterBlockEnabled(),
+            beaconConfig.eth2NetworkConfig().isLateBlockPublishingEnabled());
 
     final ExecutionPayloadFactory executionPayloadFactory;
     final ExecutionPayloadPublisher executionPayloadPublisher;
@@ -1806,10 +1807,12 @@ public class BeaconChainController extends Service implements BeaconChainControl
           new ExecutionPayloadFactoryGloas(spec, executionLayerBlockProductionManager);
       executionPayloadPublisher =
           new ExecutionPayloadPublisherGloas(
+              spec,
               executionPayloadFactory,
               executionPayloadGossipChannel,
               dataColumnSidecarGossipChannel,
-              executionPayloadManager);
+              executionPayloadManager,
+              beaconConfig.eth2NetworkConfig().isLatePayloadPublishingEnabled());
     } else {
       executionPayloadFactory = ExecutionPayloadFactory.NOOP;
       executionPayloadPublisher = ExecutionPayloadPublisher.NOOP;

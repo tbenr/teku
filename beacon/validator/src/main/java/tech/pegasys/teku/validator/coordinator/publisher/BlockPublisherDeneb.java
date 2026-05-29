@@ -18,6 +18,7 @@ import tech.pegasys.teku.ethereum.performance.trackers.BlockPublishingPerformanc
 import tech.pegasys.teku.infrastructure.async.AsyncRunner;
 import tech.pegasys.teku.networking.eth2.gossip.BlobSidecarGossipChannel;
 import tech.pegasys.teku.networking.eth2.gossip.BlockGossipChannel;
+import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.statetransition.blobs.BlockBlobSidecarsTrackersPool;
 import tech.pegasys.teku.statetransition.blobs.RemoteOrigin;
@@ -46,6 +47,30 @@ public class BlockPublisherDeneb extends BlockPublisherPhase0 {
         blockImportChannel,
         dutyMetrics,
         gossipBlobsAfterBlock);
+    this.blockBlobSidecarsTrackersPool = blockBlobSidecarsTrackersPool;
+    this.blobSidecarGossipChannel = blobSidecarGossipChannel;
+  }
+
+  public BlockPublisherDeneb(
+      final AsyncRunner asyncRunner,
+      final Spec spec,
+      final BlockFactory blockFactory,
+      final BlockImportChannel blockImportChannel,
+      final BlockGossipChannel blockGossipChannel,
+      final BlockBlobSidecarsTrackersPool blockBlobSidecarsTrackersPool,
+      final BlobSidecarGossipChannel blobSidecarGossipChannel,
+      final DutyMetrics dutyMetrics,
+      final boolean gossipBlobsAfterBlock,
+      final boolean isLateBlockPublishingEnabled) {
+    super(
+        asyncRunner,
+        spec,
+        blockFactory,
+        blockGossipChannel,
+        blockImportChannel,
+        dutyMetrics,
+        gossipBlobsAfterBlock,
+        isLateBlockPublishingEnabled);
     this.blockBlobSidecarsTrackersPool = blockBlobSidecarsTrackersPool;
     this.blobSidecarGossipChannel = blobSidecarGossipChannel;
   }

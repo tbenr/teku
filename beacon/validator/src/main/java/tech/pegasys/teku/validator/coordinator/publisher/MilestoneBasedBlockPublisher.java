@@ -54,15 +54,47 @@ public class MilestoneBasedBlockPublisher implements BlockPublisher {
       final CustodyGroupCountManager custodyGroupCountManager,
       final OptionalInt dasPublishWithholdColumnsEverySlots,
       final boolean gossipBlobsAfterBlock) {
+    this(
+        asyncRunner,
+        spec,
+        blockFactory,
+        blockImportChannel,
+        blockGossipChannel,
+        blockBlobSidecarsTrackersPool,
+        blobSidecarGossipChannel,
+        dataColumnSidecarGossipChannel,
+        dutyMetrics,
+        custodyGroupCountManager,
+        dasPublishWithholdColumnsEverySlots,
+        gossipBlobsAfterBlock,
+        false);
+  }
+
+  public MilestoneBasedBlockPublisher(
+      final AsyncRunner asyncRunner,
+      final Spec spec,
+      final BlockFactory blockFactory,
+      final BlockImportChannel blockImportChannel,
+      final BlockGossipChannel blockGossipChannel,
+      final BlockBlobSidecarsTrackersPool blockBlobSidecarsTrackersPool,
+      final BlobSidecarGossipChannel blobSidecarGossipChannel,
+      final DataColumnSidecarGossipChannel dataColumnSidecarGossipChannel,
+      final DutyMetrics dutyMetrics,
+      final CustodyGroupCountManager custodyGroupCountManager,
+      final OptionalInt dasPublishWithholdColumnsEverySlots,
+      final boolean gossipBlobsAfterBlock,
+      final boolean isLateBlockPublishingEnabled) {
     this.spec = spec;
     final BlockPublisherPhase0 blockPublisherPhase0 =
         new BlockPublisherPhase0(
             asyncRunner,
+            spec,
             blockFactory,
             blockGossipChannel,
             blockImportChannel,
             dutyMetrics,
-            gossipBlobsAfterBlock);
+            gossipBlobsAfterBlock,
+            isLateBlockPublishingEnabled);
 
     // Not needed for all milestones
     final Supplier<BlockPublisherDeneb> blockAndBlobSidecarsPublisherSupplier =
@@ -70,18 +102,21 @@ public class MilestoneBasedBlockPublisher implements BlockPublisher {
             () ->
                 new BlockPublisherDeneb(
                     asyncRunner,
+                    spec,
                     blockFactory,
                     blockImportChannel,
                     blockGossipChannel,
                     blockBlobSidecarsTrackersPool,
                     blobSidecarGossipChannel,
                     dutyMetrics,
-                    gossipBlobsAfterBlock));
+                    gossipBlobsAfterBlock,
+                    isLateBlockPublishingEnabled));
     final Supplier<BlockPublisherFulu> blockAndDataColumnSidecarsPublisherSupplier =
         Suppliers.memoize(
             () ->
                 new BlockPublisherFulu(
                     asyncRunner,
+                    spec,
                     blockFactory,
                     blockImportChannel,
                     blockGossipChannel,
@@ -89,7 +124,8 @@ public class MilestoneBasedBlockPublisher implements BlockPublisher {
                     dutyMetrics,
                     custodyGroupCountManager,
                     dasPublishWithholdColumnsEverySlots,
-                    gossipBlobsAfterBlock));
+                    gossipBlobsAfterBlock,
+                    isLateBlockPublishingEnabled));
 
     // Populate forks publishers
     spec.getEnabledMilestones()

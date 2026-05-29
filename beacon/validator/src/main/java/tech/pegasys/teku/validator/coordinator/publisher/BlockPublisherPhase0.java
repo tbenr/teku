@@ -18,6 +18,7 @@ import tech.pegasys.teku.ethereum.performance.trackers.BlockPublishingPerformanc
 import tech.pegasys.teku.infrastructure.async.AsyncRunner;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.networking.eth2.gossip.BlockGossipChannel;
+import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
@@ -43,6 +44,26 @@ public class BlockPublisherPhase0 extends AbstractBlockPublisher {
         blockImportChannel,
         dutyMetrics,
         gossipBlobsAfterBlock);
+  }
+
+  public BlockPublisherPhase0(
+      final AsyncRunner asyncRunner,
+      final Spec spec,
+      final BlockFactory blockFactory,
+      final BlockGossipChannel blockGossipChannel,
+      final BlockImportChannel blockImportChannel,
+      final DutyMetrics dutyMetrics,
+      final boolean gossipBlobsAfterBlock,
+      final boolean isLateBlockPublishingEnabled) {
+    super(
+        asyncRunner,
+        spec,
+        blockFactory,
+        blockGossipChannel,
+        blockImportChannel,
+        dutyMetrics,
+        gossipBlobsAfterBlock,
+        isLateBlockPublishingEnabled);
   }
 
   @Override
