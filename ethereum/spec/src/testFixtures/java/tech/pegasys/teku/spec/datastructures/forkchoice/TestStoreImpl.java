@@ -462,6 +462,30 @@ public class TestStoreImpl implements MutableStore, VoteUpdater {
     }
 
     @Override
+    public boolean isExecutionBlockHashKnownForBlockRoot(
+        final Bytes32 blockHash, final Bytes32 blockRoot) {
+      throw new UnsupportedOperationException("Not implemented");
+    }
+
+    @Override
+    public boolean isFullExecutionBlockHashKnownForBlockRoot(
+        final Bytes32 blockHash, final Bytes32 blockRoot) {
+      throw new UnsupportedOperationException("Not implemented");
+    }
+
+    @Override
+    public Optional<UInt64> getExecutionBlockNumberForBlockRootAndHash(
+        final Bytes32 blockRoot, final Bytes32 blockHash) {
+      throw new UnsupportedOperationException("Not implemented");
+    }
+
+    @Override
+    public Optional<UInt64> getExecutionGasLimitForBlockRootAndHash(
+        final Bytes32 blockRoot, final Bytes32 blockHash) {
+      throw new UnsupportedOperationException("Not implemented");
+    }
+
+    @Override
     public Optional<Bytes32> getAncestor(final Bytes32 blockRoot, final UInt64 slot) {
       return Optional.empty();
     }

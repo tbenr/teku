@@ -105,9 +105,12 @@ public class ExecutionPayloadBidGossipValidatorTest {
         .thenReturn(Optional.of(proposerPreferences));
 
     when(gossipValidationHelper.isSlotCurrentOrNext(slot)).thenReturn(true);
-    when(gossipValidationHelper.isBlockHashKnown(parentBlockHash, parentBlockRoot))
+    when(gossipValidationHelper.isExecutionPayloadBidForFullParent(any(), eq(postState)))
         .thenReturn(true);
-    when(gossipValidationHelper.getGasLimitForExecutionPayload(parentBlockRoot))
+    when(gossipValidationHelper.isFullExecutionBlockHashKnownForBlockRoot(
+            parentBlockHash, parentBlockRoot))
+        .thenReturn(true);
+    when(gossipValidationHelper.getGasLimitForExecutionPayload(eq(parentBlockRoot), any()))
         .thenReturn(Optional.of(bid.getGasLimit()));
     when(gossipValidationHelper.getSlotForBlockRoot(parentBlockRoot))
         .thenReturn(Optional.of(slot.decrement()));
@@ -179,7 +182,7 @@ public class ExecutionPayloadBidGossipValidatorTest {
     final UInt64 targetGasLimit = UInt64.valueOf(60_000_001);
     final SignedExecutionPayloadBid bidWithGasLimit = signedBidWithGasLimit(bidGasLimit);
     mockProposerPreferences(bidWithGasLimit, targetGasLimit);
-    when(gossipValidationHelper.getGasLimitForExecutionPayload(parentBlockRoot))
+    when(gossipValidationHelper.getGasLimitForExecutionPayload(eq(parentBlockRoot), any()))
         .thenReturn(Optional.of(parentGasLimit));
 
     assertThatSafeFuture(bidValidator.validate(bidWithGasLimit))
@@ -193,7 +196,7 @@ public class ExecutionPayloadBidGossipValidatorTest {
     final UInt64 targetGasLimit = UInt64.valueOf(100_000_000);
     final SignedExecutionPayloadBid bidWithGasLimit = signedBidWithGasLimit(bidGasLimit);
     mockProposerPreferences(bidWithGasLimit, targetGasLimit);
-    when(gossipValidationHelper.getGasLimitForExecutionPayload(parentBlockRoot))
+    when(gossipValidationHelper.getGasLimitForExecutionPayload(eq(parentBlockRoot), any()))
         .thenReturn(Optional.of(parentGasLimit));
 
     assertThatSafeFuture(bidValidator.validate(bidWithGasLimit)).isCompletedWithValue(ACCEPT);
@@ -206,7 +209,7 @@ public class ExecutionPayloadBidGossipValidatorTest {
     final UInt64 targetGasLimit = UInt64.valueOf(100_000_000);
     final SignedExecutionPayloadBid bidWithGasLimit = signedBidWithGasLimit(bidGasLimit);
     mockProposerPreferences(bidWithGasLimit, targetGasLimit);
-    when(gossipValidationHelper.getGasLimitForExecutionPayload(parentBlockRoot))
+    when(gossipValidationHelper.getGasLimitForExecutionPayload(eq(parentBlockRoot), any()))
         .thenReturn(Optional.of(parentGasLimit));
 
     assertThatSafeFuture(bidValidator.validate(bidWithGasLimit))
@@ -223,7 +226,7 @@ public class ExecutionPayloadBidGossipValidatorTest {
     final UInt64 targetGasLimit = UInt64.valueOf(30_000_000);
     final SignedExecutionPayloadBid bidWithGasLimit = signedBidWithGasLimit(bidGasLimit);
     mockProposerPreferences(bidWithGasLimit, targetGasLimit);
-    when(gossipValidationHelper.getGasLimitForExecutionPayload(parentBlockRoot))
+    when(gossipValidationHelper.getGasLimitForExecutionPayload(eq(parentBlockRoot), any()))
         .thenReturn(Optional.of(parentGasLimit));
 
     assertThatSafeFuture(bidValidator.validate(bidWithGasLimit)).isCompletedWithValue(ACCEPT);
@@ -231,7 +234,7 @@ public class ExecutionPayloadBidGossipValidatorTest {
 
   @TestTemplate
   void shouldSaveForFuture_whenParentGasLimitIsUnavailable() {
-    when(gossipValidationHelper.getGasLimitForExecutionPayload(parentBlockRoot))
+    when(gossipValidationHelper.getGasLimitForExecutionPayload(eq(parentBlockRoot), any()))
         .thenReturn(Optional.empty());
 
     assertThatSafeFuture(bidValidator.validate(signedBid)).isCompletedWithValue(SAVE_FOR_FUTURE);
@@ -282,8 +285,31 @@ public class ExecutionPayloadBidGossipValidatorTest {
 
   @TestTemplate
   void shouldSaveForFuture_whenParentBlockHashIsUnknown() {
-    when(gossipValidationHelper.isBlockHashKnown(parentBlockHash, parentBlockRoot))
+    when(gossipValidationHelper.isFullExecutionBlockHashKnownForBlockRoot(
+            parentBlockHash, parentBlockRoot))
         .thenReturn(false);
+    assertThatSafeFuture(bidValidator.validate(signedBid)).isCompletedWithValue(SAVE_FOR_FUTURE);
+  }
+
+  @TestTemplate
+  void shouldAccept_whenBidBuildsOnEmptyParentAndEmptyGasLimitIsCompatible() {
+    when(gossipValidationHelper.isExecutionPayloadBidForFullParent(any(), eq(postState)))
+        .thenReturn(false);
+    when(gossipValidationHelper.isExecutionPayloadBidForEmptyParent(any(), eq(postState)))
+        .thenReturn(true);
+    when(gossipValidationHelper.isBlockHashKnown(parentBlockHash, parentBlockRoot))
+        .thenReturn(true);
+
+    assertThatSafeFuture(bidValidator.validate(signedBid)).isCompletedWithValue(ACCEPT);
+  }
+
+  @TestTemplate
+  void shouldSaveForFuture_whenBidDoesNotMatchFullOrEmptyParent() {
+    when(gossipValidationHelper.isExecutionPayloadBidForFullParent(any(), eq(postState)))
+        .thenReturn(false);
+    when(gossipValidationHelper.isExecutionPayloadBidForEmptyParent(any(), eq(postState)))
+        .thenReturn(false);
+
     assertThatSafeFuture(bidValidator.validate(signedBid)).isCompletedWithValue(SAVE_FOR_FUTURE);
   }
 
@@ -343,7 +369,8 @@ public class ExecutionPayloadBidGossipValidatorTest {
   @TestTemplate
   void shouldIgnoreSeenBid() {
     assertThatSafeFuture(bidValidator.validate(signedBid)).isCompletedWithValue(ACCEPT);
-    verify(gossipValidationHelper).isBlockHashKnown(parentBlockHash, parentBlockRoot);
+    verify(gossipValidationHelper)
+        .isFullExecutionBlockHashKnownForBlockRoot(parentBlockHash, parentBlockRoot);
     verify(gossipValidationHelper).getParentStateInBlockEpoch(any(), any(), any());
     verify(gossipValidationHelper)
         .isSignatureValidWithRespectToBuilderIndex(any(), any(), any(), any());
@@ -553,10 +580,13 @@ public class ExecutionPayloadBidGossipValidatorTest {
     when(proposerPreferencesManager.getProposerPreferences(slot))
         .thenReturn(Optional.of(matchingPreferences));
     when(gossipValidationHelper.isSlotCurrentOrNext(slot)).thenReturn(true);
-    when(gossipValidationHelper.isBlockHashKnown(
+    when(gossipValidationHelper.isExecutionPayloadBidForFullParent(any(), eq(postState)))
+        .thenReturn(true);
+    when(gossipValidationHelper.isFullExecutionBlockHashKnownForBlockRoot(
             message.getParentBlockHash(), message.getParentBlockRoot()))
         .thenReturn(true);
-    when(gossipValidationHelper.getGasLimitForExecutionPayload(message.getParentBlockRoot()))
+    when(gossipValidationHelper.getGasLimitForExecutionPayload(
+            eq(message.getParentBlockRoot()), any()))
         .thenReturn(Optional.of(message.getGasLimit()));
     when(gossipValidationHelper.getSlotForBlockRoot(message.getParentBlockRoot()))
         .thenReturn(Optional.of(slot.decrement()));

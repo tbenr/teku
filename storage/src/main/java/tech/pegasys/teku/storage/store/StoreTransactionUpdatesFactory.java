@@ -307,6 +307,29 @@ class StoreTransactionUpdatesFactory {
         .isGreaterThanOrEqualTo(SpecMilestone.GLOAS)) {
       return Optional.empty();
     }
-    return Optional.ofNullable(hotBlocks.get(latestFinalized.getRoot()));
+    return Optional.ofNullable(hotBlocks.get(latestFinalized.getRoot()))
+        .map(
+            boundaryBlock -> {
+              final Optional<Bytes32> executionBlockHash = boundaryBlock.getExecutionBlockHash();
+              final Optional<UInt64> executionBlockNumber =
+                  executionBlockHash.flatMap(
+                      blockHash ->
+                          baseStore
+                              .getForkChoiceStrategy()
+                              .getExecutionBlockNumberForBlockRootAndHash(
+                                  boundaryBlock.getRoot(), blockHash));
+              final Optional<UInt64> executionGasLimit =
+                  executionBlockHash.flatMap(
+                      blockHash ->
+                          baseStore
+                              .getForkChoiceStrategy()
+                              .getExecutionGasLimitForBlockRootAndHash(
+                                  boundaryBlock.getRoot(), blockHash));
+              return new BlockAndCheckpoints(
+                  boundaryBlock.getBlock(),
+                  boundaryBlock.getBlockCheckpoints(),
+                  executionBlockNumber,
+                  executionGasLimit);
+            });
   }
 }

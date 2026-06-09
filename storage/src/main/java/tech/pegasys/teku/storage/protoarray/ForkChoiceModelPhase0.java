@@ -42,6 +42,7 @@ class ForkChoiceModelPhase0 implements ForkChoiceModel {
       final BlockCheckpoints checkpoints,
       final Optional<UInt64> executionBlockNumber,
       final Optional<Bytes32> executionBlockHash,
+      final Optional<UInt64> executionGasLimit,
       final boolean optimisticallyProcessed) {
     final ForkChoiceNode baseNode = ForkChoiceNode.createBase(blockRoot);
     protoArray.addNode(
@@ -53,6 +54,7 @@ class ForkChoiceModelPhase0 implements ForkChoiceModel {
         checkpoints,
         executionBlockNumber.orElse(ProtoNode.NO_EXECUTION_BLOCK_NUMBER),
         executionBlockHash.orElse(ProtoNode.NO_EXECUTION_BLOCK_HASH),
+        executionGasLimit.orElse(ProtoNode.NO_EXECUTION_GAS_LIMIT),
         optimisticallyProcessed);
     blockNodeIndex.putBaseNode(blockRoot, blockSlot, baseNode);
   }
@@ -68,6 +70,7 @@ class ForkChoiceModelPhase0 implements ForkChoiceModel {
       final BlockCheckpoints checkpoints,
       final Optional<UInt64> executionBlockNumber,
       final Optional<Bytes32> executionBlockHash,
+      final Optional<UInt64> executionGasLimit,
       final boolean optimisticallyProcessed) {
     processBlock(
         protoArray,
@@ -79,6 +82,7 @@ class ForkChoiceModelPhase0 implements ForkChoiceModel {
         checkpoints,
         executionBlockNumber,
         executionBlockHash,
+        executionGasLimit,
         optimisticallyProcessed);
   }
 
@@ -89,6 +93,7 @@ class ForkChoiceModelPhase0 implements ForkChoiceModel {
       final Bytes32 blockRoot,
       final UInt64 executionBlockNumber,
       final Bytes32 executionBlockHash,
+      final UInt64 executionGasLimit,
       final boolean isOptimistic) {
     // No-op
   }
@@ -109,6 +114,7 @@ class ForkChoiceModelPhase0 implements ForkChoiceModel {
         block.getCheckpointEpochs().orElseThrow(),
         block.getExecutionBlockNumber(),
         block.getExecutionBlockHash(),
+        block.getExecutionGasLimit(),
         optimisticallyProcessed);
   }
 
@@ -226,6 +232,48 @@ class ForkChoiceModelPhase0 implements ForkChoiceModel {
       final BlockNodeVariantsIndex blockNodeIndex,
       final Bytes32 blockRoot) {
     return getBaseNodeData(protoArray, blockNodeIndex, blockRoot);
+  }
+
+  @Override
+  public boolean isExecutionBlockHashKnownForBlockRoot(
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockHash,
+      final Bytes32 blockRoot) {
+    return getBaseNodeData(protoArray, blockNodeIndex, blockRoot)
+        .map(protoNodeData -> protoNodeData.getExecutionBlockHash().equals(blockHash))
+        .orElse(false);
+  }
+
+  @Override
+  public boolean isFullExecutionBlockHashKnownForBlockRoot(
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockHash,
+      final Bytes32 blockRoot) {
+    return isExecutionBlockHashKnownForBlockRoot(protoArray, blockNodeIndex, blockHash, blockRoot);
+  }
+
+  @Override
+  public Optional<UInt64> getExecutionBlockNumberForBlockRootAndHash(
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockRoot,
+      final Bytes32 blockHash) {
+    return getBaseNodeData(protoArray, blockNodeIndex, blockRoot)
+        .filter(protoNodeData -> protoNodeData.getExecutionBlockHash().equals(blockHash))
+        .map(ProtoNodeData::getExecutionBlockNumber);
+  }
+
+  @Override
+  public Optional<UInt64> getExecutionGasLimitForBlockRootAndHash(
+      final ProtoArray protoArray,
+      final BlockNodeVariantsIndex blockNodeIndex,
+      final Bytes32 blockRoot,
+      final Bytes32 blockHash) {
+    return getBaseNodeData(protoArray, blockNodeIndex, blockRoot)
+        .filter(protoNodeData -> protoNodeData.getExecutionBlockHash().equals(blockHash))
+        .map(ProtoNodeData::getExecutionGasLimit);
   }
 
   @Override

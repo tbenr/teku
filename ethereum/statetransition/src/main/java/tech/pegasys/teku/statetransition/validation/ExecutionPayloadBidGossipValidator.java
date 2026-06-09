@@ -149,38 +149,6 @@ public class ExecutionPayloadBidGossipValidator {
     }
 
     /*
-     * [IGNORE] bid.parent_block_hash is the block hash of a known execution payload in fork choice.
-     */
-    if (!gossipValidationHelper.isBlockHashKnown(
-        bid.getParentBlockHash(), bid.getParentBlockRoot())) {
-      LOG.trace(
-          "Bid's parent block hash {} is not the block hash of a known execution payload in fork choice. It will be saved for future processing",
-          bid.getParentBlockHash());
-      return completedFuture(SAVE_FOR_FUTURE);
-    }
-
-    /*
-     * [IGNORE] bid.gas_limit is compatible with proposer_preferences.target_gas_limit under the
-     * EIP-1559 transition rule from the parent execution payload gas limit.
-     */
-    final Optional<UInt64> maybeParentGasLimit =
-        gossipValidationHelper.getGasLimitForExecutionPayload(bid.getParentBlockRoot());
-    if (maybeParentGasLimit.isEmpty()) {
-      LOG.trace(
-          "Gas limit for parent execution payload with block hash {} is unavailable. It will be saved for future processing",
-          bid.getParentBlockHash());
-      return completedFuture(SAVE_FOR_FUTURE);
-    }
-    final UInt64 parentGasLimit = maybeParentGasLimit.get();
-    final UInt64 targetGasLimit = proposerPreferences.get().getTargetGasLimit();
-    if (!isGasLimitTargetCompatible(parentGasLimit, bid.getGasLimit(), targetGasLimit)) {
-      return completedFuture(
-          ignore(
-              "Bid gas_limit %s is not compatible with parent gas_limit %s and proposer preferences target_gas_limit %s",
-              bid.getGasLimit(), parentGasLimit, targetGasLimit));
-    }
-
-    /*
      * [IGNORE] bid.parent_block_root is the hash tree root of a known beacon block in fork choice.
      */
     final Optional<UInt64> maybeParentBlockSlot =
@@ -217,6 +185,37 @@ public class ExecutionPayloadBidGossipValidator {
                 return SAVE_FOR_FUTURE;
               }
               final BeaconState state = maybeState.get();
+
+              /*
+               * [IGNORE] bid.parent_block_hash is the block hash of a known execution payload in fork choice.
+               */
+              if (!isBidParentExecutionPayloadKnown(bid, state)) {
+                LOG.trace(
+                    "Bid's parent block hash {} is not the block hash of a known execution payload in fork choice. It will be saved for future processing",
+                    bid.getParentBlockHash());
+                return SAVE_FOR_FUTURE;
+              }
+
+              /*
+               * [IGNORE] bid.gas_limit is compatible with proposer_preferences.target_gas_limit under the
+               * EIP-1559 transition rule from the parent execution payload gas limit.
+               */
+              final Optional<UInt64> maybeParentGasLimit =
+                  gossipValidationHelper.getGasLimitForExecutionPayload(
+                      bid.getParentBlockRoot(), bid.getParentBlockHash());
+              if (maybeParentGasLimit.isEmpty()) {
+                LOG.trace(
+                    "Gas limit for parent execution payload with block hash {} is unavailable. It will be saved for future processing",
+                    bid.getParentBlockHash());
+                return SAVE_FOR_FUTURE;
+              }
+              final UInt64 parentGasLimit = maybeParentGasLimit.get();
+              final UInt64 targetGasLimit = proposerPreferences.get().getTargetGasLimit();
+              if (!isGasLimitTargetCompatible(parentGasLimit, bid.getGasLimit(), targetGasLimit)) {
+                return ignore(
+                    "Bid gas_limit %s is not compatible with parent gas_limit %s and proposer preferences target_gas_limit %s",
+                    bid.getGasLimit(), parentGasLimit, targetGasLimit);
+              }
 
               /*
                * [REJECT] bid.builder_index is a valid/active builder index -- i.e. is_active_builder(state, bid.builder_index) returns True
@@ -364,6 +363,19 @@ public class ExecutionPayloadBidGossipValidator {
         signedExecutionPayloadBid.getMessage().getBuilderIndex(),
         signedExecutionPayloadBid.getSignature(),
         state);
+  }
+
+  private boolean isBidParentExecutionPayloadKnown(
+      final ExecutionPayloadBid bid, final BeaconState parentState) {
+    if (gossipValidationHelper.isExecutionPayloadBidForFullParent(bid, parentState)) {
+      return gossipValidationHelper.isFullExecutionBlockHashKnownForBlockRoot(
+          bid.getParentBlockHash(), bid.getParentBlockRoot());
+    }
+    if (gossipValidationHelper.isExecutionPayloadBidForEmptyParent(bid, parentState)) {
+      return gossipValidationHelper.isBlockHashKnown(
+          bid.getParentBlockHash(), bid.getParentBlockRoot());
+    }
+    return false;
   }
 
   static boolean isGasLimitTargetCompatible(

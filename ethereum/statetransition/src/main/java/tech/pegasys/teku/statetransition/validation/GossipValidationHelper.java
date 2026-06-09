@@ -28,11 +28,12 @@ import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
 import tech.pegasys.teku.spec.datastructures.operations.AttestationData;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
+import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.gloas.BeaconStateGloas;
 import tech.pegasys.teku.spec.logic.common.util.DataColumnSidecarUtil;
 import tech.pegasys.teku.spec.logic.versions.gloas.helpers.BeaconStateAccessorsGloas;
 import tech.pegasys.teku.spec.logic.versions.gloas.helpers.MiscHelpersGloas;
@@ -248,16 +249,34 @@ public class GossipValidationHelper {
   }
 
   public boolean isBlockHashKnown(final Bytes32 blockHash, final Bytes32 blockRoot) {
-    final Optional<Bytes32> maybeBlockHash =
-        recentChainData.getExecutionBlockHashForBlockRoot(blockRoot);
-    return maybeBlockHash.isPresent() && blockHash.equals(maybeBlockHash.get());
+    return recentChainData.isExecutionBlockHashKnownForBlockRoot(blockHash, blockRoot);
   }
 
-  public Optional<UInt64> getGasLimitForExecutionPayload(final Bytes32 blockRoot) {
-    return recentChainData
-        .getStore()
-        .getExecutionPayloadIfAvailable(blockRoot)
-        .map(SignedExecutionPayloadEnvelope::getMessage)
-        .map(envelope -> envelope.getPayload().getGasLimit());
+  public boolean isFullExecutionBlockHashKnownForBlockRoot(
+      final Bytes32 blockHash, final Bytes32 blockRoot) {
+    return recentChainData.isFullExecutionBlockHashKnownForBlockRoot(blockHash, blockRoot);
+  }
+
+  public Optional<UInt64> getGasLimitForExecutionPayload(
+      final Bytes32 blockRoot, final Bytes32 blockHash) {
+    return recentChainData.getExecutionGasLimitForBlockRootAndHash(blockRoot, blockHash);
+  }
+
+  public boolean isExecutionPayloadBidForFullParent(
+      final ExecutionPayloadBid bid, final BeaconState parentState) {
+    return parentState
+        .toVersionGloas()
+        .map(BeaconStateGloas::getLatestExecutionPayloadBid)
+        .map(parentBid -> parentBid.getBlockHash().equals(bid.getParentBlockHash()))
+        .orElse(false);
+  }
+
+  public boolean isExecutionPayloadBidForEmptyParent(
+      final ExecutionPayloadBid bid, final BeaconState parentState) {
+    return parentState
+        .toVersionGloas()
+        .map(BeaconStateGloas::getLatestBlockHash)
+        .map(bid.getParentBlockHash()::equals)
+        .orElse(false);
   }
 }

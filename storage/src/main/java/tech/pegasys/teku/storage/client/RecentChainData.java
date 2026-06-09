@@ -664,6 +664,37 @@ public abstract class RecentChainData
     return getForkChoiceStrategy().flatMap(forkChoice -> forkChoice.blockSlot(root));
   }
 
+  public boolean isExecutionBlockHashKnownForBlockRoot(
+      final Bytes32 blockHash, final Bytes32 blockRoot) {
+    return getForkChoiceStrategy()
+        .map(forkChoice -> forkChoice.isExecutionBlockHashKnownForBlockRoot(blockHash, blockRoot))
+        .orElse(false);
+  }
+
+  public boolean isFullExecutionBlockHashKnownForBlockRoot(
+      final Bytes32 blockHash, final Bytes32 blockRoot) {
+    return getForkChoiceStrategy()
+        .map(
+            forkChoice ->
+                forkChoice.isFullExecutionBlockHashKnownForBlockRoot(blockHash, blockRoot))
+        .orElse(false);
+  }
+
+  public Optional<UInt64> getExecutionBlockNumberForBlockRootAndHash(
+      final Bytes32 blockRoot, final Bytes32 blockHash) {
+    return getForkChoiceStrategy()
+        .flatMap(
+            forkChoice ->
+                forkChoice.getExecutionBlockNumberForBlockRootAndHash(blockRoot, blockHash));
+  }
+
+  public Optional<UInt64> getExecutionGasLimitForBlockRootAndHash(
+      final Bytes32 blockRoot, final Bytes32 blockHash) {
+    return getForkChoiceStrategy()
+        .flatMap(
+            forkChoice -> forkChoice.getExecutionGasLimitForBlockRootAndHash(blockRoot, blockHash));
+  }
+
   public Optional<Bytes32> getExecutionBlockHashForBlockRoot(final Bytes32 root) {
     return getForkChoiceStrategy().flatMap(forkChoice -> forkChoice.executionBlockHash(root));
   }

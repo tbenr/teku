@@ -351,6 +351,7 @@ public class KvStoreDatabase implements Database {
                     b.getStateRoot(),
                     executionPayload.map(ExecutionPayload::getBlockNumber),
                     executionPayload.map(ExecutionPayload::getBlockHash),
+                    executionPayload.map(ExecutionPayload::getGasLimit),
                     checkpointEpochs,
                     gloasForkChoiceRebuildData));
           });

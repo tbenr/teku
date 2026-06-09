@@ -423,10 +423,8 @@ public class BlockManager extends Service
 
   private boolean isParentExecutionPayloadAvailable(
       final ParentExecutionPayloadDependency dependency) {
-    return recentChainData
-        .getExecutionBlockHashForBlockRoot(dependency.parentBeaconBlockRoot())
-        .filter(dependency.parentExecutionBlockHash()::equals)
-        .isPresent();
+    return recentChainData.isFullExecutionBlockHashKnownForBlockRoot(
+        dependency.parentExecutionBlockHash(), dependency.parentBeaconBlockRoot());
   }
 
   private List<SignedBeaconBlock> removeBlocksPendingParentExecutionPayload(

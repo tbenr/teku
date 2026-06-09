@@ -29,6 +29,14 @@ public interface ReadOnlyForkChoiceStrategy {
 
   Optional<Bytes32> executionBlockHash(Bytes32 blockRoot);
 
+  boolean isExecutionBlockHashKnownForBlockRoot(Bytes32 blockHash, Bytes32 blockRoot);
+
+  boolean isFullExecutionBlockHashKnownForBlockRoot(Bytes32 blockHash, Bytes32 blockRoot);
+
+  Optional<UInt64> getExecutionBlockNumberForBlockRootAndHash(Bytes32 blockRoot, Bytes32 blockHash);
+
+  Optional<UInt64> getExecutionGasLimitForBlockRootAndHash(Bytes32 blockRoot, Bytes32 blockHash);
+
   Optional<Bytes32> getAncestor(Bytes32 blockRoot, UInt64 slot);
 
   /**

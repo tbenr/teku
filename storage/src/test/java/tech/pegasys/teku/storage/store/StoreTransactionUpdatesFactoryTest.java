@@ -77,6 +77,7 @@ class StoreTransactionUpdatesFactoryTest {
                         genesis.getStateRoot(),
                         genesis.getExecutionBlockNumber(),
                         genesis.getExecutionBlockHash(),
+                        genesis.getExecutionGasLimit(),
                         Optional.of(spec.calculateBlockCheckpoints(genesis.getState())))))
             .storeConfig(StoreConfig.createDefault())
             .votes(Collections.emptyMap())

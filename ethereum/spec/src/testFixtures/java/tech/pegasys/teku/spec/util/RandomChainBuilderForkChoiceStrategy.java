@@ -73,6 +73,34 @@ public class RandomChainBuilderForkChoiceStrategy implements ReadOnlyForkChoiceS
   }
 
   @Override
+  public boolean isExecutionBlockHashKnownForBlockRoot(
+      final Bytes32 blockHash, final Bytes32 blockRoot) {
+    return executionBlockHash(blockRoot).filter(blockHash::equals).isPresent();
+  }
+
+  @Override
+  public boolean isFullExecutionBlockHashKnownForBlockRoot(
+      final Bytes32 blockHash, final Bytes32 blockRoot) {
+    return isExecutionBlockHashKnownForBlockRoot(blockHash, blockRoot);
+  }
+
+  @Override
+  public Optional<UInt64> getExecutionBlockNumberForBlockRootAndHash(
+      final Bytes32 blockRoot, final Bytes32 blockHash) {
+    return getExecutionPayload(blockRoot)
+        .filter(executionPayload -> executionPayload.getBlockHash().equals(blockHash))
+        .map(ExecutionPayload::getBlockNumber);
+  }
+
+  @Override
+  public Optional<UInt64> getExecutionGasLimitForBlockRootAndHash(
+      final Bytes32 blockRoot, final Bytes32 blockHash) {
+    return getExecutionPayload(blockRoot)
+        .filter(executionPayload -> executionPayload.getBlockHash().equals(blockHash))
+        .map(ExecutionPayload::getGasLimit);
+  }
+
+  @Override
   public Optional<Bytes32> getAncestor(final Bytes32 blockRoot, final UInt64 slot) {
     if (getBlock(blockRoot).isEmpty()) {
       return Optional.empty();

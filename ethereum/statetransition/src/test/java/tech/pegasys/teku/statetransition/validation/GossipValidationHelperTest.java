@@ -46,9 +46,9 @@ import tech.pegasys.teku.spec.TestSpecInvocationContextProvider.SpecContext;
 import tech.pegasys.teku.spec.constants.Domain;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.fulu.BeaconStateSchemaFulu;
+import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.gloas.BeaconStateGloas;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.gloas.MutableBeaconStateGloas;
 import tech.pegasys.teku.spec.datastructures.state.versions.gloas.Builder;
 import tech.pegasys.teku.spec.generator.ChainBuilder;
@@ -301,38 +301,54 @@ public class GossipValidationHelperTest {
   }
 
   @TestTemplate
-  void getGasLimitForExecutionPayload_shouldReturnGasLimitFromAvailableExecutionPayload(
+  void getGasLimitForExecutionPayload_shouldResolveGloasFullAndEmptyContexts(
       final SpecContext specContext) {
     assumeThat(specContext.getSpecMilestone()).isEqualTo(SpecMilestone.GLOAS);
-    final RecentChainData recentChainData = mock(RecentChainData.class);
-    final UpdatableStore store = mock(UpdatableStore.class);
-    final SignedExecutionPayloadEnvelope executionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(1);
-    final Bytes32 blockRoot = executionPayload.getBeaconBlockRoot();
+    final SignedBlockAndState parentBlock = storageSystem.chainUpdater().advanceChain(1);
+    final SignedBlockAndState block = storageSystem.chainUpdater().advanceChain(2);
 
-    when(recentChainData.getStore()).thenReturn(store);
-    when(store.getExecutionPayloadIfAvailable(blockRoot)).thenReturn(Optional.of(executionPayload));
+    final Bytes32 fullParentBlockHash =
+        block
+            .getBlock()
+            .getMessage()
+            .getBody()
+            .getOptionalSignedExecutionPayloadBid()
+            .orElseThrow()
+            .getMessage()
+            .getBlockHash();
+    final UInt64 fullParentGasLimit =
+        block
+            .getBlock()
+            .getMessage()
+            .getBody()
+            .getOptionalSignedExecutionPayloadBid()
+            .orElseThrow()
+            .getMessage()
+            .getGasLimit();
+    final Bytes32 emptyParentBlockHash =
+        BeaconStateGloas.required(block.getState()).getLatestBlockHash();
+    final UInt64 emptyParentGasLimit =
+        parentBlock
+            .getBlock()
+            .getMessage()
+            .getBody()
+            .getOptionalSignedExecutionPayloadBid()
+            .orElseThrow()
+            .getMessage()
+            .getGasLimit();
 
-    final GossipValidationHelper helper =
-        new GossipValidationHelper(spec, recentChainData, storageSystem.getMetricsSystem());
-    assertThat(helper.getGasLimitForExecutionPayload(blockRoot))
-        .contains(executionPayload.getMessage().getPayload().getGasLimit());
-  }
-
-  @TestTemplate
-  void getGasLimitForExecutionPayload_shouldReturnEmptyWhenExecutionPayloadIsUnavailable(
-      final SpecContext specContext) {
-    assumeThat(specContext.getSpecMilestone()).isEqualTo(SpecMilestone.GLOAS);
-    final RecentChainData recentChainData = mock(RecentChainData.class);
-    final UpdatableStore store = mock(UpdatableStore.class);
-    final Bytes32 blockRoot = dataStructureUtil.randomBytes32();
-
-    when(recentChainData.getStore()).thenReturn(store);
-    when(store.getExecutionPayloadIfAvailable(blockRoot)).thenReturn(Optional.empty());
-
-    final GossipValidationHelper helper =
-        new GossipValidationHelper(spec, recentChainData, storageSystem.getMetricsSystem());
-    assertThat(helper.getGasLimitForExecutionPayload(blockRoot)).isEmpty();
+    assertThat(
+            gossipValidationHelper.getGasLimitForExecutionPayload(
+                block.getRoot(), fullParentBlockHash))
+        .contains(fullParentGasLimit);
+    assertThat(
+            gossipValidationHelper.getGasLimitForExecutionPayload(
+                block.getRoot(), emptyParentBlockHash))
+        .contains(emptyParentGasLimit);
+    assertThat(
+            gossipValidationHelper.getGasLimitForExecutionPayload(
+                block.getRoot(), dataStructureUtil.randomBytes32()))
+        .isEmpty();
   }
 
   @TestTemplate

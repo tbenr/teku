@@ -23,8 +23,10 @@ import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.gloas.BeaconStateGloas;
+import tech.pegasys.teku.spec.generator.ChainBuilder;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 
 class StoredBlockMetadataTest {
@@ -73,5 +75,33 @@ class StoredBlockMetadataTest {
         .contains(
             new GloasForkChoiceRebuildData(
                 latestBid.getParentBlockHash(), latestBid.getBlockHash(), Optional.empty()));
+  }
+
+  @Test
+  void extractGloasForkChoiceRebuildData_shouldCapturePayloadGasLimitFromBlindedEnvelope() {
+    final Spec spec = TestSpecFactory.createMinimalGloas();
+    final ChainBuilder chainBuilder = ChainBuilder.create(spec);
+    chainBuilder.generateGenesis();
+    final SignedBlockAndState blockAndState = chainBuilder.generateBlockAtSlot(UInt64.ONE);
+    final ExecutionPayloadBid bid =
+        blockAndState
+            .getBlock()
+            .getMessage()
+            .getBody()
+            .getOptionalSignedExecutionPayloadBid()
+            .map(SignedExecutionPayloadBid::getMessage)
+            .orElseThrow();
+    final SignedBlindedExecutionPayloadEnvelope blindedEnvelope =
+        chainBuilder.getExecutionPayloadAtSlot(blockAndState.getSlot()).orElseThrow().blind(spec);
+
+    assertThat(
+            StoredBlockMetadata.extractGloasForkChoiceRebuildData(
+                blockAndState.getBlock(), Optional.of(blindedEnvelope)))
+        .contains(
+            new GloasForkChoiceRebuildData(
+                bid.getParentBlockHash(),
+                bid.getBlockHash(),
+                Optional.of(blindedEnvelope.getMessage().getPayloadHeader().getBlockNumber()),
+                Optional.of(blindedEnvelope.getMessage().getPayloadHeader().getGasLimit())));
   }
 }
