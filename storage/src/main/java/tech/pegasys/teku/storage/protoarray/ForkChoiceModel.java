@@ -121,7 +121,7 @@ interface ForkChoiceModel {
   boolean shouldBuildOnFull(
       ProtoArray protoArray,
       BlockNodeVariantsIndex blockNodeIndex,
-      ReadOnlyStore store,
+      UInt64 currentSlot,
       ForkChoiceNode head);
 
   /**
@@ -161,6 +161,10 @@ interface ForkChoiceModel {
 
   void onPtcVote(
       Bytes32 blockRoot, IntSet ptcPositions, boolean payloadPresent, boolean blobDataAvailable);
+
+  Optional<Boolean> getPayloadTimelinessVote(Bytes32 blockRoot, int ptcPosition);
+
+  Optional<Boolean> getPayloadDataAvailabilityVote(Bytes32 blockRoot, int ptcPosition);
 
   void onRemovedBlockRoot(
       ProtoArray protoArray, BlockNodeVariantsIndex blockNodeIndex, Bytes32 blockRoot);

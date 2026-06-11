@@ -780,6 +780,11 @@ public class ForkChoiceUtil {
     return Optional.empty();
   }
 
+  // get_payload_due_ms
+  public Optional<Integer> getPayloadDueMillis() {
+    return Optional.empty();
+  }
+
   private boolean isExecutionBlock(final ReadOnlyStore store, final SignedBeaconBlock block) {
     // post-Bellatrix: always true
     final BeaconBlockBody body = block.getMessage().getBody();
@@ -870,8 +875,12 @@ public class ForkChoiceUtil {
   }
 
   public AvailabilityChecker<?> createAvailabilityCheckerOnExecutionPayloadEnvelope(
-      final SignedBeaconBlock block) {
+      final SignedBeaconBlock block, final SignedExecutionPayloadEnvelope signedEnvelope) {
     return AvailabilityChecker.NOOP;
+  }
+
+  public boolean isDataAvailabilityCheckDeferredToExecutionPayloadEnvelope() {
+    return false;
   }
 
   // Used for computing committee indices when producing attestations.

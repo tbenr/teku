@@ -166,9 +166,9 @@ class ForkChoiceModelPhase0 implements ForkChoiceModel {
   public boolean shouldBuildOnFull(
       final ProtoArray protoArray,
       final BlockNodeVariantsIndex blockNodeIndex,
-      final ReadOnlyStore store,
+      final UInt64 currentSlot,
       final ForkChoiceNode head) {
-    return shouldExtendPayload(protoArray, blockNodeIndex, store, head.blockRoot());
+    return false;
   }
 
   @Override
@@ -245,6 +245,18 @@ class ForkChoiceModelPhase0 implements ForkChoiceModel {
       final boolean payloadPresent,
       final boolean blobDataAvailable) {
     // No-op
+  }
+
+  @Override
+  public Optional<Boolean> getPayloadTimelinessVote(
+      final Bytes32 blockRoot, final int ptcPosition) {
+    return Optional.empty();
+  }
+
+  @Override
+  public Optional<Boolean> getPayloadDataAvailabilityVote(
+      final Bytes32 blockRoot, final int ptcPosition) {
+    return Optional.empty();
   }
 
   @Override

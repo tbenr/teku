@@ -49,7 +49,7 @@ import tech.pegasys.teku.spec.logic.common.statetransition.availability.Availabi
 import tech.pegasys.teku.spec.logic.common.statetransition.results.BlockImportResult;
 import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil;
 import tech.pegasys.teku.spec.logic.versions.fulu.util.ForkChoiceUtilFulu;
-import tech.pegasys.teku.spec.logic.versions.gloas.execution.ExecutionRequestsProcessorGloas;
+import tech.pegasys.teku.spec.logic.versions.gloas.block.BlockProcessorGloas;
 import tech.pegasys.teku.spec.logic.versions.gloas.helpers.BeaconStateAccessorsGloas;
 import tech.pegasys.teku.spec.logic.versions.gloas.helpers.BeaconStateMutatorsGloas;
 import tech.pegasys.teku.spec.logic.versions.gloas.helpers.MiscHelpersGloas;
@@ -62,7 +62,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
 
   private final BeaconStateMutatorsGloas beaconStateMutatorsGloas;
   private final WithdrawalsHelpersGloas withdrawalsHelpers;
-  private final ExecutionRequestsProcessorGloas executionRequestsProcessor;
+  private final BlockProcessorGloas blockProcessor;
 
   public ForkChoiceUtilGloas(
       final SpecConfigGloas specConfig,
@@ -72,11 +72,11 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
       final AttestationUtilGloas attestationUtil,
       final MiscHelpersGloas miscHelpers,
       final WithdrawalsHelpersGloas withdrawalsHelpers,
-      final ExecutionRequestsProcessorGloas executionRequestsProcessor) {
+      final BlockProcessorGloas blockProcessor) {
     super(specConfig, beaconStateAccessors, epochProcessor, attestationUtil, miscHelpers);
     this.beaconStateMutatorsGloas = beaconStateMutators;
     this.withdrawalsHelpers = withdrawalsHelpers;
-    this.executionRequestsProcessor = executionRequestsProcessor;
+    this.blockProcessor = blockProcessor;
   }
 
   @Override
@@ -101,14 +101,14 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
       final BeaconState state, final ExecutionRequests parentExecutionRequests) {
     final BeaconState effectiveState =
         state.updated(
-            stateMutable -> {
-              final MutableBeaconStateGloas stateGloas =
-                  MutableBeaconStateGloas.required(stateMutable);
-              executionRequestsProcessor.applyParentExecutionPayload(
-                  stateGloas,
+            mutableState -> {
+              final MutableBeaconStateGloas mutableStateGloas =
+                  MutableBeaconStateGloas.required(mutableState);
+              blockProcessor.applyParentExecutionPayload(
+                  mutableStateGloas,
                   parentExecutionRequests,
-                  beaconStateMutatorsGloas.createValidatorExitContextSupplier(stateGloas));
-              withdrawalsHelpers.processWithdrawals(stateGloas);
+                  beaconStateMutatorsGloas.createValidatorExitContextSupplier(mutableStateGloas));
+              withdrawalsHelpers.processWithdrawals(mutableStateGloas);
             });
     return BeaconStateGloas.required(effectiveState).getPayloadExpectedWithdrawals();
   }
@@ -126,6 +126,12 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
   public Optional<Integer> getPayloadAttestationDueMillis() {
     final SpecConfigGloas configGloas = SpecConfigGloas.required(specConfig);
     return Optional.of(getSlotComponentDurationMillis(configGloas.getPayloadAttestationDueBps()));
+  }
+
+  @Override
+  public Optional<Integer> getPayloadDueMillis() {
+    final SpecConfigGloas configGloas = SpecConfigGloas.required(specConfig);
+    return Optional.of(getSlotComponentDurationMillis(configGloas.getPayloadDueBps()));
   }
 
   /**
@@ -158,14 +164,19 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
 
   @Override
   public AvailabilityChecker<?> createAvailabilityCheckerOnExecutionPayloadEnvelope(
-      final SignedBeaconBlock block) {
+      final SignedBeaconBlock block, final SignedExecutionPayloadEnvelope signedEnvelope) {
     final AvailabilityCheckerFactory<UInt64> factory =
         this.dataColumnSidecarAvailabilityCheckerFactory;
     if (factory == null) {
       throw new IllegalStateException(
           "DataColumnSidecarAvailabilityCheckerFactory not initialized");
     }
-    return factory.createAvailabilityChecker(block);
+    return factory.createAvailabilityChecker(block, signedEnvelope);
+  }
+
+  @Override
+  public boolean isDataAvailabilityCheckDeferredToExecutionPayloadEnvelope() {
+    return true;
   }
 
   @Override
@@ -506,7 +517,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
     if (context
         .getStore()
         .getForkChoiceStrategy()
-        .shouldBuildOnFull(context.getStore(), proposerHead)) {
+        .shouldBuildOnFull(context.getStore(), slot, proposerHead)) {
       return proposerHead.toFull();
     }
     return proposerHead.toEmpty();

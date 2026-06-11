@@ -28,6 +28,7 @@ import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
 import tech.pegasys.teku.spec.datastructures.operations.AttestationData;
@@ -152,6 +153,14 @@ public class GossipValidationHelper {
         recentChainData.getForkChoiceStrategy().orElseThrow());
   }
 
+  @SuppressWarnings("unused")
+  public boolean currentFinalizedCheckpointIsAncestorOfAttestationBlock(final Bytes32 blockRoot) {
+    // All nodes in the proto-array descend from the finalized block, so no production validation
+    // is needed for this rule. The reference-test executor overrides this method to model
+    // generated tests with fake finalized checkpoint roots that cannot be represented in Store.
+    return true;
+  }
+
   public boolean isProposerTheExpectedProposer(
       final UInt64 proposerIndex, final UInt64 slot, final BeaconState postState) {
     final int expectedProposerIndex = spec.getBeaconProposerIndex(postState, slot);
@@ -242,5 +251,16 @@ public class GossipValidationHelper {
     final Optional<Bytes32> maybeBlockHash =
         recentChainData.getExecutionBlockHashForBlockRoot(blockRoot);
     return maybeBlockHash.isPresent() && blockHash.equals(maybeBlockHash.get());
+  }
+
+  public Optional<SignedExecutionPayloadEnvelope> getRecentlyImportedExecutionPayload(
+      final Bytes32 blockRoot) {
+    return recentChainData.getStore().getExecutionPayloadIfAvailable(blockRoot);
+  }
+
+  public Optional<UInt64> getGasLimitForExecutionPayload(final Bytes32 blockRoot) {
+    return getRecentlyImportedExecutionPayload(blockRoot)
+        .map(SignedExecutionPayloadEnvelope::getMessage)
+        .map(envelope -> envelope.getPayload().getGasLimit());
   }
 }

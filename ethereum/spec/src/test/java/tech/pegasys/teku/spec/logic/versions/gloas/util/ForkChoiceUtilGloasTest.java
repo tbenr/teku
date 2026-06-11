@@ -71,6 +71,11 @@ class ForkChoiceUtilGloasTest {
   }
 
   @Test
+  void isDataAvailabilityCheckDeferredToExecutionPayloadEnvelope_shouldReturnTrue() {
+    assertThat(forkChoiceUtil.isDataAvailabilityCheckDeferredToExecutionPayloadEnvelope()).isTrue();
+  }
+
+  @Test
   void getPayloadAttributeWithdrawalsUsesEffectiveState() {
     final UInt64 stateSlot = gloasSlot.plus(spec.getSlotsPerEpoch(gloasSlot));
     final SchemaDefinitionsGloas schemaDefinitions =
@@ -159,6 +164,14 @@ class ForkChoiceUtilGloasTest {
 
     assertThat(forkChoiceUtil.computeBlockTimeliness(gloasSlot, gloasSlot, ptcDueMillis))
         .isEqualTo(new BlockTimeliness(false, false));
+  }
+
+  @Test
+  void getPayloadDueMillis_shouldUsePayloadDueBps() {
+    assertThat(forkChoiceUtil.getPayloadDueMillis())
+        .hasValue(spec.getSlotDurationMillis(gloasSlot) * 3 / 4);
+    assertThat(forkChoiceUtil.getPayloadDueMillis())
+        .isEqualTo(forkChoiceUtil.getPayloadAttestationDueMillis());
   }
 
   @Test

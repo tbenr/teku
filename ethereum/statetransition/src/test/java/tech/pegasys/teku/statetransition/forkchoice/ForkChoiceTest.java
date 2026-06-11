@@ -217,9 +217,7 @@ class ForkChoiceTest {
     // blobs always available
     if (spec.isMilestoneSupported(SpecMilestone.DENEB)) {
       final List<BlobSidecar> blobSidecars = dataStructureUtil.randomBlobSidecars(2);
-      when(blobSidecarsAvailabilityChecker.getAvailabilityCheckResult())
-          .thenReturn(
-              SafeFuture.completedFuture(DataAndValidationResult.validResult(blobSidecars)));
+      setBlobSidecarsAvailabilityResult(DataAndValidationResult.validResult(blobSidecars));
     }
   }
 
@@ -247,7 +245,7 @@ class ForkChoiceTest {
     importBlock(blockAndState);
 
     verify(blobSidecarsAvailabilityChecker).initiateDataAvailabilityCheck();
-    verify(blobSidecarsAvailabilityChecker).getAvailabilityCheckResult();
+    verify(blobSidecarsAvailabilityChecker).getAndLogAvailabilityCheckResult(any());
   }
 
   @Test
@@ -256,14 +254,13 @@ class ForkChoiceTest {
     final SignedBlockAndState blockAndState = chainBuilder.generateBlockAtSlot(ONE);
     storageSystem.chainUpdater().advanceCurrentSlotToAtLeast(blockAndState.getSlot());
 
-    when(blobSidecarsAvailabilityChecker.getAvailabilityCheckResult())
-        .thenReturn(SafeFuture.completedFuture(DataAndValidationResult.notAvailable()));
+    setBlobSidecarsAvailabilityResult(DataAndValidationResult.notAvailable());
 
     importBlockAndAssertFailure(
         blockAndState, FailureReason.FAILED_DATA_AVAILABILITY_CHECK_NOT_AVAILABLE);
 
     verify(blobSidecarsAvailabilityChecker).initiateDataAvailabilityCheck();
-    verify(blobSidecarsAvailabilityChecker).getAvailabilityCheckResult();
+    verify(blobSidecarsAvailabilityChecker).getAndLogAvailabilityCheckResult(any());
   }
 
   @Test
@@ -302,8 +299,7 @@ class ForkChoiceTest {
     final SignedBlockAndState blockAndState = chainBuilder.generateBlockAtSlot(ONE);
     storageSystem.chainUpdater().advanceCurrentSlotToAtLeast(blockAndState.getSlot());
 
-    when(blobSidecarsAvailabilityChecker.getAvailabilityCheckResult())
-        .thenReturn(SafeFuture.completedFuture(DataAndValidationResult.notAvailable()));
+    setBlobSidecarsAvailabilityResult(DataAndValidationResult.notAvailable());
 
     importBlockAndAssertFailure(
         blockAndState, FailureReason.FAILED_DATA_AVAILABILITY_CHECK_NOT_AVAILABLE);
@@ -311,7 +307,7 @@ class ForkChoiceTest {
     verify(blockBroadcastValidator, never()).onConsensusValidationSucceeded();
 
     verify(blobSidecarsAvailabilityChecker).initiateDataAvailabilityCheck();
-    verify(blobSidecarsAvailabilityChecker).getAvailabilityCheckResult();
+    verify(blobSidecarsAvailabilityChecker).getAndLogAvailabilityCheckResult(any());
   }
 
   @Test
@@ -328,7 +324,7 @@ class ForkChoiceTest {
     verify(blockBroadcastValidator).onConsensusValidationSucceeded();
 
     verify(blobSidecarsAvailabilityChecker).initiateDataAvailabilityCheck();
-    verify(blobSidecarsAvailabilityChecker).getAvailabilityCheckResult();
+    verify(blobSidecarsAvailabilityChecker).getAndLogAvailabilityCheckResult(any());
   }
 
   @Test
@@ -404,13 +400,12 @@ class ForkChoiceTest {
     final SignedBlockAndState blockAndState = chainBuilder.generateBlockAtSlot(ONE);
     storageSystem.chainUpdater().advanceCurrentSlotToAtLeast(blockAndState.getSlot());
 
-    when(blobSidecarsAvailabilityChecker.getAvailabilityCheckResult())
-        .thenReturn(SafeFuture.completedFuture(DataAndValidationResult.notRequired()));
+    setBlobSidecarsAvailabilityResult(DataAndValidationResult.notRequired());
 
     importBlock(blockAndState);
 
     verify(blobSidecarsAvailabilityChecker).initiateDataAvailabilityCheck();
-    verify(blobSidecarsAvailabilityChecker).getAvailabilityCheckResult();
+    verify(blobSidecarsAvailabilityChecker).getAndLogAvailabilityCheckResult(any());
   }
 
   @Test
@@ -629,6 +624,28 @@ class ForkChoiceTest {
         SpecConfigGloas.required(spec.atSlot(parentSlot).getConfig())
             .getDataAvailabilityTimelyThreshold();
     strategy.onPtcVote(parentBlock.getRoot(), ptcPositions(threshold + 1), true, false);
+    storageSystem.chainUpdater().advanceCurrentSlotToAtLeast(proposalSlot);
+
+    final ChainHead blockProductionHead =
+        safeJoin(
+            forkChoice.prepareForBlockProduction(proposalSlot, BlockProductionPerformance.NOOP));
+
+    assertThat(blockProductionHead.getRoot()).isEqualTo(parentBlock.getRoot());
+    assertThat(blockProductionHead.getPayloadStatus())
+        .isEqualTo(ForkChoicePayloadStatus.PAYLOAD_STATUS_EMPTY);
+  }
+
+  @Test
+  void prepareForBlockProduction_shouldUseEmptyParentWhenPtcVotesPayloadUntimely() {
+    setupWithSpec(TestSpecFactory.createMinimalGloas());
+
+    final UInt64 parentSlot = UInt64.ONE;
+    final UInt64 proposalSlot = parentSlot.plus(ONE);
+    final SignedBlockAndState parentBlock = storageSystem.chainUpdater().advanceChain(parentSlot);
+    final ForkChoiceStrategy strategy = recentChainData.getStore().getForkChoiceStrategy();
+    final int threshold =
+        SpecConfigGloas.required(spec.atSlot(parentSlot).getConfig()).getPayloadTimelyThreshold();
+    strategy.onPtcVote(parentBlock.getRoot(), ptcPositions(threshold + 1), false, true);
     storageSystem.chainUpdater().advanceCurrentSlotToAtLeast(proposalSlot);
 
     final ChainHead blockProductionHead =
@@ -974,6 +991,69 @@ class ForkChoiceTest {
 
     // proposer boost is given to the first block despite the fork chain having bigger weight
     assertThat(recentChainData.getStore().getProposerBoostRoot()).hasValue(block.getRoot());
+  }
+
+  @Test
+  void onBlock_shouldUpdateProposerBoostRootWhenDependentRootsMatch() {
+    final UInt64 currentEpoch = getEpochAfterMinSeedLookahead();
+    final UInt64 dependentSlot = getDependentSlotForEpoch(currentEpoch);
+    final UInt64 importSlot = spec.computeStartSlotAtEpoch(currentEpoch);
+    final UInt64 parentSlot = importSlot.minus(1);
+
+    final SignedBlockAndState dependentBlock =
+        storageSystem.chainUpdater().advanceChainUntil(dependentSlot);
+    final ChainBuilder forkChain = chainBuilder.fork();
+
+    final SignedBlockAndState canonicalHead =
+        storageSystem.chainUpdater().advanceChainUntil(parentSlot);
+    saveDivergentNextBlock(forkChain);
+    final SignedBlockAndState forkParent = saveChainUntil(forkChain, parentSlot);
+
+    final ReadOnlyForkChoiceStrategy forkChoiceStrategy =
+        recentChainData.getForkChoiceStrategy().orElseThrow();
+    assertThat(forkChoiceStrategy.getAncestor(canonicalHead.getRoot(), dependentSlot))
+        .contains(dependentBlock.getRoot());
+    assertThat(forkChoiceStrategy.getAncestor(forkParent.getRoot(), dependentSlot))
+        .contains(dependentBlock.getRoot());
+
+    applyVotesToTargetBlock(canonicalHead);
+    processHead(parentSlot);
+    assertThat(recentChainData.getBestBlockRoot()).contains(canonicalHead.getRoot());
+
+    tickToSlot(importSlot);
+    final SignedBlockAndState forkBlock = forkChain.generateBlockAtSlot(importSlot);
+    importBlock(forkBlock);
+
+    assertThat(recentChainData.getStore().getProposerBoostRoot()).hasValue(forkBlock.getRoot());
+  }
+
+  @Test
+  void onBlock_shouldNotUpdateProposerBoostRootWhenDependentRootsDiffer() {
+    final ChainBuilder forkChain = chainBuilder.fork();
+    final UInt64 currentEpoch = getEpochAfterMinSeedLookahead();
+    final UInt64 dependentSlot = getDependentSlotForEpoch(currentEpoch);
+    final UInt64 importSlot = spec.computeStartSlotAtEpoch(currentEpoch);
+    final UInt64 parentSlot = importSlot.minus(1);
+
+    saveDivergentNextBlock(forkChain);
+    final SignedBlockAndState canonicalHead =
+        storageSystem.chainUpdater().advanceChainUntil(parentSlot);
+    final SignedBlockAndState forkParent = saveChainUntil(forkChain, parentSlot);
+
+    final ReadOnlyForkChoiceStrategy forkChoiceStrategy =
+        recentChainData.getForkChoiceStrategy().orElseThrow();
+    assertThat(forkChoiceStrategy.getAncestor(canonicalHead.getRoot(), dependentSlot))
+        .isNotEqualTo(forkChoiceStrategy.getAncestor(forkParent.getRoot(), dependentSlot));
+
+    applyVotesToTargetBlock(canonicalHead);
+    processHead(parentSlot);
+    assertThat(recentChainData.getBestBlockRoot()).contains(canonicalHead.getRoot());
+
+    tickToSlot(importSlot);
+    final SignedBlockAndState forkBlock = forkChain.generateBlockAtSlot(importSlot);
+    importBlock(forkBlock);
+
+    assertThat(recentChainData.getStore().getProposerBoostRoot()).isEmpty();
   }
 
   @Test
@@ -1514,6 +1594,16 @@ class ForkChoiceTest {
         .isEqualTo(optimistically);
   }
 
+  private void setBlobSidecarsAvailabilityResult(
+      final DataAndValidationResult<BlobSidecar> result) {
+    final SafeFuture<DataAndValidationResult<BlobSidecar>> resultFuture =
+        SafeFuture.completedFuture(result);
+    doReturn(resultFuture).when(blobSidecarsAvailabilityChecker).getAvailabilityCheckResult();
+    doReturn(resultFuture)
+        .when(blobSidecarsAvailabilityChecker)
+        .getAndLogAvailabilityCheckResult(any());
+  }
+
   private SafeFuture<BlockImportResult> importBlockNoResultCheck(final SignedBlockAndState block) {
     storageSystem.chainUpdater().advanceCurrentSlotToAtLeast(block.getSlot());
     return forkChoice.onBlock(
@@ -1534,6 +1624,44 @@ class ForkChoiceTest {
         forkChoice.onBlock(
             block.getBlock(), Optional.empty(), blockBroadcastValidator, executionLayer);
     assertBlockImportedSuccessfully(result, true);
+  }
+
+  private UInt64 getEpochAfterMinSeedLookahead() {
+    return UInt64.valueOf(spec.getGenesisSpecConfig().getMinSeedLookahead() + 2L);
+  }
+
+  private UInt64 getDependentSlotForEpoch(final UInt64 currentEpoch) {
+    final int minSeedLookahead = spec.getSpecConfig(currentEpoch).getMinSeedLookahead();
+    return spec.computeStartSlotAtEpoch(currentEpoch.minus(minSeedLookahead)).minus(1);
+  }
+
+  private SignedBlockAndState saveChainUntil(final ChainBuilder chain, final UInt64 slot) {
+    SignedBlockAndState latestBlock = chain.getLatestBlockAndState();
+    while (chain.getLatestSlot().isLessThan(slot)) {
+      latestBlock = chain.generateNextBlock();
+      storageSystem.chainUpdater().saveBlock(latestBlock);
+    }
+    return latestBlock;
+  }
+
+  private SignedBlockAndState saveDivergentNextBlock(final ChainBuilder chain) {
+    final SignedBlockAndState block =
+        chain.generateNextBlock(
+            BlockOptions.create().setEth1Data(dataStructureUtil.randomEth1Data()));
+    storageSystem.chainUpdater().saveBlock(block);
+    return block;
+  }
+
+  private void applyVotesToTargetBlock(final SignedBlockAndState targetBlock) {
+    for (int validatorIndex = 0; validatorIndex < 4; validatorIndex++) {
+      applyAttestationFromValidator(UInt64.valueOf(validatorIndex), targetBlock);
+    }
+  }
+
+  private void tickToSlot(final UInt64 slot) {
+    forkChoice.onTick(
+        spec.computeTimeMillisAtSlot(slot, recentChainData.getGenesisTimeMillis()),
+        Optional.empty());
   }
 
   private void assertBlockImportFailure(

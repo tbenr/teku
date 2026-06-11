@@ -82,8 +82,6 @@ import tech.pegasys.teku.spec.executionlayer.PayloadStatus;
 import tech.pegasys.teku.spec.logic.common.execution.ExecutionPayloadVerificationException;
 import tech.pegasys.teku.spec.logic.common.statetransition.availability.AvailabilityChecker;
 import tech.pegasys.teku.spec.logic.common.statetransition.availability.DataAndValidationResult;
-import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.EpochProcessingException;
-import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.SlotProcessingException;
 import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.StateTransitionException;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.BlockImportResult;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.BlockImportResult.FailureReason;
@@ -533,14 +531,9 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
 
     final SafeFuture<? extends DataAndValidationResult<?>> dataAndValidationResultSafeFuture =
         availabilityChecker
-            .getAvailabilityCheckResult()
+            .getAndLogAvailabilityCheckResult(LOG)
             .thenPeek(
                 result -> {
-                  LOG.debug(
-                      "Data availability check for slot: {}, block_root: {} result: {}",
-                      block.getSlot(),
-                      block.getRoot(),
-                      result.toLogString());
                   blockImportPerformance.ifPresent(BlockImportPerformance::dataAvailabilityChecked);
                   // consensus validation is completed when DA check is completed
                   if (result.isSuccess()) {
@@ -600,7 +593,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     final ForkChoiceUtil forkChoiceUtil = spec.atSlot(signedEnvelope.getSlot()).getForkChoiceUtil();
 
     final AvailabilityChecker<?> availabilityChecker =
-        forkChoiceUtil.createAvailabilityCheckerOnExecutionPayloadEnvelope(block);
+        forkChoiceUtil.createAvailabilityCheckerOnExecutionPayloadEnvelope(block, signedEnvelope);
     availabilityChecker.initiateDataAvailabilityCheck();
     final ForkChoicePayloadExecutorGloas payloadExecutor =
         ForkChoicePayloadExecutorGloas.create(signedEnvelope, executionLayer);
@@ -618,16 +611,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     }
 
     final SafeFuture<? extends DataAndValidationResult<?>> dataAndValidationResultFuture =
-        availabilityChecker
-            .getAvailabilityCheckResult()
-            .thenPeek(
-                result ->
-                    LOG.debug(
-                        "Data availability check for slot: {}, builder: {}, block_root: {} result: {}",
-                        signedEnvelope.getSlot(),
-                        signedEnvelope.getMessage().getBuilderIndex(),
-                        signedEnvelope.getBeaconBlockRoot(),
-                        result.toLogString()));
+        availabilityChecker.getAndLogAvailabilityCheckResult(LOG);
 
     return payloadExecutor
         .getExecutionResult()
@@ -712,6 +696,9 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
         computeEarliestBlobSidecarsSlot(
             recentChainData.getStore(), dataAndValidationResult, block.getMessage());
 
+    final Optional<ForkChoiceNode> preImportHead =
+        recentChainData.getChainHead().map(ChainHead::getForkChoiceNode);
+
     forkChoiceUtil.applyBlockToStore(
         transaction,
         block,
@@ -720,7 +707,13 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
         blobSidecars,
         earliestBlobSidecarsSlot);
 
-    final boolean shouldUpdateProposerBoostRoot = shouldUpdateProposerBoostRoot(block, transaction);
+    final boolean shouldUpdateProposerBoostRoot =
+        preImportHead
+            .filter(
+                forkChoiceNode ->
+                    shouldUpdateProposerBoostRoot(
+                        block, forkChoiceNode, forkChoiceStrategy, transaction))
+            .isPresent();
     if (shouldUpdateProposerBoostRoot) {
       transaction.setProposerBoostRoot(block.getRoot());
     }
@@ -897,7 +890,10 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
 
   // from consensus-specs/fork-choice:
   private boolean shouldUpdateProposerBoostRoot(
-      final SignedBeaconBlock block, final StoreTransaction transaction) {
+      final SignedBeaconBlock block,
+      final ForkChoiceNode preImportHead,
+      final ForkChoiceStrategy forkChoiceStrategy,
+      final StoreTransaction transaction) {
     // is_first_block
     if (transaction.getProposerBoostRoot().isPresent()) {
       return false;
@@ -907,31 +903,49 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
       return false;
     }
 
-    // in the edge cases when the chain head is not present or the head state future is not
-    // immediately available, the proposer boost root will be set to maintain backwards
-    // compatibility (see: https://github.com/ethereum/consensus-specs/pull/4807/)
-    return recentChainData
-        .getChainHead()
-        .map(
-            chainHead -> {
-              final SafeFuture<BeaconState> headStateFuture = chainHead.getState();
-              if (!headStateFuture.isCompletedNormally()) {
-                return true;
-              }
-              final BeaconState headState = headStateFuture.join();
-              final UInt64 currentSlot = spec.getCurrentSlot(transaction);
-              try {
-                return block.getProposerIndex().intValue()
-                    == spec.getProposerIndexAtSlot(headState, currentSlot);
-              } catch (final SlotProcessingException | EpochProcessingException ex) {
-                throw new RuntimeException(
-                    String.format(
-                        "Can't progress head state from slot %s to slot %s",
-                        headState.getSlot(), currentSlot),
-                    ex);
-              }
-            })
-        .orElse(true);
+    final Optional<Bytes32> maybeBlockDependentRoot =
+        getDependentRoot(block, forkChoiceStrategy, transaction);
+    final Optional<Bytes32> maybeHeadDependentRoot =
+        getDependentRoot(preImportHead, forkChoiceStrategy, transaction);
+    return maybeBlockDependentRoot.isPresent()
+        && maybeBlockDependentRoot.equals(maybeHeadDependentRoot);
+  }
+
+  private Optional<Bytes32> getDependentRoot(
+      final SignedBeaconBlock block,
+      final ForkChoiceStrategy forkChoiceStrategy,
+      final StoreTransaction transaction) {
+    final Optional<UInt64> maybeDependentSlot = getDependentSlot(transaction);
+    if (maybeDependentSlot.isEmpty()) {
+      return Optional.of(Bytes32.ZERO);
+    }
+    final UInt64 dependentSlot = maybeDependentSlot.get();
+    if (!block.getSlot().isGreaterThan(dependentSlot)) {
+      return Optional.of(block.getRoot());
+    }
+    return forkChoiceStrategy.getAncestor(block.getParentRoot(), dependentSlot);
+  }
+
+  private Optional<Bytes32> getDependentRoot(
+      final ForkChoiceNode node,
+      final ForkChoiceStrategy forkChoiceStrategy,
+      final StoreTransaction transaction) {
+    final Optional<UInt64> maybeDependentSlot = getDependentSlot(transaction);
+    if (maybeDependentSlot.isEmpty()) {
+      return Optional.of(Bytes32.ZERO);
+    }
+    return forkChoiceStrategy
+        .getAncestorNode(node.blockRoot(), maybeDependentSlot.get())
+        .map(ForkChoiceNode::blockRoot);
+  }
+
+  private Optional<UInt64> getDependentSlot(final StoreTransaction transaction) {
+    final UInt64 currentEpoch = spec.computeEpochAtSlot(spec.getCurrentSlot(transaction));
+    final int minSeedLookahead = spec.getSpecConfig(currentEpoch).getMinSeedLookahead();
+    if (currentEpoch.isLessThanOrEqualTo(UInt64.valueOf(minSeedLookahead))) {
+      return Optional.empty();
+    }
+    return Optional.of(spec.computeStartSlotAtEpoch(currentEpoch.minus(minSeedLookahead)).minus(1));
   }
 
   private Optional<List<BlobSidecar>> extractBlobSidecarsFromValidationResults(

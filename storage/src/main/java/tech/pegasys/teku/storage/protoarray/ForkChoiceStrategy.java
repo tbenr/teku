@@ -487,11 +487,12 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
   }
 
   @Override
-  public boolean shouldBuildOnFull(final ReadOnlyStore store, final ForkChoiceNode head) {
+  public boolean shouldBuildOnFull(
+      final ReadOnlyStore store, final UInt64 currentSlot, final ForkChoiceNode head) {
     protoArrayLock.readLock().lock();
     try {
       return getForkChoiceModelForPayloadDecision(store, head.blockRoot())
-          .shouldBuildOnFull(protoArray, blockNodeIndex, store, head);
+          .shouldBuildOnFull(protoArray, blockNodeIndex, currentSlot, head);
     } finally {
       protoArrayLock.readLock().unlock();
     }
@@ -583,6 +584,33 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
       return getForkChoiceModelForRoot(node.blockRoot())
           .flatMap(forkChoiceModel -> forkChoiceModel.getParentBeaconBlockNode(protoArray, node))
           .map(ProtoNode::getForkChoiceNode);
+    } finally {
+      protoArrayLock.readLock().unlock();
+    }
+  }
+
+  @Override
+  public Optional<Boolean> getPayloadTimelinessVote(
+      final Bytes32 blockRoot, final int ptcPosition) {
+    protoArrayLock.readLock().lock();
+    try {
+      return getForkChoiceModelForRoot(blockRoot)
+          .flatMap(
+              forkChoiceModel -> forkChoiceModel.getPayloadTimelinessVote(blockRoot, ptcPosition));
+    } finally {
+      protoArrayLock.readLock().unlock();
+    }
+  }
+
+  @Override
+  public Optional<Boolean> getPayloadDataAvailabilityVote(
+      final Bytes32 blockRoot, final int ptcPosition) {
+    protoArrayLock.readLock().lock();
+    try {
+      return getForkChoiceModelForRoot(blockRoot)
+          .flatMap(
+              forkChoiceModel ->
+                  forkChoiceModel.getPayloadDataAvailabilityVote(blockRoot, ptcPosition));
     } finally {
       protoArrayLock.readLock().unlock();
     }
