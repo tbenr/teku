@@ -1817,7 +1817,8 @@ public class BeaconChainController extends Service implements BeaconChainControl
               executionPayloadGossipChannel,
               dataColumnSidecarGossipChannel,
               executionPayloadManager,
-              beaconConfig.eth2NetworkConfig().isLatePayloadPublishingEnabled());
+              beaconConfig.eth2NetworkConfig().isLatePayloadPublishingEnabled(),
+              beaconConfig.eth2NetworkConfig().isLateColumnPublishingEnabled());
     } else {
       executionPayloadFactory = ExecutionPayloadFactory.NOOP;
       executionPayloadPublisher = ExecutionPayloadPublisher.NOOP;

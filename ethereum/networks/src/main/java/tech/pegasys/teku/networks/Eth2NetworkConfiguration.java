@@ -67,6 +67,7 @@ public class Eth2NetworkConfiguration {
   public static final boolean DEFAULT_PREPARE_BLOCK_PRODUCTION_ENABLED = true;
   public static final boolean DEFAULT_LATE_BLOCK_PUBLISHING = false;
   public static final boolean DEFAULT_LATE_PAYLOAD_PUBLISHING = false;
+  public static final boolean DEFAULT_LATE_COLUMN_PUBLISHING = false;
 
   public static final boolean DEFAULT_AGGREGATING_ATTESTATION_POOL_PROFILING_ENABLED = false;
   public static final int
@@ -155,6 +156,7 @@ public class Eth2NetworkConfiguration {
   private final boolean prepareBlockProductionEnabled;
   private final boolean lateBlockPublishingEnabled;
   private final boolean latePayloadPublishingEnabled;
+  private final boolean lateColumnPublishingEnabled;
   private final boolean forkChoiceUpdatedAlwaysSendPayloadAttributes;
   private final int pendingAttestationsMaxQueue;
   private final boolean rustKzgEnabled;
@@ -199,6 +201,7 @@ public class Eth2NetworkConfiguration {
       final boolean prepareBlockProductionEnabled,
       final boolean lateBlockPublishingEnabled,
       final boolean latePayloadPublishingEnabled,
+      final boolean lateColumnPublishingEnabled,
       final boolean forkChoiceUpdatedAlwaysSendPayloadAttributes,
       final int pendingAttestationsMaxQueue,
       final boolean rustKzgEnabled,
@@ -244,6 +247,7 @@ public class Eth2NetworkConfiguration {
     this.prepareBlockProductionEnabled = prepareBlockProductionEnabled;
     this.lateBlockPublishingEnabled = lateBlockPublishingEnabled;
     this.latePayloadPublishingEnabled = latePayloadPublishingEnabled;
+    this.lateColumnPublishingEnabled = lateColumnPublishingEnabled;
     this.forkChoiceUpdatedAlwaysSendPayloadAttributes =
         forkChoiceUpdatedAlwaysSendPayloadAttributes;
     this.pendingAttestationsMaxQueue = pendingAttestationsMaxQueue;
@@ -409,6 +413,10 @@ public class Eth2NetworkConfiguration {
     return latePayloadPublishingEnabled;
   }
 
+  public boolean isLateColumnPublishingEnabled() {
+    return lateColumnPublishingEnabled;
+  }
+
   public boolean isForkChoiceUpdatedAlwaysSendPayloadAttributes() {
     return forkChoiceUpdatedAlwaysSendPayloadAttributes;
   }
@@ -567,6 +575,7 @@ public class Eth2NetworkConfiguration {
     private boolean prepareBlockProductionEnabled = DEFAULT_PREPARE_BLOCK_PRODUCTION_ENABLED;
     private boolean lateBlockPublishingEnabled = DEFAULT_LATE_BLOCK_PUBLISHING;
     private boolean latePayloadPublishingEnabled = DEFAULT_LATE_PAYLOAD_PUBLISHING;
+    private boolean lateColumnPublishingEnabled = DEFAULT_LATE_COLUMN_PUBLISHING;
     private boolean forkChoiceUpdatedAlwaysSendPayloadAttributes =
         DEFAULT_FORK_CHOICE_UPDATED_ALWAYS_SEND_PAYLOAD_ATTRIBUTES;
     private OptionalInt pendingAttestationsMaxQueue = OptionalInt.empty();
@@ -679,6 +688,7 @@ public class Eth2NetworkConfiguration {
           resolvePrepareBlockProductionAbility(prepareBlockProductionEnabled),
           lateBlockPublishingEnabled,
           latePayloadPublishingEnabled,
+          lateColumnPublishingEnabled,
           forkChoiceUpdatedAlwaysSendPayloadAttributes,
           pendingAttestationsMaxQueue.orElse(DEFAULT_MAX_QUEUE_PENDING_ATTESTATIONS),
           rustKzgEnabled,
@@ -1335,6 +1345,11 @@ public class Eth2NetworkConfiguration {
 
     public Builder latePayloadPublishingEnabled(final boolean latePayloadPublishingEnabled) {
       this.latePayloadPublishingEnabled = latePayloadPublishingEnabled;
+      return this;
+    }
+
+    public Builder lateColumnPublishingEnabled(final boolean lateColumnPublishingEnabled) {
+      this.lateColumnPublishingEnabled = lateColumnPublishingEnabled;
       return this;
     }
 

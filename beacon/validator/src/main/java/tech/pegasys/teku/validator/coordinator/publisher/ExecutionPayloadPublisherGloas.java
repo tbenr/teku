@@ -48,6 +48,11 @@ public class ExecutionPayloadPublisherGloas implements ExecutionPayloadPublisher
           (spec, slot) -> spec.atSlot(slot).getConfig().getSlotDurationMillis() + 1_500);
 
   static final AtomicInteger LAST_PAYLOAD_PUBLISHING_DELAY_INDEX = new AtomicInteger(0);
+  static final AtomicInteger LAST_COLUMN_PUBLISHING_DELAY_INDEX = new AtomicInteger(0);
+
+  // fraction of data column sidecars whose publishing is delayed when late column publishing is
+  // enabled
+  static final double DELAYED_COLUMN_FRACTION = 0.8;
 
   private final Spec spec;
   private final ExecutionPayloadFactory executionPayloadFactory;
@@ -55,6 +60,7 @@ public class ExecutionPayloadPublisherGloas implements ExecutionPayloadPublisher
   private final DataColumnSidecarGossipChannel dataColumnSidecarGossipChannel;
   private final ExecutionPayloadManager executionPayloadManager;
   private final boolean isLatePayloadPublishingEnabled;
+  private final boolean isLateColumnPublishingEnabled;
 
   public ExecutionPayloadPublisherGloas(
       final ExecutionPayloadFactory executionPayloadFactory,
@@ -67,6 +73,7 @@ public class ExecutionPayloadPublisherGloas implements ExecutionPayloadPublisher
         executionPayloadGossipChannel,
         dataColumnSidecarGossipChannel,
         executionPayloadManager,
+        false,
         false);
   }
 
@@ -76,13 +83,15 @@ public class ExecutionPayloadPublisherGloas implements ExecutionPayloadPublisher
       final ExecutionPayloadGossipChannel executionPayloadGossipChannel,
       final DataColumnSidecarGossipChannel dataColumnSidecarGossipChannel,
       final ExecutionPayloadManager executionPayloadManager,
-      final boolean isLatePayloadPublishingEnabled) {
+      final boolean isLatePayloadPublishingEnabled,
+      final boolean isLateColumnPublishingEnabled) {
     this.spec = spec;
     this.executionPayloadFactory = executionPayloadFactory;
     this.executionPayloadGossipChannel = executionPayloadGossipChannel;
     this.dataColumnSidecarGossipChannel = dataColumnSidecarGossipChannel;
     this.executionPayloadManager = executionPayloadManager;
     this.isLatePayloadPublishingEnabled = isLatePayloadPublishingEnabled;
+    this.isLateColumnPublishingEnabled = isLateColumnPublishingEnabled;
   }
 
   @Override
@@ -132,15 +141,52 @@ public class ExecutionPayloadPublisherGloas implements ExecutionPayloadPublisher
         .toVoid();
   }
 
+  private SafeFuture<Void> delayColumnPublishing(final UInt64 slot, final int delayedCount) {
+    final int delayMillis =
+        PAYLOAD_DELAYS_MILLIS
+            .get(
+                LAST_COLUMN_PUBLISHING_DELAY_INDEX.getAndUpdate(
+                    i -> (i + 1) % PAYLOAD_DELAYS_MILLIS.size()))
+            .apply(spec, slot);
+    LOG.info(
+        "delaying publishing of {} column sidecars for slot {} by {} millis",
+        delayedCount,
+        slot,
+        delayMillis);
+    return new SafeFuture<Void>()
+        .orTimeout(delayMillis, TimeUnit.MILLISECONDS)
+        .exceptionally(ignore -> null)
+        .toVoid();
+  }
+
   private void publishExecutionPayloadAndDataColumnSidecars(
       final SignedExecutionPayloadEnvelope signedExecutionPayload,
       final SafeFuture<List<DataColumnSidecar>> dataColumnSidecarsFuture) {
     executionPayloadGossipChannel.publishExecutionPayload(signedExecutionPayload).finishError(LOG);
-    dataColumnSidecarsFuture
-        .thenAccept(
-            dataColumnSidecars ->
+    dataColumnSidecarsFuture.thenAccept(this::publishDataColumnSidecars).finishError(LOG);
+  }
+
+  private void publishDataColumnSidecars(final List<DataColumnSidecar> dataColumnSidecars) {
+    if (!isLateColumnPublishingEnabled || dataColumnSidecars.isEmpty()) {
+      dataColumnSidecarGossipChannel.publishDataColumnSidecars(
+          dataColumnSidecars, RemoteOrigin.LOCAL_PROPOSAL);
+      return;
+    }
+
+    // delay publishing of 80% of the data column sidecars, publish the rest immediately
+    final int delayedCount = (int) Math.ceil(dataColumnSidecars.size() * DELAYED_COLUMN_FRACTION);
+    final List<DataColumnSidecar> delayedDataColumnSidecars =
+        dataColumnSidecars.subList(0, delayedCount);
+    final List<DataColumnSidecar> immediateDataColumnSidecars =
+        dataColumnSidecars.subList(delayedCount, dataColumnSidecars.size());
+
+    dataColumnSidecarGossipChannel.publishDataColumnSidecars(
+        immediateDataColumnSidecars, RemoteOrigin.LOCAL_PROPOSAL);
+    delayColumnPublishing(dataColumnSidecars.getFirst().getSlot(), delayedCount)
+        .thenRun(
+            () ->
                 dataColumnSidecarGossipChannel.publishDataColumnSidecars(
-                    dataColumnSidecars, RemoteOrigin.LOCAL_PROPOSAL))
+                    delayedDataColumnSidecars, RemoteOrigin.LOCAL_PROPOSAL))
         .finishError(LOG);
   }
 }

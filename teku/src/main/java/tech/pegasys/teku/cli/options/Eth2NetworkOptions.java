@@ -188,6 +188,17 @@ public class Eth2NetworkOptions {
       Eth2NetworkConfiguration.DEFAULT_LATE_PAYLOAD_PUBLISHING;
 
   @Option(
+      names = {"--Xlate-column-publishing-enabled"},
+      paramLabel = "<BOOLEAN>",
+      description = "late-column-publishing.",
+      arity = "0..1",
+      fallbackValue = "true",
+      showDefaultValue = Visibility.ALWAYS,
+      hidden = true)
+  private boolean lateColumnPublishingEnabled =
+      Eth2NetworkConfiguration.DEFAULT_LATE_COLUMN_PUBLISHING;
+
+  @Option(
       names = {"--Xfork-choice-updated-always-send-payload-attributes"},
       paramLabel = "<BOOLEAN>",
       description =
@@ -602,6 +613,7 @@ public class Eth2NetworkOptions {
             aggregatingAttestationPoolV2TotalBlockAggregationTimeLimit)
         .lateBlockPublishingEnabled(lateBlockPublishingEnabled)
         .latePayloadPublishingEnabled(latePayloadPublishingEnabled)
+        .lateColumnPublishingEnabled(lateColumnPublishingEnabled)
         .epochsStoreBlobs(epochsStoreBlobs)
         .attestationWaitLimitMillis(attestationWaitlimitMillis)
         .forkChoiceUpdatedAlwaysSendPayloadAttributes(forkChoiceUpdatedAlwaysSendPayloadAttributes)
