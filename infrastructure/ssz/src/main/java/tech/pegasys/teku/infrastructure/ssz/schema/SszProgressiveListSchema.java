@@ -73,16 +73,19 @@ public class SszProgressiveListSchema<ElementDataT extends SszData>
   private final DeserializableTypeDefinition<SszList<ElementDataT>> jsonTypeDefinition;
   private final Supplier<SszNodeTemplate> elementSszSupernodeTemplate =
       Suppliers.memoize(() -> SszNodeTemplate.createFromType(getElementSchema()));
+private final Optional<Long> sszLengthUpperboundOverride;
+
 
   public SszProgressiveListSchema(final SszSchema<ElementDataT> elementSchema) {
-    this(elementSchema, SszSchemaHints.none());
+    this(elementSchema, SszSchemaHints.none(),  Optional.empty());
   }
 
   public SszProgressiveListSchema(
-      final SszSchema<ElementDataT> elementSchema, final SszSchemaHints hints) {
+      final SszSchema<ElementDataT> elementSchema, final SszSchemaHints hints, final Optional<Long> sszLengthUpperboundOverride) {
     this.elementSchema = elementSchema;
     this.hints = hints;
     this.elementsPerChunk = computeElementsPerChunk(elementSchema);
+    this.sszLengthUpperboundOverride = sszLengthUpperboundOverride;
     this.defaultTree =
         BranchNode.create(ProgressiveTreeUtil.createProgressiveTree(List.of()), toLengthNode(0));
     this.jsonTypeDefinition =
@@ -96,8 +99,8 @@ public class SszProgressiveListSchema<ElementDataT extends SszData>
   }
 
   public static <T extends SszData> SszProgressiveListSchema<T> create(
-      final SszSchema<T> elementSchema, final SszSchemaHints hints) {
-    return new SszProgressiveListSchema<>(elementSchema, hints);
+      final SszSchema<T> elementSchema, final SszSchemaHints hints, final Optional<Long> sszLengthUpperboundOverride) {
+    return new SszProgressiveListSchema<>(elementSchema, hints, sszLengthUpperboundOverride);
   }
 
   private static int computeElementsPerChunk(final SszSchema<?> schema) {
@@ -356,7 +359,8 @@ public class SszProgressiveListSchema<ElementDataT extends SszData>
   public SszLengthBounds getSszLengthBounds() {
     // Progressive lists have no max capacity — use Long.MAX_VALUE bits directly
     // to avoid overflow when converting from bytes to bits
-    return SszLengthBounds.ofBits(0, Long.MAX_VALUE);
+    return sszLengthUpperboundOverride.map(upperbound -> SszLengthBounds.ofBytes(0, upperbound))
+            .orElseGet(() -> SszLengthBounds.ofBits(0, Long.MAX_VALUE));
   }
 
   @Override

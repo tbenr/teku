@@ -18,6 +18,8 @@ import tech.pegasys.teku.infrastructure.ssz.collections.impl.SszProgressiveUInt6
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 
+import java.util.Optional;
+
 /**
  * Schema for a progressive list of UInt64 values. Extends {@link SszProgressiveListSchema} with
  * hardcoded UINT64 element schema and overrides {@link #createFromBackingNode} to produce {@link
@@ -26,8 +28,8 @@ import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
  */
 public class SszProgressiveUInt64ListSchema extends SszProgressiveListSchema<SszUInt64> {
 
-  private SszProgressiveUInt64ListSchema(final SszSchemaHints hints) {
-    super(SszPrimitiveSchemas.UINT64_SCHEMA, hints);
+  private SszProgressiveUInt64ListSchema(final SszSchemaHints hints, final Optional<Long> sszLengthUpperboundOverride) {
+    super(SszPrimitiveSchemas.UINT64_SCHEMA, hints, sszLengthUpperboundOverride);
   }
 
   public static SszProgressiveUInt64ListSchema create() {
