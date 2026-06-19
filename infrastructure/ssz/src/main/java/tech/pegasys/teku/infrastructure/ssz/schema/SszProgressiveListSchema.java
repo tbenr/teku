@@ -73,19 +73,19 @@ public class SszProgressiveListSchema<ElementDataT extends SszData>
   private final DeserializableTypeDefinition<SszList<ElementDataT>> jsonTypeDefinition;
   private final Supplier<SszNodeTemplate> elementSszSupernodeTemplate =
       Suppliers.memoize(() -> SszNodeTemplate.createFromType(getElementSchema()));
-private final Optional<Long> sszLengthUpperboundOverride;
+private final long sszLengthBytesUpperBoundOverride;
 
 
-  public SszProgressiveListSchema(final SszSchema<ElementDataT> elementSchema) {
-    this(elementSchema, SszSchemaHints.none(),  Optional.empty());
+  public SszProgressiveListSchema(final SszSchema<ElementDataT> elementSchema, final long sszLengthBytesUpperBoundOverride) {
+    this(elementSchema, SszSchemaHints.none(), sszLengthBytesUpperBoundOverride);
   }
 
   public SszProgressiveListSchema(
-      final SszSchema<ElementDataT> elementSchema, final SszSchemaHints hints, final Optional<Long> sszLengthUpperboundOverride) {
+      final SszSchema<ElementDataT> elementSchema, final SszSchemaHints hints, final long sszLengthBytesUpperBoundOverride) {
     this.elementSchema = elementSchema;
     this.hints = hints;
     this.elementsPerChunk = computeElementsPerChunk(elementSchema);
-    this.sszLengthUpperboundOverride = sszLengthUpperboundOverride;
+    this.sszLengthBytesUpperBoundOverride = sszLengthBytesUpperBoundOverride;
     this.defaultTree =
         BranchNode.create(ProgressiveTreeUtil.createProgressiveTree(List.of()), toLengthNode(0));
     this.jsonTypeDefinition =
@@ -94,12 +94,12 @@ private final Optional<Long> sszLengthUpperboundOverride;
   }
 
   public static <T extends SszData> SszProgressiveListSchema<T> create(
-      final SszSchema<T> elementSchema) {
-    return new SszProgressiveListSchema<>(elementSchema);
+      final SszSchema<T> elementSchema, final long sszLengthUpperboundOverride) {
+    return new SszProgressiveListSchema<>(elementSchema, sszLengthUpperboundOverride);
   }
 
   public static <T extends SszData> SszProgressiveListSchema<T> create(
-      final SszSchema<T> elementSchema, final SszSchemaHints hints, final Optional<Long> sszLengthUpperboundOverride) {
+      final SszSchema<T> elementSchema, final SszSchemaHints hints, long sszLengthUpperboundOverride) {
     return new SszProgressiveListSchema<>(elementSchema, hints, sszLengthUpperboundOverride);
   }
 
@@ -359,8 +359,7 @@ private final Optional<Long> sszLengthUpperboundOverride;
   public SszLengthBounds getSszLengthBounds() {
     // Progressive lists have no max capacity — use Long.MAX_VALUE bits directly
     // to avoid overflow when converting from bytes to bits
-    return sszLengthUpperboundOverride.map(upperbound -> SszLengthBounds.ofBytes(0, upperbound))
-            .orElseGet(() -> SszLengthBounds.ofBits(0, Long.MAX_VALUE));
+    return SszLengthBounds.ofBytes(0, sszLengthBytesUpperBoundOverride);
   }
 
   @Override

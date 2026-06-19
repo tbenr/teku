@@ -28,16 +28,16 @@ import java.util.Optional;
  */
 public class SszProgressiveUInt64ListSchema extends SszProgressiveListSchema<SszUInt64> {
 
-  private SszProgressiveUInt64ListSchema(final SszSchemaHints hints, final Optional<Long> sszLengthUpperboundOverride) {
-    super(SszPrimitiveSchemas.UINT64_SCHEMA, hints, sszLengthUpperboundOverride);
+  private SszProgressiveUInt64ListSchema(final SszSchemaHints hints, final long sszLengthBytesUpperBoundOverride) {
+    super(SszPrimitiveSchemas.UINT64_SCHEMA, hints, sszLengthBytesUpperBoundOverride);
   }
 
-  public static SszProgressiveUInt64ListSchema create() {
-    return new SszProgressiveUInt64ListSchema(SszSchemaHints.none());
+  public static SszProgressiveUInt64ListSchema create(final long sszLengthBytesUpperBoundOverride) {
+    return new SszProgressiveUInt64ListSchema(SszSchemaHints.none(), sszLengthBytesUpperBoundOverride);
   }
 
-  public static SszProgressiveUInt64ListSchema create(final SszSchemaHints hints) {
-    return new SszProgressiveUInt64ListSchema(hints);
+  public static SszProgressiveUInt64ListSchema create(final SszSchemaHints hints, final long sszLengthBytesUpperBoundOverride) {
+    return new SszProgressiveUInt64ListSchema(hints, sszLengthBytesUpperBoundOverride);
   }
 
   @Override
