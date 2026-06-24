@@ -33,6 +33,15 @@ public class IndexedAttestationSchema
         namedSchema("signature", SszSignatureSchema.INSTANCE));
   }
 
+  protected IndexedAttestationSchema(
+      final String containerName,
+      final boolean[] activeFields,
+      final NamedSchema<SszUInt64List> attestingIndicesSchema,
+      final NamedSchema<AttestationData> dataSchema,
+      final NamedSchema<SszSignature> signatureSchema) {
+    super(containerName, activeFields, attestingIndicesSchema, dataSchema, signatureSchema);
+  }
+
   public SszUInt64ListSchema<?> getAttestingIndicesSchema() {
     return (SszUInt64ListSchema<?>) super.getFieldSchema0();
   }

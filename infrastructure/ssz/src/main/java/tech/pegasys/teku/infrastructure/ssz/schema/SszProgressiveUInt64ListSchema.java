@@ -13,18 +13,20 @@
 
 package tech.pegasys.teku.infrastructure.ssz.schema;
 
-import tech.pegasys.teku.infrastructure.ssz.SszList;
+import tech.pegasys.teku.infrastructure.ssz.collections.SszUInt64List;
 import tech.pegasys.teku.infrastructure.ssz.collections.impl.SszProgressiveUInt64ListImpl;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
+import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszUInt64ListSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 
 /**
- * Schema for a progressive list of UInt64 values. Extends {@link SszProgressiveListSchema} with
- * hardcoded UINT64 element schema and overrides {@link #createFromBackingNode} to produce {@link
- * SszProgressiveUInt64ListImpl} instances that implement {@link
- * tech.pegasys.teku.infrastructure.ssz.collections.SszUInt64List}.
+ * Progressive (EIP-7916) list of UInt64 values that preserves Teku's {@link SszUInt64List}
+ * interface. Produces {@link SszProgressiveUInt64ListImpl} instances and uses progressive
+ * merkleization with no fixed max capacity.
  */
-public class SszProgressiveUInt64ListSchema extends SszProgressiveListSchema<SszUInt64> {
+public class SszProgressiveUInt64ListSchema
+    extends AbstractSszProgressiveListSchema<SszUInt64, SszUInt64List>
+    implements SszUInt64ListSchema<SszUInt64List> {
 
   private SszProgressiveUInt64ListSchema(final SszSchemaHints hints) {
     super(SszPrimitiveSchemas.UINT64_SCHEMA, hints);
@@ -39,7 +41,7 @@ public class SszProgressiveUInt64ListSchema extends SszProgressiveListSchema<Ssz
   }
 
   @Override
-  public SszList<SszUInt64> createFromBackingNode(final TreeNode node) {
+  public SszUInt64List createFromBackingNode(final TreeNode node) {
     return new SszProgressiveUInt64ListImpl(this, node);
   }
 }

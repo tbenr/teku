@@ -45,6 +45,22 @@ public class AttestationElectraSchema
         namedSchema("committee_bits", SszBitvectorSchema.create(maxCommitteesPerSlot)));
   }
 
+  protected AttestationElectraSchema(
+      final String containerName,
+      final boolean[] activeFields,
+      final NamedSchema<SszBitlist> aggregationBitsSchema,
+      final NamedSchema<AttestationData> dataSchema,
+      final NamedSchema<SszSignature> signatureSchema,
+      final NamedSchema<SszBitvector> committeeBitsSchema) {
+    super(
+        containerName,
+        activeFields,
+        aggregationBitsSchema,
+        dataSchema,
+        signatureSchema,
+        committeeBitsSchema);
+  }
+
   @Override
   public SszBitlistSchema<?> getAggregationBitsSchema() {
     return (SszBitlistSchema<?>) getFieldSchema0();

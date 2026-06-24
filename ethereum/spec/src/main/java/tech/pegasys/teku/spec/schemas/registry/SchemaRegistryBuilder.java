@@ -204,6 +204,8 @@ import tech.pegasys.teku.spec.datastructures.operations.SignedAggregateAndProof.
 import tech.pegasys.teku.spec.datastructures.operations.SignedBlsToExecutionChangeSchema;
 import tech.pegasys.teku.spec.datastructures.operations.SingleAttestationSchema;
 import tech.pegasys.teku.spec.datastructures.operations.versions.electra.AttestationElectraSchema;
+import tech.pegasys.teku.spec.datastructures.operations.versions.gloas.AttestationGloasSchema;
+import tech.pegasys.teku.spec.datastructures.operations.versions.gloas.IndexedAttestationGloasSchema;
 import tech.pegasys.teku.spec.datastructures.operations.versions.phase0.AttestationPhase0Schema;
 import tech.pegasys.teku.spec.datastructures.state.HistoricalBatch.HistoricalBatchSchema;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.altair.BeaconStateSchemaAltair;
@@ -804,6 +806,9 @@ public class SchemaRegistryBuilder {
             (registry, specConfig, schemaName) ->
                 new IndexedAttestationSchema(
                     schemaName, getMaxValidatorsPerAttestationElectra(specConfig)))
+        .withCreator(
+            GLOAS,
+            (registry, specConfig, schemaName) -> new IndexedAttestationGloasSchema(schemaName))
         .build();
   }
 
@@ -820,6 +825,11 @@ public class SchemaRegistryBuilder {
                 new AttestationElectraSchema(
                         getMaxValidatorsPerAttestationElectra(specConfig),
                         specConfig.getMaxCommitteesPerSlot())
+                    .castTypeToAttestationSchema())
+        .withCreator(
+            GLOAS,
+            (registry, specConfig, schemaName) ->
+                new AttestationGloasSchema(specConfig.getMaxCommitteesPerSlot())
                     .castTypeToAttestationSchema())
         .build();
   }
