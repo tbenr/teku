@@ -13,6 +13,7 @@
 
 package tech.pegasys.teku.infrastructure.ssz.collections.impl;
 
+import tech.pegasys.teku.infrastructure.ssz.cache.IntCache;
 import tech.pegasys.teku.infrastructure.ssz.collections.SszByteList;
 import tech.pegasys.teku.infrastructure.ssz.collections.SszMutablePrimitiveList;
 import tech.pegasys.teku.infrastructure.ssz.impl.SszProgressiveListImpl;
@@ -33,6 +34,13 @@ public class SszProgressiveByteListImpl extends SszProgressiveListImpl<SszByte>
     super(schema, backingTree);
   }
 
+  public SszProgressiveByteListImpl(
+      final SszProgressiveByteListSchema<?> schema,
+      final TreeNode backingTree,
+      final IntCache<SszByte> cache) {
+    super(schema, backingTree, cache);
+  }
+
   @Override
   public Byte getElement(final int index) {
     return get(index).get();
@@ -45,12 +53,12 @@ public class SszProgressiveByteListImpl extends SszProgressiveListImpl<SszByte>
 
   @Override
   public SszMutablePrimitiveList<Byte, SszByte> createWritableCopy() {
-    throw new UnsupportedOperationException("ProgressiveByteList does not support mutation");
+    return new SszMutableProgressiveByteListImpl(this);
   }
 
   @Override
   public boolean isWritableSupported() {
-    return false;
+    return true;
   }
 
   @Override

@@ -14,12 +14,13 @@
 package tech.pegasys.teku.infrastructure.ssz.schema;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.apache.tuweni.bytes.Bytes;
 import org.junit.jupiter.api.Test;
 import tech.pegasys.teku.infrastructure.ssz.collections.SszByteList;
+import tech.pegasys.teku.infrastructure.ssz.collections.SszMutablePrimitiveList;
 import tech.pegasys.teku.infrastructure.ssz.collections.impl.SszProgressiveByteListImpl;
+import tech.pegasys.teku.infrastructure.ssz.primitive.SszByte;
 
 class SszProgressiveByteListSchemaTest {
 
@@ -62,10 +63,32 @@ class SszProgressiveByteListSchemaTest {
   }
 
   @Test
-  void mutation_shouldNotBeSupported() {
+  void mutationIsSupported() {
+    final SszByteList byteList = SCHEMA.fromBytes(Bytes.fromHexString("0x010203"));
+    assertThat(byteList.isWritableSupported()).isTrue();
+  }
+
+  @Test
+  void writableCopy_canSetElement() {
+    final SszByteList byteList = SCHEMA.fromBytes(Bytes.fromHexString("0x010203"));
+    final SszMutablePrimitiveList<Byte, SszByte> mutable = byteList.createWritableCopy();
+    mutable.set(1, SszByte.of((byte) 0xFF));
+    final SszByteList updated = (SszByteList) mutable.commitChanges();
+
+    assertThat(updated.getBytes()).isEqualTo(Bytes.fromHexString("0x01FF03"));
+    // mutated list still round-trips
+    assertThat(SCHEMA.sszDeserialize(updated.sszSerialize()).getBytes())
+        .isEqualTo(Bytes.fromHexString("0x01FF03"));
+  }
+
+  @Test
+  void writableCopy_canAppendElement() {
     final SszByteList byteList = SCHEMA.fromBytes(Bytes.fromHexString("0x0102"));
-    assertThat(byteList.isWritableSupported()).isFalse();
-    assertThatThrownBy(byteList::createWritableCopy)
-        .isInstanceOf(UnsupportedOperationException.class);
+    final SszMutablePrimitiveList<Byte, SszByte> mutable = byteList.createWritableCopy();
+    mutable.appendElement((byte) 0x03);
+    final SszByteList updated = (SszByteList) mutable.commitChanges();
+
+    assertThat(updated.getBytes()).isEqualTo(Bytes.fromHexString("0x010203"));
+    assertThat(updated.size()).isEqualTo(3);
   }
 }
