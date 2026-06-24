@@ -58,6 +58,10 @@ public class SszLengthBounds {
     return saturatingBitsCeilToBytes(max);
   }
 
+  public boolean isUnbounded() {
+    return getMaxBits() == Long.MAX_VALUE;
+  }
+
   public SszLengthBounds ceilToBytes() {
     return SszLengthBounds.ofBytes(getMinBytes(), getMaxBytes());
   }

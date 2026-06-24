@@ -107,4 +107,19 @@ public class SszLengthBoundsTest {
     final SszLengthBounds ceiled = bounds.ceilToBytes();
     assertThat(ceiled.getMaxBytes()).isPositive();
   }
+
+  @Test
+  void maxValueUpperBoundIsUnbounded() {
+    assertThat(SszLengthBounds.ofBits(0, Long.MAX_VALUE).isUnbounded()).isTrue();
+  }
+
+  @Test
+  void finiteUpperBoundIsNotUnbounded() {
+    assertThat(SszLengthBounds.ofBytes(0, 1024).isUnbounded()).isFalse();
+  }
+
+  @Test
+  void saturatedOverflowIsTreatedAsUnbounded() {
+    assertThat(SszLengthBounds.ofBytes(0, Long.MAX_VALUE).addBytes(1).isUnbounded()).isTrue();
+  }
 }
