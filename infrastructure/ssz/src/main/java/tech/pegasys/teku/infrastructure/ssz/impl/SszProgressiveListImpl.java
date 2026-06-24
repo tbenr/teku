@@ -18,10 +18,10 @@ import tech.pegasys.teku.infrastructure.ssz.SszData;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.infrastructure.ssz.SszMutableList;
 import tech.pegasys.teku.infrastructure.ssz.cache.IntCache;
+import tech.pegasys.teku.infrastructure.ssz.schema.AbstractSszProgressiveListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
-import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.CachingTreeAccessor;
 import tech.pegasys.teku.infrastructure.ssz.tree.GIndexUtil;
@@ -41,14 +41,14 @@ public class SszProgressiveListImpl<SszElementT extends SszData>
   private final CachingTreeAccessor cachingTreeAccessor;
 
   public SszProgressiveListImpl(
-      final SszProgressiveListSchema<SszElementT> schema, final TreeNode backingNode) {
+      final AbstractSszProgressiveListSchema<SszElementT, ?> schema, final TreeNode backingNode) {
     super(schema, backingNode);
     this.cachingTreeAccessor =
         new CachingTreeAccessor(backingNode, schema::getChildGeneralizedIndex);
   }
 
   public SszProgressiveListImpl(
-      final SszProgressiveListSchema<SszElementT> schema,
+      final AbstractSszProgressiveListSchema<SszElementT, ?> schema,
       final TreeNode backingNode,
       final IntCache<SszElementT> cache) {
     super(schema, backingNode, cache);

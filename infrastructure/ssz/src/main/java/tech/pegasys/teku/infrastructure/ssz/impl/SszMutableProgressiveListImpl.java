@@ -24,8 +24,8 @@ import tech.pegasys.teku.infrastructure.ssz.SszMutableList;
 import tech.pegasys.teku.infrastructure.ssz.SszMutableRefList;
 import tech.pegasys.teku.infrastructure.ssz.SszPrimitive;
 import tech.pegasys.teku.infrastructure.ssz.cache.IntCache;
+import tech.pegasys.teku.infrastructure.ssz.schema.AbstractSszProgressiveListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchema;
-import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveListSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.BranchNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.GIndexUtil;
 import tech.pegasys.teku.infrastructure.ssz.tree.ProgressiveTreeUtil;
@@ -142,8 +142,8 @@ public class SszMutableProgressiveListImpl<
 
   @SuppressWarnings("unchecked")
   @Override
-  public SszProgressiveListSchema<SszElementT> getSchema() {
-    return (SszProgressiveListSchema<SszElementT>) super.getSchema();
+  public AbstractSszProgressiveListSchema<SszElementT, ?> getSchema() {
+    return (AbstractSszProgressiveListSchema<SszElementT, ?>) super.getSchema();
   }
 
   @Override

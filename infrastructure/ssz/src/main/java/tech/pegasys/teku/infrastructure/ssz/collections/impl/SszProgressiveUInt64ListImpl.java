@@ -18,7 +18,7 @@ import tech.pegasys.teku.infrastructure.ssz.collections.SszMutableUInt64List;
 import tech.pegasys.teku.infrastructure.ssz.collections.SszUInt64List;
 import tech.pegasys.teku.infrastructure.ssz.impl.SszProgressiveListImpl;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
-import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveListSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.AbstractSszProgressiveListSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 
 /**
@@ -32,12 +32,12 @@ public class SszProgressiveUInt64ListImpl extends SszProgressiveListImpl<SszUInt
     implements SszUInt64List {
 
   public SszProgressiveUInt64ListImpl(
-      final SszProgressiveListSchema<SszUInt64> schema, final TreeNode backingNode) {
+      final AbstractSszProgressiveListSchema<SszUInt64, ?> schema, final TreeNode backingNode) {
     super(schema, backingNode);
   }
 
   public SszProgressiveUInt64ListImpl(
-      final SszProgressiveListSchema<SszUInt64> schema,
+      final AbstractSszProgressiveListSchema<SszUInt64, ?> schema,
       final TreeNode backingNode,
       final IntCache<SszUInt64> cache) {
     super(schema, backingNode, cache);

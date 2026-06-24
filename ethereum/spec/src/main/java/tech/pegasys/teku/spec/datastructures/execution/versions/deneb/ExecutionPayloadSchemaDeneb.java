@@ -113,7 +113,7 @@ public class ExecutionPayloadSchemaDeneb
   }
 
   @Override
-  public TransactionSchema getTransactionSchema() {
+  public SszByteListSchema<Transaction> getTransactionSchema() {
     return (TransactionSchema) getTransactionsSchema().getElementSchema();
   }
 

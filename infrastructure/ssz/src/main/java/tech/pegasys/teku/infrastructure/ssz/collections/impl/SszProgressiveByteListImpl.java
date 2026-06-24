@@ -13,42 +13,39 @@
 
 package tech.pegasys.teku.infrastructure.ssz.collections.impl;
 
-import java.util.stream.IntStream;
-import org.apache.tuweni.bytes.Bytes;
-import org.apache.tuweni.bytes.MutableBytes;
-import tech.pegasys.teku.infrastructure.ssz.cache.IntCache;
 import tech.pegasys.teku.infrastructure.ssz.collections.SszByteList;
+import tech.pegasys.teku.infrastructure.ssz.collections.SszMutablePrimitiveList;
+import tech.pegasys.teku.infrastructure.ssz.impl.SszProgressiveListImpl;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszByte;
-import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszByteListSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveByteListSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 
-public class SszByteListImpl extends SszPrimitiveListImpl<Byte, SszByte> implements SszByteList {
+/**
+ * Immutable byte list backed by a progressive merkle tree (EIP-7916). Element access is delegated
+ * to the inherited packed-primitive access of {@link SszProgressiveListImpl}, which routes through
+ * the schema's progressive generalized indices.
+ */
+public class SszProgressiveByteListImpl extends SszProgressiveListImpl<SszByte>
+    implements SszByteList {
 
-  public SszByteListImpl(final SszByteListSchema<?> schema, final TreeNode backingTree) {
+  public SszProgressiveByteListImpl(
+      final SszProgressiveByteListSchema<?> schema, final TreeNode backingTree) {
     super(schema, backingTree);
   }
 
   @Override
-  public Bytes getBytes() {
-    MutableBytes bytes = MutableBytes.create(size());
-    IntStream.range(0, size()).forEach(idx -> bytes.set(idx, getElement(idx)));
-    return bytes;
-  }
-
-  @Override
   public Byte getElement(final int index) {
-    return elementType.createFromPackedNodeUnboxed(getTreeNode(index), index % elementsPerChunk);
+    return get(index).get();
   }
 
   @Override
-  protected IntCache<SszByte> createCache() {
-    // caching with Bytes in this class
-    return IntCache.noop();
+  public SszProgressiveByteListSchema<?> getSchema() {
+    return (SszProgressiveByteListSchema<?>) super.getSchema();
   }
 
   @Override
-  public SszByteListSchema<?> getSchema() {
-    return (SszByteListSchema<?>) super.getSchema();
+  public SszMutablePrimitiveList<Byte, SszByte> createWritableCopy() {
+    throw new UnsupportedOperationException("ProgressiveByteList does not support mutation");
   }
 
   @Override
@@ -58,6 +55,6 @@ public class SszByteListImpl extends SszPrimitiveListImpl<Byte, SszByte> impleme
 
   @Override
   public String toString() {
-    return "SszByteList{" + getBytes() + '}';
+    return "SszProgressiveByteList{" + getBytes() + '}';
   }
 }
