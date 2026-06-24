@@ -182,6 +182,11 @@ public class SszProgressiveBitlistSchemaTest {
   }
 
   @Test
+  void getSszLengthBounds_shouldBeUnbounded() {
+    assertThat(new SszProgressiveBitlistSchema().getSszLengthBounds().isUnbounded()).isTrue();
+  }
+
+  @Test
   void getSszLengthBounds_isWithinBounds_shouldAcceptReasonableSizes() {
     final SszLengthBounds bounds = SCHEMA.getSszLengthBounds();
     assertThat(bounds.isWithinBounds(1000)).isTrue();

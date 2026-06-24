@@ -230,6 +230,33 @@ public class SszProgressiveListSchemaTest {
   }
 
   @Test
+  void getSszLengthBounds_shouldBeUnbounded() {
+    assertThat(
+            SszProgressiveListSchema.create(SszPrimitiveSchemas.UINT64_SCHEMA)
+                .getSszLengthBounds()
+                .isUnbounded())
+        .isTrue();
+  }
+
+  @Test
+  void equals_defaultHintsEqualsExplicitNoneHints() {
+    assertThat(
+            SszProgressiveListSchema.create(
+                SszPrimitiveSchemas.UINT64_SCHEMA, SszSchemaHints.none()))
+        .isEqualTo(SszProgressiveListSchema.create(SszPrimitiveSchemas.UINT64_SCHEMA));
+  }
+
+  @Test
+  void equals_differentHints_shouldNotBeEqual() {
+    final SszProgressiveListSchema<SszUInt64> defaultHints =
+        SszProgressiveListSchema.create(SszPrimitiveSchemas.UINT64_SCHEMA);
+    final SszProgressiveListSchema<SszUInt64> superNodeHints =
+        SszProgressiveListSchema.create(
+            SszPrimitiveSchemas.UINT64_SCHEMA, SszSchemaHints.sszSuperNode(4));
+    assertThat(defaultHints).isNotEqualTo(superNodeHints);
+  }
+
+  @Test
   void getName_shouldContainElementSchema() {
     assertThat(UINT64_LIST_SCHEMA.getName()).isPresent();
     assertThat(UINT64_LIST_SCHEMA.getName().get()).startsWith("ProgressiveList[");

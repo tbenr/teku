@@ -631,12 +631,12 @@ public class SszProgressiveListSchema<ElementDataT extends SszData>
     if (!(o instanceof SszProgressiveListSchema<?> that)) {
       return false;
     }
-    return elementSchema.equals(that.elementSchema);
+    return Objects.equals(elementSchema, that.elementSchema) && Objects.equals(hints, that.hints);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(elementSchema);
+    return Objects.hash(elementSchema, hints);
   }
 
   @Override
