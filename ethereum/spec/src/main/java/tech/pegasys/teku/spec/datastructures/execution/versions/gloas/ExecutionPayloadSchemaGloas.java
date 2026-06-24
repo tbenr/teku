@@ -43,8 +43,11 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema19;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt256;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
+import tech.pegasys.teku.infrastructure.ssz.schema.ProgressiveSchemaUtils;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveByteListSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszByteListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszByteVectorSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
@@ -52,8 +55,8 @@ import tech.pegasys.teku.spec.config.SpecConfigGloas;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadBuilder;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadSchema;
+import tech.pegasys.teku.spec.datastructures.execution.ProgressiveTransactionSchema;
 import tech.pegasys.teku.spec.datastructures.execution.Transaction;
-import tech.pegasys.teku.spec.datastructures.execution.TransactionSchema;
 import tech.pegasys.teku.spec.datastructures.execution.versions.capella.Withdrawal;
 import tech.pegasys.teku.spec.datastructures.execution.versions.capella.WithdrawalSchema;
 
@@ -81,11 +84,14 @@ public class ExecutionPayloadSchemaGloas
         SszUInt64>
     implements ExecutionPayloadSchema<ExecutionPayloadGloasImpl> {
 
+  private static final boolean[] ACTIVE_FIELDS = ProgressiveSchemaUtils.allActive(19);
+
   private final ExecutionPayloadGloasImpl defaultExecutionPayload;
 
   public ExecutionPayloadSchemaGloas(final SpecConfigGloas specConfig) {
     super(
         "ExecutionPayloadGloas",
+        ACTIVE_FIELDS,
         namedSchema(PARENT_HASH, SszPrimitiveSchemas.BYTES32_SCHEMA),
         namedSchema(FEE_RECIPIENT, SszByteVectorSchema.create(Bytes20.SIZE)),
         namedSchema(STATE_ROOT, SszPrimitiveSchemas.BYTES32_SCHEMA),
@@ -96,20 +102,15 @@ public class ExecutionPayloadSchemaGloas
         namedSchema(GAS_LIMIT, SszPrimitiveSchemas.UINT64_SCHEMA),
         namedSchema(GAS_USED, SszPrimitiveSchemas.UINT64_SCHEMA),
         namedSchema(TIMESTAMP, SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema(EXTRA_DATA, SszByteListSchema.create(specConfig.getMaxExtraDataBytes())),
+        namedSchema(EXTRA_DATA, new SszProgressiveByteListSchema<SszByteList>()),
         namedSchema(BASE_FEE_PER_GAS, SszPrimitiveSchemas.UINT256_SCHEMA),
         namedSchema(BLOCK_HASH, SszPrimitiveSchemas.BYTES32_SCHEMA),
         namedSchema(
-            TRANSACTIONS,
-            SszListSchema.create(
-                new TransactionSchema(specConfig), specConfig.getMaxTransactionsPerPayload())),
-        namedSchema(
-            WITHDRAWALS,
-            SszListSchema.create(Withdrawal.SSZ_SCHEMA, specConfig.getMaxWithdrawalsPerPayload())),
+            TRANSACTIONS, SszProgressiveListSchema.create(new ProgressiveTransactionSchema())),
+        namedSchema(WITHDRAWALS, SszProgressiveListSchema.create(Withdrawal.SSZ_SCHEMA)),
         namedSchema(BLOB_GAS_USED, SszPrimitiveSchemas.UINT64_SCHEMA),
         namedSchema(EXCESS_BLOB_GAS, SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema(
-            BLOCK_ACCESS_LIST, SszByteListSchema.create(specConfig.getMaxBytesPerTransaction())),
+        namedSchema(BLOCK_ACCESS_LIST, new SszProgressiveByteListSchema<SszByteList>()),
         namedSchema(SLOT_NUMBER, SszPrimitiveSchemas.UINT64_SCHEMA));
     this.defaultExecutionPayload = createFromBackingNode(getDefaultTree());
   }
@@ -120,8 +121,9 @@ public class ExecutionPayloadSchemaGloas
   }
 
   @Override
+  @SuppressWarnings("unchecked")
   public SszByteListSchema<Transaction> getTransactionSchema() {
-    return (TransactionSchema) getTransactionsSchema().getElementSchema();
+    return (SszByteListSchema<Transaction>) getTransactionsSchema().getElementSchema();
   }
 
   @Override
