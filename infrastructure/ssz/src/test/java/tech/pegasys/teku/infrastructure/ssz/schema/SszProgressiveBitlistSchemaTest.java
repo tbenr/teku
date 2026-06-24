@@ -144,6 +144,14 @@ public class SszProgressiveBitlistSchemaTest {
   }
 
   @Test
+  void unboundedConstructorForm_shouldProduceUsableDefault() {
+    final SszProgressiveBitlistSchema schema = new SszProgressiveBitlistSchema();
+
+    assertThat(schema.getDefault().size()).isZero();
+    assertThat(schema.getDefault().sszSerialize()).isEqualTo(Bytes.of(1));
+  }
+
+  @Test
   void sszDeserialize_emptyBytes_shouldThrow() {
     assertThatThrownBy(() -> SCHEMA.sszDeserialize(Bytes.EMPTY)).isInstanceOf(Exception.class);
   }

@@ -18,8 +18,6 @@ import tech.pegasys.teku.infrastructure.ssz.collections.impl.SszProgressiveUInt6
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 
-import java.util.Optional;
-
 /**
  * Schema for a progressive list of UInt64 values. Extends {@link SszProgressiveListSchema} with
  * hardcoded UINT64 element schema and overrides {@link #createFromBackingNode} to produce {@link
@@ -28,16 +26,16 @@ import java.util.Optional;
  */
 public class SszProgressiveUInt64ListSchema extends SszProgressiveListSchema<SszUInt64> {
 
-  private SszProgressiveUInt64ListSchema(final SszSchemaHints hints, final long sszLengthBytesUpperBoundOverride) {
-    super(SszPrimitiveSchemas.UINT64_SCHEMA, hints, sszLengthBytesUpperBoundOverride);
+  private SszProgressiveUInt64ListSchema(final SszSchemaHints hints) {
+    super(SszPrimitiveSchemas.UINT64_SCHEMA, hints);
   }
 
-  public static SszProgressiveUInt64ListSchema create(final long sszLengthBytesUpperBoundOverride) {
-    return new SszProgressiveUInt64ListSchema(SszSchemaHints.none(), sszLengthBytesUpperBoundOverride);
+  public static SszProgressiveUInt64ListSchema create() {
+    return create(SszSchemaHints.none());
   }
 
-  public static SszProgressiveUInt64ListSchema create(final SszSchemaHints hints, final long sszLengthBytesUpperBoundOverride) {
-    return new SszProgressiveUInt64ListSchema(hints, sszLengthBytesUpperBoundOverride);
+  public static SszProgressiveUInt64ListSchema create(final SszSchemaHints hints) {
+    return new SszProgressiveUInt64ListSchema(hints);
   }
 
   @Override

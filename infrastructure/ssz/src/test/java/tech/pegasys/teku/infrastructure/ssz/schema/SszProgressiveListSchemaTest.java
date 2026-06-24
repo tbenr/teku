@@ -190,6 +190,20 @@ public class SszProgressiveListSchemaTest {
   }
 
   @Test
+  void unboundedFactoryForms_shouldProduceUsableDefaults() {
+    final SszProgressiveListSchema<SszUInt64> defaultHintsSchema =
+        SszProgressiveListSchema.create(SszPrimitiveSchemas.UINT64_SCHEMA);
+    final SszProgressiveListSchema<SszUInt64> explicitHintsSchema =
+        SszProgressiveListSchema.create(SszPrimitiveSchemas.UINT64_SCHEMA, SszSchemaHints.none());
+    final SszProgressiveListSchema<SszUInt64> constructorSchema =
+        new SszProgressiveListSchema<>(SszPrimitiveSchemas.UINT64_SCHEMA);
+
+    assertThat(defaultHintsSchema.getDefault().size()).isZero();
+    assertThat(explicitHintsSchema.getDefault().size()).isZero();
+    assertThat(constructorSchema.getDefault().size()).isZero();
+  }
+
+  @Test
   void getChildGeneralizedIndex_shouldReturnCorrectGIndex() {
     long gIdx0 = UINT64_LIST_SCHEMA.getChildGeneralizedIndex(0);
     long gIdx1 = UINT64_LIST_SCHEMA.getChildGeneralizedIndex(1);
