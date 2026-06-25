@@ -22,10 +22,18 @@ import java.util.Locale;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszFieldName;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
+import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveByteListSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveListSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveUInt64ListSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.SszSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszSchemaHints;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszVectorSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszBitvectorSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszByteListSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszUInt64ListSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.impl.AbstractSszCollectionSchema;
 import tech.pegasys.teku.infrastructure.ssz.sos.SszField;
+import tech.pegasys.teku.spec.SpecMilestone;
 import tech.pegasys.teku.spec.config.SpecConfig;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlockHeader;
 import tech.pegasys.teku.spec.datastructures.blocks.Eth1Data;
@@ -33,6 +41,7 @@ import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.Fork;
 import tech.pegasys.teku.spec.datastructures.state.Validator;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
+import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconStateSchema;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.MutableBeaconState;
 
 public enum BeaconStateFields implements SszFieldName {
@@ -133,6 +142,81 @@ public enum BeaconStateFields implements SszFieldName {
     state.setFinalizedCheckpoint(source.getFinalizedCheckpoint());
   }
 
+  /**
+   * Like {@link #copyCommonFieldsFromSource} but rebuilds the common list fields through the target
+   * state schema. Required when upgrading into a milestone (Gloas+) whose common list fields are
+   * progressive, since the source's bounded list backing nodes are structurally incompatible with
+   * the progressive target fields.
+   */
+  public static void copyCommonFieldsFromSourceUsingTargetSchemas(
+      final MutableBeaconState state, final BeaconState source) {
+    final BeaconStateSchema<?, ?> targetSchema = state.getBeaconStateSchema();
+    // Version
+    state.setGenesisTime(source.getGenesisTime());
+    state.setGenesisValidatorsRoot(source.getGenesisValidatorsRoot());
+    state.setSlot(source.getSlot());
+    state.setFork(source.getFork());
+    // History
+    state.setLatestBlockHeader(source.getLatestBlockHeader());
+    state.setBlockRoots(source.getBlockRoots());
+    state.setStateRoots(source.getStateRoots());
+    // historical_roots stays a bounded primitive (Bytes32) list across the upgrade
+    state.setHistoricalRoots(source.getHistoricalRoots());
+    // Eth1
+    state.setEth1Data(source.getEth1Data());
+    state.setEth1DataVotes(
+        BeaconStateListFieldMigration.rematerialize(
+            targetSchema, ETH1_DATA_VOTES, source.getEth1DataVotes()));
+    state.setEth1DepositIndex(source.getEth1DepositIndex());
+    // Registry
+    state.setValidators(
+        BeaconStateListFieldMigration.rematerialize(
+            targetSchema, VALIDATORS, source.getValidators()));
+    state.setBalances(
+        BeaconStateListFieldMigration.rematerializeUInt64(
+            targetSchema, BALANCES, source.getBalances()));
+    // Randomness
+    state.setRandaoMixes(source.getRandaoMixes());
+    // Slashings
+    state.setSlashings(source.getSlashings());
+    // Finality
+    state.setJustificationBits(source.getJustificationBits());
+    state.setPreviousJustifiedCheckpoint(source.getPreviousJustifiedCheckpoint());
+    state.setCurrentJustifiedCheckpoint(source.getCurrentJustifiedCheckpoint());
+    state.setFinalizedCheckpoint(source.getFinalizedCheckpoint());
+  }
+
+  /**
+   * Returns the schema to use for a BeaconState list field: a progressive (EIP-7916) list for Gloas
+   * and later, or the supplied bounded list schema for earlier milestones.
+   */
+  public static SszSchema<?> listSchemaForState(
+      final SpecConfig specConfig, final SszListSchema<?, ?> boundedListSchema) {
+    if (!specConfig.getMilestone().isGreaterThanOrEqualTo(SpecMilestone.GLOAS)) {
+      return boundedListSchema;
+    }
+    return toProgressiveListSchema(boundedListSchema);
+  }
+
+  /** Returns the progressive equivalent of a bounded list schema, preserving the element type. */
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  public static SszSchema<?> toProgressiveListSchema(final SszListSchema<?, ?> boundedListSchema) {
+    if (boundedListSchema instanceof SszUInt64ListSchema) {
+      return SszProgressiveUInt64ListSchema.create(getHints(boundedListSchema));
+    }
+    if (boundedListSchema instanceof SszByteListSchema) {
+      return new SszProgressiveByteListSchema<>();
+    }
+    return SszProgressiveListSchema.create(
+        (SszSchema) boundedListSchema.getElementSchema(), getHints(boundedListSchema));
+  }
+
+  private static SszSchemaHints getHints(final SszListSchema<?, ?> schema) {
+    return schema instanceof AbstractSszCollectionSchema<?, ?> collectionSchema
+        ? collectionSchema.getHints()
+        : SszSchemaHints.none();
+  }
+
   static List<SszField> getCommonFields(final SpecConfig specConfig) {
     SszField forkField = new SszField(3, BeaconStateFields.FORK, Fork.SSZ_SCHEMA);
     final BeaconBlockHeader.BeaconBlockHeaderSchema blockHeaderSchema =
@@ -166,10 +250,12 @@ public enum BeaconStateFields implements SszFieldName {
             9,
             BeaconStateFields.ETH1_DATA_VOTES,
             () ->
-                SszListSchema.create(
-                    Eth1Data.SSZ_SCHEMA,
-                    (long) specConfig.getEpochsPerEth1VotingPeriod()
-                        * specConfig.getSlotsPerEpoch()));
+                listSchemaForState(
+                    specConfig,
+                    SszListSchema.create(
+                        Eth1Data.SSZ_SCHEMA,
+                        (long) specConfig.getEpochsPerEth1VotingPeriod()
+                            * specConfig.getSlotsPerEpoch())));
     SszField eth1DepositIndexField =
         new SszField(10, BeaconStateFields.ETH1_DEPOSIT_INDEX, SszPrimitiveSchemas.UINT64_SCHEMA);
     SszField validatorsField =
@@ -177,17 +263,22 @@ public enum BeaconStateFields implements SszFieldName {
             11,
             BeaconStateFields.VALIDATORS,
             () ->
-                SszListSchema.create(
-                    Validator.SSZ_SCHEMA,
-                    specConfig.getValidatorRegistryLimit(),
-                    SszSchemaHints.sszSuperNode(8)));
+                listSchemaForState(
+                    specConfig,
+                    SszListSchema.create(
+                        Validator.SSZ_SCHEMA,
+                        specConfig.getValidatorRegistryLimit(),
+                        SszSchemaHints.sszSuperNode(8))));
     SszField balancesField =
         new SszField(
             12,
             BeaconStateFields.BALANCES,
             () ->
-                SszListSchema.create(
-                    SszPrimitiveSchemas.UINT64_SCHEMA, specConfig.getValidatorRegistryLimit()));
+                listSchemaForState(
+                    specConfig,
+                    SszListSchema.create(
+                        SszPrimitiveSchemas.UINT64_SCHEMA,
+                        specConfig.getValidatorRegistryLimit())));
     SszField randaoMixesField =
         new SszField(
             13,

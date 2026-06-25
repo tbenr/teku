@@ -105,6 +105,7 @@ import com.google.common.annotations.VisibleForTesting;
 import java.util.HashSet;
 import java.util.Set;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszListSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszVectorSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszBitvectorSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszUInt64VectorSchema;
@@ -413,6 +414,10 @@ public class SchemaRegistryBuilder {
                 SszListSchema.create(
                     new PendingDepositSchema(),
                     SpecConfigElectra.required(specConfig).getPendingDepositsLimit()))
+        .withCreator(
+            GLOAS,
+            (registry, specConfig, schemaName) ->
+                SszProgressiveListSchema.create(new PendingDepositSchema()))
         .build();
   }
 
@@ -424,6 +429,10 @@ public class SchemaRegistryBuilder {
                 SszListSchema.create(
                     new PendingPartialWithdrawalSchema(),
                     SpecConfigElectra.required(specConfig).getPendingPartialWithdrawalsLimit()))
+        .withCreator(
+            GLOAS,
+            (registry, specConfig, schemaName) ->
+                SszProgressiveListSchema.create(new PendingPartialWithdrawalSchema()))
         .build();
   }
 
@@ -435,6 +444,10 @@ public class SchemaRegistryBuilder {
                 SszListSchema.create(
                     new PendingConsolidationSchema(),
                     SpecConfigElectra.required(specConfig).getPendingConsolidationsLimit()))
+        .withCreator(
+            GLOAS,
+            (registry, specConfig, schemaName) ->
+                SszProgressiveListSchema.create(new PendingConsolidationSchema()))
         .build();
   }
 
@@ -723,6 +736,10 @@ public class SchemaRegistryBuilder {
             (registry, specConfig, schemaName) ->
                 SszListSchema.create(
                     new HistoricalSummarySchema(), specConfig.getHistoricalRootsLimit()))
+        .withCreator(
+            GLOAS,
+            (registry, specConfig, schemaName) ->
+                SszProgressiveListSchema.create(new HistoricalSummarySchema()))
         .build();
   }
 
@@ -1128,9 +1145,7 @@ public class SchemaRegistryBuilder {
         .withCreator(
             GLOAS,
             (registry, specConfig, schemaName) ->
-                SszListSchema.create(
-                    registry.get(BUILDER_PENDING_WITHDRAWAL_SCHEMA),
-                    SpecConfigGloas.required(specConfig).getBuilderPendingWithdrawalsLimit()))
+                SszProgressiveListSchema.create(registry.get(BUILDER_PENDING_WITHDRAWAL_SCHEMA)))
         .build();
   }
 
