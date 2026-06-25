@@ -13,6 +13,7 @@
 
 package tech.pegasys.teku.spec.datastructures.operations.versions.gloas;
 
+import tech.pegasys.teku.infrastructure.ssz.collections.SszBitlist;
 import tech.pegasys.teku.infrastructure.ssz.schema.ProgressiveSchemaUtils;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveBitlistSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszBitvectorSchema;
@@ -36,5 +37,10 @@ public class AttestationGloasSchema extends AttestationElectraSchema {
         namedSchema("data", AttestationData.SSZ_SCHEMA),
         namedSchema("signature", SszSignatureSchema.INSTANCE),
         namedSchema("committee_bits", SszBitvectorSchema.create(maxCommitteesPerSlot)));
+  }
+
+  @Override
+  public SszBitlist createEmptyAggregationBits() {
+    return getAggregationBitsSchema().empty();
   }
 }

@@ -42,6 +42,7 @@ import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema19;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt256;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
+import tech.pegasys.teku.infrastructure.ssz.schema.ProgressiveSchemaUtils;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszByteListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszByteVectorSchema;
@@ -76,12 +77,15 @@ public class ExecutionPayloadHeaderSchemaGloas
         SszUInt64>
     implements ExecutionPayloadHeaderSchema<ExecutionPayloadHeaderGloasImpl> {
 
+  private static final boolean[] ACTIVE_FIELDS = ProgressiveSchemaUtils.allActive(19);
+
   private final ExecutionPayloadHeaderGloasImpl defaultExecutionPayloadHeader;
   private final ExecutionPayloadHeaderGloasImpl executionPayloadHeaderOfDefaultPayload;
 
   public ExecutionPayloadHeaderSchemaGloas(final SpecConfigGloas specConfig) {
     super(
         "ExecutionPayloadHeaderGloas",
+        ACTIVE_FIELDS,
         namedSchema(PARENT_HASH, SszPrimitiveSchemas.BYTES32_SCHEMA),
         namedSchema(FEE_RECIPIENT, SszByteVectorSchema.create(Bytes20.SIZE)),
         namedSchema(STATE_ROOT, SszPrimitiveSchemas.BYTES32_SCHEMA),

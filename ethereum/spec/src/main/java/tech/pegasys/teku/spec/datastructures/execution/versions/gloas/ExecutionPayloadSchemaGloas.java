@@ -102,7 +102,7 @@ public class ExecutionPayloadSchemaGloas
         namedSchema(GAS_LIMIT, SszPrimitiveSchemas.UINT64_SCHEMA),
         namedSchema(GAS_USED, SszPrimitiveSchemas.UINT64_SCHEMA),
         namedSchema(TIMESTAMP, SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema(EXTRA_DATA, new SszProgressiveByteListSchema<SszByteList>()),
+        namedSchema(EXTRA_DATA, SszByteListSchema.create(specConfig.getMaxExtraDataBytes())),
         namedSchema(BASE_FEE_PER_GAS, SszPrimitiveSchemas.UINT256_SCHEMA),
         namedSchema(BLOCK_HASH, SszPrimitiveSchemas.BYTES32_SCHEMA),
         namedSchema(
@@ -110,7 +110,7 @@ public class ExecutionPayloadSchemaGloas
         namedSchema(WITHDRAWALS, SszProgressiveListSchema.create(Withdrawal.SSZ_SCHEMA)),
         namedSchema(BLOB_GAS_USED, SszPrimitiveSchemas.UINT64_SCHEMA),
         namedSchema(EXCESS_BLOB_GAS, SszPrimitiveSchemas.UINT64_SCHEMA),
-        namedSchema(BLOCK_ACCESS_LIST, new SszProgressiveByteListSchema<SszByteList>()),
+        namedSchema(BLOCK_ACCESS_LIST, new SszProgressiveByteListSchema<>()),
         namedSchema(SLOT_NUMBER, SszPrimitiveSchemas.UINT64_SCHEMA));
     this.defaultExecutionPayload = createFromBackingNode(getDefaultTree());
   }

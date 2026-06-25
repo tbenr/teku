@@ -120,13 +120,15 @@ import tech.pegasys.teku.spec.config.SpecConfigFulu;
 import tech.pegasys.teku.spec.config.SpecConfigGloas;
 import tech.pegasys.teku.spec.config.SpecConfigHeze;
 import tech.pegasys.teku.spec.constants.NetworkConstants;
-import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobKzgCommitmentsSchema;
+import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobKzgCommitmentsSchemaDeneb;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSchema;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecarSchema;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.fulu.CellSchema;
-import tech.pegasys.teku.spec.datastructures.blobs.versions.fulu.DataColumnSchema;
+import tech.pegasys.teku.spec.datastructures.blobs.versions.fulu.DataColumnSchemaFulu;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.fulu.DataColumnSidecarSchemaFulu;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.fulu.MatrixEntrySchema;
+import tech.pegasys.teku.spec.datastructures.blobs.versions.gloas.BlobKzgCommitmentsSchemaGloas;
+import tech.pegasys.teku.spec.datastructures.blobs.versions.gloas.DataColumnSchemaGloas;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.gloas.DataColumnSidecarSchemaGloas;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlockSchema;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlockHeader;
@@ -684,7 +686,9 @@ public class SchemaRegistryBuilder {
         .withCreator(
             DENEB,
             (registry, specConfig, schemaName) ->
-                new BlobKzgCommitmentsSchema(SpecConfigDeneb.required(specConfig)))
+                new BlobKzgCommitmentsSchemaDeneb(SpecConfigDeneb.required(specConfig)))
+        .withCreator(
+            GLOAS, (registry, specConfig, schemaName) -> new BlobKzgCommitmentsSchemaGloas())
         .build();
   }
 
@@ -730,16 +734,14 @@ public class SchemaRegistryBuilder {
   }
 
   private static SchemaProvider<?> createHistoricalSummariesSchemaProvider() {
+    // historical_summaries stays a bounded list in all milestones (not converted to a progressive
+    // list by EIP-7688): List[HistoricalSummary, HISTORICAL_ROOTS_LIMIT].
     return providerBuilder(HISTORICAL_SUMMARIES_SCHEMA)
         .withCreator(
             CAPELLA,
             (registry, specConfig, schemaName) ->
                 SszListSchema.create(
                     new HistoricalSummarySchema(), specConfig.getHistoricalRootsLimit()))
-        .withCreator(
-            GLOAS,
-            (registry, specConfig, schemaName) ->
-                SszProgressiveListSchema.create(new HistoricalSummarySchema()))
         .build();
   }
 
@@ -902,7 +904,9 @@ public class SchemaRegistryBuilder {
         .withCreator(
             FULU,
             (registry, specConfig, schemaName) ->
-                new DataColumnSchema(SpecConfigDeneb.required(specConfig), registry))
+                new DataColumnSchemaFulu(SpecConfigDeneb.required(specConfig), registry))
+        .withCreator(
+            GLOAS, (registry, specConfig, schemaName) -> new DataColumnSchemaGloas(registry))
         .build();
   }
 

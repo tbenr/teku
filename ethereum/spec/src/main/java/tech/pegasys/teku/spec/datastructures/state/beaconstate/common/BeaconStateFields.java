@@ -164,9 +164,8 @@ public enum BeaconStateFields implements SszFieldName {
     state.setHistoricalRoots(source.getHistoricalRoots());
     // Eth1
     state.setEth1Data(source.getEth1Data());
-    state.setEth1DataVotes(
-        BeaconStateListFieldMigration.rematerialize(
-            targetSchema, ETH1_DATA_VOTES, source.getEth1DataVotes()));
+    // eth1_data_votes schema is unchanged across the upgrade (bounded list), so copy directly.
+    state.setEth1DataVotes(source.getEth1DataVotes());
     state.setEth1DepositIndex(source.getEth1DepositIndex());
     // Registry
     state.setValidators(
@@ -245,17 +244,17 @@ public enum BeaconStateFields implements SszFieldName {
                 SszListSchema.create(
                     SszPrimitiveSchemas.BYTES32_SCHEMA, specConfig.getHistoricalRootsLimit()));
     SszField eth1DataField = new SszField(8, BeaconStateFields.ETH1_DATA, Eth1Data.SSZ_SCHEMA);
+    // eth1_data_votes stays a bounded list in all milestones (not converted to a progressive list
+    // by EIP-7688): List[Eth1Data, EPOCHS_PER_ETH1_VOTING_PERIOD * SLOTS_PER_EPOCH].
     SszField eth1DataVotesField =
         new SszField(
             9,
             BeaconStateFields.ETH1_DATA_VOTES,
             () ->
-                listSchemaForState(
-                    specConfig,
-                    SszListSchema.create(
-                        Eth1Data.SSZ_SCHEMA,
-                        (long) specConfig.getEpochsPerEth1VotingPeriod()
-                            * specConfig.getSlotsPerEpoch())));
+                SszListSchema.create(
+                    Eth1Data.SSZ_SCHEMA,
+                    (long) specConfig.getEpochsPerEth1VotingPeriod()
+                        * specConfig.getSlotsPerEpoch()));
     SszField eth1DepositIndexField =
         new SszField(10, BeaconStateFields.ETH1_DEPOSIT_INDEX, SszPrimitiveSchemas.UINT64_SCHEMA);
     SszField validatorsField =

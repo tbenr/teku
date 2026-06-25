@@ -15,10 +15,13 @@ package tech.pegasys.teku.infrastructure.ssz.schema;
 
 import java.util.List;
 import org.apache.tuweni.bytes.Bytes;
+import tech.pegasys.teku.infrastructure.json.types.DeserializableArrayTypeDefinition;
+import tech.pegasys.teku.infrastructure.json.types.DeserializableTypeDefinition;
 import tech.pegasys.teku.infrastructure.ssz.collections.SszByteList;
 import tech.pegasys.teku.infrastructure.ssz.collections.impl.SszProgressiveByteListImpl;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszByte;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszByteListSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.json.SszPrimitiveTypeDefinitions;
 import tech.pegasys.teku.infrastructure.ssz.sos.SszReader;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 
@@ -31,8 +34,19 @@ public class SszProgressiveByteListSchema<SszListT extends SszByteList>
     extends AbstractSszProgressiveListSchema<SszByte, SszListT>
     implements SszByteListSchema<SszListT> {
 
+  // this is needed to make the ref test pass because the byteList there is serialized as unit8 list
+  // and not a 0x00 string
+  private final DeserializableTypeDefinition<SszListT> jsonTypeDefinition =
+      new DeserializableArrayTypeDefinition<>(
+          SszPrimitiveTypeDefinitions.SSZ_UINT8_TYPE_DEFINITION, this::createFromElements);
+
   public SszProgressiveByteListSchema() {
     super(SszPrimitiveSchemas.BYTE_SCHEMA);
+  }
+
+  @Override
+  public DeserializableTypeDefinition<SszListT> getJsonTypeDefinition() {
+    return jsonTypeDefinition;
   }
 
   @Override

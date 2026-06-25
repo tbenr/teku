@@ -28,7 +28,9 @@ import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.WITHDRAWAL_REQ
 import java.util.List;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema5;
+import tech.pegasys.teku.infrastructure.ssz.schema.ProgressiveSchemaUtils;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszListSchema;
+import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveListSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.spec.config.SpecConfigGloas;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionRequestsBuilder;
@@ -62,31 +64,21 @@ public class ExecutionRequestsSchemaGloas
       final String containerName) {
     super(
         containerName,
+        ProgressiveSchemaUtils.allActive(5),
         namedSchema(
-            DEPOSITS,
-            SszListSchema.create(
-                schemaRegistry.get(DEPOSIT_REQUEST_SCHEMA),
-                specConfig.getMaxDepositRequestsPerPayload())),
+            DEPOSITS, SszProgressiveListSchema.create(schemaRegistry.get(DEPOSIT_REQUEST_SCHEMA))),
         namedSchema(
             WITHDRAWALS,
-            SszListSchema.create(
-                schemaRegistry.get(WITHDRAWAL_REQUEST_SCHEMA),
-                specConfig.getMaxWithdrawalRequestsPerPayload())),
+            SszProgressiveListSchema.create(schemaRegistry.get(WITHDRAWAL_REQUEST_SCHEMA))),
         namedSchema(
             CONSOLIDATIONS,
-            SszListSchema.create(
-                schemaRegistry.get(CONSOLIDATION_REQUEST_SCHEMA),
-                specConfig.getMaxConsolidationRequestsPerPayload())),
+            SszProgressiveListSchema.create(schemaRegistry.get(CONSOLIDATION_REQUEST_SCHEMA))),
         namedSchema(
             BUILDER_DEPOSITS,
-            SszListSchema.create(
-                schemaRegistry.get(BUILDER_DEPOSIT_REQUEST_SCHEMA),
-                specConfig.getMaxBuilderDepositRequestsPerPayload())),
+            SszProgressiveListSchema.create(schemaRegistry.get(BUILDER_DEPOSIT_REQUEST_SCHEMA))),
         namedSchema(
             BUILDER_EXITS,
-            SszListSchema.create(
-                schemaRegistry.get(BUILDER_EXIT_REQUEST_SCHEMA),
-                specConfig.getMaxBuilderExitRequestsPerPayload())));
+            SszProgressiveListSchema.create(schemaRegistry.get(BUILDER_EXIT_REQUEST_SCHEMA))));
   }
 
   public ExecutionRequestsGloas create(

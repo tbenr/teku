@@ -11,20 +11,14 @@
  * specific language governing permissions and limitations under the License.
  */
 
-package tech.pegasys.teku.spec.datastructures.blobs.versions.fulu;
+package tech.pegasys.teku.spec.datastructures.blobs;
 
-import tech.pegasys.teku.infrastructure.ssz.SszList;
-import tech.pegasys.teku.infrastructure.ssz.impl.SszListImpl;
-import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
-import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSchema;
+import java.util.List;
+import tech.pegasys.teku.infrastructure.ssz.schema.SszListSchema;
+import tech.pegasys.teku.spec.datastructures.blobs.versions.fulu.Cell;
+import tech.pegasys.teku.spec.datastructures.blobs.versions.fulu.DataColumn;
 
-public class DataColumn extends SszListImpl<Cell> implements SszList<Cell> {
+public interface DataColumnSchema extends SszListSchema<Cell, DataColumn> {
 
-  public DataColumn(final DataColumnSchema schema, final TreeNode node) {
-    super(schema, node);
-  }
-
-  public String toBriefString() {
-    return isEmpty() ? "" : get(0).toBriefString();
-  }
+  DataColumn create(List<Cell> columnCells);
 }
