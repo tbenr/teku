@@ -14,6 +14,7 @@
 package tech.pegasys.teku.infrastructure.ssz.sos;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.Test;
 
@@ -121,5 +122,33 @@ public class SszLengthBoundsTest {
   @Test
   void saturatedOverflowIsTreatedAsUnbounded() {
     assertThat(SszLengthBounds.ofBytes(0, Long.MAX_VALUE).addBytes(1).isUnbounded()).isTrue();
+  }
+
+  @Test
+  void withMaxBytesUpperBound_shouldApplyToUnboundedBounds() {
+    final SszLengthBounds bounds = SszLengthBounds.ofBits(16, Long.MAX_VALUE);
+
+    final SszLengthBounds result = bounds.withMaxBytesUpperBound(1024);
+
+    assertThat(result.getMinBytes()).isEqualTo(2);
+    assertThat(result.getMaxBytes()).isEqualTo(1024);
+  }
+
+  @Test
+  void withMaxBytesUpperBound_shouldRejectFiniteBounds() {
+    final SszLengthBounds bounds = SszLengthBounds.ofBytes(2, 2048);
+
+    assertThatThrownBy(() -> bounds.withMaxBytesUpperBound(1024))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("only valid for unbounded raw SSZ bounds");
+  }
+
+  @Test
+  void withMaxBytesUpperBound_shouldRejectBoundBelowMinimum() {
+    final SszLengthBounds bounds = SszLengthBounds.ofBytes(2, Long.MAX_VALUE);
+
+    assertThatThrownBy(() -> bounds.withMaxBytesUpperBound(1))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("below raw minimum");
   }
 }

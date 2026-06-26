@@ -13,6 +13,8 @@
 
 package tech.pegasys.teku.infrastructure.ssz.sos;
 
+import static com.google.common.base.Preconditions.checkArgument;
+
 import com.google.common.base.MoreObjects;
 import java.util.Objects;
 
@@ -60,6 +62,19 @@ public class SszLengthBounds {
 
   public boolean isUnbounded() {
     return getMaxBits() == Long.MAX_VALUE;
+  }
+
+  public SszLengthBounds withMaxBytesUpperBound(final long maxBytes) {
+    checkArgument(
+        isUnbounded(),
+        "SSZ upper bound override is only valid for unbounded raw SSZ bounds: %s",
+        this);
+    checkArgument(
+        maxBytes >= getMinBytes(),
+        "SSZ upper bound override %s is below raw minimum %s",
+        maxBytes,
+        getMinBytes());
+    return SszLengthBounds.ofBytes(getMinBytes(), maxBytes);
   }
 
   public SszLengthBounds ceilToBytes() {

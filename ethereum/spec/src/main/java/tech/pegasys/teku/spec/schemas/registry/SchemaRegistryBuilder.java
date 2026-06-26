@@ -103,6 +103,7 @@ import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.WITHDRAWAL_SCH
 
 import com.google.common.annotations.VisibleForTesting;
 import java.util.HashSet;
+import java.util.OptionalLong;
 import java.util.Set;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszProgressiveListSchema;
@@ -532,6 +533,14 @@ public class SchemaRegistryBuilder {
             PHASE0,
             (registry, specConfig, schemaName) ->
                 new SignedBeaconBlockSchema(registry.get(BEACON_BLOCK_SCHEMA), schemaName))
+        .withCreator(
+            GLOAS,
+            (registry, specConfig, schemaName) ->
+                new SignedBeaconBlockSchema(
+                    registry.get(BEACON_BLOCK_SCHEMA),
+                    schemaName,
+                    OptionalLong.of(
+                        SpecConfigGloas.required(specConfig).getMaxSignedBeaconBlockSize())))
         .build();
   }
 
@@ -810,6 +819,14 @@ public class SchemaRegistryBuilder {
         .withCreator(
             ELECTRA,
             (registry, specConfig, schemaName) -> new AttesterSlashingSchema(schemaName, registry))
+        .withCreator(
+            GLOAS,
+            (registry, specConfig, schemaName) ->
+                new AttesterSlashingSchema(
+                    schemaName,
+                    registry,
+                    OptionalLong.of(
+                        SpecConfigGloas.required(specConfig).getMaxAttesterSlashingSize())))
         .build();
   }
 
@@ -887,6 +904,14 @@ public class SchemaRegistryBuilder {
             ELECTRA,
             (registry, specConfig, schemaName) ->
                 new SignedAggregateAndProofSchema(schemaName, registry))
+        .withCreator(
+            GLOAS,
+            (registry, specConfig, schemaName) ->
+                new SignedAggregateAndProofSchema(
+                    schemaName,
+                    registry,
+                    OptionalLong.of(
+                        SpecConfigGloas.required(specConfig).getMaxSignedAggregateAndProofSize())))
         .build();
   }
 
@@ -923,7 +948,10 @@ public class SchemaRegistryBuilder {
             GLOAS,
             (registry, specConfig, schemaName) ->
                 new DataColumnSidecarSchemaGloas(
-                    registry.get(DATA_COLUMN_SCHEMA), SpecConfigGloas.required(specConfig)))
+                    registry.get(DATA_COLUMN_SCHEMA),
+                    SpecConfigGloas.required(specConfig),
+                    OptionalLong.of(
+                        SpecConfigGloas.required(specConfig).getMaxDataColumnSidecarSize())))
         .build();
   }
 
@@ -1071,7 +1099,12 @@ public class SchemaRegistryBuilder {
     return providerBuilder(SIGNED_EXECUTION_PAYLOAD_BID_SCHEMA)
         .withCreator(
             GLOAS,
-            (registry, specConfig, schemaName) -> new SignedExecutionPayloadBidSchema(registry))
+            (registry, specConfig, schemaName) ->
+                new SignedExecutionPayloadBidSchema(
+                    registry,
+                    OptionalLong.of(
+                        SpecConfigGloas.required(specConfig)
+                            .getMaxSignedExecutionPayloadBidSize())))
         .build();
   }
 

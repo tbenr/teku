@@ -13,6 +13,7 @@
 
 package tech.pegasys.teku.spec.datastructures.blobs.versions.gloas;
 
+import java.util.OptionalLong;
 import java.util.function.Consumer;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema5;
@@ -37,8 +38,17 @@ public class DataColumnSidecarSchemaGloas
         DataColumnSidecarGloas, SszUInt64, DataColumn, SszList<SszKZGProof>, SszUInt64, SszBytes32>
     implements DataColumnSidecarSchema<DataColumnSidecarGloas> {
 
+  private final OptionalLong networkSszLengthBytesUpperBound;
+
   public DataColumnSidecarSchemaGloas(
       final DataColumnSchema dataColumnSchema, final SpecConfigGloas specConfig) {
+    this(dataColumnSchema, specConfig, OptionalLong.empty());
+  }
+
+  public DataColumnSidecarSchemaGloas(
+      final DataColumnSchema dataColumnSchema,
+      final SpecConfigGloas specConfig,
+      final OptionalLong networkSszLengthBytesUpperBound) {
     super(
         "DataColumnSidecarGloas",
         namedSchema(FIELD_INDEX, SszPrimitiveSchemas.UINT64_SCHEMA),
@@ -46,6 +56,13 @@ public class DataColumnSidecarSchemaGloas
         namedSchema(FIELD_KZG_PROOFS, SszProgressiveListSchema.create(SszKZGProofSchema.INSTANCE)),
         namedSchema(FIELD_SLOT, SszPrimitiveSchemas.UINT64_SCHEMA),
         namedSchema(FIELD_BEACON_BLOCK_ROOT, SszPrimitiveSchemas.BYTES32_SCHEMA));
+    this.networkSszLengthBytesUpperBound = networkSszLengthBytesUpperBound;
+    validateNetworkSszLengthBytesUpperBound();
+  }
+
+  @Override
+  public OptionalLong getNetworkSszLengthBytesUpperBound() {
+    return networkSszLengthBytesUpperBound;
   }
 
   @Override

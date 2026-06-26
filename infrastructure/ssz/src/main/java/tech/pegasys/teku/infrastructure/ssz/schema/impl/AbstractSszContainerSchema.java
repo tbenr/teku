@@ -26,6 +26,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Queue;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
@@ -90,6 +91,8 @@ public abstract class AbstractSszContainerSchema<C extends SszContainer>
 
   private final Supplier<SszLengthBounds> sszLengthBounds =
       Suppliers.memoize(this::computeSszLengthBounds);
+  private final Supplier<SszLengthBounds> networkSszLengthBounds =
+      Suppliers.memoize(this::computeNetworkSszLengthBounds);
   private final String containerName;
   private final List<String> childrenNames = new ArrayList<>();
   private final Object2IntMap<String> childrenNamesToFieldIndex = new Object2IntOpenHashMap<>();
@@ -361,12 +364,14 @@ public abstract class AbstractSszContainerSchema<C extends SszContainer>
     }
     AbstractSszContainerSchema<?> that = (AbstractSszContainerSchema<?>) o;
     return childrenSchemas.equals(that.childrenSchemas)
-        && Arrays.equals(activeFields, that.activeFields);
+        && Arrays.equals(activeFields, that.activeFields)
+        && Objects.equals(
+            getNetworkSszLengthBytesUpperBound(), that.getNetworkSszLengthBytesUpperBound());
   }
 
   @Override
   public int hashCode() {
-    int result = Objects.hash(childrenSchemas);
+    int result = Objects.hash(childrenSchemas, getNetworkSszLengthBytesUpperBound());
     result = 31 * result + Arrays.hashCode(activeFields);
     return result;
   }
@@ -511,12 +516,28 @@ public abstract class AbstractSszContainerSchema<C extends SszContainer>
     return sszLengthBounds.get();
   }
 
+  @Override
+  public SszLengthBounds getNetworkSszLengthBounds() {
+    return networkSszLengthBounds.get();
+  }
+
   private SszLengthBounds computeSszLengthBounds() {
     return IntStream.range(0, getFieldsCount())
         .mapToObj(this::getChildSchema)
         .map(t -> t.getSszLengthBounds().addBytes(t.isFixedSize() ? 0 : SszType.SSZ_LENGTH_SIZE))
         .map(SszLengthBounds::ceilToBytes)
         .reduce(SszLengthBounds.ZERO, SszLengthBounds::add);
+  }
+
+  private SszLengthBounds computeNetworkSszLengthBounds() {
+    final OptionalLong upperBound = getNetworkSszLengthBytesUpperBound();
+    return upperBound.isPresent()
+        ? getSszLengthBounds().withMaxBytesUpperBound(upperBound.getAsLong())
+        : getSszLengthBounds();
+  }
+
+  protected void validateNetworkSszLengthBytesUpperBound() {
+    computeNetworkSszLengthBounds();
   }
 
   @Override
