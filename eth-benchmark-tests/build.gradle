@@ -1,3 +1,5 @@
+import java.util.Locale
+
 idea {
 	module {
 		testSources.from(sourceSets.jmh.java.srcDirs)
@@ -39,4 +41,37 @@ dependencies {
 
 	testFixturesImplementation 'io.consensys.tuweni:tuweni-bytes'
 	testFixturesImplementation 'io.consensys.tuweni:tuweni-ssz'
+}
+
+def hashtreeOsName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+def hashtreeLibraryName = hashtreeOsName.contains('mac')
+		? 'libhashtree.dylib'
+		: 'libhashtree.so'
+def hashtreeLibrary = project(':infrastructure:crypto')
+		.layout.buildDirectory.file("native/hashtree/$hashtreeLibraryName")
+
+tasks.register('tinyTransactionsJmh', JavaExec) {
+	dependsOn jmhClasses, ':infrastructure:crypto:buildHashtreeNative'
+	group = 'benchmark'
+	description = 'Benchmarks pathological one-byte transactions in real Fulu and Gloas structures.'
+	mainClass = 'org.openjdk.jmh.Main'
+	classpath = sourceSets.jmh.compileClasspath + sourceSets.jmh.runtimeClasspath
+	environment(
+			'HASHTREE_LIBRARY',
+			hashtreeLibrary.get().asFile.absolutePath)
+	jvmArgs '--enable-native-access=ALL-UNNAMED', '-Xms4g', '-Xmx4g'
+	args(
+			'tech.pegasys.teku.benchmarks.ssz.TinyTransactionPayloadBenchmark',
+			'-f', '2',
+			'-wi', '3',
+			'-i', '5',
+			'-r', '1s',
+			'-w', '1s',
+			'-prof', 'gc',
+			'-rf', 'json',
+			'-rff',
+			file("$buildDir/reports/jmh/tiny-transactions.json").absolutePath)
+	doFirst {
+		file("$buildDir/reports/jmh").mkdirs()
+	}
 }
