@@ -28,3 +28,19 @@ tasks.register('buildHashtreeNative', Exec) {
 				hashtreeOutputDir.get().asFile.absolutePath)
 	}
 }
+
+tasks.register('hashtreeTest', Test) {
+	dependsOn testClasses, buildHashtreeNative
+	group = 'verification'
+	description = 'Runs hashtree FFM tests against the locally built shared library.'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	filter {
+		includeTestsMatching(
+				'tech.pegasys.teku.infrastructure.crypto.HashtreeBatchSha256NativeTest')
+	}
+	systemProperty(
+			'teku.hashtree.library',
+			hashtreeLibrary.get().asFile.absolutePath)
+	jvmArgs '--enable-native-access=ALL-UNNAMED'
+}
