@@ -44,3 +44,28 @@ tasks.register('hashtreeTest', Test) {
 			hashtreeLibrary.get().asFile.absolutePath)
 	jvmArgs '--enable-native-access=ALL-UNNAMED'
 }
+
+tasks.register('hashtreeJmh', JavaExec) {
+	dependsOn jmhClasses, buildHashtreeNative
+	group = 'benchmark'
+	description = 'Benchmarks JCA against the local hashtree FFM provider.'
+	mainClass = 'org.openjdk.jmh.Main'
+	classpath = sourceSets.jmh.compileClasspath + sourceSets.jmh.runtimeClasspath
+	environment(
+			'HASHTREE_LIBRARY',
+			hashtreeLibrary.get().asFile.absolutePath)
+	args(
+			'tech.pegasys.teku.infrastructure.crypto.Native.*Benchmark',
+			'-f', '2',
+			'-wi', '3',
+			'-i', '5',
+			'-r', '1s',
+			'-w', '1s',
+			'-prof', 'gc',
+			'-rf', 'json',
+			'-rff',
+			file("$buildDir/reports/jmh/hashtree-kernel.json").absolutePath)
+	doFirst {
+		file("$buildDir/reports/jmh").mkdirs()
+	}
+}
