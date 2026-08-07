@@ -1,3 +1,5 @@
+import java.util.Locale
+
 dependencies {
 	api 'org.bouncycastle:bcprov-jdk18on'
 	api 'io.consensys.tuweni:tuweni-bytes'
@@ -5,4 +7,24 @@ dependencies {
 
 	jmhImplementation 'org.bouncycastle:bcprov-jdk18on'
 	jmhImplementation project(':infrastructure:crypto')
+}
+
+def hashtreeOsName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+def hashtreeLibraryName = hashtreeOsName.contains('mac')
+		? 'libhashtree.dylib'
+		: 'libhashtree.so'
+def hashtreeOutputDir = layout.buildDirectory.dir('native/hashtree')
+def hashtreeLibrary = hashtreeOutputDir.map { it.file(hashtreeLibraryName) }
+
+tasks.register('buildHashtreeNative', Exec) {
+	group = 'build'
+	description = 'Builds the pinned hashtree shared library for local validation.'
+	inputs.file('src/main/native/hashtree/build-hashtree.sh')
+	outputs.file(hashtreeLibrary)
+	doFirst {
+		commandLine(
+				'bash',
+				file('src/main/native/hashtree/build-hashtree.sh').absolutePath,
+				hashtreeOutputDir.get().asFile.absolutePath)
+	}
 }
