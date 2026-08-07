@@ -133,6 +133,10 @@ For progressive lists:
 
 The planners must avoid materializing declared-but-empty portions of large trees.
 
+Native work is processed in benchmark-derived tiles rather than requiring one scratch allocation
+large enough for every transaction. Tiling must preserve enough independent pairs to saturate the
+selected SIMD implementation while bounding scratch independently of the transaction count.
+
 ### Cache And Concurrency
 
 Preserve existing volatile root caches and lock-free behavior. Two threads may independently
@@ -171,6 +175,39 @@ Use fresh objects per measured invocation:
 Benchmark setup must prevent an earlier invocation from satisfying the measured call through the
 root cache.
 
+### Degenerate Many-Tiny-Transaction Payloads
+
+Add an adversarial payload containing `1,048,576` one-byte transaction entries, matching the
+mainnet pre-Gloas `MAX_TRANSACTIONS_PER_PAYLOAD`. Use the same count for Gloas even though its
+progressive transaction list has no fixed maximum, so the fixed and progressive shapes receive
+identical serialized transaction data.
+
+Test both identical byte values and values cycling through all 256 byte values. The second form
+prevents an implementation from making the comparison meaningless by memoizing one repeated
+transaction root.
+
+Measure intermediate counts as well as the maximum, including counts around SIMD and progressive
+level boundaries, to show scaling and the native crossover point. For the maximum case, measure:
+
+- Cold transaction-list root.
+- Cold whole execution-payload root.
+- Deserialize-plus-hash.
+- Peak Java allocation and native scratch.
+- Total hash pairs and FFM calls per planner stage.
+
+Report pre-Gloas and Gloas absolute results separately. A one-byte pre-Gloas transaction still
+folds its data root through the fixed `MAX_BYTES_PER_TRANSACTION` depth before mixing in its length.
+The progressive Gloas transaction has a much shallower populated shape. Combining their results
+would hide whether a gain comes from native batching or from the progressive schema itself.
+
+One-byte transaction encodings are valid inputs to the SSZ schemas but need not be valid execution
+transactions. This workload therefore evaluates SSZ deserialization and merkleization, not
+execution-layer acceptance or a complete payload-validation workflow.
+
+The maximum case must use bounded tiles and report peak scratch. An implementation that allocates
+scratch proportional to all `1,048,576` transactions does not satisfy this workload even if its
+latency improves.
+
 ### Workflows
 
 Measure complete block processing/state transition and payload deserialization/validation. These
@@ -193,6 +230,8 @@ Production adoption requires all of the following:
 - At least 25% lower whole-object cold-root time on a common production platform.
 - At least 5% improvement in block-processing or payload-validation workflow time.
 - No meaningful small-batch regression because the Java threshold is selected correctly.
+- Separate many-tiny-transaction results for fixed and progressive payloads; if either native
+  planner regresses, that planner remains on Java regardless of results for the other shape.
 - Bounded operation-scoped native memory with no arena ownership in backing nodes.
 - Reliable Java fallback when the native library is absent or unsupported.
 - Reproducible binaries, pinned upstream revision, license reporting, SBOM coverage, and platform
