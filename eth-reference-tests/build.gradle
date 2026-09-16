@@ -63,9 +63,11 @@ def convertRefTestOptions = [
 	mainnet: ['--strip-prefix', 'tests/'],
 	bls: ['--add-prefix', 'bls/'],
 	'slashing-protection-interchange': [
-		'--include', '.*/tests/generated/[^/]+\\.json',
+		'--include',
+		'.*/tests/generated/[^/]+\\.json',
 		'--flatten',
-		'--add-prefix', 'slashing-protection-interchange/'
+		'--add-prefix',
+		'slashing-protection-interchange/'
 	],
 ]
 def convertRefTestDownloadTasks = [
@@ -126,8 +128,8 @@ task generateReferenceTestClasses(type: JavaExec) {
 	// Declare inputs and outputs so Gradle can skip the task when nothing relevant
 	// changed, and reuse outputs via the build cache.
 	inputs.files(fileTree(refTestArchivesDir) { include '*.zip' })
-			.withPropertyName('refTestArchives')
-			.withPathSensitivity(PathSensitivity.NAME_ONLY)
+	.withPropertyName('refTestArchives')
+	.withPathSensitivity(PathSensitivity.NAME_ONLY)
 	inputs.files(configurations.refTestGenerator)
 			.withPropertyName('generatorClasspath')
 			.withNormalizer(ClasspathNormalizer)
