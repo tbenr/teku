@@ -597,7 +597,8 @@ public class ForkChoiceTestExecutor implements TestExecutor {
                               + payloadAttestationMessage.getData().getSlot()
                               + " and block root "
                               + payloadAttestationMessage.getData().getBeaconBlockRoot()));
-      validatablePayloadAttestationMessage.calculatePtcPositions(spec, state);
+      validatablePayloadAttestationMessage.calculatePayloadTimelinessCommitteePositions(
+          spec, state);
     }
     assertDoesNotThrow(
         () ->
