@@ -663,14 +663,14 @@ jobs:
         id: ref-cache-key
         shell: bash
         run: |
-          # Derive the cache key from the reference test version definitions and the converter
-          # that produces the archives, so unrelated build.gradle edits don't bust the cache.
+          # Derive the cache key from the reference test version definitions, the converter and the
+          # per-archive conversion options, so unrelated root build.gradle edits don't bust the cache.
           LINES=$(grep -E '^def (refTestVersion|blsRefTestVersion|slashingProtectionInterchangeRefTestVersion)' build.gradle)
           if [ -z "$LINES" ]; then
             echo "Could not find reference test version definitions in build.gradle" >&2
             exit 1
           fi
-          HASH=$( (echo -n "$LINES"; cat eth-tests/src/main/java/tech/pegasys/teku/ethtests/ReferenceTestArchiveConverter.java) | sha256sum | cut -c1-16)
+          HASH=$( (echo -n "$LINES"; cat eth-tests/src/main/java/tech/pegasys/teku/ethtests/ReferenceTestArchiveConverter.java eth-reference-tests/build.gradle) | sha256sum | cut -c1-16)
           echo "key=reftests-archives-$HASH" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:

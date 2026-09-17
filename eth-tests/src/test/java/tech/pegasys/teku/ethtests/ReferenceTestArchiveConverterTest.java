@@ -15,11 +15,15 @@ package tech.pegasys.teku.ethtests;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import org.junit.jupiter.api.Test;
@@ -139,6 +143,36 @@ class ReferenceTestArchiveConverterTest {
         new String[] {tarGz.toString(), zip.toString(), "--strip-prefix", "tests/"});
 
     assertThat(entries(zip).keySet()).containsExactly("general/x.yaml");
+  }
+
+  @Test
+  void shouldRejectFlagWithoutValue() {
+    final Path tarGz = tmp.resolve("in.tar.gz");
+    final Path zip = tmp.resolve("out.zip");
+
+    assertThatThrownBy(
+            () ->
+                ReferenceTestArchiveConverter.main(
+                    new String[] {tarGz.toString(), zip.toString(), "--strip-prefix"}))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("--strip-prefix");
+  }
+
+  @Test
+  void shouldReportCorruptHeaderAsIoException() throws IOException {
+    final Path tarGz = tmp.resolve("in.tar.gz");
+    final byte[] header = new byte[512];
+    System.arraycopy("bad".getBytes(UTF_8), 0, header, 0, 3);
+    System.arraycopy("zz".getBytes(UTF_8), 0, header, 124, 2); // size field is not octal
+    try (OutputStream out = new GZIPOutputStream(Files.newOutputStream(tarGz))) {
+      out.write(header);
+      out.write(new byte[1024]);
+    }
+    final Path zip = tmp.resolve("out.zip");
+
+    assertThatThrownBy(() -> ReferenceTestArchiveConverter.convert(tarGz, zip, Options.DEFAULT))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("tar header");
   }
 
   private static Map<String, String> entries(final Path zip) throws IOException {

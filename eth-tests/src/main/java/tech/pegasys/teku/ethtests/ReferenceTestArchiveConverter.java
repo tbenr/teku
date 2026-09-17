@@ -69,9 +69,9 @@ public class ReferenceTestArchiveConverter {
     boolean flatten = false;
     for (int i = 2; i < args.length; i++) {
       switch (args[i]) {
-        case "--strip-prefix" -> stripPrefix = args[++i];
-        case "--add-prefix" -> addPrefix = args[++i];
-        case "--include" -> includeRegex = args[++i];
+        case "--strip-prefix" -> stripPrefix = valueOf(args, i++);
+        case "--add-prefix" -> addPrefix = valueOf(args, i++);
+        case "--include" -> includeRegex = valueOf(args, i++);
         case "--flatten" -> flatten = true;
         default -> throw new IllegalArgumentException("Unknown argument: " + args[i]);
       }
@@ -80,6 +80,13 @@ public class ReferenceTestArchiveConverter {
         Path.of(args[0]),
         Path.of(args[1]),
         new Options(stripPrefix, addPrefix, includeRegex, flatten));
+  }
+
+  private static String valueOf(final String[] args, final int flagIndex) {
+    if (flagIndex + 1 >= args.length) {
+      throw new IllegalArgumentException("Missing value for " + args[flagIndex]);
+    }
+    return args[flagIndex + 1];
   }
 
   public static void convert(final Path tarGz, final Path zip, final Options options)
@@ -216,8 +223,13 @@ public class ReferenceTestArchiveConverter {
     return new String(bytes, offset, end - offset, StandardCharsets.UTF_8);
   }
 
-  private static long octal(final byte[] header, final int offset, final int length) {
+  private static long octal(final byte[] header, final int offset, final int length)
+      throws IOException {
     final String value = string(header, offset, length).trim();
-    return value.isEmpty() ? 0 : Long.parseLong(value, 8);
+    try {
+      return value.isEmpty() ? 0 : Long.parseLong(value, 8);
+    } catch (final NumberFormatException e) {
+      throw new IOException("Corrupt tar header: invalid octal field '" + value + "'", e);
+    }
   }
 }

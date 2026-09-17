@@ -105,10 +105,10 @@ task convertRefTests {
 // Lets the tests read either the zip archives (default) or a plain directory of <config>/ trees,
 // e.g. vectors generated from a local consensus-specs checkout:
 //   ./gradlew referenceTest -Dteku.ref-test.root-dir=/path/to/tests
+def refTestRootDirOverride = System.getProperty('teku.ref-test.root-dir')
 def configureRefTestLocation = { task ->
-	def rootDirOverride = System.getProperty('teku.ref-test.root-dir')
-	if (rootDirOverride) {
-		task.systemProperty('teku.ref-test.root-dir', rootDirOverride)
+	if (refTestRootDirOverride) {
+		task.systemProperty('teku.ref-test.root-dir', refTestRootDirOverride)
 	} else {
 		task.dependsOn convertRefTests
 		task.systemProperty('teku.ref-test.archives-dir', refTestArchivesDir.absolutePath)
@@ -127,9 +127,15 @@ task generateReferenceTestClasses(type: JavaExec) {
 
 	// Declare inputs and outputs so Gradle can skip the task when nothing relevant
 	// changed, and reuse outputs via the build cache.
-	inputs.files(fileTree(refTestArchivesDir) { include '*.zip' })
-	.withPropertyName('refTestArchives')
-	.withPathSensitivity(PathSensitivity.NAME_ONLY)
+	if (refTestRootDirOverride) {
+		inputs.dir(refTestRootDirOverride)
+		.withPropertyName('refTestRootDir')
+		.withPathSensitivity(PathSensitivity.RELATIVE)
+	} else {
+		inputs.files(fileTree(refTestArchivesDir) { include '*.zip' })
+		.withPropertyName('refTestArchives')
+		.withPathSensitivity(PathSensitivity.NAME_ONLY)
+	}
 	inputs.files(configurations.refTestGenerator)
 			.withPropertyName('generatorClasspath')
 			.withNormalizer(ClasspathNormalizer)
