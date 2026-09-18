@@ -129,8 +129,8 @@ task generateReferenceTestClasses(type: JavaExec) {
 	// changed, and reuse outputs via the build cache.
 	if (refTestRootDirOverride) {
 		inputs.dir(refTestRootDirOverride)
-		.withPropertyName('refTestRootDir')
-		.withPathSensitivity(PathSensitivity.RELATIVE)
+				.withPropertyName('refTestRootDir')
+				.withPathSensitivity(PathSensitivity.RELATIVE)
 	} else {
 		inputs.files(fileTree(refTestArchivesDir) { include '*.zip' })
 		.withPropertyName('refTestArchives')
