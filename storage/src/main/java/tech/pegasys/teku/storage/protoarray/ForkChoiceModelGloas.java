@@ -739,7 +739,7 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
           .getEmptyNode(resolved.getBlockRoot())
           .flatMap(protoArray::getNode)
           .filter(emptyNode -> !emptyNode.isInvalid())
-          .orElse(resolved);
+          .orElseThrow();
     }
     return resolved;
   }
