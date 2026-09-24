@@ -769,6 +769,9 @@ class ProtoArrayTest {
 
     // block2b attaches to EMPTY path
     addValidBlockWithParentIndex(2, block2b, block1a, Optional.of(emptyNodeIndex));
+    // Every Gloas block has an EMPTY variant; the head walk must end on a variant, never on BASE
+    protoArray.createEmptyNode(block2a);
+    protoArray.createEmptyNode(block2b);
 
     // Vote for block2a (FULL path child)
     voteUpdater.putVote(UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block2a, false, false));
@@ -969,6 +972,8 @@ class ProtoArrayTest {
     // block2a attaches to EMPTY path, block2b attaches to FULL path
     addValidBlockWithParentIndex(6, block2a, block1a, Optional.of(emptyNodeIndex));
     addValidBlockWithParentIndex(6, block2b, block1a, Optional.of(fullNodeIndex));
+    protoArray.createEmptyNode(block2a);
+    protoArray.createEmptyNode(block2b);
 
     // Vote for block2a (EMPTY path child) — gives EMPTY path more weight
     // Need two votes so the balance list covers validator 0
@@ -999,6 +1004,8 @@ class ProtoArrayTest {
     // block2a on EMPTY path, block2b on FULL path — both get votes
     addValidBlockWithParentIndex(6, block2a, block1a, Optional.of(emptyNodeIndex));
     addValidBlockWithParentIndex(6, block2b, block1a, Optional.of(fullNodeIndex));
+    protoArray.createEmptyNode(block2a);
+    protoArray.createEmptyNode(block2b);
 
     // Vote for EMPTY path child (more votes) — validators 0 and 1
     voteUpdater.putVote(UInt64.ZERO, new VoteTracker(Bytes32.ZERO, block2a, false, false));
@@ -1214,6 +1221,21 @@ class ProtoArrayTest {
 
     assertThat(protoArray.getNodeByIndex(emptyNodeIndex).isFullyValidated()).isTrue();
     assertThat(protoArray.getNodeByIndex(fullNodeIndex).isOptimistic()).isTrue();
+  }
+
+  @Test
+  void findOptimisticHead_gloasShouldThrowWhenWalkEndsOnPendingNodeWithoutEmptyVariant() {
+    // Every Gloas block gets its EMPTY variant on import, so a PENDING leaf without one is a broken
+    // tree rather than a legitimate head. The walk must fail loudly instead of returning PENDING.
+    addValidBlock(1, block1a, GENESIS_CHECKPOINT.getRoot());
+    applyScoreChanges(gloasModel, UInt64.valueOf(100), Optional.empty());
+
+    assertThatThrownBy(
+            () ->
+                protoArray.findOptimisticHead(
+                    UInt64.valueOf(5), GENESIS_CHECKPOINT, GENESIS_CHECKPOINT))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("has no valid EMPTY variant");
   }
 
   @Test
