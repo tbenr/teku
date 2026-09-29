@@ -154,7 +154,9 @@ public class LibP2PGossipNetworkBuilder {
           return new PreparedPubsubMessage(msg, preparedMessage);
         });
     builder.setMessageValidator(STRICT_FIELDS_VALIDATOR);
-    return builder.build();
+    final GossipRouter router = builder.build();
+    GossipMetricsListener.attachTo(metricsSystem, router);
+    return router;
   }
 
   protected Gossip createGossip(
