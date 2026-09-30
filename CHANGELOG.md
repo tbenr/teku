@@ -9,6 +9,7 @@
 ### Breaking Changes
 
 ### Additions and Improvements
+ - Added experimental gossipsub metrics reporting mesh size, message flow, validation outcomes, router misbehaviour and slow peers. They are off by default; enable them with `--metrics-categories=...,LIBP2P_GOSSIP`.
 
 ### Bug Fixes
  - The ENR `eth2` field now advertises the current fork version as `next_fork_version` when a BPO fork is scheduled before the next hard fork, as the Fulu p2p specification requires.
