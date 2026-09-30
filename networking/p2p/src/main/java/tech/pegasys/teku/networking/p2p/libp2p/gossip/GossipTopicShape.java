@@ -17,13 +17,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Reduces a gossip topic to a bounded label value.
- *
- * <p>A full topic is {@code /eth2/<forkDigest>/<name>/<encoding>}, and {@code <name>} carries a
- * subnet index for the subnet topics. Used directly as a metric label that is unbounded in
- * practice: the fork digest rotates at every fork and the subnet index multiplies every series by
- * the subnet count. This keeps only the topic shape - the name with its trailing subnet index
- * removed - so the label is drawn from the fixed set of topic kinds the spec defines.
+ * Reduces a gossip topic to a bounded label value. Limits metrics cardinality.
  *
  * <p>Anything that does not parse collapses to {@value #OTHER} rather than minting a new series.
  */

@@ -24,11 +24,8 @@ public enum TekuMetricCategory implements MetricCategory {
   EXECUTOR("executor"),
   LIBP2P("libp2p"),
   /**
-   * Experimental gossipsub router internals. Deliberately absent from {@link #defaultCategories()},
-   * so they are only collected when asked for with {@code --metrics-categories=...,LIBP2P_GOSSIP}.
-   * Once the set has settled these should be promoted into {@link #LIBP2P}, which renames every
-   * series from {@code libp2p_gossip_gossipsub_*} to {@code libp2p_gossipsub_*} and breaks any
-   * dashboard built against the experimental names.
+   * Experimental gossipsub router internals. Deliberately absent from {@link #defaultCategories()}.
+   * Eventually will be promoted to "regular" LIBP2P.
    */
   LIBP2P_GOSSIP("libp2p_gossip"),
   NETWORK("network"),

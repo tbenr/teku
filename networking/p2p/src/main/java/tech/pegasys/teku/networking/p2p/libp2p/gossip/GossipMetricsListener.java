@@ -32,12 +32,8 @@ import tech.pegasys.teku.infrastructure.metrics.TekuMetricCategory;
 /**
  * Publishes gossipsub router internals as metrics.
  *
- * <p>Metric names follow the set rust-libp2p's gossipsub crate exposes, so a Teku dashboard lines
- * up with the equivalent Lighthouse one. With {@link TekuMetricCategory#LIBP2P} they are exposed as
- * {@code libp2p_gossipsub_*}.
- *
  * <p>The {@code topic} label is the topic shape, not the topic - see {@link GossipTopicShape}. No
- * metric carries a peer id.
+ * metric carries a peer id. This is done to limit the cardinality of metrics.
  *
  * <p>Threading: every {@code notify*} callback runs synchronously on the gossip event thread, so
  * the callbacks must stay cheap and must not block. Gauge suppliers run on the metrics scrape
@@ -56,14 +52,6 @@ public class GossipMetricsListener implements GossipRouterEventListener {
   private final Counter slowPeerEvents;
 
   private final LabelledSuppliedMetric meshPeerCounts;
-
-  /**
-   * Mirrors the router's own mesh membership. {@link GossipRouter#getMesh()} cannot be read here:
-   * it is a plain {@code LinkedHashMap} mutated on the event thread, so a scrape would race it. The
-   * membership cannot be counted incrementally from meshed/pruned alone either, because {@code
-   * GossipRouter.onPeerDisconnected} drops the peer from every mesh without emitting a prune -
-   * hence {@link #notifyDisconnected} doing the same removal here.
-   */
   private final Map<String, Set<PeerId>> meshPeersByTopic = new ConcurrentHashMap<>();
 
   /** Topic shapes already registered as a gauge series, so each registers exactly once. */
@@ -132,12 +120,8 @@ public class GossipMetricsListener implements GossipRouterEventListener {
 
   /**
    * Attaches to {@code router} and starts recording, unless {@link
-   * TekuMetricCategory#LIBP2P_GOSSIP} is disabled.
-   *
-   * <p>A disabled category already makes every metric a no-op, but the listener itself would still
-   * run: {@link GossipTopicShape#of} parses a topic per received message and the mesh membership
-   * map is maintained on every mesh change. Not attaching at all keeps that off the gossip event
-   * thread.
+   * TekuMetricCategory#LIBP2P_GOSSIP} is disabled. Won't even attach the listener if the metric
+   * category is disabled.
    */
   public static Optional<GossipMetricsListener> attachTo(
       final MetricsSystem metricsSystem, final GossipRouter router) {
