@@ -9,6 +9,7 @@
 ### Breaking Changes
 
 ### Additions and Improvements
+ - Block production now resends `forkchoiceUpdated` when the execution layer returned no `payloadId` (e.g. `SYNCING`) for the one sent ahead of the proposal slot, instead of missing the proposal. A warning is logged when no `payloadId` is returned.
 
 ### Bug Fixes
  - The validator client now sends the required `Eth-Consensus-Version` header when submitting gloas proposer preferences to the beacon node.
