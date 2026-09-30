@@ -72,70 +72,81 @@ public class GossipMetricsListener implements GossipRouterEventListener {
   public GossipMetricsListener(final MetricsSystem metricsSystem) {
     messagesReceived =
         metricsSystem.createLabelledCounter(
-            TekuMetricCategory.LIBP2P,
+            TekuMetricCategory.LIBP2P_GOSSIP,
             "gossipsub_topic_msg_recv_counts",
             "Number of gossip messages received for the first time, by topic",
             "topic");
     messageBytesReceived =
         metricsSystem.createLabelledCounter(
-            TekuMetricCategory.LIBP2P,
+            TekuMetricCategory.LIBP2P_GOSSIP,
             "gossipsub_topic_msg_recv_bytes",
             "Payload bytes of gossip messages received for the first time, by topic",
             "topic");
     duplicateMessages =
         metricsSystem.createLabelledCounter(
-            TekuMetricCategory.LIBP2P,
+            TekuMetricCategory.LIBP2P_GOSSIP,
             "gossipsub_duplicate_msgs_total",
             "Number of gossip messages received that were already seen, by topic",
             "topic");
     acceptedMessages =
         metricsSystem.createLabelledCounter(
-            TekuMetricCategory.LIBP2P,
+            TekuMetricCategory.LIBP2P_GOSSIP,
             "gossipsub_accepted_messages_total",
             "Number of first-seen gossip messages that passed validation, by topic",
             "topic");
     invalidMessages =
         metricsSystem.createLabelledCounter(
-            TekuMetricCategory.LIBP2P,
+            TekuMetricCategory.LIBP2P_GOSSIP,
             "gossipsub_invalid_messages_total",
             "Number of first-seen gossip messages that failed validation, by topic",
             "topic");
     meshPeerInclusionEvents =
         metricsSystem.createLabelledCounter(
-            TekuMetricCategory.LIBP2P,
+            TekuMetricCategory.LIBP2P_GOSSIP,
             "gossipsub_mesh_peer_inclusion_events",
             "Number of times a peer was added to a topic mesh, by topic",
             "topic");
     meshPeerChurnEvents =
         metricsSystem.createLabelledCounter(
-            TekuMetricCategory.LIBP2P,
+            TekuMetricCategory.LIBP2P_GOSSIP,
             "gossipsub_mesh_peer_churn_events",
             "Number of times a peer was pruned from a topic mesh, by topic",
             "topic");
     routerMisbehaviourEvents =
         metricsSystem.createCounter(
-            TekuMetricCategory.LIBP2P,
+            TekuMetricCategory.LIBP2P_GOSSIP,
             "gossipsub_router_misbehaviour_total",
             "Number of gossip router misbehaviour penalties applied to peers");
     slowPeerEvents =
         metricsSystem.createCounter(
-            TekuMetricCategory.LIBP2P,
+            TekuMetricCategory.LIBP2P_GOSSIP,
             "gossipsub_slow_peer_total",
             "Number of times a peer's outbound queue stayed above the slow-peer threshold");
     meshPeerCounts =
         metricsSystem.createLabelledSuppliedGauge(
-            TekuMetricCategory.LIBP2P,
+            TekuMetricCategory.LIBP2P_GOSSIP,
             "gossipsub_mesh_peer_counts",
             "Number of peers currently in the topic mesh, by topic",
             "topic");
   }
 
-  /** Attaches to {@code router} and starts recording. */
-  public static GossipMetricsListener attachTo(
+  /**
+   * Attaches to {@code router} and starts recording, unless {@link
+   * TekuMetricCategory#LIBP2P_GOSSIP} is disabled.
+   *
+   * <p>A disabled category already makes every metric a no-op, but the listener itself would still
+   * run: {@link GossipTopicShape#of} parses a topic per received message and the mesh membership
+   * map is maintained on every mesh change. Not attaching at all keeps that off the gossip event
+   * thread.
+   */
+  public static Optional<GossipMetricsListener> attachTo(
       final MetricsSystem metricsSystem, final GossipRouter router) {
+    if (!metricsSystem.isCategoryEnabled(TekuMetricCategory.LIBP2P_GOSSIP)) {
+      return Optional.empty();
+    }
     final GossipMetricsListener listener = new GossipMetricsListener(metricsSystem);
     router.getEventBroadcaster().getListeners().add(listener);
-    return listener;
+    return Optional.of(listener);
   }
 
   @Override

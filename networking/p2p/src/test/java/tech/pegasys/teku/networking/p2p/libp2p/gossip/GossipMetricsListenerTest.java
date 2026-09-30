@@ -14,13 +14,19 @@
 package tech.pegasys.teku.networking.p2p.libp2p.gossip;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static tech.pegasys.teku.infrastructure.metrics.TekuMetricCategory.LIBP2P;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import static tech.pegasys.teku.infrastructure.metrics.TekuMetricCategory.LIBP2P_GOSSIP;
 
 import com.google.protobuf.ByteString;
 import io.libp2p.core.PeerId;
 import io.libp2p.pubsub.DefaultPubsubMessage;
 import io.libp2p.pubsub.PubsubMessage;
+import io.libp2p.pubsub.gossip.GossipRouter;
+import io.libp2p.pubsub.gossip.GossipRouterEventBroadcaster;
 import java.util.Optional;
+import java.util.Set;
+import org.hyperledger.besu.plugin.services.metrics.MetricCategory;
 import org.junit.jupiter.api.Test;
 import pubsub.pb.Rpc;
 import tech.pegasys.teku.infrastructure.metrics.StubMetricsSystem;
@@ -43,11 +49,11 @@ class GossipMetricsListenerTest {
 
     assertThat(
             metricsSystem.getLabelledCounterValue(
-                LIBP2P, "gossipsub_topic_msg_recv_counts", "beacon_attestation"))
+                LIBP2P_GOSSIP, "gossipsub_topic_msg_recv_counts", "beacon_attestation"))
         .isEqualTo(2);
     assertThat(
             metricsSystem.getLabelledCounterValue(
-                LIBP2P, "gossipsub_topic_msg_recv_bytes", "beacon_attestation"))
+                LIBP2P_GOSSIP, "gossipsub_topic_msg_recv_bytes", "beacon_attestation"))
         .isEqualTo(150);
   }
 
@@ -59,15 +65,15 @@ class GossipMetricsListenerTest {
 
     assertThat(
             metricsSystem.getLabelledCounterValue(
-                LIBP2P, "gossipsub_duplicate_msgs_total", "beacon_block"))
+                LIBP2P_GOSSIP, "gossipsub_duplicate_msgs_total", "beacon_block"))
         .isEqualTo(1);
     assertThat(
             metricsSystem.getLabelledCounterValue(
-                LIBP2P, "gossipsub_accepted_messages_total", "beacon_block"))
+                LIBP2P_GOSSIP, "gossipsub_accepted_messages_total", "beacon_block"))
         .isEqualTo(1);
     assertThat(
             metricsSystem.getLabelledCounterValue(
-                LIBP2P, "gossipsub_invalid_messages_total", "beacon_block"))
+                LIBP2P_GOSSIP, "gossipsub_invalid_messages_total", "beacon_block"))
         .isEqualTo(1);
   }
 
@@ -76,9 +82,10 @@ class GossipMetricsListenerTest {
     listener.notifyRouterMisbehavior(PeerId.random(), 5);
     listener.notifySlowPeer(PeerId.random());
 
-    assertThat(metricsSystem.getCounterValue(LIBP2P, "gossipsub_router_misbehaviour_total"))
+    assertThat(metricsSystem.getCounterValue(LIBP2P_GOSSIP, "gossipsub_router_misbehaviour_total"))
         .isEqualTo(1);
-    assertThat(metricsSystem.getCounterValue(LIBP2P, "gossipsub_slow_peer_total")).isEqualTo(1);
+    assertThat(metricsSystem.getCounterValue(LIBP2P_GOSSIP, "gossipsub_slow_peer_total"))
+        .isEqualTo(1);
   }
 
   @Test
@@ -102,7 +109,7 @@ class GossipMetricsListenerTest {
     assertThat(meshPeerCount("beacon_block")).isZero();
     assertThat(
             metricsSystem.getLabelledCounterValue(
-                LIBP2P, "gossipsub_mesh_peer_churn_events", "beacon_block"))
+                LIBP2P_GOSSIP, "gossipsub_mesh_peer_churn_events", "beacon_block"))
         .isEqualTo(1);
   }
 
@@ -149,13 +156,40 @@ class GossipMetricsListenerTest {
 
     assertThat(
             metricsSystem.getLabelledCounterValue(
-                LIBP2P, "gossipsub_topic_msg_recv_counts", GossipTopicShape.OTHER))
+                LIBP2P_GOSSIP, "gossipsub_topic_msg_recv_counts", GossipTopicShape.OTHER))
         .isEqualTo(1);
+  }
+
+  @Test
+  void doesNotAttachWhenTheCategoryIsDisabled() {
+    // StubMetricsSystem reports no enabled categories.
+    assertThat(GossipMetricsListener.attachTo(metricsSystem, mock(GossipRouter.class))).isEmpty();
+  }
+
+  @Test
+  void attachesAndRegistersItselfWhenTheCategoryIsEnabled() {
+    final GossipRouterEventBroadcaster broadcaster = new GossipRouterEventBroadcaster();
+    final GossipRouter router = mock(GossipRouter.class);
+    when(router.getEventBroadcaster()).thenReturn(broadcaster);
+
+    final Optional<GossipMetricsListener> attached =
+        GossipMetricsListener.attachTo(new CategoryEnabledMetricsSystem(), router);
+
+    assertThat(attached).isPresent();
+    assertThat(broadcaster.getListeners()).containsExactly(attached.orElseThrow());
+  }
+
+  /** StubMetricsSystem reports no enabled categories, so the gate needs one that does. */
+  private static class CategoryEnabledMetricsSystem extends StubMetricsSystem {
+    @Override
+    public Set<MetricCategory> getEnabledCategories() {
+      return Set.of(LIBP2P_GOSSIP);
+    }
   }
 
   private double meshPeerCount(final String topicShape) {
     return metricsSystem
-        .getLabelledGauge(LIBP2P, "gossipsub_mesh_peer_counts")
+        .getLabelledGauge(LIBP2P_GOSSIP, "gossipsub_mesh_peer_counts")
         .getValue(topicShape)
         .orElseThrow();
   }
