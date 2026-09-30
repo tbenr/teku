@@ -9,7 +9,7 @@
 ### Breaking Changes
 
 ### Additions and Improvements
- - Added gossipsub metrics `libp2p_gossipsub_*` (off by default; enable them with `--metrics-categories=...,LIBP2P_GOSSIP`).
+ - Added experimental gossipsub metrics `libp2p_gossip_gossipsub_*` (off by default; enable them on top of the default metric categories with `--Xmetrics-additional-categories=LIBP2P_GOSSIP`).
 
 ### Bug Fixes
  - The ENR `eth2` field now advertises the current fork version as `next_fork_version` when a BPO fork is scheduled before the next hard fork, as the Fulu p2p specification requires.
