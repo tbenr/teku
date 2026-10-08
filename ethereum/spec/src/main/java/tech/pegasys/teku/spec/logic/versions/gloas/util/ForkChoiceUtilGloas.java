@@ -164,14 +164,14 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
 
   @Override
   public AvailabilityChecker<?> createAvailabilityCheckerOnExecutionPayloadEnvelope(
-      final SignedBeaconBlock block, final SignedExecutionPayloadEnvelope signedEnvelope) {
+      final BeaconState state, final SignedExecutionPayloadEnvelope signedEnvelope) {
     final AvailabilityCheckerFactory<UInt64> factory =
         this.dataColumnSidecarAvailabilityCheckerFactory;
     if (factory == null) {
       throw new IllegalStateException(
           "DataColumnSidecarAvailabilityCheckerFactory not initialized");
     }
-    return factory.createAvailabilityChecker(block, signedEnvelope);
+    return factory.createAvailabilityChecker(state, signedEnvelope);
   }
 
   @Override
@@ -210,7 +210,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
     if (!result.isSuccessful()) {
       return result;
     }
-    if (isParentFullPayloadRequired(block, store)
+    if (isParentFullPayloadRequired(block, blockSlotState)
         && !isRequiredParentFullPayloadAvailable(block, store)) {
       return BlockImportResult.FAILED_UNKNOWN_PARENT_EXECUTION_PAYLOAD;
     }
@@ -226,10 +226,22 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
   }
 
   private boolean isParentFullPayloadRequired(
-      final SignedBeaconBlock block, final ReadOnlyStore store) {
-    return getParentPayloadStatusIfAvailable(store, block.getMessage().getBlock())
-        .map(PAYLOAD_STATUS_FULL::equals)
-        .orElse(false);
+      final SignedBeaconBlock block, final BeaconState blockSlotState) {
+    if (blockSlotState
+        .getLatestBlockHeader()
+        .getSlot()
+        .isLessThan(miscHelpers.computeStartSlotAtEpoch(specConfig.getGloasForkEpoch()))) {
+      return false;
+    }
+    return ((MiscHelpersGloas) miscHelpers)
+        .isBidBuildingOnFullParent(
+            BeaconStateGloas.required(blockSlotState),
+            block
+                .getMessage()
+                .getBody()
+                .getOptionalSignedExecutionPayloadBid()
+                .orElseThrow()
+                .getMessage());
   }
 
   private boolean isRequiredParentFullPayloadAvailable(
@@ -585,13 +597,6 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
               }
               return getParentPayloadStatus(block, parentBlock.get());
             });
-  }
-
-  private Optional<ForkChoicePayloadStatus> getParentPayloadStatusIfAvailable(
-      final ReadOnlyStore store, final BeaconBlock block) {
-    return store
-        .getBlockIfAvailable(block.getParentRoot())
-        .map(parentBlock -> getParentPayloadStatus(block, parentBlock.getMessage().getBlock()));
   }
 
   private ForkChoicePayloadStatus getParentPayloadStatus(
