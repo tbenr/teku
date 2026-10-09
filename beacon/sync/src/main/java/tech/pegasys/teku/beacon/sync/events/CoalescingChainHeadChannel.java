@@ -207,13 +207,13 @@ public class CoalescingChainHeadChannel implements ChainHeadChannel, SyncSubscri
     }
 
     /**
-     * While syncing only the last head update is delivered, so the pending reorg context must keep
-     * whatever the consumers need to act on. A block reorg is what pools, light client pruning and
-     * the chain_reorg event act on, so it is never displaced by a payload reorg; between block
-     * reorgs the earliest common ancestor covers the most ground. A payload reorg only matters for
-     * logging, so the latest one wins and any block reorg takes precedence over it (a payload reorg
-     * displaced this way is not logged once syncing completes; the delivered payload status still
-     * reflects the final head).
+     * While syncing only the last head update is delivered (without logging), so the pending reorg
+     * context must keep whatever the consumers need to act on. A block reorg is what pools, light
+     * client pruning and the chain_reorg event act on, so it is never displaced by a payload reorg;
+     * between block reorgs the earliest common ancestor covers the most ground. No consumer acts on
+     * a payload reorg, so one is only kept while no block reorg is pending (the latest, so that the
+     * delivered event is not stripped of a context that was reported) and the delivered payload
+     * status reflects the final head regardless of which context is kept.
      */
     private void mergeReorgContext(final ReorgContext incoming) {
       if (this.reorgContext.isEmpty()) {
