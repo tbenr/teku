@@ -229,7 +229,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
         .isLessThan(miscHelpers.computeStartSlotAtEpoch(specConfig.getGloasForkEpoch()))) {
       return false;
     }
-    return ((MiscHelpersGloas) miscHelpers)
+    return MiscHelpersGloas.required(miscHelpers)
         .isBidBuildingOnFullParent(
             BeaconStateGloas.required(blockSlotState),
             block
