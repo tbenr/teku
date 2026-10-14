@@ -71,15 +71,19 @@ public class Eth2PeerSelectionStrategy implements PeerSelectionStrategy {
         peerSubnetSubscriptionsFactory.create(network);
     // A pending dial reserves one slot for its identity until it completes or times out. Pending
     // dials are read before the connected snapshot, and both budgets derive from that snapshot, so
-    // a dial completing in between is counted once, as connected.
+    // a dial completing in between is counted once, as connected. Whether to fill is decided on
+    // connected peers alone, so pending dials never stop a node that is below its lower bound
+    // from bursting towards the upper bound; they only take their slots out of that burst.
     final Set<NodeId> pendingPeerIds =
         network.streamPendingConnections().collect(Collectors.toSet());
     final List<? extends Peer> connectedPeers = network.streamPeers().toList();
     final Set<NodeId> pendingUnconnectedPeerIds = new HashSet<>(pendingPeerIds);
     connectedPeers.forEach(peer -> pendingUnconnectedPeerIds.remove(peer.getId()));
     final int peersRequiredForPeerCount =
-        targetPeerCountRange.getPeersToAdd(
-            connectedPeers.size() + pendingUnconnectedPeerIds.size());
+        Math.max(
+            0,
+            targetPeerCountRange.getPeersToAdd(connectedPeers.size())
+                - pendingUnconnectedPeerIds.size());
     final int randomlySelectedPeerCount =
         countRandomlySelectedPeers(connectedPeers, peerPools)
             + countPendingPeersInPool(pendingUnconnectedPeerIds, peerPools, RANDOMLY_SELECTED);

@@ -256,6 +256,27 @@ class Eth2PeerSelectionStrategyTest {
   }
 
   @Test
+  void selectPeersToConnect_shouldKeepFillingTowardsUpperBoundWhileDialsArePending() {
+    final Eth2PeerSelectionStrategy strategy = createStrategy(2, 4, 0);
+    // Below the lower bound with one dial in flight: the burst to the upper bound continues,
+    // minus the slot the pending dial already holds
+    withConnectedPeers(1);
+    when(network.streamPendingConnections()).thenReturn(Stream.of(PEER1.getId()));
+
+    assertThat(
+            strategy.selectPeersToConnect(
+                network,
+                peerPools,
+                () ->
+                    List.of(
+                        DISCOVERY_PEER1,
+                        DISCOVERY_PEER2,
+                        DISCOVERY_PEER3,
+                        createDiscoveryPeer(PEER4, 4))))
+        .containsExactly(PEER2, PEER3);
+  }
+
+  @Test
   void selectPeersToConnect_shouldNotDialReplacementWhenPendingDialFillsBudget() {
     final Eth2PeerSelectionStrategy strategy = createStrategy(1, 1, 0);
     when(network.streamPendingConnections()).thenReturn(Stream.of(PEER1.getId()));
