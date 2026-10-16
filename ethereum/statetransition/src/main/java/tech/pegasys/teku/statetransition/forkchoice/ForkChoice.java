@@ -784,7 +784,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     // (which may have changed while we were processing the block, as may the validity of the parent
     // node it builds on)
     if (!forkChoiceUtil.blockDescendsFromLatestFinalizedBlock(
-        block, recentChainData.getStore(), forkChoiceStrategy)) {
+        block, blockSlotState, recentChainData.getStore(), forkChoiceStrategy)) {
       return BlockImportResult.FAILED_INVALID_ANCESTRY;
     }
 

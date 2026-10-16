@@ -732,9 +732,6 @@ public class ForkChoiceUtil {
   public BlockImportResult checkOnBlockConditions(
       final SignedBeaconBlock block, final BeaconState blockSlotState, final ReadOnlyStore store) {
     final UInt64 blockSlot = block.getSlot();
-    if (blockSlotState == null) {
-      return BlockImportResult.FAILED_UNKNOWN_PARENT;
-    }
     if (!blockSlotState.getSlot().equals(blockSlot)) {
       return BlockImportResult.FAILED_INVALID_ANCESTRY;
     }
@@ -748,7 +745,8 @@ public class ForkChoiceUtil {
     if (blockIsFromFuture(store, blockSlot)) {
       return BlockImportResult.FAILED_BLOCK_IS_FROM_FUTURE;
     }
-    if (!blockDescendsFromLatestFinalizedBlock(block, store, store.getForkChoiceStrategy())) {
+    if (!blockDescendsFromLatestFinalizedBlock(
+        block, blockSlotState, store, store.getForkChoiceStrategy())) {
       return BlockImportResult.FAILED_INVALID_ANCESTRY;
     }
     // Successful so far
@@ -761,13 +759,15 @@ public class ForkChoiceUtil {
 
   /**
    * Returns whether {@code block} builds on the finalized chain, walking fork choice from the node
-   * the block builds on: pre-Gloas, its parent's base node.
+   * the block builds on: pre-Gloas, its parent's base node. {@code blockSlotState} is the block's
+   * pre-state, from which Gloas derives the parent variant.
    *
    * <p>Fork choice stops tracking a node once the execution layer has invalidated it, so this walk
    * also rejects the descendants of an invalidated block or payload, as optimistic sync requires.
    */
   public boolean blockDescendsFromLatestFinalizedBlock(
       final SignedBeaconBlock block,
+      final BeaconState blockSlotState,
       final ReadOnlyStore store,
       final ReadOnlyForkChoiceStrategy forkChoiceStrategy) {
     return blockDescendsFromLatestFinalizedBlock(
