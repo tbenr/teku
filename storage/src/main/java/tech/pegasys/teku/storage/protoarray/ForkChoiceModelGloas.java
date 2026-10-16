@@ -789,6 +789,24 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
         .filter(gasLimit -> !gasLimit.equals(ProtoNode.NO_EXECUTION_GAS_LIMIT));
   }
 
+  @Override
+  public boolean isAwaitingExecutionPayload(
+      final BlockNodeVariantsIndex blockNodeIndex, final Bytes32 blockRoot) {
+    // The index has an entry for a block exactly while its BASE node is tracked: the entry is
+    // created with the block and removed when the block leaves the protoarray (pruning, or the
+    // BASE node itself invalidated through an ancestor). The FULL identity is attached when the
+    // payload is imported and stays in the entry afterwards. When the execution layer invalidates
+    // the payload only the FULL node leaves the protoarray indices, the entry keeps the identity.
+    // Hence:
+    //  - no entry: block not tracked, nothing to wait for -> false
+    //  - entry with FULL identity: payload imported, still tracked or since invalidated -> false
+    //  - entry without FULL identity: payload never imported -> true
+    return blockNodeIndex
+        .getVariants(blockRoot)
+        .map(variants -> variants.fullNode().isEmpty())
+        .orElse(false);
+  }
+
   private Optional<ProtoNode> getExecutionNodeForBlockRootAndHash(
       final ProtoArray protoArray,
       final BlockNodeVariantsIndex blockNodeIndex,

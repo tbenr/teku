@@ -225,10 +225,14 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
       final SignedBeaconBlock block, final BeaconState blockSlotState, final ReadOnlyStore store) {
     // Spec order: once the parent is known, a block building on the parent's payload needs that
     // payload verified before the timing and finality checks. The finality check below walks from
-    // FULL(parent) for such blocks, so a payload that has merely not arrived yet must be reported
-    // here first, rather than being mistaken for an invalidated one.
+    // FULL(parent) for such blocks and rejects the block when that node is not tracked, so a
+    // payload that has merely not arrived yet must be reported here first. Fork choice remembers a
+    // payload it has imported for as long as the parent is tracked, so an imported payload that
+    // the execution layer has since invalidated, as well as a parent that is no longer tracked at
+    // all, are left to the finality check. This is deliberately not read from the store's bounded
+    // payload cache, which BlockManager does not consult either when deciding to retry the block.
     if (getParentNode(block, blockSlotState).payloadStatus() == PAYLOAD_STATUS_FULL
-        && !isRequiredParentFullPayloadAvailable(block, store)) {
+        && store.getForkChoiceStrategy().isAwaitingExecutionPayload(block.getParentRoot())) {
       return BlockImportResult.FAILED_UNKNOWN_PARENT_EXECUTION_PAYLOAD;
     }
     return super.checkOnBlockConditions(block, blockSlotState, store);
@@ -290,35 +294,14 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
    *
    * <p>Kept as the {@code is_payload_verified} spec mapping; fork choice uses its own check in
    * {@code ForkChoiceModelGloas}.
+   *
+   * <p>Fork choice tracks a FULL node, optimistic or valid, for every payload imported that way and
+   * drops it once the execution layer invalidates the payload, so the node is the authoritative
+   * signal. The store's payload map is only a bounded cache and may still hold an invalidated
+   * envelope, or have evicted a verified one.
    */
   public boolean isPayloadVerified(final ReadOnlyStore store, final Bytes32 root) {
-    return store.getExecutionPayloadIfAvailable(root).isPresent();
-  }
-
-  private boolean isRequiredParentFullPayloadAvailable(
-      final SignedBeaconBlock block, final ReadOnlyStore store) {
-    return block
-        .getMessage()
-        .getBody()
-        .toVersionGloas()
-        .flatMap(
-            beaconBlockBodyGloas -> {
-              final Bytes32 requiredParentBlockHash =
-                  beaconBlockBodyGloas
-                      .getSignedExecutionPayloadBid()
-                      .getMessage()
-                      .getParentBlockHash();
-              return store
-                  .getExecutionPayloadIfAvailable(block.getParentRoot())
-                  .map(
-                      executionPayload ->
-                          executionPayload
-                              .getMessage()
-                              .getPayload()
-                              .getBlockHash()
-                              .equals(requiredParentBlockHash));
-            })
-        .orElse(false);
+    return store.getForkChoiceStrategy().getBlockData(root, PAYLOAD_STATUS_FULL).isPresent();
   }
 
   @Override
