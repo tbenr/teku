@@ -421,22 +421,65 @@ class ForkChoiceUtilGloasTest {
   }
 
   @Test
-  void isPayloadVerified_shouldReturnTrue_whenPayloadIsAvailable() {
+  void isPayloadVerified_shouldReturnTrue_whenForkChoiceTracksTheFullNode() {
+    // The store's payload map is a bounded cache: fork choice is the authoritative signal
     final SignedBeaconBlock currentBlock = dataStructureUtil.randomSignedBeaconBlock();
-    final ReadOnlyStore store = mock(ReadOnlyStore.class);
+    final ReadOnlyStore store = createStore();
+    when(store.getExecutionPayloadIfAvailable(currentBlock.getRoot())).thenReturn(Optional.empty());
+    when(store
+            .getForkChoiceStrategy()
+            .getBlockData(currentBlock.getRoot(), ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL))
+        .thenReturn(Optional.of(mock(ProtoNodeData.class)));
+    assertThat(forkChoiceUtil.isPayloadVerified(store, currentBlock.getRoot())).isTrue();
+  }
+
+  @Test
+  void isPayloadVerified_shouldReturnFalse_whenOnlyTheStoreStillHoldsThePayload() {
+    // A cached envelope whose FULL node is gone was invalidated: the payload is not verified
+    final SignedBeaconBlock currentBlock = dataStructureUtil.randomSignedBeaconBlock();
+    final ReadOnlyStore store = createStore();
     when(store.getExecutionPayloadIfAvailable(currentBlock.getRoot()))
         .thenReturn(
             Optional.of(
                 dataStructureUtil.randomSignedExecutionPayloadEnvelopeForBlock(currentBlock)));
-    assertThat(forkChoiceUtil.isPayloadVerified(store, currentBlock.getRoot())).isTrue();
+    assertThat(forkChoiceUtil.isPayloadVerified(store, currentBlock.getRoot())).isFalse();
+  }
+
+  @Test
+  void computeCommitteeIndexForAttestation_shouldSelectPayloadPresentIndexOnlyForTrackedFullNode() {
+    final BeaconBlock block = dataStructureUtil.randomBeaconBlock(gloasSlot);
+    final UInt64 nextSlot = gloasSlot.plus(1);
+    final ReadOnlyStore store = createStore();
+    when(store.getExecutionPayloadIfAvailable(block.getRoot()))
+        .thenReturn(
+            Optional.of(
+                dataStructureUtil.randomSignedExecutionPayloadEnvelopeForBlock(
+                    dataStructureUtil.signedBlock(block))));
+    // the envelope is still cached but fork choice no longer tracks FULL(block)
+    assertThat(forkChoiceUtil.computeCommitteeIndexForAttestation(nextSlot, block, 0, store))
+        .isEqualTo(0);
+
+    when(store
+            .getForkChoiceStrategy()
+            .getBlockData(block.getRoot(), ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL))
+        .thenReturn(Optional.of(mock(ProtoNodeData.class)));
+    assertThat(forkChoiceUtil.computeCommitteeIndexForAttestation(nextSlot, block, 0, store))
+        .isEqualTo(1);
   }
 
   @Test
   void isPayloadVerified_shouldReturnFalse_whenPayloadIsNotAvailable() {
     final SignedBeaconBlock currentBlock = dataStructureUtil.randomSignedBeaconBlock();
-    final ReadOnlyStore store = mock(ReadOnlyStore.class);
+    final ReadOnlyStore store = createStore();
     when(store.getExecutionPayloadIfAvailable(currentBlock.getRoot())).thenReturn(Optional.empty());
     assertThat(forkChoiceUtil.isPayloadVerified(store, currentBlock.getRoot())).isFalse();
+  }
+
+  /** A store mock whose fork choice strategy tracks nothing. */
+  private ReadOnlyStore createStore() {
+    final ReadOnlyStore store = mock(ReadOnlyStore.class);
+    when(store.getForkChoiceStrategy()).thenReturn(mock(ReadOnlyForkChoiceStrategy.class));
+    return store;
   }
 
   @Test
