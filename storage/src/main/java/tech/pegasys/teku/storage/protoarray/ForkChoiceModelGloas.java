@@ -14,6 +14,7 @@
 package tech.pegasys.teku.storage.protoarray;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
 
 import com.google.common.annotations.VisibleForTesting;
 import it.unimi.dsi.fastutil.ints.IntSet;
@@ -220,17 +221,28 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
     // node at the root of the protoarray. A completely missing parent is only valid while
     // rebuilding the very first anchor node into an empty protoarray.
     final Optional<ForkChoiceNode> fullNode = blockNodeIndex.getFullNode(parentRoot);
-    if (fullNode.isPresent()) {
-      final Optional<ProtoNode> maybeFullNode = protoArray.getNode(fullNode.get());
-      if (maybeFullNode.isPresent()
-          && maybeFullNode.get().getExecutionBlockHash().equals(childParentBlockHash)) {
-        return maybeFullNode;
-      }
+    final Optional<ProtoNode> trackedFullNode = fullNode.flatMap(protoArray::getNode);
+    if (trackedFullNode.isPresent()
+        && trackedFullNode.get().getExecutionBlockHash().equals(childParentBlockHash)) {
+      return trackedFullNode;
     }
+    // A FULL variant the index knows but the protoarray no longer tracks has been invalidated by
+    // the execution layer (pruning removes the whole index entry).
+    final boolean fullNodeInvalidated = fullNode.isPresent() && trackedFullNode.isEmpty();
 
     final Optional<ProtoNode> emptyNode =
         blockNodeIndex.getEmptyNode(parentRoot).flatMap(protoArray::getNode);
     if (emptyNode.isPresent()) {
+      // A child that passed the state transition names either the parent's payload or the
+      // execution head EMPTY inherited, so a child not naming the latter builds on the invalidated
+      // payload. on_block rejects such blocks (ForkChoiceUtilGloas), there is no fallback to EMPTY.
+      checkState(
+          !fullNodeInvalidated
+              || emptyNode.get().getExecutionBlockHash().equals(childParentBlockHash),
+          "Block builds on execution payload %s of parent %s which has been invalidated by the"
+              + " execution layer",
+          childParentBlockHash,
+          parentRoot);
       return emptyNode;
     }
 

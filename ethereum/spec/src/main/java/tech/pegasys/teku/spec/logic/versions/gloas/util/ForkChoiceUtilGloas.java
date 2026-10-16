@@ -218,15 +218,58 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
   @Override
   public BlockImportResult checkOnBlockConditions(
       final SignedBeaconBlock block, final BeaconState blockSlotState, final ReadOnlyStore store) {
-    final BlockImportResult result = super.checkOnBlockConditions(block, blockSlotState, store);
-    if (!result.isSuccessful()) {
-      return result;
-    }
-    if (isParentFullPayloadRequired(block, store)
+    // Spec order: once the parent is known, a block building on the parent's payload needs that
+    // payload verified before the timing and finality checks. The finality check below walks from
+    // FULL(parent) for such blocks, so a payload that has merely not arrived yet must be reported
+    // here first, rather than being mistaken for an invalidated one.
+    if (blockSlotState != null
+        && isParentFullPayloadRequired(block, store)
         && !isRequiredParentFullPayloadAvailable(block, store)) {
       return BlockImportResult.FAILED_UNKNOWN_PARENT_EXECUTION_PAYLOAD;
     }
-    return result;
+    return super.checkOnBlockConditions(block, blockSlotState, store);
+  }
+
+  /**
+   * Spec mapping: the finalized-descent check of {@code on_block}, via {@code get_checkpoint_block}
+   * and the modified {@code get_ancestor}.
+   *
+   * <p>The walk starts from the node the block builds on (see {@link #getParentNode}) rather than
+   * from the parent's PENDING node as in {@code get_checkpoint_block}. For a tracked parent node
+   * both walks reach the same ancestor. They differ once the execution layer has invalidated the
+   * parent's payload: only the parent's FULL node leaves fork choice while its BASE and EMPTY
+   * variants stay valid, so a block building on that payload is rejected here, as optimistic sync
+   * requires for descendants of an INVALIDATED payload, instead of passing the PENDING walk. A
+   * parent payload that has not been received yet is reported as {@code
+   * UNKNOWN_PARENT_EXECUTION_PAYLOAD} before this check runs.
+   */
+  @Override
+  public boolean blockDescendsFromLatestFinalizedBlock(
+      final SignedBeaconBlock block,
+      final ReadOnlyStore store,
+      final ReadOnlyForkChoiceStrategy forkChoiceStrategy) {
+    return blockDescendsFromLatestFinalizedBlock(
+        block.getSlot(),
+        getParentNode(store, block.getMessage().getBlock()),
+        store,
+        forkChoiceStrategy);
+  }
+
+  /**
+   * The fork choice node the block builds on, see {@code get_parent_payload_status}: FULL(parent)
+   * when its bid names the parent's payload, EMPTY(parent) otherwise. A pre-Gloas parent has no
+   * payload variants, so the walk starts from its base node as for every pre-Gloas block.
+   */
+  private ForkChoiceNode getParentNode(final ReadOnlyStore store, final BeaconBlock block) {
+    return store
+        .getBlockIfAvailable(block.getParentRoot())
+        .map(parentBlock -> parentBlock.getMessage().getBlock())
+        .filter(parentBlock -> parentBlock.getBody().toVersionGloas().isPresent())
+        .map(
+            parentBlock ->
+                new ForkChoiceNode(
+                    block.getParentRoot(), getParentPayloadStatus(block, parentBlock)))
+        .orElseGet(() -> ForkChoiceNode.createBase(block.getParentRoot()));
   }
 
   /**
