@@ -191,58 +191,85 @@ class ForkChoiceUtilGloasTest {
 
   @Test
   void blockDescendsFromLatestFinalizedBlock_shouldWalkFromFullParentWhenBuildingOnItsPayload() {
-    final Bytes32 parentBlockHash = dataStructureUtil.randomBytes32();
-    final BeaconBlock parentBlock = createBlockWithBlockHash(parentBlockHash);
-    final SignedBeaconBlock block =
-        dataStructureUtil.signedBlock(
-            createBlockWithParentAndParentBlockHash(parentBlock.getRoot(), parentBlockHash));
+    final Bytes32 parentPayloadHash = dataStructureUtil.randomBytes32();
+    final BeaconState preState = createPreState(gloasSlot, gloasSlot, parentPayloadHash);
+    final SignedBeaconBlock block = createBlockBuildingOn(parentPayloadHash);
 
     assertWalksFinalizedAncestryFrom(
-        block, parentBlock, ForkChoiceNode.createFull(parentBlock.getRoot()));
+        block, preState, ForkChoiceNode.createFull(block.getParentRoot()));
   }
 
   @Test
   void
       blockDescendsFromLatestFinalizedBlock_shouldWalkFromEmptyParentWhenNotBuildingOnItsPayload() {
-    final BeaconBlock parentBlock = createBlockWithBlockHash(dataStructureUtil.randomBytes32());
-    final SignedBeaconBlock block =
-        dataStructureUtil.signedBlock(
-            createBlockWithParentAndParentBlockHash(
-                parentBlock.getRoot(), dataStructureUtil.randomBytes32()));
+    final BeaconState preState =
+        createPreState(gloasSlot, gloasSlot, dataStructureUtil.randomBytes32());
+    final SignedBeaconBlock block = createBlockBuildingOn(dataStructureUtil.randomBytes32());
 
     assertWalksFinalizedAncestryFrom(
-        block, parentBlock, ForkChoiceNode.createEmpty(parentBlock.getRoot()));
+        block, preState, ForkChoiceNode.createEmpty(block.getParentRoot()));
   }
 
   @Test
   void blockDescendsFromLatestFinalizedBlock_shouldWalkFromBaseParentWhenParentIsPreGloas() {
-    final BeaconBlock parentBlock = dataStructureUtil.randomBeaconBlock(gloasSlot.minusMinZero(1));
-    final SignedBeaconBlock block =
-        dataStructureUtil.signedBlock(
-            createBlockWithParentAndParentBlockHash(
-                parentBlock.getRoot(), dataStructureUtil.randomBytes32()));
+    // The fork upgrade seeds latest_execution_payload_bid with the pre-fork block hash, which the
+    // first Gloas block's bid names as parent_block_hash: that is not a payload FULL(parent) could
+    // represent, the pre-Gloas parent only has a base node. Skipped slots straddle the fork here.
+    final Bytes32 preForkBlockHash = dataStructureUtil.randomBytes32();
+    final BeaconState preState =
+        createPreState(gloasSlot.plus(1), gloasSlot.minus(2), preForkBlockHash);
+    final SignedBeaconBlock block = createBlockBuildingOn(preForkBlockHash);
 
     assertWalksFinalizedAncestryFrom(
-        block, parentBlock, ForkChoiceNode.createBase(parentBlock.getRoot()));
+        block, preState, ForkChoiceNode.createBase(block.getParentRoot()));
+  }
+
+  /** A block at {@code gloasSlot} whose bid names {@code parentBlockHash}. */
+  private SignedBeaconBlock createBlockBuildingOn(final Bytes32 parentBlockHash) {
+    return dataStructureUtil.signedBlock(
+        createBlockWithParentAndParentBlockHash(
+            dataStructureUtil.randomBytes32(), parentBlockHash));
+  }
+
+  /**
+   * A pre-state at {@code stateSlot} whose latest block header is the parent's at {@code
+   * parentSlot} and whose latest execution payload bid, the parent's bid, has {@code
+   * parentBidBlockHash}.
+   */
+  private BeaconState createPreState(
+      final UInt64 stateSlot, final UInt64 parentSlot, final Bytes32 parentBidBlockHash) {
+    final ExecutionPayloadBid parentBid =
+        BeaconBlockBodyGloas.required(createBlockWithBlockHash(parentBidBlockHash).getBody())
+            .getSignedExecutionPayloadBid()
+            .getMessage();
+    return dataStructureUtil
+        .stateBuilderGloas(10, 1, 10)
+        .slot(stateSlot)
+        .build()
+        .updated(
+            state -> {
+              state.setLatestBlockHeader(
+                  dataStructureUtil.randomBeaconBlockHeader(parentSlot, UInt64.ZERO));
+              MutableBeaconStateGloas.required(state).setLatestExecutionPayloadBid(parentBid);
+            });
   }
 
   private void assertWalksFinalizedAncestryFrom(
       final SignedBeaconBlock block,
-      final BeaconBlock parentBlock,
+      final BeaconState preState,
       final ForkChoiceNode expectedParentNode) {
     final Checkpoint finalizedCheckpoint =
         new Checkpoint(UInt64.ZERO, dataStructureUtil.randomBytes32());
     final ReadOnlyStore store = mock(ReadOnlyStore.class);
     when(store.getFinalizedCheckpoint()).thenReturn(finalizedCheckpoint);
-    when(store.getBlockIfAvailable(parentBlock.getRoot()))
-        .thenReturn(Optional.of(dataStructureUtil.signedBlock(parentBlock)));
     final ReadOnlyForkChoiceStrategy forkChoiceStrategy = mock(ReadOnlyForkChoiceStrategy.class);
     // Only the node the block builds on leads to the finalized root
     when(forkChoiceStrategy.getAncestorNode(expectedParentNode, UInt64.ZERO))
         .thenReturn(Optional.of(ForkChoiceNode.createBase(finalizedCheckpoint.getRoot())));
 
     assertThat(
-            forkChoiceUtil.blockDescendsFromLatestFinalizedBlock(block, store, forkChoiceStrategy))
+            forkChoiceUtil.blockDescendsFromLatestFinalizedBlock(
+                block, preState, store, forkChoiceStrategy))
         .isTrue();
     verify(forkChoiceStrategy).getAncestorNode(expectedParentNode, UInt64.ZERO);
   }

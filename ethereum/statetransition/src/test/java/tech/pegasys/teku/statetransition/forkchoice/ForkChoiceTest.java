@@ -1888,6 +1888,56 @@ class ForkChoiceTest {
   }
 
   @Test
+  void onBlock_gloasShouldRejectBlockBuildingOnInvalidatedParentPayloadWhenParentNotCached() {
+    // The parent block has been evicted from the store's bounded block cache, so the variant the
+    // block builds on has to come from the pre-state: otherwise the finality checks pass through
+    // the parent's base node and the block only fails inside the store commit
+    setupWithSpec(
+        TestSpecFactory.createMinimalGloas(
+            builder -> builder.blsSignatureVerifier(BLSSignatureVerifier.NOOP)),
+        StoreConfig.builder().blockCacheSize(1).build());
+    assertThat(forkChoice.applyGenesisExecutionPayloadForGloas()).isCompleted();
+
+    final SignedBlockAndState parent = chainBuilder.generateBlockAtSlot(ONE);
+    importBlock(parent);
+    final SignedExecutionPayloadEnvelope parentPayload = importPayloadOptimistically(parent);
+    final ChainBuilder siblingChain = chainBuilder.fork();
+    final SignedBlockAndState child = chainBuilder.generateBlockAtSlot(3);
+    // importing another child of the parent evicts the parent from the single-entry block cache
+    importBlock(siblingChain.generateBlockAtSlot(2));
+    assertThat(recentChainData.getStore().getBlockIfAvailable(parent.getRoot())).isEmpty();
+
+    invalidateExecutionPayload(parent, parentPayload);
+    executionLayer.setPayloadStatus(PayloadStatus.VALID);
+    importBlockAndAssertFailure(child, FailureReason.DOES_NOT_DESCEND_FROM_LATEST_FINALIZED);
+    assertThat(recentChainData.containsBlock(child.getRoot())).isFalse();
+  }
+
+  @Test
+  void onBlock_gloasShouldImportFirstGloasBlockAfterSkippedSlotsAcrossTheFork() {
+    // The first Gloas block names the pre-fork execution head, which the fork upgrade also seeds
+    // as latest_execution_payload_bid: its pre-Gloas parent has no payload variants to require
+    setupWithSpec(TestSpecFactory.createMinimalWithGloasForkEpoch(ONE));
+    final UInt64 firstGloasSlot = spec.computeStartSlotAtEpoch(ONE);
+
+    final SignedBlockAndState preGloasParent =
+        chainBuilder.generateBlockAtSlot(firstGloasSlot.minus(2));
+    importBlock(preGloasParent);
+    final SignedBlockAndState firstGloasBlock =
+        chainBuilder.generateBlockAtSlot(firstGloasSlot.plus(1));
+
+    importBlock(firstGloasBlock);
+
+    assertThat(recentChainData.containsBlock(firstGloasBlock.getRoot())).isTrue();
+    assertThat(
+            recentChainData
+                .getForkChoiceStrategy()
+                .orElseThrow()
+                .getParentBeaconBlockNode(ForkChoiceNode.createBase(firstGloasBlock.getRoot())))
+        .contains(ForkChoiceNode.createBase(preGloasParent.getRoot()));
+  }
+
+  @Test
   void onBlock_gloasShouldRejectBlockWhoseParentPayloadIsInvalidatedWhileImporting() {
     // The parent payload can be invalidated between the on_block preconditions and the store
     // update, so the check must be repeated on the fork choice thread right before importing.

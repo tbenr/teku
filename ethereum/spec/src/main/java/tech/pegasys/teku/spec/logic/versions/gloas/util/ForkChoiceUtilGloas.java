@@ -30,6 +30,7 @@ import tech.pegasys.teku.spec.config.SpecConfigGloas;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.gloas.BeaconBlockBodyGloas;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionRequests;
 import tech.pegasys.teku.spec.datastructures.execution.versions.capella.Withdrawal;
@@ -63,6 +64,8 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
   private final BeaconStateMutatorsGloas beaconStateMutatorsGloas;
   private final WithdrawalsHelpersGloas withdrawalsHelpers;
   private final BlockProcessorGloas blockProcessor;
+  private final MiscHelpersGloas miscHelpersGloas;
+  private final UInt64 firstGloasSlot;
 
   public ForkChoiceUtilGloas(
       final SpecConfigGloas specConfig,
@@ -77,6 +80,8 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
     this.beaconStateMutatorsGloas = beaconStateMutators;
     this.withdrawalsHelpers = withdrawalsHelpers;
     this.blockProcessor = blockProcessor;
+    this.miscHelpersGloas = miscHelpers;
+    this.firstGloasSlot = miscHelpers.computeStartSlotAtEpoch(specConfig.getGloasForkEpoch());
   }
 
   @Override
@@ -210,8 +215,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
     // payload verified before the timing and finality checks. The finality check below walks from
     // FULL(parent) for such blocks, so a payload that has merely not arrived yet must be reported
     // here first, rather than being mistaken for an invalidated one.
-    if (blockSlotState != null
-        && isParentFullPayloadRequired(block, store)
+    if (getParentNode(block, blockSlotState).payloadStatus() == PAYLOAD_STATUS_FULL
         && !isRequiredParentFullPayloadAvailable(block, store)) {
       return BlockImportResult.FAILED_UNKNOWN_PARENT_EXECUTION_PAYLOAD;
     }
@@ -234,30 +238,38 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
   @Override
   public boolean blockDescendsFromLatestFinalizedBlock(
       final SignedBeaconBlock block,
+      final BeaconState blockSlotState,
       final ReadOnlyStore store,
       final ReadOnlyForkChoiceStrategy forkChoiceStrategy) {
     return blockDescendsFromLatestFinalizedBlock(
-        block.getSlot(),
-        getParentNode(store, block.getMessage().getBlock()),
-        store,
-        forkChoiceStrategy);
+        block.getSlot(), getParentNode(block, blockSlotState), store, forkChoiceStrategy);
   }
 
   /**
    * The fork choice node the block builds on, see {@code get_parent_payload_status}: FULL(parent)
-   * when its bid names the parent's payload, EMPTY(parent) otherwise. A pre-Gloas parent has no
-   * payload variants, so the walk starts from its base node as for every pre-Gloas block.
+   * when the bid names the parent's payload, EMPTY(parent) otherwise. The parent's bid is read from
+   * the pre-state, whose {@code latest_execution_payload_bid} it is, rather than from the store's
+   * bounded block cache, which may have evicted the parent block.
+   *
+   * <p>A pre-Gloas parent has no payload variants, so the walk starts from its base node. It is
+   * recognised by the pre-state's latest block header, since the fork upgrade seeds {@code
+   * latest_execution_payload_bid} with the pre-fork block hash, which the first Gloas block's bid
+   * names and which would otherwise look like FULL.
    */
-  private ForkChoiceNode getParentNode(final ReadOnlyStore store, final BeaconBlock block) {
-    return store
-        .getBlockIfAvailable(block.getParentRoot())
-        .map(parentBlock -> parentBlock.getMessage().getBlock())
-        .filter(parentBlock -> parentBlock.getBody().toVersionGloas().isPresent())
-        .map(
-            parentBlock ->
-                new ForkChoiceNode(
-                    block.getParentRoot(), getParentPayloadStatus(block, parentBlock)))
-        .orElseGet(() -> ForkChoiceNode.createBase(block.getParentRoot()));
+  private ForkChoiceNode getParentNode(
+      final SignedBeaconBlock block, final BeaconState blockSlotState) {
+    final Bytes32 parentRoot = block.getParentRoot();
+    if (blockSlotState.getLatestBlockHeader().getSlot().isLessThan(firstGloasSlot)) {
+      return ForkChoiceNode.createBase(parentRoot);
+    }
+    final ExecutionPayloadBid bid =
+        BeaconBlockBodyGloas.required(block.getMessage().getBody())
+            .getSignedExecutionPayloadBid()
+            .getMessage();
+    return miscHelpersGloas.isBidBuildingOnFullParent(
+            BeaconStateGloas.required(blockSlotState), bid)
+        ? ForkChoiceNode.createFull(parentRoot)
+        : ForkChoiceNode.createEmpty(parentRoot);
   }
 
   /**
@@ -266,13 +278,6 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
    */
   public boolean isPayloadVerified(final ReadOnlyStore store, final Bytes32 root) {
     return store.getExecutionPayloadIfAvailable(root).isPresent();
-  }
-
-  private boolean isParentFullPayloadRequired(
-      final SignedBeaconBlock block, final ReadOnlyStore store) {
-    return getParentPayloadStatusIfAvailable(store, block.getMessage().getBlock())
-        .map(PAYLOAD_STATUS_FULL::equals)
-        .orElse(false);
   }
 
   private boolean isRequiredParentFullPayloadAvailable(
@@ -628,13 +633,6 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
               }
               return getParentPayloadStatus(block, parentBlock.get());
             });
-  }
-
-  private Optional<ForkChoicePayloadStatus> getParentPayloadStatusIfAvailable(
-      final ReadOnlyStore store, final BeaconBlock block) {
-    return store
-        .getBlockIfAvailable(block.getParentRoot())
-        .map(parentBlock -> getParentPayloadStatus(block, parentBlock.getMessage().getBlock()));
   }
 
   private ForkChoicePayloadStatus getParentPayloadStatus(
