@@ -15,6 +15,7 @@ package tech.pegasys.teku.spec.logic.versions.gloas.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Duration;
@@ -44,6 +45,7 @@ import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyStore;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
+import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.gloas.BeaconStateGloas;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.gloas.BeaconStateSchemaGloas;
@@ -185,6 +187,64 @@ class ForkChoiceUtilGloasTest {
       computeBlockTimeliness_shouldMarkBlockLateForAttestationsAndPtcWhenBlockIsNotFromCurrentSlot() {
     assertThat(forkChoiceUtil.computeBlockTimeliness(gloasSlot, gloasSlot.plus(1), 0))
         .isEqualTo(new BlockTimeliness(false, false));
+  }
+
+  @Test
+  void blockDescendsFromLatestFinalizedBlock_shouldWalkFromFullParentWhenBuildingOnItsPayload() {
+    final Bytes32 parentBlockHash = dataStructureUtil.randomBytes32();
+    final BeaconBlock parentBlock = createBlockWithBlockHash(parentBlockHash);
+    final SignedBeaconBlock block =
+        dataStructureUtil.signedBlock(
+            createBlockWithParentAndParentBlockHash(parentBlock.getRoot(), parentBlockHash));
+
+    assertWalksFinalizedAncestryFrom(
+        block, parentBlock, ForkChoiceNode.createFull(parentBlock.getRoot()));
+  }
+
+  @Test
+  void
+      blockDescendsFromLatestFinalizedBlock_shouldWalkFromEmptyParentWhenNotBuildingOnItsPayload() {
+    final BeaconBlock parentBlock = createBlockWithBlockHash(dataStructureUtil.randomBytes32());
+    final SignedBeaconBlock block =
+        dataStructureUtil.signedBlock(
+            createBlockWithParentAndParentBlockHash(
+                parentBlock.getRoot(), dataStructureUtil.randomBytes32()));
+
+    assertWalksFinalizedAncestryFrom(
+        block, parentBlock, ForkChoiceNode.createEmpty(parentBlock.getRoot()));
+  }
+
+  @Test
+  void blockDescendsFromLatestFinalizedBlock_shouldWalkFromBaseParentWhenParentIsPreGloas() {
+    final BeaconBlock parentBlock = dataStructureUtil.randomBeaconBlock(gloasSlot.minusMinZero(1));
+    final SignedBeaconBlock block =
+        dataStructureUtil.signedBlock(
+            createBlockWithParentAndParentBlockHash(
+                parentBlock.getRoot(), dataStructureUtil.randomBytes32()));
+
+    assertWalksFinalizedAncestryFrom(
+        block, parentBlock, ForkChoiceNode.createBase(parentBlock.getRoot()));
+  }
+
+  private void assertWalksFinalizedAncestryFrom(
+      final SignedBeaconBlock block,
+      final BeaconBlock parentBlock,
+      final ForkChoiceNode expectedParentNode) {
+    final Checkpoint finalizedCheckpoint =
+        new Checkpoint(UInt64.ZERO, dataStructureUtil.randomBytes32());
+    final ReadOnlyStore store = mock(ReadOnlyStore.class);
+    when(store.getFinalizedCheckpoint()).thenReturn(finalizedCheckpoint);
+    when(store.getBlockIfAvailable(parentBlock.getRoot()))
+        .thenReturn(Optional.of(dataStructureUtil.signedBlock(parentBlock)));
+    final ReadOnlyForkChoiceStrategy forkChoiceStrategy = mock(ReadOnlyForkChoiceStrategy.class);
+    // Only the node the block builds on leads to the finalized root
+    when(forkChoiceStrategy.getAncestorNode(expectedParentNode, UInt64.ZERO))
+        .thenReturn(Optional.of(ForkChoiceNode.createBase(finalizedCheckpoint.getRoot())));
+
+    assertThat(
+            forkChoiceUtil.blockDescendsFromLatestFinalizedBlock(block, store, forkChoiceStrategy))
+        .isTrue();
+    verify(forkChoiceStrategy).getAncestorNode(expectedParentNode, UInt64.ZERO);
   }
 
   @Test
