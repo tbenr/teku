@@ -1914,6 +1914,38 @@ class ForkChoiceTest {
   }
 
   @Test
+  void onBlock_gloasShouldImportBlockBuildingOnEmptyParentAfterParentPayloadInvalidated() {
+    // A block that builds on EMPTY(parent) is unaffected by the invalidation of the parent's
+    // payload
+    setupWithSpec(
+        TestSpecFactory.createMinimalGloas(
+            builder -> builder.blsSignatureVerifier(BLSSignatureVerifier.NOOP)));
+    assertThat(forkChoice.applyGenesisExecutionPayloadForGloas()).isCompleted();
+    final ReadOnlyForkChoiceStrategy forkChoiceStrategy =
+        recentChainData.getForkChoiceStrategy().orElseThrow();
+
+    final SignedBlockAndState parent = chainBuilder.generateBlockAtSlot(ONE);
+    importBlock(parent);
+    final SignedExecutionPayloadEnvelope parentPayload = importPayloadOptimistically(parent);
+    final SignedBlockAndState child =
+        chainBuilder.generateBlockAtSlot(
+            UInt64.valueOf(2), BlockOptions.create().setBuildOnEmptyParent(true));
+    assertThat(getExecutionPayloadBidParentBlockHash(child))
+        .isNotEqualTo(parentPayload.getMessage().getPayload().getBlockHash());
+
+    invalidateExecutionPayload(parent, parentPayload);
+    executionLayer.setPayloadStatus(PayloadStatus.VALID);
+    importBlock(child);
+
+    assertThat(
+            forkChoiceStrategy.getParentBeaconBlockNode(ForkChoiceNode.createBase(child.getRoot())))
+        .contains(ForkChoiceNode.createEmpty(parent.getRoot()));
+    assertThat(forkChoice.processHead()).isCompleted();
+    assertThat(recentChainData.getChainHead().map(ChainHead::getForkChoiceNode))
+        .contains(ForkChoiceNode.createEmpty(child.getRoot()));
+  }
+
+  @Test
   void onBlock_gloasShouldImportFirstGloasBlockAfterSkippedSlotsAcrossTheFork() {
     // The first Gloas block names the pre-fork execution head, which the fork upgrade also seeds
     // as latest_execution_payload_bid: its pre-Gloas parent has no payload variants to require
