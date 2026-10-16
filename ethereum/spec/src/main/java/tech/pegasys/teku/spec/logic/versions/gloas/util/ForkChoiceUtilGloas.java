@@ -18,8 +18,10 @@ import static tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayload
 import static tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL;
 import static tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING;
 
+import com.google.common.base.Suppliers;
 import it.unimi.dsi.fastutil.ints.IntList;
 import java.util.Optional;
+import java.util.function.Supplier;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes32;
@@ -65,7 +67,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
   private final WithdrawalsHelpersGloas withdrawalsHelpers;
   private final BlockProcessorGloas blockProcessor;
   private final MiscHelpersGloas miscHelpersGloas;
-  private final UInt64 firstGloasSlot;
+  private final Supplier<UInt64> firstGloasSlot;
 
   public ForkChoiceUtilGloas(
       final SpecConfigGloas specConfig,
@@ -81,7 +83,11 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
     this.withdrawalsHelpers = withdrawalsHelpers;
     this.blockProcessor = blockProcessor;
     this.miscHelpersGloas = miscHelpers;
-    this.firstGloasSlot = miscHelpers.computeStartSlotAtEpoch(specConfig.getGloasForkEpoch());
+    // memoized: the fork epoch may be FAR_FUTURE_EPOCH, whose start slot overflows, and this
+    // util is only asked about a block's parent once Gloas is scheduled
+    this.firstGloasSlot =
+        Suppliers.memoize(
+            () -> miscHelpers.computeStartSlotAtEpoch(specConfig.getGloasForkEpoch()));
   }
 
   @Override
@@ -263,7 +269,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
   private ForkChoiceNode getParentNode(
       final SignedBeaconBlock block, final BeaconState blockSlotState) {
     final Bytes32 parentRoot = block.getParentRoot();
-    if (blockSlotState.getLatestBlockHeader().getSlot().isLessThan(firstGloasSlot)) {
+    if (blockSlotState.getLatestBlockHeader().getSlot().isLessThan(firstGloasSlot.get())) {
       return ForkChoiceNode.createBase(parentRoot);
     }
     final ExecutionPayloadBid bid =
