@@ -233,9 +233,10 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
     final Optional<ProtoNode> emptyNode =
         blockNodeIndex.getEmptyNode(parentRoot).flatMap(protoArray::getNode);
     if (emptyNode.isPresent()) {
-      // A child that passed the state transition names either the parent's payload or the
-      // execution head EMPTY inherited, so a child not naming the latter builds on the invalidated
-      // payload. on_block rejects such blocks (ForkChoiceUtilGloas), there is no fallback to EMPTY.
+      // Consistency check, not a reachable condition: the state transition only accepts a block
+      // whose bid names the pre-state's latest block hash, which is the hash EMPTY(parent) carries,
+      // and a block building on the invalidated payload is rejected by on_block's finality walk
+      // (ForkChoiceUtilGloas) before it gets here.
       checkState(
           !fullNodeInvalidated
               || emptyNode.get().getExecutionBlockHash().equals(childParentBlockHash),
