@@ -144,6 +144,14 @@ public interface ReadOnlyForkChoiceStrategy {
 
   boolean contains(Bytes32 blockRoot);
 
+  /**
+   * Whether fork choice currently tracks {@code node}: it has been added and neither pruned nor
+   * invalidated by the execution layer since.
+   */
+  default boolean contains(final ForkChoiceNode node) {
+    return getBlockData(node.blockRoot(), node.payloadStatus()).isPresent();
+  }
+
   Optional<Boolean> isOptimistic(Bytes32 blockRoot);
 
   boolean isFullyValidated(final Bytes32 blockRoot);

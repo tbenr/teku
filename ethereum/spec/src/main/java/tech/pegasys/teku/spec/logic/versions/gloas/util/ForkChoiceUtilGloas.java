@@ -304,7 +304,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
    * envelope, or have evicted a verified one.
    */
   public boolean isPayloadVerified(final ReadOnlyStore store, final Bytes32 root) {
-    return store.getForkChoiceStrategy().getBlockData(root, PAYLOAD_STATUS_FULL).isPresent();
+    return store.getForkChoiceStrategy().contains(ForkChoiceNode.createFull(root));
   }
 
   @Override

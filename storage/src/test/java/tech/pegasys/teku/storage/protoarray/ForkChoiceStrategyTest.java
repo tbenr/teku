@@ -1359,7 +1359,7 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
   void getAncestorNode_gloasShouldNotResolveFromAnInvalidatedFullNode() {
     // After FULL(B) is invalidated the finalized ancestry walk (see ForkChoiceUtilGloas
     // .blockDescendsFromLatestFinalizedBlock) must fail from FULL(B) but still resolve from
-    // EMPTY(B) and from the block root
+    // EMPTY(B) and from the block root, and FULL(B) is no longer contained while B still is
     final Spec gloasSpec = TestSpecFactory.createMinimalGloas();
     final ChainBuilder chainBuilder = ChainBuilder.create(gloasSpec);
     final SignedBlockAndState genesis = chainBuilder.generateGenesis();
@@ -1412,6 +1412,7 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
     final ForkChoiceStrategy strategy = ForkChoiceStrategy.initialize(gloasSpec, protoArray);
     assertThat(strategy.getAncestorNode(fullB, ZERO).map(ForkChoiceNode::blockRoot))
         .contains(genesis.getRoot());
+    assertThat(strategy.contains(fullB)).isTrue();
 
     strategy.onForkChoiceUpdatedResult(
         new SlotAndForkChoiceNode(ONE, fullB),
@@ -1419,6 +1420,8 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
         true);
 
     assertThat(strategy.getAncestorNode(fullB, ZERO)).isEmpty();
+    assertThat(strategy.contains(fullB)).isFalse();
+    assertThat(strategy.contains(ForkChoiceNode.createEmpty(blockB.getRoot()))).isTrue();
     assertThat(
             strategy
                 .getAncestorNode(ForkChoiceNode.createEmpty(blockB.getRoot()), ZERO)

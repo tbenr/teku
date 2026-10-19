@@ -395,6 +395,16 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
   }
 
   @Override
+  public boolean contains(final ForkChoiceNode node) {
+    protoArrayLock.readLock().lock();
+    try {
+      return protoArray.getNode(node).isPresent();
+    } finally {
+      protoArrayLock.readLock().unlock();
+    }
+  }
+
+  @Override
   public Optional<UInt64> blockSlot(final Bytes32 blockRoot) {
     protoArrayLock.readLock().lock();
     try {

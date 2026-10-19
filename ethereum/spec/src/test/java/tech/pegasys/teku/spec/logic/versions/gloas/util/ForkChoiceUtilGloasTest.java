@@ -344,31 +344,17 @@ class ForkChoiceUtilGloasTest {
     // The store's payload map is a bounded cache: fork choice is the authoritative signal
     final SignedBeaconBlock currentBlock = dataStructureUtil.randomSignedBeaconBlock();
     final ReadOnlyStore store = createStore();
-    when(store.getExecutionPayloadIfAvailable(currentBlock.getRoot())).thenReturn(Optional.empty());
-    when(store
-            .getForkChoiceStrategy()
-            .getBlockData(currentBlock.getRoot(), ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL))
-        .thenReturn(Optional.of(mock(ProtoNodeData.class)));
+    when(store.getForkChoiceStrategy().contains(ForkChoiceNode.createFull(currentBlock.getRoot())))
+        .thenReturn(true);
     assertThat(forkChoiceUtil.isPayloadVerified(store, currentBlock.getRoot())).isTrue();
   }
 
   @Test
-  void isPayloadVerified_shouldReturnFalse_whenOnlyTheStoreStillHoldsThePayload() {
-    // A cached envelope whose FULL node is gone was invalidated: the payload is not verified
+  void isPayloadVerified_shouldReturnFalse_whenForkChoiceDoesNotTrackTheFullNode() {
+    // Never imported, or imported and since invalidated by the execution layer: whether the
+    // store's bounded cache still holds the envelope does not matter
     final SignedBeaconBlock currentBlock = dataStructureUtil.randomSignedBeaconBlock();
     final ReadOnlyStore store = createStore();
-    when(store.getExecutionPayloadIfAvailable(currentBlock.getRoot()))
-        .thenReturn(
-            Optional.of(
-                dataStructureUtil.randomSignedExecutionPayloadEnvelopeForBlock(currentBlock)));
-    assertThat(forkChoiceUtil.isPayloadVerified(store, currentBlock.getRoot())).isFalse();
-  }
-
-  @Test
-  void isPayloadVerified_shouldReturnFalse_whenPayloadIsNotAvailable() {
-    final SignedBeaconBlock currentBlock = dataStructureUtil.randomSignedBeaconBlock();
-    final ReadOnlyStore store = createStore();
-    when(store.getExecutionPayloadIfAvailable(currentBlock.getRoot())).thenReturn(Optional.empty());
     assertThat(forkChoiceUtil.isPayloadVerified(store, currentBlock.getRoot())).isFalse();
   }
 
