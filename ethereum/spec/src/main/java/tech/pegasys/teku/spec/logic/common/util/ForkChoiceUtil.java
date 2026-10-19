@@ -742,6 +742,11 @@ public class ForkChoiceUtil {
       // Block is at same slot as its parent or the parent root doesn't match the state
       return BlockImportResult.FAILED_INVALID_ANCESTRY;
     }
+    final Optional<BlockImportResult> parentPayloadFailure =
+        checkParentPayloadVerified(block, blockSlotState, store);
+    if (parentPayloadFailure.isPresent()) {
+      return parentPayloadFailure.get();
+    }
     if (blockIsFromFuture(store, blockSlot)) {
       return BlockImportResult.FAILED_BLOCK_IS_FROM_FUTURE;
     }
@@ -751,6 +756,18 @@ public class ForkChoiceUtil {
     }
     // Successful so far
     return BlockImportResult.successful(block);
+  }
+
+  /**
+   * Spec: once the parent is known, {@code on_block} requires the parent's payload to be verified
+   * for a block that builds on it, before the timing and finality checks. Pre-Gloas a block carries
+   * its own payload, so there is nothing to check.
+   *
+   * @return the failure to report, or empty when the block may proceed to the remaining checks
+   */
+  protected Optional<BlockImportResult> checkParentPayloadVerified(
+      final SignedBeaconBlock block, final BeaconState blockSlotState, final ReadOnlyStore store) {
+    return Optional.empty();
   }
 
   private boolean blockIsFromFuture(final ReadOnlyStore store, final UInt64 blockSlot) {

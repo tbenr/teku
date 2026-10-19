@@ -227,21 +227,20 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
   }
 
   @Override
-  public BlockImportResult checkOnBlockConditions(
+  protected Optional<BlockImportResult> checkParentPayloadVerified(
       final SignedBeaconBlock block, final BeaconState blockSlotState, final ReadOnlyStore store) {
-    // Spec order: once the parent is known, a block building on the parent's payload needs that
-    // payload verified before the timing and finality checks. The finality check below walks from
-    // FULL(parent) for such blocks and rejects the block when that node is not tracked, so a
-    // payload that has merely not arrived yet must be reported here first. Fork choice remembers a
-    // payload it has imported for as long as the parent is tracked, so an imported payload that
-    // the execution layer has since invalidated, as well as a parent that is no longer tracked at
-    // all, are left to the finality check. This is deliberately not read from the store's bounded
-    // payload cache, which BlockManager does not consult either when deciding to retry the block.
+    // The finality check walks from FULL(parent) for a block building on the parent's payload and
+    // rejects the block when that node is not tracked, so a payload that has merely not arrived
+    // yet must be reported here first. Fork choice remembers a payload it has imported for as long
+    // as the parent is tracked, so an imported payload that the execution layer has since
+    // invalidated, as well as a parent that is no longer tracked at all, are left to the finality
+    // check. This is deliberately not read from the store's bounded payload cache, which
+    // BlockManager does not consult either when deciding to retry the block.
     if (getParentNode(block, blockSlotState).payloadStatus() == PAYLOAD_STATUS_FULL
         && store.getForkChoiceStrategy().isAwaitingExecutionPayload(block.getParentRoot())) {
-      return BlockImportResult.FAILED_UNKNOWN_PARENT_EXECUTION_PAYLOAD;
+      return Optional.of(BlockImportResult.FAILED_UNKNOWN_PARENT_EXECUTION_PAYLOAD);
     }
-    return super.checkOnBlockConditions(block, blockSlotState, store);
+    return Optional.empty();
   }
 
   /**

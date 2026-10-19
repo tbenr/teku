@@ -51,6 +51,7 @@ import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.gloas.BeaconStateGloas;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.gloas.BeaconStateSchemaGloas;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.gloas.MutableBeaconStateGloas;
+import tech.pegasys.teku.spec.logic.common.statetransition.results.BlockImportResult;
 import tech.pegasys.teku.spec.logic.common.util.ForkChoiceUtil.BlockTimeliness;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitionsGloas;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
@@ -271,6 +272,22 @@ class ForkChoiceUtilGloasTest {
 
     assertWalksFinalizedAncestryFrom(
         block, preState, ForkChoiceNode.createBase(block.getParentRoot()));
+  }
+
+  @Test
+  void checkOnBlockConditions_shouldCheckStateConsistencyBeforeParentPayload() {
+    // Spec order: the payload check follows the parent-known check. A pre-state that does not
+    // belong to the block's parent is invalid ancestry, also while fork choice is still awaiting
+    // that parent's payload.
+    final Bytes32 parentPayloadHash = dataStructureUtil.randomBytes32();
+    final BeaconState preState = createPreState(gloasSlot, gloasSlot, parentPayloadHash);
+    final SignedBeaconBlock block = createBlockBuildingOn(parentPayloadHash);
+    final ReadOnlyStore store = createStore();
+    when(store.getForkChoiceStrategy().isAwaitingExecutionPayload(block.getParentRoot()))
+        .thenReturn(true);
+
+    assertThat(forkChoiceUtil.checkOnBlockConditions(block, preState, store))
+        .isEqualTo(BlockImportResult.FAILED_INVALID_ANCESTRY);
   }
 
   /** A block at {@code gloasSlot} whose bid names {@code parentBlockHash}. */
