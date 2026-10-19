@@ -509,8 +509,9 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
       return false;
     }
 
-    final boolean payloadIsTimely = payloadTimeliness(blockNodeVariants.get(), true);
-    final boolean payloadDataIsAvailable = payloadDataAvailability(blockNodeVariants.get(), true);
+    final boolean payloadIsTimely = payloadTimeliness(protoArray, blockNodeVariants.get(), true);
+    final boolean payloadDataIsAvailable =
+        payloadDataAvailability(protoArray, blockNodeVariants.get(), true);
     if (payloadIsTimely && payloadDataIsAvailable) {
       return true;
     }
@@ -536,8 +537,10 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
   }
 
   private boolean payloadTimeliness(
-      final BlockNodeVariants blockNodeVariants, final boolean timely) {
-    if (!isPayloadVerified(blockNodeVariants)) {
+      final ProtoArray protoArray,
+      final BlockNodeVariants blockNodeVariants,
+      final boolean timely) {
+    if (!isPayloadVerified(protoArray, blockNodeVariants)) {
       return !timely;
     }
     return payloadTimelinessCommitteeVoteTracker.getPayloadPresentVoteCount(
@@ -546,8 +549,10 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
   }
 
   private boolean payloadDataAvailability(
-      final BlockNodeVariants blockNodeVariants, final boolean available) {
-    if (!isPayloadVerified(blockNodeVariants)) {
+      final ProtoArray protoArray,
+      final BlockNodeVariants blockNodeVariants,
+      final boolean available) {
+    if (!isPayloadVerified(protoArray, blockNodeVariants)) {
       return !available;
     }
     return payloadTimelinessCommitteeVoteTracker.getDataAvailableVoteCount(
@@ -555,8 +560,14 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
         > dataAvailabilityTimelyThreshold;
   }
 
-  private boolean isPayloadVerified(final BlockNodeVariants blockNodeVariants) {
-    return blockNodeVariants.fullNode().isPresent();
+  /**
+   * Spec {@code is_payload_verified}: the index keeps the FULL identity after the execution layer
+   * has invalidated the payload, so only a FULL node the protoarray still tracks counts, as in
+   * {@code ForkChoiceUtilGloas#isPayloadVerified}.
+   */
+  private boolean isPayloadVerified(
+      final ProtoArray protoArray, final BlockNodeVariants blockNodeVariants) {
+    return blockNodeVariants.fullNode().flatMap(protoArray::getNode).isPresent();
   }
 
   @Override
@@ -688,10 +699,10 @@ class ForkChoiceModelGloas implements ForkChoiceModel {
     if (!headIsFromPreviousSlot(head, protoArray, slot)) {
       return true;
     }
-    if (payloadDataAvailability(headNodeVariants.get(), false)) {
+    if (payloadDataAvailability(protoArray, headNodeVariants.get(), false)) {
       return false;
     }
-    if (payloadTimeliness(headNodeVariants.get(), false)) {
+    if (payloadTimeliness(protoArray, headNodeVariants.get(), false)) {
       return false;
     }
     return true;
