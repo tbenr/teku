@@ -29,6 +29,7 @@ import tech.pegasys.teku.infrastructure.exceptions.InvalidConfigurationException
 import tech.pegasys.teku.spec.networks.Eth2Network;
 import tech.pegasys.teku.storage.server.DatabaseVersion;
 import tech.pegasys.teku.storage.server.StorageConfiguration;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
 
 public class BeaconNodeDataOptionsTest extends AbstractBeaconNodeCommandTest {
   private static final Path TEST_PATH = Path.of("/tmp/teku");
@@ -270,5 +271,29 @@ public class BeaconNodeDataOptionsTest extends AbstractBeaconNodeCommandTest {
   void forceClearDb_shouldUseFallbackValue() {
     final TekuConfiguration tekuConfig = getTekuConfigurationFromArguments("--force-clear-db");
     assertThat(tekuConfig.storageConfiguration().isForceClearDb()).isEqualTo(true);
+  }
+
+  @Test
+  void stateDiffsDefaultOff() {
+    final TekuConfiguration tekuConfig = getTekuConfigurationFromArguments();
+    assertThat(tekuConfig.storageConfiguration().getStateDiffDagConfig().enabled()).isFalse();
+    assertThat(tekuConfig.beaconChain().storeConfig().isStateDiffsEnabled()).isFalse();
+  }
+
+  @Test
+  void stateDiffsFlagEnables() {
+    final TekuConfiguration tekuConfig =
+        getTekuConfigurationFromArguments("--Xdata-storage-state-diffs");
+    assertThat(tekuConfig.storageConfiguration().getStateDiffDagConfig())
+        .isEqualTo(StateDiffDagConfig.prune());
+    assertThat(tekuConfig.beaconChain().storeConfig().isStateDiffsEnabled()).isTrue();
+  }
+
+  @Test
+  void stateDiffsFlagAcceptsFalse() {
+    final TekuConfiguration tekuConfig =
+        getTekuConfigurationFromArguments("--Xdata-storage-state-diffs=false");
+    assertThat(tekuConfig.storageConfiguration().getStateDiffDagConfig().enabled()).isFalse();
+    assertThat(tekuConfig.beaconChain().storeConfig().isStateDiffsEnabled()).isFalse();
   }
 }

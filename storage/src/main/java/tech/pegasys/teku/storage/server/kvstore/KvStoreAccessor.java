@@ -36,6 +36,16 @@ public interface KvStoreAccessor extends AutoCloseable {
    */
   long size(KvStoreColumn<?, ?> column);
 
+  /**
+   * Returns the storage engine's on-disk size estimates of the given column, read from its
+   * properties without scanning it.
+   *
+   * @return the sizes, or empty when the storage engine has no per-column sizes
+   */
+  default Optional<ColumnSize> getColumnSize(final KvStoreColumn<?, ?> column) {
+    return Optional.empty();
+  }
+
   <K, V> Map<K, V> getAll(KvStoreColumn<K, V> column);
 
   /**

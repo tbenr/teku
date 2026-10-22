@@ -24,6 +24,7 @@ import tech.pegasys.teku.storage.server.StateStorageMode;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreAccessor;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreConfiguration;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreDatabase;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.kvstore.schema.SchemaCombinedSnapshotState;
 import tech.pegasys.teku.storage.server.kvstore.schema.SchemaFinalizedSnapshotStateAdapter;
 import tech.pegasys.teku.storage.server.kvstore.schema.SchemaHotAdapter;
@@ -80,7 +81,8 @@ public class RocksDbDatabaseFactory {
       final StateStorageMode stateStorageMode,
       final boolean storeNonCanonicalBlocks,
       final int maxKnownNodeCacheSize,
-      final Spec spec) {
+      final Spec spec,
+      final StateDiffDagConfig stateDiffDagConfig) {
 
     final V6SchemaCombinedTreeState schema = new V6SchemaCombinedTreeState(spec);
     final KvStoreAccessor db =
@@ -99,7 +101,8 @@ public class RocksDbDatabaseFactory {
         stateStorageMode,
         storeNonCanonicalBlocks,
         maxKnownNodeCacheSize,
-        spec);
+        spec,
+        stateDiffDagConfig);
   }
 
   public static Database createV6(
@@ -109,7 +112,8 @@ public class RocksDbDatabaseFactory {
       final StateStorageMode stateStorageMode,
       final long stateStorageFrequency,
       final boolean storeNonCanonicalBlocks,
-      final Spec spec) {
+      final Spec spec,
+      final StateDiffDagConfig stateDiffDagConfig) {
 
     final KvStoreAccessor db =
         RocksDbInstanceFactory.create(
@@ -128,6 +132,7 @@ public class RocksDbDatabaseFactory {
         stateStorageFrequency,
         storeNonCanonicalBlocks,
         spec,
+        stateDiffDagConfig,
         metricsSystem);
   }
 }

@@ -37,6 +37,7 @@ import tech.pegasys.teku.spec.datastructures.lightclient.LightClientUpdate;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.storage.server.kvstore.ColumnEntry;
+import tech.pegasys.teku.storage.server.kvstore.ColumnSize;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreAccessor;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreAccessor.KvStoreTransaction;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.HotUpdater;
@@ -98,6 +99,37 @@ public class V4HotKvStoreDao {
 
   public Optional<BeaconState> getHotState(final Bytes32 root) {
     return db.get(schema.getColumnHotStatesByRoot(), root);
+  }
+
+  public Optional<Bytes> getStateDiffNode(final Bytes32 blockRoot) {
+    return db.get(schema.getColumnStateDiffNodes(), blockRoot);
+  }
+
+  public Optional<Bytes> getStateSupernode(final Bytes32 hash) {
+    return db.get(schema.getColumnStateSupernodes(), hash);
+  }
+
+  public Optional<UInt64> getStateSupernodeRefCount(final Bytes32 hash) {
+    return db.get(schema.getColumnStateSupernodeRefCounts(), hash);
+  }
+
+  public Optional<Bytes> getStateDiffMode() {
+    return db.get(schema.getVariableStateDiffMode());
+  }
+
+  @MustBeClosed
+  public Stream<ColumnEntry<Bytes32, Bytes>> streamStateDiffNodes() {
+    return db.stream(schema.getColumnStateDiffNodes());
+  }
+
+  @MustBeClosed
+  public Stream<ColumnEntry<Bytes32, UInt64>> streamStateSupernodeRefCounts() {
+    return db.stream(schema.getColumnStateSupernodeRefCounts());
+  }
+
+  @MustBeClosed
+  public Stream<Bytes32> streamStateSupernodeHashes() {
+    return db.streamKeys(schema.getColumnStateSupernodes());
   }
 
   @MustBeClosed
@@ -256,6 +288,20 @@ public class V4HotKvStoreDao {
     return columnCounts;
   }
 
+  public Map<String, ColumnSize> getColumnSizes(final Optional<String> maybeColumnNameFilter) {
+    final Map<String, ColumnSize> columnSizes = new LinkedHashMap<>();
+    schema
+        .getColumnMap()
+        .forEach(
+            (k, v) -> {
+              if (maybeColumnNameFilter.isEmpty()
+                  || k.contains(maybeColumnNameFilter.get().toUpperCase(Locale.ROOT))) {
+                db.getColumnSize(v).ifPresent(size -> columnSizes.put(k, size));
+              }
+            });
+    return columnSizes;
+  }
+
   static class V4HotUpdater implements HotUpdater {
 
     private final KvStoreTransaction transaction;
@@ -401,6 +447,42 @@ public class V4HotKvStoreDao {
     @Override
     public void deleteHotState(final Bytes32 blockRoot) {
       transaction.delete(schema.getColumnHotStatesByRoot(), blockRoot);
+    }
+
+    @Override
+    public void putStateDiffNode(final Bytes32 blockRoot, final Bytes record) {
+      transaction.put(schema.getColumnStateDiffNodes(), blockRoot, record);
+    }
+
+    @Override
+    public void deleteStateDiffNode(final Bytes32 blockRoot) {
+      transaction.delete(schema.getColumnStateDiffNodes(), blockRoot);
+    }
+
+    @Override
+    public void putStateSupernode(final Bytes32 hash, final Bytes ssz) {
+      transaction.put(schema.getColumnStateSupernodes(), hash, ssz);
+    }
+
+    @Override
+    public void setStateSupernodeRefCount(final Bytes32 hash, final UInt64 refCount) {
+      transaction.put(schema.getColumnStateSupernodeRefCounts(), hash, refCount);
+    }
+
+    @Override
+    public void deleteStateSupernode(final Bytes32 hash) {
+      transaction.delete(schema.getColumnStateSupernodes(), hash);
+      transaction.delete(schema.getColumnStateSupernodeRefCounts(), hash);
+    }
+
+    @Override
+    public void setStateDiffMode(final Bytes marker) {
+      transaction.put(schema.getVariableStateDiffMode(), marker);
+    }
+
+    @Override
+    public void deleteLatestFinalizedState() {
+      transaction.delete(schema.getVariableLatestFinalizedState());
     }
 
     @Override
