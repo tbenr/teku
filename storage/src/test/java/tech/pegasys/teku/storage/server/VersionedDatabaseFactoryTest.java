@@ -15,6 +15,7 @@ package tech.pegasys.teku.storage.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static tech.pegasys.teku.storage.server.StateStorageMode.PRUNE;
 
 import java.io.File;
@@ -149,6 +150,24 @@ public class VersionedDatabaseFactoryTest {
   }
 
   @Test
+  public void rejectsStateDiffsOnV5() {
+    assumeTrue(DatabaseVersion.tryLoadRocksdbLibrary());
+    final DatabaseFactory dbFactory = stateDiffsFactory(DatabaseVersion.V5);
+
+    assertThatThrownBy(dbFactory::createDatabase)
+        .isInstanceOf(DatabaseStorageException.class)
+        .hasMessageContaining("State diff storage requires a V6 database");
+    assertThat(dataDir.resolve(VersionedDatabaseFactory.DB_VERSION_FILENAME)).doesNotExist();
+  }
+
+  @Test
+  public void allowsStateDiffsOnV6() throws Exception {
+    assumeTrue(DatabaseVersion.tryLoadRocksdbLibrary());
+    createAndCloseDatabase(stateDiffsFactory(DatabaseVersion.V6));
+    assertDbVersionSaved(dataDir, DatabaseVersion.V6);
+  }
+
+  @Test
   public void createDatabase_freshDbWithBlobDbEnabled_persistsEnabledMode() throws Exception {
     createAndCloseDatabase(blobDbFactory(true));
     assertBlobDbModeSaved(dataDir, true);
@@ -233,6 +252,20 @@ public class VersionedDatabaseFactoryTest {
 
   private VersionedDatabaseFactory blobDbFactory(final boolean blobDbEnabled) {
     return blobDbFactory(blobDbEnabled, DatabaseVersion.DEFAULT_VERSION);
+  }
+
+  private VersionedDatabaseFactory stateDiffsFactory(final DatabaseVersion createDbVersion) {
+    return new VersionedDatabaseFactory(
+        new StubMetricsSystem(),
+        dataDir,
+        StorageConfiguration.builder()
+            .specProvider(spec)
+            .eth1DepositContract(eth1Address)
+            .dataStorageMode(DATA_STORAGE_MODE)
+            .dataStorageCreateDbVersion(createDbVersion)
+            .stateDiffsEnabled(true)
+            .build(),
+        Optional.empty());
   }
 
   private VersionedDatabaseFactory blobDbFactory(

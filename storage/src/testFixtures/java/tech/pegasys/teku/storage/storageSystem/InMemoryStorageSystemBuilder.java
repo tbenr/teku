@@ -26,6 +26,7 @@ import tech.pegasys.teku.storage.server.DatabaseVersion;
 import tech.pegasys.teku.storage.server.StateStorageMode;
 import tech.pegasys.teku.storage.server.kvstore.InMemoryKvStoreDatabaseFactory;
 import tech.pegasys.teku.storage.server.kvstore.MockKvStoreInstance;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.kvstore.schema.Schema;
 import tech.pegasys.teku.storage.server.kvstore.schema.SchemaFinalizedSnapshotStateAdapter;
 import tech.pegasys.teku.storage.server.kvstore.schema.V6SchemaCombinedSnapshot;
@@ -40,6 +41,7 @@ public class InMemoryStorageSystemBuilder {
   private int numberOfValidators = 8;
   private long stateStorageFrequency = 1L;
   private boolean storeNonCanonicalBlocks = false;
+  private boolean stateDiffsEnabled = false;
 
   private int stateRebuildTimeoutSeconds = 120;
 
@@ -96,7 +98,8 @@ public class InMemoryStorageSystemBuilder {
         database,
         createRestartSupplier(),
         storageMode,
-        storeConfig,
+        // State diffs put the store in state diff mode too, as the command line flag does
+        stateDiffsEnabled ? storeConfig.withStateDiffsEnabled() : storeConfig,
         spec,
         ChainBuilder.create(spec, validatorKeys),
         stateRebuildTimeoutSeconds);
@@ -114,7 +117,8 @@ public class InMemoryStorageSystemBuilder {
             .storageMode(storageMode)
             .stateStorageFrequency(stateStorageFrequency)
             .storeConfig(storeConfig)
-            .numberOfValidators(numberOfValidators);
+            .numberOfValidators(numberOfValidators)
+            .stateDiffsEnabled(stateDiffsEnabled);
 
     copy.unifiedDb = unifiedDb;
     copy.hotDb = hotDb;
@@ -133,6 +137,11 @@ public class InMemoryStorageSystemBuilder {
   public InMemoryStorageSystemBuilder storeNonCanonicalBlocks(
       final boolean storeNonCanonicalBlocks) {
     this.storeNonCanonicalBlocks = storeNonCanonicalBlocks;
+    return this;
+  }
+
+  public InMemoryStorageSystemBuilder stateDiffsEnabled(final boolean stateDiffsEnabled) {
+    this.stateDiffsEnabled = stateDiffsEnabled;
     return this;
   }
 
@@ -165,8 +174,9 @@ public class InMemoryStorageSystemBuilder {
   }
 
   private StorageSystem.RestartedStorageSupplier createRestartSupplier() {
-    return (mode) -> {
+    return (mode, stateDiffs) -> {
       final InMemoryStorageSystemBuilder copy = copy().storageMode(mode);
+      stateDiffs.ifPresent(copy::stateDiffsEnabled);
       copy.reopenDatabases();
       return copy.build();
     };
@@ -178,7 +188,7 @@ public class InMemoryStorageSystemBuilder {
       hotDb = MockKvStoreInstance.createEmpty(schema.getAllColumns(), schema.getAllVariables());
     }
     return InMemoryKvStoreDatabaseFactory.createTree(
-        hotDb, storageMode, storeNonCanonicalBlocks, spec);
+        hotDb, storageMode, storeNonCanonicalBlocks, spec, stateDiffDagConfig());
   }
 
   private Database createV6Database() {
@@ -187,7 +197,16 @@ public class InMemoryStorageSystemBuilder {
       hotDb = MockKvStoreInstance.createEmpty(schema.getAllColumns(), schema.getAllVariables());
     }
     return InMemoryKvStoreDatabaseFactory.createV6(
-        hotDb, storageMode, stateStorageFrequency, storeNonCanonicalBlocks, spec);
+        hotDb,
+        storageMode,
+        stateStorageFrequency,
+        storeNonCanonicalBlocks,
+        spec,
+        stateDiffDagConfig());
+  }
+
+  private StateDiffDagConfig stateDiffDagConfig() {
+    return stateDiffsEnabled ? StateDiffDagConfig.prune() : StateDiffDagConfig.disabled();
   }
 
   // V5 only differs by the RocksDB configuration which doesn't apply to the in-memory version

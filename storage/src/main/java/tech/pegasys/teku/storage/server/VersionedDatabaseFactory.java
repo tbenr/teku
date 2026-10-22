@@ -34,6 +34,7 @@ import tech.pegasys.teku.infrastructure.version.VersionProvider;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.networks.Eth2Network;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreConfiguration;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.kvstore.schema.V6SchemaCombinedSnapshot;
 import tech.pegasys.teku.storage.server.leveldb.LevelDbDatabaseFactory;
 import tech.pegasys.teku.storage.server.metadata.V5DatabaseMetadata;
@@ -73,6 +74,7 @@ public class VersionedDatabaseFactory implements DatabaseFactory {
   private final boolean prunedSlotCompactionEnabled;
   private final SyncDataAccessor dbSettingFileSyncDataAccessor;
   private final Optional<Eth2Network> maybeNetwork;
+  private final StateDiffDagConfig stateDiffDagConfig;
 
   public VersionedDatabaseFactory(
       final MetricsSystem metricsSystem,
@@ -91,6 +93,7 @@ public class VersionedDatabaseFactory implements DatabaseFactory {
     this.storeNonCanonicalBlocks = config.isStoreNonCanonicalBlocksEnabled();
     this.rocksdbBlobDbEnabled = config.isRocksdbBlobDbEnabled();
     this.prunedSlotCompactionEnabled = config.isPrunedSlotCompactionEnabled();
+    this.stateDiffDagConfig = config.getStateDiffDagConfig();
     this.spec = config.getSpec();
 
     this.dbDirectory = this.dataDirectory.toPath().resolve(DB_PATH).toFile();
@@ -108,6 +111,7 @@ public class VersionedDatabaseFactory implements DatabaseFactory {
     LOG.info("Beacon data directory set to: {}", dataDirectory.getAbsolutePath());
     validateDataPaths();
     final DatabaseVersion dbVersion = getDatabaseVersion();
+    validateStateDiffSupport(dbVersion);
     createDirectories(dbVersion);
     saveDatabaseVersion(dbVersion);
     saveStorageMode(stateStorageMode);
@@ -189,6 +193,21 @@ public class VersionedDatabaseFactory implements DatabaseFactory {
     initDatabaseVersionMetrics(metricsSystem, dbVersion, stateStorageMode);
 
     return database;
+  }
+
+  private void validateStateDiffSupport(final DatabaseVersion dbVersion) {
+    if (!stateDiffDagConfig.enabled()) {
+      return;
+    }
+    switch (dbVersion) {
+      case V4, V5, LEVELDB1 ->
+          throw DatabaseStorageException.unrecoverable(
+              "State diff storage requires a V6 database, but the database version is "
+                  + dbVersion.getValue());
+      default -> {
+        // V6 family (single database) supports state diffs
+      }
+    }
   }
 
   private void warnLevelDbDeprecation() {
@@ -287,7 +306,8 @@ public class VersionedDatabaseFactory implements DatabaseFactory {
           stateStorageMode,
           stateStorageFrequency,
           storeNonCanonicalBlocks,
-          spec);
+          spec,
+          stateDiffDagConfig);
     } catch (final IOException e) {
       throw DatabaseStorageException.unrecoverable("Failed to read metadata", e);
     }
@@ -336,7 +356,8 @@ public class VersionedDatabaseFactory implements DatabaseFactory {
           stateStorageMode,
           stateStorageFrequency,
           storeNonCanonicalBlocks,
-          spec);
+          spec,
+          stateDiffDagConfig);
     } catch (final IOException e) {
       throw DatabaseStorageException.unrecoverable("Failed to read metadata", e);
     }
@@ -355,7 +376,8 @@ public class VersionedDatabaseFactory implements DatabaseFactory {
           stateStorageMode,
           storeNonCanonicalBlocks,
           maxKnownNodeCacheSize,
-          spec);
+          spec,
+          stateDiffDagConfig);
     } catch (final IOException e) {
       throw DatabaseStorageException.unrecoverable("Failed to read metadata", e);
     }
@@ -373,7 +395,8 @@ public class VersionedDatabaseFactory implements DatabaseFactory {
           stateStorageMode,
           storeNonCanonicalBlocks,
           maxKnownNodeCacheSize,
-          spec);
+          spec,
+          stateDiffDagConfig);
     } catch (final IOException e) {
       throw DatabaseStorageException.unrecoverable("Failed to read metadata", e);
     }

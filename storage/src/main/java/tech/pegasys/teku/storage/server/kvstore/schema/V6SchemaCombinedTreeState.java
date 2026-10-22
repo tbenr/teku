@@ -220,6 +220,7 @@ public class V6SchemaCombinedTreeState extends V6SchemaCombined implements Schem
         .put("EARLIEST_AVAILABLE_DATA_COLUMN_SLOT", getVariableEarliestAvailableDataColumnSlot())
         .put("LAST_DATA_COLUMN_SLOT_PRUNED", getVariableLastDataColumnSidecarPrunedSlot())
         .put("LAST_DATA_COLUMN_SLOT_ARCHIVED", getVariableLastDataColumnSidecarArchivedSlot())
+        .put("STATE_DIFF_MODE", getVariableStateDiffMode())
         .build();
   }
 
@@ -261,6 +262,9 @@ public class V6SchemaCombinedTreeState extends V6SchemaCombined implements Schem
             getBestLightClientUpdateSignatureBlockRootsByPeriod())
         .put("LIGHT_CLIENT_BOOTSTRAPS_BY_SLOT", getLightClientBootstrapsBySlot())
         .put("LIGHT_CLIENT_SYNC_COMMITTEES_BY_PERIOD", getLightClientSyncCommitteesByPeriod())
+        .put("STATE_DIFF_NODES", getColumnStateDiffNodes())
+        .put("STATE_SUPERNODES", getColumnStateSupernodes())
+        .put("STATE_SUPERNODE_REFCOUNTS", getColumnStateSupernodeRefCounts())
         .build();
   }
 

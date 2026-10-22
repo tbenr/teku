@@ -17,6 +17,7 @@ import tech.pegasys.teku.infrastructure.metrics.StubMetricsSystem;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.storage.server.Database;
 import tech.pegasys.teku.storage.server.StateStorageMode;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.kvstore.schema.SchemaFinalizedSnapshotStateAdapter;
 import tech.pegasys.teku.storage.server.kvstore.schema.SchemaHotAdapter;
 import tech.pegasys.teku.storage.server.kvstore.schema.V6SchemaCombinedSnapshot;
@@ -53,7 +54,8 @@ public class InMemoryKvStoreDatabaseFactory {
       final StateStorageMode storageMode,
       final long stateStorageFrequency,
       final boolean storeNonCanonicalBlocks,
-      final Spec spec) {
+      final Spec spec,
+      final StateDiffDagConfig stateDiffDagConfig) {
     final V6SchemaCombinedSnapshot combinedSchema = V6SchemaCombinedSnapshot.createV6(spec);
     return KvStoreDatabase.createWithStateSnapshots(
         db,
@@ -62,6 +64,7 @@ public class InMemoryKvStoreDatabaseFactory {
         stateStorageFrequency,
         storeNonCanonicalBlocks,
         spec,
+        stateDiffDagConfig,
         new StubMetricsSystem(),
         true);
   }
@@ -70,7 +73,8 @@ public class InMemoryKvStoreDatabaseFactory {
       final MockKvStoreInstance db,
       final StateStorageMode storageMode,
       final boolean storeNonCanonicalBlocks,
-      final Spec spec) {
+      final Spec spec,
+      final StateDiffDagConfig stateDiffDagConfig) {
     final V6SchemaCombinedTreeState schema = new V6SchemaCombinedTreeState(spec);
     return KvStoreDatabase.createWithStateTree(
         new StubMetricsSystem(),
@@ -80,6 +84,7 @@ public class InMemoryKvStoreDatabaseFactory {
         storeNonCanonicalBlocks,
         1000,
         spec,
+        stateDiffDagConfig,
         true);
   }
 }

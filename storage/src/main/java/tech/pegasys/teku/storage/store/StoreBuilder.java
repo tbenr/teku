@@ -64,6 +64,7 @@ public class StoreBuilder {
   private ForkChoiceStrategy forkChoiceStrategy = null;
   private Optional<UInt64> custodyGroupCount = Optional.empty();
   private Optional<Bytes32> fastConfirmedRoot = Optional.empty();
+  private boolean stateDiffStorageActive = false;
 
   private StoreBuilder() {}
 
@@ -118,11 +119,15 @@ public class StoreBuilder {
         .blockInformation(data.blockInformation())
         .votes(data.votes())
         .latestCanonicalBlockRoot(data.latestCanonicalBlockRoot())
-        .fastConfirmedRoot(data.fastConfirmedRoot());
+        .fastConfirmedRoot(data.fastConfirmedRoot())
+        .stateDiffStorageActive(data.stateDiffStorageActive());
   }
 
   public UpdatableStore build() {
     assertValid();
+    // A database using state diff storage keeps doing so, whether or not the configuration asks
+    final StoreConfig effectiveStoreConfig =
+        stateDiffStorageActive ? this.storeConfig.withStateDiffsEnabled() : this.storeConfig;
 
     if (forkChoiceStrategy != null) {
       return Store.create(
@@ -142,7 +147,7 @@ public class StoreBuilder {
           justifiedCheckpoint,
           bestJustifiedCheckpoint,
           votes,
-          storeConfig,
+          effectiveStoreConfig,
           forkChoiceStrategy,
           custodyGroupCount,
           fastConfirmedRoot);
@@ -166,7 +171,7 @@ public class StoreBuilder {
         blockInfoByRoot,
         latestCanonicalBlockRoot,
         votes,
-        storeConfig,
+        effectiveStoreConfig,
         custodyGroupCount,
         fastConfirmedRoot);
   }
@@ -206,6 +211,15 @@ public class StoreBuilder {
   public StoreBuilder storeConfig(final StoreConfig storeConfig) {
     checkNotNull(storeConfig);
     this.storeConfig = storeConfig;
+    return this;
+  }
+
+  /**
+   * Whether the database stores hot states as state diff DAG nodes, which puts the store in state
+   * diff mode even when its configuration does not enable it.
+   */
+  public StoreBuilder stateDiffStorageActive(final boolean stateDiffStorageActive) {
+    this.stateDiffStorageActive = stateDiffStorageActive;
     return this;
   }
 

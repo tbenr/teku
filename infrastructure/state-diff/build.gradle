@@ -1,0 +1,9 @@
+dependencies {
+	api project(':infrastructure:ssz')
+	api project(':infrastructure:unsigned')
+
+	api 'io.consensys.tuweni:tuweni-bytes'
+	api 'it.unimi.dsi:fastutil'
+
+	testImplementation testFixtures(project(':infrastructure:ssz'))
+}

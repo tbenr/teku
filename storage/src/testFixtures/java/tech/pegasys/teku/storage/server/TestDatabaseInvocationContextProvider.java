@@ -25,6 +25,13 @@ import org.junit.jupiter.api.extension.TestTemplateInvocationContextProvider;
 import tech.pegasys.teku.storage.storageSystem.SupportedDatabaseVersionArgumentsProvider;
 
 class TestDatabaseInvocationContextProvider implements TestTemplateInvocationContextProvider {
+  private static final Set<DatabaseVersion> STATE_DIFF_VERSIONS =
+      Set.of(
+          DatabaseVersion.V6,
+          DatabaseVersion.LEVELDB2,
+          DatabaseVersion.ROCKSDB_TREE,
+          DatabaseVersion.LEVELDB_TREE);
+
   @Override
   public boolean supportsTestTemplate(final ExtensionContext context) {
     return true;
@@ -37,30 +44,32 @@ class TestDatabaseInvocationContextProvider implements TestTemplateInvocationCon
         new HashSet<>(SupportedDatabaseVersionArgumentsProvider.supportedDatabaseVersions());
     final List<TestTemplateInvocationContext> configurations = new ArrayList<>();
 
-    databaseVersions.stream()
-        .map(databaseVersion -> generateContext(databaseVersion, true))
-        .forEach(configurations::add);
-
-    databaseVersions.stream()
-        .map(databaseVersion -> generateContext(databaseVersion, false))
-        .forEach(configurations::add);
+    for (final boolean inMemoryStorage : List.of(true, false)) {
+      databaseVersions.stream()
+          .map(databaseVersion -> new DatabaseContext(databaseVersion, inMemoryStorage, false))
+          .map(this::generateContext)
+          .forEach(configurations::add);
+      // State diff storage is only supported by the single-database (V6 family) versions
+      databaseVersions.stream()
+          .filter(STATE_DIFF_VERSIONS::contains)
+          .map(databaseVersion -> new DatabaseContext(databaseVersion, inMemoryStorage, true))
+          .map(this::generateContext)
+          .forEach(configurations::add);
+    }
 
     return configurations.stream();
   }
 
-  private TestTemplateInvocationContext generateContext(
-      final DatabaseVersion databaseVersion, final boolean inMemoryStorage) {
+  private TestTemplateInvocationContext generateContext(final DatabaseContext databaseContext) {
     return new TestTemplateInvocationContext() {
       @Override
       public String getDisplayName(final int invocationIndex) {
-        return databaseVersion.name() + (inMemoryStorage ? " (in-memory)" : " (file-storage)");
+        return databaseContext.toString();
       }
 
       @Override
       public List<Extension> getAdditionalExtensions() {
-        return List.of(
-            new DatabaseVersionParameterResolver<>(
-                new DatabaseContext(databaseVersion, inMemoryStorage)));
+        return List.of(new DatabaseVersionParameterResolver<>(databaseContext));
       }
     };
   }

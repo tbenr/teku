@@ -24,6 +24,7 @@ import tech.pegasys.teku.storage.server.StateStorageMode;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreAccessor;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreConfiguration;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreDatabase;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.kvstore.schema.SchemaFinalizedSnapshotStateAdapter;
 import tech.pegasys.teku.storage.server.kvstore.schema.SchemaHotAdapter;
 import tech.pegasys.teku.storage.server.kvstore.schema.V6SchemaCombinedSnapshot;
@@ -79,7 +80,8 @@ public class LevelDbDatabaseFactory {
       final StateStorageMode stateStorageMode,
       final long stateStorageFrequency,
       final boolean storeNonCanonicalBlocks,
-      final Spec spec) {
+      final Spec spec,
+      final StateDiffDagConfig stateDiffDagConfig) {
     final V6SchemaCombinedSnapshot schema = V6SchemaCombinedSnapshot.createV6(spec);
     final KvStoreAccessor db =
         LevelDbInstanceFactory.create(
@@ -98,6 +100,7 @@ public class LevelDbDatabaseFactory {
         stateStorageFrequency,
         storeNonCanonicalBlocks,
         spec,
+        stateDiffDagConfig,
         metricsSystem,
         hotConfiguration.prunedSlotCompactionEnabled());
   }
@@ -108,7 +111,8 @@ public class LevelDbDatabaseFactory {
       final StateStorageMode stateStorageMode,
       final boolean storeNonCanonicalBlocks,
       final int maxKnownNodeCacheSize,
-      final Spec spec) {
+      final Spec spec,
+      final StateDiffDagConfig stateDiffDagConfig) {
 
     final V6SchemaCombinedTreeState schema = new V6SchemaCombinedTreeState(spec);
     final KvStoreAccessor db =
@@ -128,6 +132,7 @@ public class LevelDbDatabaseFactory {
         storeNonCanonicalBlocks,
         maxKnownNodeCacheSize,
         spec,
+        stateDiffDagConfig,
         hotConfiguration.prunedSlotCompactionEnabled());
   }
 }
