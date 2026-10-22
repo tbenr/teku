@@ -39,6 +39,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
+import org.hyperledger.besu.plugin.services.metrics.Counter;
 import tech.pegasys.teku.dataproviders.generators.CachingTaskQueue;
 import tech.pegasys.teku.dataproviders.generators.StateAtSlotTask;
 import tech.pegasys.teku.dataproviders.generators.StateGenerationTask;
@@ -90,6 +91,12 @@ class Store extends CacheableStore {
 
   private final int hotStatePersistenceFrequencyInEpochs;
 
+  /**
+   * Whether hot states are persisted as state diff DAG nodes: the state of each epoch's checkpoint
+   * block, which is then also the persisted base for regeneration.
+   */
+  private final boolean stateDiffMode;
+
   private final ReadWriteLock votesLock = new ReentrantReadWriteLock();
   private final Lock readVotesLock = votesLock.readLock();
   private final ReadWriteLock lock = new ReentrantReadWriteLock();
@@ -100,6 +107,7 @@ class Store extends CacheableStore {
   private Optional<SettableGauge> executionPayloadCountGauge = Optional.empty();
   private Optional<SettableGauge> epochStatesCountGauge = Optional.empty();
   private Optional<SettableGauge> blobSidecarsBlocksCountGauge = Optional.empty();
+  private Optional<Counter> stateDiffNodesSkippedCounter = Optional.empty();
 
   private final Optional<Map<Bytes32, StateAndBlockSummary>> maybeEpochStates;
 
@@ -135,6 +143,7 @@ class Store extends CacheableStore {
       final MetricsSystem metricsSystem,
       final Spec spec,
       final int hotStatePersistenceFrequencyInEpochs,
+      final boolean stateDiffMode,
       final BlockProvider blockProvider,
       final ExecutionPayloadProvider executionPayloadProvider,
       final BlindedExecutionPayloadProvider blindedExecutionPayloadProvider,
@@ -174,6 +183,7 @@ class Store extends CacheableStore {
     // Store instance variables
     this.initialCheckpoint = initialCheckpoint;
     this.hotStatePersistenceFrequencyInEpochs = hotStatePersistenceFrequencyInEpochs;
+    this.stateDiffMode = stateDiffMode;
     this.timeMillis = secondsToMillis(time);
     this.genesisTime = genesisTime;
     this.justifiedCheckpoint = justifiedCheckpoint;
@@ -313,6 +323,7 @@ class Store extends CacheableStore {
         metricsSystem,
         spec,
         config.getHotStatePersistenceFrequencyInEpochs(),
+        config.isStateDiffsEnabled(),
         blockProvider,
         executionPayloadProvider,
         blindedExecutionPayloadProvider,
@@ -499,6 +510,15 @@ class Store extends CacheableStore {
                   TekuMetricCategory.STORAGE,
                   "memory_execution_payload_count",
                   "Number of execution payload envelopes held in the in-memory store"));
+      if (stateDiffMode) {
+        stateDiffNodesSkippedCounter =
+            Optional.of(
+                metricsSystem.createCounter(
+                    TekuMetricCategory.STORAGE,
+                    "store_state_diff_nodes_skipped_total",
+                    "Checkpoint block states not stored as state diff nodes because they were no"
+                        + " longer in memory"));
+      }
       blockStates.startMetrics();
       checkpointStates.startMetrics();
     } finally {
@@ -666,9 +686,30 @@ class Store extends CacheableStore {
     }
   }
 
+  /**
+   * The post-state of {@code blockRoot} if it is in memory. In state diff mode the epoch states
+   * cache is consulted too: it keeps the pre-epoch-transition parent states, which are the
+   * checkpoint block states persisted as state diff nodes.
+   */
   @Override
   public Optional<BeaconState> getBlockStateIfAvailable(final Bytes32 blockRoot) {
-    return blockStates.getIfAvailable(blockRoot).map(StateAndBlockSummary::getState);
+    final Optional<BeaconState> blockState =
+        blockStates.getIfAvailable(blockRoot).map(StateAndBlockSummary::getState);
+    if (blockState.isPresent() || !stateDiffMode) {
+      return blockState;
+    }
+    return maybeEpochStates
+        .flatMap(epochStates -> Optional.ofNullable(epochStates.get(blockRoot)))
+        .map(StateAndBlockSummary::getState);
+  }
+
+  boolean isStateDiffMode() {
+    return stateDiffMode;
+  }
+
+  /** Counts a checkpoint block state that could not be stored as a state diff node. */
+  void onStateDiffNodeSkipped() {
+    stateDiffNodesSkippedCounter.ifPresent(Counter::inc);
   }
 
   @Override
@@ -1103,7 +1144,9 @@ class Store extends CacheableStore {
     }
 
     // Create a hash tree from the finalized root to the target state
-    // Capture the latest epoch boundary root along the way
+    // Capture the latest epoch boundary root along the way: the first block of the epoch, or in
+    // state diff mode the nearest checkpoint block, whose state is the persisted one: a block on
+    // an epoch start slot, or the parent of the first block of an epoch
     final HashTree.Builder treeBuilder = HashTree.builder();
     final AtomicReference<SlotAndBlockRoot> latestEpochBoundary = new AtomicReference<>();
     readLock.lock();
@@ -1112,8 +1155,21 @@ class Store extends CacheableStore {
           blockRoot,
           (root, slot, parent) -> {
             treeBuilder.childAndParentRoots(root, parent);
-            if (shouldPersistState(slot, parent)) {
-              latestEpochBoundary.compareAndExchange(null, new SlotAndBlockRoot(slot, root));
+            if (latestEpochBoundary.get() != null) {
+              return;
+            }
+            if (!stateDiffMode) {
+              if (shouldPersistState(slot, parent)) {
+                latestEpochBoundary.set(new SlotAndBlockRoot(slot, root));
+              }
+            } else if (spec.computeStartSlotAtEpoch(spec.computeEpochAtSlot(slot)).equals(slot)) {
+              latestEpochBoundary.set(new SlotAndBlockRoot(slot, root));
+            } else if (shouldPersistState(slot, parent)) {
+              forkChoiceStrategy
+                  .blockSlot(parent)
+                  .ifPresent(
+                      parentSlot ->
+                          latestEpochBoundary.set(new SlotAndBlockRoot(parentSlot, parent)));
             }
           });
       treeBuilder.rootHash(finalizedAnchor.getRoot());

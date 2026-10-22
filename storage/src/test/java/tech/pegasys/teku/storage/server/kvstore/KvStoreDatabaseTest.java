@@ -16,6 +16,7 @@ package tech.pegasys.teku.storage.server.kvstore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -27,6 +28,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.google.errorprone.annotations.MustBeClosed;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -65,12 +67,17 @@ import tech.pegasys.teku.spec.util.DataStructureUtil;
 import tech.pegasys.teku.storage.api.FinalizedChainData;
 import tech.pegasys.teku.storage.api.StorageUpdate;
 import tech.pegasys.teku.storage.server.Database;
+import tech.pegasys.teku.storage.server.DatabaseStorageException;
 import tech.pegasys.teku.storage.server.StateStorageMode;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreAccessor.KvStoreTransaction;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreDatabase.DataColumnSidecarType;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.CombinedKvStoreDao;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.FinalizedUpdater;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.HotUpdater;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.V4FinalizedStateSnapshotStorageLogic;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationException;
 import tech.pegasys.teku.storage.server.kvstore.schema.KvStoreColumn;
 import tech.pegasys.teku.storage.server.kvstore.schema.V6SchemaCombinedSnapshot;
 import tech.pegasys.teku.storage.server.kvstore.serialization.KvStoreDeserializationException;
@@ -315,7 +322,13 @@ class KvStoreDatabaseTest {
       new DataStructureUtil(gloasScheduledSpec);
   private final KvStoreCombinedDao gloasDao = mock(KvStoreCombinedDao.class);
   private final KvStoreDatabase gloasDatabase =
-      new KvStoreDatabase(gloasDao, StateStorageMode.PRUNE, false, gloasScheduledSpec);
+      new KvStoreDatabase(
+          gloasDao,
+          StateStorageMode.PRUNE,
+          false,
+          gloasScheduledSpec,
+          StateDiffDagConfig.disabled(),
+          new StubMetricsSystem());
 
   @Test
   void findOrphanedExecutionPayloadRoots_shouldNotReadBlocksWhenFinalizedEpochIsBeforeGloas() {
@@ -368,7 +381,13 @@ class KvStoreDatabaseTest {
     when(dao.getHotBlock(any()))
         .thenAnswer(invocation -> chainBuilder.getBlock(invocation.getArgument(0)));
     final KvStoreDatabase database =
-        new KvStoreDatabase(dao, StateStorageMode.PRUNE, false, gloasSpec);
+        new KvStoreDatabase(
+            dao,
+            StateStorageMode.PRUNE,
+            false,
+            gloasSpec,
+            StateDiffDagConfig.disabled(),
+            new StubMetricsSystem());
     final Map<Bytes32, Bytes32> finalizedChildToParent = new HashMap<>();
     chainBuilder
         .streamBlocksAndStates(1, 4)
@@ -428,7 +447,13 @@ class KvStoreDatabaseTest {
     final FinalizedUpdater finalizedUpdater = mock(FinalizedUpdater.class);
     final HotUpdater hotUpdater = mock(HotUpdater.class);
     final KvStoreDatabase database =
-        new KvStoreDatabase(dao, storageMode, false, gloasSpec) {
+        new KvStoreDatabase(
+            dao,
+            storageMode,
+            false,
+            gloasSpec,
+            StateDiffDagConfig.disabled(),
+            new StubMetricsSystem()) {
           @Override
           protected FinalizedUpdater finalizedUpdater() {
             return finalizedUpdater;
@@ -456,6 +481,7 @@ class KvStoreDatabaseTest {
             Optional.of(finalizedChainData),
             Optional.empty(),
             Optional.empty(),
+            Map.of(),
             Map.of(),
             Map.of(),
             Map.of(parent.getRoot(), parentEnvelope, child.getRoot(), childEnvelope),
@@ -682,7 +708,14 @@ class KvStoreDatabaseTest {
         MockKvStoreInstance.createEmpty(schema.getAllColumns(), schema.getAllVariables());
     final Database database =
         KvStoreDatabase.createWithStateSnapshots(
-            db, schema, StateStorageMode.PRUNE, 1, false, spec, new StubMetricsSystem());
+            db,
+            schema,
+            StateStorageMode.PRUNE,
+            1,
+            false,
+            spec,
+            StateDiffDagConfig.disabled(),
+            new StubMetricsSystem());
     final LightClientUpdate update0 = dataStructureUtil.randomLightClientUpdate(UInt64.ZERO);
     final LightClientUpdate update2 = dataStructureUtil.randomLightClientUpdate(UInt64.valueOf(2));
     database.storeBestLightClientUpdate(UInt64.ZERO, update0, Bytes32.ZERO);
@@ -706,6 +739,105 @@ class KvStoreDatabaseTest {
     }
   }
 
+  @Test
+  void stateDiffs_bootstrapOfLegacyDatabaseIsOneTransaction() {
+    final Spec spec = TestSpecFactory.createMinimalAltair();
+    final V6SchemaCombinedSnapshot schema = V6SchemaCombinedSnapshot.createV6(spec);
+    final MockKvStoreInstance db =
+        MockKvStoreInstance.createEmpty(schema.getAllColumns(), schema.getAllVariables());
+    final AnchorPoint genesis =
+        AnchorPoint.fromGenesisState(spec, ChainBuilder.create(spec).generateGenesis().getState());
+    KvStoreDatabase.createWithStateSnapshots(
+            db,
+            schema,
+            StateStorageMode.PRUNE,
+            1,
+            false,
+            spec,
+            StateDiffDagConfig.disabled(),
+            new StubMetricsSystem())
+        .storeInitialAnchor(genesis);
+
+    final KvStoreCombinedDao dao =
+        new CombinedKvStoreDao<>(
+            db, schema, new V4FinalizedStateSnapshotStorageLogic<>(1), new StubMetricsSystem());
+    // The last write of the bootstrap transaction fails
+    final KvStoreDatabase database =
+        new KvStoreDatabase(
+            dao,
+            StateStorageMode.PRUNE,
+            false,
+            spec,
+            StateDiffDagConfig.prune(),
+            new StubMetricsSystem()) {
+          @Override
+          @MustBeClosed
+          @SuppressWarnings("MustBeClosedChecker") // closing the mock closes the delegate
+          protected HotUpdater hotUpdater() {
+            final HotUpdater updater = mock(HotUpdater.class, delegatesTo(super.hotUpdater()));
+            doThrow(new IllegalStateException("Write failed"))
+                .when(updater)
+                .deleteLatestFinalizedState();
+            return updater;
+          }
+        };
+
+    assertThatThrownBy(database::createMemoryStore).hasMessage("Write failed");
+
+    assertThat(database.isStateDiffStorageActive()).isFalse();
+    assertThat(dao.getStateDiffMode()).isEmpty();
+    assertThat(dao.getStateDiffNode(genesis.getRoot())).isEmpty();
+    assertThat(dao.getLatestFinalizedState()).contains(genesis.getState());
+  }
+
+  @Test
+  void stateDiffs_corruptAnchorFailsStartupWithActionableError() {
+    final Spec spec = TestSpecFactory.createMinimalAltair();
+    final V6SchemaCombinedSnapshot schema = V6SchemaCombinedSnapshot.createV6(spec);
+    final MockKvStoreInstance db =
+        MockKvStoreInstance.createEmpty(schema.getAllColumns(), schema.getAllVariables());
+    final AnchorPoint genesis =
+        AnchorPoint.fromGenesisState(spec, ChainBuilder.create(spec).generateGenesis().getState());
+    KvStoreDatabase.createWithStateSnapshots(
+            db,
+            schema,
+            StateStorageMode.PRUNE,
+            1,
+            false,
+            spec,
+            StateDiffDagConfig.prune(),
+            new StubMetricsSystem())
+        .storeInitialAnchor(genesis);
+    final KvStoreCombinedDao dao =
+        new CombinedKvStoreDao<>(
+            db, schema, new V4FinalizedStateSnapshotStorageLogic<>(1), new StubMetricsSystem());
+    assertThat(dao.getStateDiffNode(genesis.getRoot())).isPresent();
+    try (final HotUpdater updater = dao.hotUpdater()) {
+      updater.putStateDiffNode(genesis.getRoot(), Bytes.of(1, 2, 3));
+      updater.commit();
+    }
+
+    final Database restarted =
+        KvStoreDatabase.createWithStateSnapshots(
+            db,
+            schema,
+            StateStorageMode.PRUNE,
+            1,
+            false,
+            spec,
+            StateDiffDagConfig.prune(),
+            new StubMetricsSystem());
+
+    assertThatThrownBy(restarted::createMemoryStore)
+        .isInstanceOfSatisfying(
+            DatabaseStorageException.class, e -> assertThat(e.isUnrecoverable()).isTrue())
+        .hasMessageContaining("State diff storage cannot reconstruct the finalized state")
+        .hasMessageContaining(genesis.getRoot().toHexString())
+        .hasMessageContaining("teku debug-tools db verify-state-diffs")
+        .hasMessageContaining("re-syncing from a checkpoint")
+        .hasCauseInstanceOf(StateDiffVerificationException.class);
+  }
+
   private KvStoreDatabase database(final UInt64 firstFuluSlot, final long... slots) {
     for (final long slot : slots) {
       populatedSlots.add(UInt64.valueOf(slot));
@@ -721,7 +853,13 @@ class KvStoreDatabaseTest {
     when(dao.streamNonCanonicalDataColumnIdentifiers(any(), any()))
         .thenAnswer(
             invocation -> streamPopulated(invocation.getArgument(0), invocation.getArgument(1)));
-    return new KvStoreDatabase(dao, StateStorageMode.PRUNE, false, spec) {
+    return new KvStoreDatabase(
+        dao,
+        StateStorageMode.PRUNE,
+        false,
+        spec,
+        StateDiffDagConfig.disabled(),
+        new StubMetricsSystem()) {
 
       @Override
       protected FinalizedUpdater finalizedUpdater() {

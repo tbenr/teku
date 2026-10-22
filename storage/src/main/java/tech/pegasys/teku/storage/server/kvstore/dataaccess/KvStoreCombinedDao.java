@@ -41,6 +41,7 @@ import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.util.DataColumnSlotAndIdentifier;
 import tech.pegasys.teku.spec.datastructures.util.SlotAndBlockRootAndBlobIndex;
 import tech.pegasys.teku.storage.server.kvstore.ColumnEntry;
+import tech.pegasys.teku.storage.server.kvstore.ColumnSize;
 
 public interface KvStoreCombinedDao extends AutoCloseable {
 
@@ -113,6 +114,30 @@ public interface KvStoreCombinedDao extends AutoCloseable {
 
   Optional<BeaconState> getHotState(Bytes32 root);
 
+  /** The encoded state diff DAG node record stored for {@code blockRoot}. */
+  Optional<Bytes> getStateDiffNode(Bytes32 blockRoot);
+
+  /** The supernode SSZ stored for {@code hash}. */
+  Optional<Bytes> getStateSupernode(Bytes32 hash);
+
+  /** The number of state diff DAG nodes referencing the supernode {@code hash}. */
+  Optional<UInt64> getStateSupernodeRefCount(Bytes32 hash);
+
+  /** The marker recording that hot states are stored in the state diff DAG. */
+  Optional<Bytes> getStateDiffMode();
+
+  /** All encoded state diff DAG node records, by block root. */
+  @MustBeClosed
+  Stream<ColumnEntry<Bytes32, Bytes>> streamStateDiffNodes();
+
+  /** All supernode reference counts, by supernode hash. */
+  @MustBeClosed
+  Stream<ColumnEntry<Bytes32, UInt64>> streamStateSupernodeRefCounts();
+
+  /** The hashes of all stored supernodes. */
+  @MustBeClosed
+  Stream<Bytes32> streamStateSupernodeHashes();
+
   Optional<SignedBlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelope(Bytes32 root);
 
   List<Bytes32> getStateRootsBeforeSlot(UInt64 slot);
@@ -165,6 +190,12 @@ public interface KvStoreCombinedDao extends AutoCloseable {
   Optional<UInt64> getEarliestBlobSidecarSlot();
 
   Map<String, Long> getColumnCounts(final Optional<String> maybeColumnFilter);
+
+  /**
+   * Returns the on-disk size estimates of all (or filtered) columns, read from storage engine
+   * properties without scanning. Empty when the storage engine has no per-column sizes.
+   */
+  Map<String, ColumnSize> getColumnSizes(final Optional<String> maybeColumnFilter);
 
   Map<String, Optional<String>> getVariables();
 
@@ -280,6 +311,21 @@ public interface KvStoreCombinedDao extends AutoCloseable {
     void pruneHotStateRoots(List<Bytes32> stateRoots);
 
     void deleteHotState(Bytes32 blockRoot);
+
+    void putStateDiffNode(Bytes32 blockRoot, Bytes record);
+
+    void deleteStateDiffNode(Bytes32 blockRoot);
+
+    void putStateSupernode(Bytes32 hash, Bytes ssz);
+
+    void setStateSupernodeRefCount(Bytes32 hash, UInt64 refCount);
+
+    /** Deletes both the supernode SSZ and its reference count. */
+    void deleteStateSupernode(Bytes32 hash);
+
+    void setStateDiffMode(Bytes marker);
+
+    void deleteLatestFinalizedState();
 
     void setFinalizedDepositSnapshot(DepositTreeSnapshot finalizedDepositSnapshot);
 
