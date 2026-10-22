@@ -88,6 +88,18 @@ public class SchemaHotAdapter implements Schema {
     return delegate.getLightClientSyncCommitteesByPeriod();
   }
 
+  public KvStoreColumn<Bytes32, Bytes> getColumnStateDiffNodes() {
+    return delegate.getColumnStateDiffNodes();
+  }
+
+  public KvStoreColumn<Bytes32, Bytes> getColumnStateSupernodes() {
+    return delegate.getColumnStateSupernodes();
+  }
+
+  public KvStoreColumn<Bytes32, UInt64> getColumnStateSupernodeRefCounts() {
+    return delegate.getColumnStateSupernodeRefCounts();
+  }
+
   public KvStoreVariable<UInt64> getVariableGenesisTime() {
     return delegate.getVariableGenesisTime();
   }
@@ -132,6 +144,10 @@ public class SchemaHotAdapter implements Schema {
     return delegate.getVariableFinalizedDepositSnapshot();
   }
 
+  public KvStoreVariable<Bytes> getVariableStateDiffMode() {
+    return delegate.getVariableStateDiffMode();
+  }
+
   public Map<String, KvStoreColumn<?, ?>> getColumnMap() {
     return ImmutableMap.<String, KvStoreColumn<?, ?>>builder()
         .put("HOT_BLOCKS_BY_ROOT", getColumnHotBlocksByRoot())
@@ -150,6 +166,9 @@ public class SchemaHotAdapter implements Schema {
             getLightClientUpdateSignatureBlockRootsByPeriod())
         .put("LIGHT_CLIENT_BOOTSTRAPS_BY_SLOT", getLightClientBootstrapsBySlot())
         .put("LIGHT_CLIENT_SYNC_COMMITTEES_BY_PERIOD", getLightClientSyncCommitteesByPeriod())
+        .put("STATE_DIFF_NODES", getColumnStateDiffNodes())
+        .put("STATE_SUPERNODES", getColumnStateSupernodes())
+        .put("STATE_SUPERNODE_REFCOUNTS", getColumnStateSupernodeRefCounts())
         .build();
   }
 
@@ -166,6 +185,7 @@ public class SchemaHotAdapter implements Schema {
         .put("FINALIZED_DEPOSIT_SNAPSHOT", getVariableFinalizedDepositSnapshot())
         .put("LATEST_CANONICAL_BLOCK_ROOT", getVariableLatestCanonicalBlockRoot())
         .put("CUSTODY_GROUP_COUNT", getVariableCustodyGroupCount())
+        .put("STATE_DIFF_MODE", getVariableStateDiffMode())
         .build();
   }
 

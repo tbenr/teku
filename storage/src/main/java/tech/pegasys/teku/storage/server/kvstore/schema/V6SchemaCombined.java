@@ -72,6 +72,16 @@ public abstract class V6SchemaCombined implements SchemaCombined {
       KvStoreColumn.create(10, UINT64_SERIALIZER, BYTES_SERIALIZER);
   private static final KvStoreColumn<UInt64, Bytes> LIGHT_CLIENT_SYNC_COMMITTEES_BY_PERIOD =
       KvStoreColumn.create(11, UINT64_SERIALIZER, BYTES_SERIALIZER);
+  // Large opaque values, kept in RocksDB blob files when the blob DB is enabled.
+  // Not 10 or 11: the light client bootstrap and sync committee columns. Not 12: with the V4
+  // finalized offset of 0 the hot blob sidecar column is finalizedOffset + 12.
+  private static final KvStoreColumn<Bytes32, Bytes> STATE_DIFF_NODES =
+      KvStoreColumn.create(14, BYTES32_SERIALIZER, BYTES_SERIALIZER, true);
+  private static final KvStoreColumn<Bytes32, Bytes> STATE_SUPERNODES =
+      KvStoreColumn.create(15, BYTES32_SERIALIZER, BYTES_SERIALIZER, true);
+  // Small values rewritten on every reference change, kept apart from the immutable supernodes.
+  private static final KvStoreColumn<Bytes32, UInt64> STATE_SUPERNODE_REFCOUNTS =
+      KvStoreColumn.create(13, BYTES32_SERIALIZER, UINT64_SERIALIZER, false);
 
   // Variables
   private static final KvStoreVariable<UInt64> GENESIS_TIME =
@@ -96,6 +106,8 @@ public abstract class V6SchemaCombined implements SchemaCombined {
       KvStoreVariable.create(11, BYTES32_SERIALIZER);
   private static final KvStoreVariable<UInt64> CUSTODY_GROUP_COUNT =
       KvStoreVariable.create(12, UINT64_SERIALIZER);
+  private static final KvStoreVariable<Bytes> STATE_DIFF_MODE =
+      KvStoreVariable.create(13, BYTES_SERIALIZER);
 
   private final KvStoreVariable<UInt64> optimisticTransitionBlockSlot;
   private final KvStoreVariable<UInt64> earliestBlobSidecarSlot;
@@ -191,6 +203,21 @@ public abstract class V6SchemaCombined implements SchemaCombined {
   }
 
   @Override
+  public KvStoreColumn<Bytes32, Bytes> getColumnStateDiffNodes() {
+    return STATE_DIFF_NODES;
+  }
+
+  @Override
+  public KvStoreColumn<Bytes32, Bytes> getColumnStateSupernodes() {
+    return STATE_SUPERNODES;
+  }
+
+  @Override
+  public KvStoreColumn<Bytes32, UInt64> getColumnStateSupernodeRefCounts() {
+    return STATE_SUPERNODE_REFCOUNTS;
+  }
+
+  @Override
   public KvStoreColumn<Bytes32, BeaconState> getColumnHotStatesByRoot() {
     return hotStatesByRoot;
   }
@@ -281,6 +308,11 @@ public abstract class V6SchemaCombined implements SchemaCombined {
   }
 
   @Override
+  public KvStoreVariable<Bytes> getVariableStateDiffMode() {
+    return STATE_DIFF_MODE;
+  }
+
+  @Override
   public Map<String, KvStoreColumn<?, ?>> getColumnMap() {
     return ImmutableMap.<String, KvStoreColumn<?, ?>>builder()
         .put("HOT_BLOCKS_BY_ROOT", getColumnHotBlocksByRoot())
@@ -307,6 +339,9 @@ public abstract class V6SchemaCombined implements SchemaCombined {
             getBestLightClientUpdateSignatureBlockRootsByPeriod())
         .put("LIGHT_CLIENT_BOOTSTRAPS_BY_SLOT", getLightClientBootstrapsBySlot())
         .put("LIGHT_CLIENT_SYNC_COMMITTEES_BY_PERIOD", getLightClientSyncCommitteesByPeriod())
+        .put("STATE_DIFF_NODES", getColumnStateDiffNodes())
+        .put("STATE_SUPERNODES", getColumnStateSupernodes())
+        .put("STATE_SUPERNODE_REFCOUNTS", getColumnStateSupernodeRefCounts())
         .build();
   }
 
@@ -330,6 +365,7 @@ public abstract class V6SchemaCombined implements SchemaCombined {
         .put("FIRST_CUSTODY_INCOMPLETE_SLOT", getVariableFirstCustodyIncompleteSlot())
         .put("EARLIEST_AVAILABLE_DATA_COLUMN_SLOT", getVariableEarliestAvailableDataColumnSlot())
         .put("LAST_DATA_COLUMN_SLOT_PRUNED", getVariableLastDataColumnSidecarPrunedSlot())
+        .put("STATE_DIFF_MODE", getVariableStateDiffMode())
         .build();
   }
 

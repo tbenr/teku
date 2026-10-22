@@ -18,6 +18,8 @@ import static java.util.stream.Collectors.toMap;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.Mockito.mock;
 import static tech.pegasys.teku.infrastructure.async.SafeFutureAssert.assertThatSafeFuture;
 import static tech.pegasys.teku.infrastructure.async.SafeFutureAssert.safeJoin;
@@ -47,9 +49,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.metrics.noop.NoOpMetricsSystem;
 import org.junit.jupiter.api.AfterEach;
@@ -99,6 +103,7 @@ import tech.pegasys.teku.spec.generator.ChainProperties;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 import tech.pegasys.teku.storage.api.FinalizedChainData;
 import tech.pegasys.teku.storage.api.GloasForkChoiceRebuildData;
+import tech.pegasys.teku.storage.api.HotStateNodeInfo;
 import tech.pegasys.teku.storage.api.OnDiskStoreData;
 import tech.pegasys.teku.storage.api.StorageUpdate;
 import tech.pegasys.teku.storage.api.StoredBlockMetadata;
@@ -109,11 +114,17 @@ import tech.pegasys.teku.storage.client.ChainUpdater;
 import tech.pegasys.teku.storage.client.RecentChainData;
 import tech.pegasys.teku.storage.server.Database;
 import tech.pegasys.teku.storage.server.DatabaseContext;
+import tech.pegasys.teku.storage.server.DatabaseVersion;
 import tech.pegasys.teku.storage.server.ShuttingDownException;
 import tech.pegasys.teku.storage.server.StateStorageMode;
 import tech.pegasys.teku.storage.server.TestDatabaseContext;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.FinalizedUpdater;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.HotUpdater;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagInvariants;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffNodeRecord;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffNodeRecordCodec;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationReport;
 import tech.pegasys.teku.storage.storageSystem.StorageSystem;
 import tech.pegasys.teku.storage.store.StoreAssertions;
 import tech.pegasys.teku.storage.store.StoreBuilder;
@@ -268,6 +279,7 @@ public class DatabaseTest {
             Map.of(),
             Map.of(),
             Map.of(),
+            Map.of(),
             Optional.of(block1Sidecar0.getSlot()),
             Map.of(),
             Map.of(),
@@ -284,6 +296,7 @@ public class DatabaseTest {
             Optional.empty(),
             Optional.empty(),
             Optional.empty(),
+            Map.of(),
             Map.of(),
             Map.of(),
             Map.of(),
@@ -438,6 +451,7 @@ public class DatabaseTest {
             Map.of(),
             Map.of(),
             Map.of(),
+            Map.of(),
             Optional.empty(),
             Map.of(block1Sidecar0.getBlockRoot(), block1Sidecar0.getSlot()),
             Map.of(),
@@ -454,6 +468,7 @@ public class DatabaseTest {
             Optional.empty(),
             Optional.empty(),
             Optional.empty(),
+            Map.of(),
             Map.of(),
             Map.of(),
             Map.of(),
@@ -634,6 +649,7 @@ public class DatabaseTest {
             Optional.empty(),
             Map.of(),
             Map.of(),
+            Map.of(),
             Map.of(blockAndState.getRoot(), signedBlindedExecutionPayloadEnvelope),
             Map.of(),
             Optional.empty(),
@@ -741,6 +757,7 @@ public class DatabaseTest {
             Optional.empty(),
             Map.of(),
             Map.of(),
+            Map.of(),
             Map.of(blockAndState.getRoot(), signedBlindedExecutionPayloadEnvelope),
             Map.of(),
             Optional.empty(),
@@ -761,6 +778,7 @@ public class DatabaseTest {
             Optional.of(finalizedChainData),
             Optional.empty(),
             Optional.empty(),
+            Map.of(),
             Map.of(),
             Map.of(),
             Map.of(),
@@ -966,6 +984,7 @@ public class DatabaseTest {
         Optional.empty(),
         Map.of(),
         Map.of(),
+        Map.of(),
         blindedExecutionPayloads,
         Map.of(),
         Optional.empty(),
@@ -1022,6 +1041,7 @@ public class DatabaseTest {
             Map.of(),
             Map.of(),
             Map.of(),
+            Map.of(),
             Optional.empty(),
             Map.of(),
             Map.of(),
@@ -1054,6 +1074,7 @@ public class DatabaseTest {
             Optional.empty(),
             Map.of(),
             Map.of(),
+            Map.of(),
             Map.of(blockAndState.getRoot(), signedBlindedExecutionPayloadEnvelope),
             Map.of(),
             Optional.empty(),
@@ -1078,6 +1099,7 @@ public class DatabaseTest {
             Optional.empty(),
             Optional.empty(),
             Optional.empty(),
+            Map.of(),
             Map.of(),
             Map.of(),
             Map.of(),
@@ -1123,6 +1145,7 @@ public class DatabaseTest {
             Optional.empty(),
             Optional.empty(),
             Optional.empty(),
+            Map.of(),
             Map.of(),
             Map.of(),
             Map.of(blockRoot, envelope),
@@ -2387,6 +2410,8 @@ public class DatabaseTest {
 
   @TestTemplate
   public void shouldPersistHotStates_everyEpoch(final DatabaseContext context) throws Exception {
+    // Tests the hot state persistence of the legacy hot state column
+    assumeFalse(context.isStateDiffsEnabled());
     final int storageFrequency = 1;
     final UInt64 latestEpoch = UInt64.valueOf(3);
     final UInt64 targetSlot = spec.computeStartSlotAtEpoch(latestEpoch);
@@ -2408,6 +2433,8 @@ public class DatabaseTest {
 
   @TestTemplate
   public void shouldPersistHotStates_never(final DatabaseContext context) throws Exception {
+    // Tests the hot state persistence of the legacy hot state column
+    assumeFalse(context.isStateDiffsEnabled());
     final int storageFrequency = 0;
     final UInt64 latestEpoch = UInt64.valueOf(3);
     final UInt64 targetSlot = spec.computeStartSlotAtEpoch(latestEpoch);
@@ -2438,6 +2465,8 @@ public class DatabaseTest {
   @TestTemplate
   public void shouldPersistHotStates_everyThirdEpoch(final DatabaseContext context)
       throws IOException {
+    // Tests the hot state persistence of the legacy hot state column
+    assumeFalse(context.isStateDiffsEnabled());
     final int storageFrequency = 3;
     final UInt64 latestEpoch = UInt64.valueOf(3 * storageFrequency);
     final UInt64 targetSlot = spec.computeStartSlotAtEpoch(latestEpoch);
@@ -2462,6 +2491,8 @@ public class DatabaseTest {
 
   @TestTemplate
   public void shouldClearStaleHotStates(final DatabaseContext context) throws IOException {
+    // Tests the hot state persistence of the legacy hot state column
+    assumeFalse(context.isStateDiffsEnabled());
     final int storageFrequency = 1;
     final UInt64 latestEpoch = UInt64.valueOf(3);
     final UInt64 targetSlot = spec.computeStartSlotAtEpoch(latestEpoch);
@@ -3877,7 +3908,14 @@ public class DatabaseTest {
 
       // Check hot data was pruned from db
       assertThat(database.getHotBlocks(Set.of(prunedBlock))).isEmpty();
-      assertThat(database.getHotState(prunedBlock)).isEmpty();
+      if (database.isStateDiffStorageActive()) {
+        // Nodes of finalized blocks may remain as bases of the finalized state, fork nodes may not
+        if (dao().getFinalizedBlock(prunedBlock).isEmpty()) {
+          assertThat(dao().getStateDiffNode(prunedBlock)).isEmpty();
+        }
+      } else {
+        assertThat(database.getHotState(prunedBlock)).isEmpty();
+      }
       index++;
     }
   }
@@ -4129,6 +4167,635 @@ public class DatabaseTest {
     assertThat(database.getLightClientBootstrap(UInt64.valueOf(8))).isEmpty();
     assertThat(database.getLightClientBootstrap(UInt64.valueOf(70))).isEmpty();
     assertThat(database.getLightClientBootstrap(UInt64.valueOf(140))).contains(periodTwo);
+  }
+
+  @TestTemplate
+  public void stateDiffs_activatesOnExistingDatabaseAndStopsWritingLatestFinalizedState(
+      final DatabaseContext context) throws IOException {
+    assumeTrue(context.isStateDiffsEnabled());
+    // Build a legacy database first
+    final DatabaseContext legacyContext =
+        new DatabaseContext(context.getDatabaseVersion(), context.isInMemoryStorage(), false);
+    initialize(legacyContext, StateStorageMode.PRUNE);
+    generateCheckpoints();
+    addBlocks(
+        chainBuilder
+            .streamBlocksAndStates(1, checkpoint3BlockAndState.getSlot().longValue())
+            .toList());
+    justifyAndFinalizeEpoch(checkpoint1.getEpoch(), checkpoint1BlockAndState);
+    assertThat(dao().getLatestFinalizedState()).contains(checkpoint1BlockAndState.getState());
+    assertThat(dao().getStateDiffMode()).isEmpty();
+    assertThat(database.isStateDiffStorageActive()).isFalse();
+
+    setDefaultStorage(storageSystem.restartedWithStateDiffs(true));
+
+    assertThat(database.isStateDiffStorageActive()).isTrue();
+    assertThat(dao().getStateDiffMode()).isPresent();
+    assertThat(dao().getLatestFinalizedState()).isEmpty();
+    final StateDiffNodeRecord anchorNode = stateDiffNode(checkpoint1BlockAndState.getRoot());
+    assertThat(anchorNode.snapshot()).isTrue();
+    assertThat(anchorNode.firstEpoch()).isEqualTo(checkpoint1.getEpoch());
+    assertThat(anchorNode.lastEpoch()).isEqualTo(checkpoint1.getEpoch());
+    final UpdatableStore restartedStore = recentChainData.getStore();
+    assertThat(restartedStore.getFinalizedCheckpoint()).isEqualTo(checkpoint1);
+    assertThat(restartedStore.getLatestFinalized().getState())
+        .isEqualTo(checkpoint1BlockAndState.getState());
+
+    // Finalizing again keeps LATEST_FINALIZED_STATE absent and stores the anchor as a node
+    justifyAndFinalizeEpoch(checkpoint2.getEpoch(), checkpoint2BlockAndState);
+    assertThat(dao().getLatestFinalizedState()).isEmpty();
+    assertThat(database.getHotState(checkpoint2BlockAndState.getRoot()))
+        .contains(checkpoint2BlockAndState.getState());
+    StateDiffDagInvariants.assertConsistent(dao());
+
+    // From now on the marker, not the flag, selects the storage
+    setDefaultStorage(storageSystem.restartedWithStateDiffs(false));
+    assertThat(database.isStateDiffStorageActive()).isTrue();
+    assertThat(recentChainData.getStore().getLatestFinalized().getState())
+        .isEqualTo(checkpoint2BlockAndState.getState());
+  }
+
+  @TestTemplate
+  public void stateDiffs_freshDatabaseWritesAnchorSnapshot(final DatabaseContext context)
+      throws IOException {
+    assumeTrue(context.isStateDiffsEnabled());
+    initialize(context, StateStorageMode.PRUNE);
+
+    assertThat(database.isStateDiffStorageActive()).isTrue();
+    assertThat(dao().getStateDiffMode()).isPresent();
+    assertThat(dao().getLatestFinalizedState()).isEmpty();
+    final StateDiffNodeRecord anchorNode = stateDiffNode(genesisBlockAndState.getRoot());
+    assertThat(anchorNode.snapshot()).isTrue();
+    assertThat(anchorNode.stateRoot()).isEqualTo(genesisBlockAndState.getState().hashTreeRoot());
+    assertThat(database.createMemoryStore().orElseThrow().stateDiffStorageActive()).isTrue();
+    StateDiffDagInvariants.assertConsistent(dao());
+  }
+
+  @TestTemplate
+  public void stateDiffs_hotStateIsReconstructedForCheckpointBlock(final DatabaseContext context)
+      throws IOException {
+    assumeTrue(context.isStateDiffsEnabled());
+    initialize(context, StateStorageMode.PRUNE);
+    generateCheckpoints();
+    addBlocks(
+        chainBuilder
+            .streamBlocksAndStates(1, checkpoint3BlockAndState.getSlot().longValue())
+            .toList());
+
+    final List<SignedBlockAndState> checkpointBlocks =
+        List.of(checkpoint1BlockAndState, checkpoint2BlockAndState, checkpoint3BlockAndState);
+    storeStateDiffNodesOnChain(checkpointBlocks);
+
+    for (final SignedBlockAndState checkpointBlock : checkpointBlocks) {
+      assertThat(database.getHotState(checkpointBlock.getRoot()))
+          .contains(checkpointBlock.getState());
+    }
+    // Nodes after the anchor snapshot are diffs
+    assertThat(stateDiffNode(checkpoint3BlockAndState.getRoot()).snapshot()).isFalse();
+    StateDiffDagInvariants.assertConsistent(dao());
+  }
+
+  @TestTemplate
+  public void stateDiffs_finalizationKeepsAnchorChainAndDropsOrphans(final DatabaseContext context)
+      throws IOException {
+    assumeTrue(context.isStateDiffsEnabled());
+    initialize(context, StateStorageMode.PRUNE);
+    final ChainBuilder fork = chainBuilder.fork();
+    generateCheckpoints();
+    // A fork built on genesis crossing into epoch 1: the store writes a node for its block 6
+    final SignedBlockAndState forkCheckpointBlock = fork.generateBlockAtSlot(6);
+    final SignedBlockAndState forkBlock = fork.generateBlockAtSlot(9);
+    assertThat(forkCheckpointBlock.getRoot())
+        .isNotEqualTo(chainBuilder.getBlockAndStateAtSlot(6).getRoot());
+    addBlocks(
+        chainBuilder
+            .streamBlocksAndStates(1, checkpoint3BlockAndState.getSlot().longValue())
+            .toList());
+    addBlocks(forkCheckpointBlock, forkBlock);
+    assertThat(dao().getStateDiffNode(forkCheckpointBlock.getRoot())).isPresent();
+
+    justifyAndFinalizeEpoch(checkpoint2.getEpoch(), checkpoint2BlockAndState);
+
+    assertThat(dao().getStateDiffNode(forkCheckpointBlock.getRoot())).isEmpty();
+    // The new anchor's reconstruction chain is kept: the anchor, on the start slot of epoch 2, got
+    // its node from the store as a diff against epoch 1's, down to genesis
+    assertThat(((KvStoreDatabase) database).getStateDiffAnchorNodesCreatedLate()).isZero();
+    assertThat(stateDiffNode(checkpoint2BlockAndState.getRoot()).parentNodeRoot())
+        .isEqualTo(checkpoint1BlockAndState.getRoot());
+    assertThat(stateDiffReconstructionChain(checkpoint2BlockAndState.getRoot()))
+        .contains(checkpoint1BlockAndState.getRoot(), genesisBlockAndState.getRoot());
+    assertThat(database.getHotState(checkpoint2BlockAndState.getRoot()))
+        .contains(checkpoint2BlockAndState.getState());
+    StateDiffDagInvariants.assertConsistent(dao());
+  }
+
+  @TestTemplate
+  public void stateDiffs_finalizingTwiceKeepsOnlyAnchorChainAndHotNodes(
+      final DatabaseContext context) throws IOException {
+    assumeTrue(context.isStateDiffsEnabled());
+    // No state cache: a checkpoint block state is available only within its own transaction
+    createStorageSystem(
+        context,
+        StateStorageMode.PRUNE,
+        StoreConfig.builder().stateCacheSize(0).epochStateCacheSize(0).build(),
+        false);
+    initGenesis();
+    // Every slot has a block except the first slot of epoch 5: the checkpoint block of an epoch is
+    // the block on its start slot, its own node, except for epoch 5, whose checkpoint block is the
+    // block at slot 39
+    chainBuilder.generateBlocksUpToSlot(39);
+    chainBuilder.generateBlockAtSlot(41);
+    chainBuilder.generateBlocksUpToSlot(48);
+    final List<SignedBlockAndState> checkpointBlocks =
+        IntStream.rangeClosed(0, 6)
+            .mapToObj(chainBuilder::getLatestBlockAndStateAtEpochBoundary)
+            .toList();
+    final List<Bytes32> checkpointRoots =
+        checkpointBlocks.stream().map(SignedBlockAndState::getRoot).toList();
+    final Bytes32 epoch4NodeRoot = checkpointRoots.get(4);
+    final Bytes32 anchor5 = checkpointRoots.get(5);
+    assertThat(checkpointBlocks.get(5).getSlot()).isEqualTo(UInt64.valueOf(39));
+    final SignedBlockAndState epoch6NodeBlock = checkpointBlocks.get(6);
+
+    // Nodes for epochs 1 to 4
+    addBlocks(chainBuilder.streamBlocksAndStates(1, 39).toList());
+    justifyAndFinalizeEpoch(UInt64.valueOf(2), checkpointBlocks.get(2));
+    // The node for epoch 5 is skipped: its checkpoint block's state is gone when the first block of
+    // the epoch arrives. So the node for epoch 6 diffs against epoch 4 and finalizing epoch 5
+    // creates its node late
+    addBlocks(chainBuilder.streamBlocksAndStates(40, 48).toList());
+    assertThat(dao().getStateDiffNode(anchor5)).isEmpty();
+    assertThat(stateDiffNode(epoch6NodeBlock.getRoot()).parentNodeRoot()).isEqualTo(epoch4NodeRoot);
+    assertThat(((KvStoreDatabase) database).getStateDiffAnchorNodesCreatedLate()).isZero();
+
+    justifyAndFinalizeEpoch(UInt64.valueOf(5), checkpointBlocks.get(5));
+
+    // The late anchor node chains through its finalized ancestors, keeping node 6's parent
+    assertThat(((KvStoreDatabase) database).getStateDiffAnchorNodesCreatedLate()).isEqualTo(1);
+    assertThat(stateDiffNode(anchor5).prevNodeRoot()).isEqualTo(epoch4NodeRoot);
+    final Set<Bytes32> expected = new HashSet<>(stateDiffReconstructionChain(anchor5));
+    expected.add(epoch6NodeBlock.getRoot());
+    assertThat(storedStateDiffNodeRoots()).isEqualTo(expected);
+    assertThat(database.getHotState(anchor5)).contains(checkpointBlocks.get(5).getState());
+    assertThat(database.getHotState(epoch6NodeBlock.getRoot()))
+        .contains(epoch6NodeBlock.getState());
+    StateDiffDagInvariants.assertConsistent(dao());
+
+    // Finalizing again drops the node of epoch 5's anchor, which no retained node needs
+    justifyAndFinalizeEpoch(UInt64.valueOf(6), checkpointBlocks.get(6));
+    assertThat(storedStateDiffNodeRoots())
+        .isEqualTo(stateDiffReconstructionChain(checkpointRoots.get(6)))
+        .contains(epoch6NodeBlock.getRoot())
+        .doesNotContain(anchor5);
+    assertThat(database.getHotState(checkpointRoots.get(6)))
+        .contains(checkpointBlocks.get(6).getState());
+    StateDiffDagInvariants.assertConsistent(dao());
+  }
+
+  @TestTemplate
+  public void stateDiffs_lateCoarseAnchorKeepsParentsOfLaterNodes(final DatabaseContext context)
+      throws IOException {
+    assumeTrue(context.isStateDiffsEnabled());
+    // No state cache: a checkpoint block state is available only within its own transaction
+    createStorageSystem(
+        context,
+        StateStorageMode.PRUNE,
+        StoreConfig.builder().stateCacheSize(0).epochStateCacheSize(0).build(),
+        false);
+    initGenesis();
+    // Every slot has a block except the first slot of epoch 16, a level 16 epoch, whose checkpoint
+    // block is the block at slot 127
+    chainBuilder.generateBlocksUpToSlot(127);
+    chainBuilder.generateBlockAtSlot(129);
+    chainBuilder.generateBlocksUpToSlot(152);
+    final List<SignedBlockAndState> checkpointBlocks =
+        IntStream.rangeClosed(0, 19)
+            .mapToObj(chainBuilder::getLatestBlockAndStateAtEpochBoundary)
+            .toList();
+    final List<Bytes32> checkpointRoots =
+        checkpointBlocks.stream().map(SignedBlockAndState::getRoot).toList();
+    final Bytes32 anchor16 = checkpointRoots.get(16);
+    assertThat(checkpointBlocks.get(16).getSlot()).isEqualTo(UInt64.valueOf(127));
+
+    // Nodes for epochs 1 to 15
+    addBlocks(chainBuilder.streamBlocksAndStates(1, 127).toList());
+    justifyAndFinalizeEpoch(UInt64.valueOf(2), checkpointBlocks.get(2));
+    // The node for epoch 16 is skipped, so the node for epoch 17 diffs against epoch 15
+    addBlocks(chainBuilder.streamBlocksAndStates(129, 152).toList());
+    assertThat(dao().getStateDiffNode(anchor16)).isEmpty();
+    assertThat(stateDiffNode(checkpointRoots.get(17)).parentNodeRoot())
+        .isEqualTo(checkpointRoots.get(15));
+
+    justifyAndFinalizeEpoch(UInt64.valueOf(16), checkpointBlocks.get(16));
+
+    // The late anchor node is at the finest level whatever its epoch, so it keeps node 15
+    assertThat(((KvStoreDatabase) database).getStateDiffAnchorNodesCreatedLate()).isEqualTo(1);
+    final StateDiffNodeRecord lateNode = stateDiffNode(anchor16);
+    assertThat(lateNode.snapshot()).isFalse();
+    assertThat(lateNode.level()).isEqualTo(3);
+    assertThat(lateNode.parentNodeRoot()).isEqualTo(checkpointRoots.get(15));
+    assertThat(storedStateDiffNodeRoots()).contains(checkpointRoots.get(15));
+    assertThat(database.getHotState(checkpointRoots.get(17)))
+        .contains(checkpointBlocks.get(17).getState());
+    StateDiffDagInvariants.assertConsistent(dao());
+
+    // The next finalizations load every chain they need
+    justifyAndFinalizeEpoch(UInt64.valueOf(17), checkpointBlocks.get(17));
+    justifyAndFinalizeEpoch(UInt64.valueOf(18), checkpointBlocks.get(18));
+
+    assertThat(((KvStoreDatabase) database).getStateDiffAnchorsRepaired()).isZero();
+    final Set<Bytes32> expected =
+        new HashSet<>(stateDiffReconstructionChain(checkpointRoots.get(18)));
+    expected.add(checkpointRoots.get(19));
+    assertThat(storedStateDiffNodeRoots()).isEqualTo(expected).doesNotContain(anchor16);
+    for (int epoch = 17; epoch <= 19; epoch++) {
+      assertThat(database.getHotState(checkpointRoots.get(epoch)))
+          .contains(checkpointBlocks.get(epoch).getState());
+    }
+    StateDiffDagInvariants.assertConsistent(dao());
+    assertThat(database.verifyStateDiffs().hasProblems()).isFalse();
+  }
+
+  @TestTemplate
+  public void stateDiffs_brokenAnchorChainIsRepairedOnFinalization(final DatabaseContext context)
+      throws IOException {
+    assumeTrue(context.isStateDiffsEnabled());
+    initialize(context, StateStorageMode.PRUNE);
+    generateCheckpoints();
+    addBlocks(
+        chainBuilder
+            .streamBlocksAndStates(1, checkpoint3BlockAndState.getSlot().longValue())
+            .toList());
+    justifyAndFinalizeEpoch(checkpoint2.getEpoch(), checkpoint2BlockAndState);
+    final Bytes32 anchor2 = checkpoint2BlockAndState.getRoot();
+    final Bytes32 anchor3 = checkpoint3BlockAndState.getRoot();
+    assertThat(stateDiffReconstructionChain(anchor2))
+        .contains(checkpoint1BlockAndState.getRoot(), genesisBlockAndState.getRoot());
+    assertThat(stateDiffNode(anchor3).parentNodeRoot()).isEqualTo(anchor2);
+
+    // A node of the anchor's chain is lost: neither the anchor's chain nor the next one loads
+    try (final KvStoreCombinedDao.HotUpdater updater = dao().hotUpdater()) {
+      updater.deleteStateDiffNode(checkpoint1BlockAndState.getRoot());
+      updater.commit();
+    }
+
+    justifyAndFinalizeEpoch(checkpoint3.getEpoch(), checkpoint3BlockAndState);
+
+    assertThat(((KvStoreDatabase) database).getStateDiffAnchorsRepaired()).isEqualTo(1);
+    assertThat(stateDiffNode(anchor3).snapshot()).isTrue();
+    assertThat(dao().getStateDiffNode(anchor2)).isEmpty();
+    assertThat(database.getHotState(anchor3)).contains(checkpoint3BlockAndState.getState());
+    final UpdatableStore restartedStore = recreateStore();
+    assertThat(restartedStore.getLatestFinalized().getState())
+        .isEqualTo(checkpoint3BlockAndState.getState());
+    // Finalizing again works without a repair
+    chainBuilder.generateBlocksUpToSlot(33);
+    final SignedBlockAndState checkpoint4BlockAndState = chainBuilder.getBlockAndStateAtSlot(32);
+    addBlocks(
+        chainBuilder
+            .streamBlocksAndStates(checkpoint3BlockAndState.getSlot().longValue() + 1, 33)
+            .toList());
+    justifyAndFinalizeEpoch(UInt64.valueOf(4), checkpoint4BlockAndState);
+    assertThat(((KvStoreDatabase) database).getStateDiffAnchorsRepaired()).isZero();
+    assertThat(stateDiffNode(checkpoint4BlockAndState.getRoot()).parentNodeRoot())
+        .isEqualTo(anchor3);
+    assertThat(database.getHotState(checkpoint4BlockAndState.getRoot()))
+        .contains(checkpoint4BlockAndState.getState());
+  }
+
+  @TestTemplate
+  public void stateDiffs_corruptHotNodeFallsBackToReplay(final DatabaseContext context)
+      throws IOException {
+    assumeTrue(context.isStateDiffsEnabled());
+    initialize(context, StateStorageMode.PRUNE);
+    generateCheckpoints();
+    chainBuilder.generateBlocksUpToSlot(33);
+    addBlocks(
+        chainBuilder
+            .streamBlocksAndStates(1, checkpoint3BlockAndState.getSlot().longValue())
+            .toList());
+    final Bytes32 node2 = checkpoint2BlockAndState.getRoot();
+    final Bytes32 node3 = checkpoint3BlockAndState.getRoot();
+    assertThat(stateDiffNode(node3).parentNodeRoot()).isEqualTo(node2);
+    // The node of checkpoint 2, above the genesis anchor, gets corrupted
+    try (final KvStoreCombinedDao.HotUpdater updater = dao().hotUpdater()) {
+      updater.putStateDiffNode(node2, Bytes.of(1, 2, 3));
+      updater.commit();
+    }
+
+    final UpdatableStore restartedStore = recreateStore();
+
+    assertThat(database.getHotState(node2)).isEmpty();
+    assertThat(database.getHotState(node3)).isEmpty();
+    // States above it are regenerated by replaying blocks from the anchor
+    final SignedBlockAndState block = chainBuilder.getBlockAndStateAtSlot(20);
+    assertThat(restartedStore.retrieveBlockState(block.getRoot()))
+        .isCompletedWithValue(Optional.of(block.getState()));
+    assertThat(restartedStore.retrieveBlockState(node3))
+        .isCompletedWithValue(Optional.of(checkpoint3BlockAndState.getState()));
+
+    // A later node whose diff base cannot be reconstructed is written as a snapshot instead
+    addBlocks(chainBuilder.streamBlocksAndStates(25, 33).toList());
+    final SignedBlockAndState checkpoint4BlockAndState = chainBuilder.getBlockAndStateAtSlot(32);
+    final StateDiffNodeRecord node4 = stateDiffNode(checkpoint4BlockAndState.getRoot());
+    assertThat(node4.snapshot()).isTrue();
+    assertThat(node4.prevNodeRoot()).isEqualTo(node3);
+    assertThat(database.getHotState(checkpoint4BlockAndState.getRoot()))
+        .contains(checkpoint4BlockAndState.getState());
+  }
+
+  @TestTemplate
+  public void stateDiffs_restartRecreatesStoreFromDag(final DatabaseContext context)
+      throws IOException {
+    assumeTrue(context.isStateDiffsEnabled());
+    initialize(context, StateStorageMode.PRUNE);
+    generateCheckpoints();
+    addBlocks(
+        chainBuilder
+            .streamBlocksAndStates(1, checkpoint2BlockAndState.getSlot().longValue())
+            .toList());
+    // The checkpoint block sits on the epoch's start slot: the store wrote its node on import, as a
+    // diff against the genesis anchor, so finalization does not have to create it
+    assertThat(stateDiffNode(checkpoint1BlockAndState.getRoot()).parentNodeRoot())
+        .isEqualTo(genesisBlockAndState.getRoot());
+    justifyAndFinalizeEpoch(checkpoint1.getEpoch(), checkpoint1BlockAndState);
+    assertThat(((KvStoreDatabase) database).getStateDiffAnchorNodesCreatedLate()).isZero();
+
+    final UpdatableStore result = recreateStore();
+
+    assertThat(result.getFinalizedCheckpoint()).isEqualTo(checkpoint1);
+    assertThat(result.getLatestFinalized().getState().hashTreeRoot())
+        .isEqualTo(checkpoint1BlockAndState.getState().hashTreeRoot());
+    assertThat(result.retrieveBlockState(checkpoint2BlockAndState.getRoot()))
+        .isCompletedWithValue(Optional.of(checkpoint2BlockAndState.getState()));
+    StateDiffDagInvariants.assertConsistent(dao());
+  }
+
+  @TestTemplate
+  public void stateDiffs_doesNotWriteHotStatesColumn(final DatabaseContext context)
+      throws IOException {
+    assumeTrue(context.isStateDiffsEnabled());
+    initialize(context, StateStorageMode.PRUNE);
+    generateCheckpoints();
+    final List<SignedBlockAndState> blocks =
+        chainBuilder
+            .streamBlocksAndStates(1, checkpoint3BlockAndState.getSlot().longValue())
+            .toList();
+    addBlocks(blocks);
+    storeStateDiffNodesOnChain(List.of(checkpoint1BlockAndState));
+
+    for (final SignedBlockAndState block : blocks) {
+      assertThat(dao().getHotState(block.getRoot())).isEmpty();
+    }
+    assertThat(database.getHotState(checkpoint1BlockAndState.getRoot()))
+        .contains(checkpoint1BlockAndState.getState());
+  }
+
+  @TestTemplate
+  public void stateDiffs_everyBlockStateRegeneratesAfterRestart(final DatabaseContext context)
+      throws IOException {
+    assumeTrue(context.isStateDiffsEnabled());
+    initialize(context, StateStorageMode.PRUNE);
+    // The canonical chain fills every slot through epoch 4; a fork leaves it after slot 12 and
+    // skips slots, so its epoch crossings happen on different blocks
+    chainBuilder.generateBlocksUpToSlot(12);
+    final ChainBuilder fork = chainBuilder.fork();
+    chainBuilder.generateBlocksUpToSlot(34);
+    final List<SignedBlockAndState> forkBlocks =
+        List.of(
+            fork.generateBlockAtSlot(14),
+            fork.generateBlockAtSlot(17),
+            fork.generateBlockAtSlot(26),
+            fork.generateBlockAtSlot(33));
+    final List<SignedBlockAndState> blocks =
+        new ArrayList<>(chainBuilder.streamBlocksAndStates(1, 34).toList());
+    blocks.addAll(forkBlocks);
+    blocks.sort(Comparator.comparing(SignedBlockAndState::getSlot));
+
+    // Imported one block per transaction, as the node does, so every node goes through the store
+    blocks.forEach(block -> addBlocks(block));
+    // Finalizing moves the anchor, so later ancestor lists end at the new anchor. The anchor, on
+    // the start slot of epoch 1, already has its node: finalization does not create it late
+    final SignedBlockAndState anchor = chainBuilder.getLatestBlockAndStateAtEpochBoundary(1);
+    assertThat(dao().getStateDiffNode(anchor.getRoot())).isPresent();
+    justifyAndFinalizeEpoch(ONE, anchor);
+    assertThat(((KvStoreDatabase) database).getStateDiffAnchorNodesCreatedLate()).isZero();
+    final List<SignedBlockAndState> blocksAfterFinalization =
+        chainBuilder.generateBlocksUpToSlot(42);
+    blocksAfterFinalization.forEach(block -> addBlocks(block));
+
+    // A node for the checkpoint block of every epoch on both branches, none in the legacy column:
+    // on the canonical chain the blocks on epoch start slots, on the fork, which skips those
+    // slots, the parents of the first blocks of its epochs
+    final List<SignedBlockAndState> checkpointBlocks =
+        List.of(
+            chainBuilder.getBlockAndStateAtSlot(16),
+            chainBuilder.getBlockAndStateAtSlot(24),
+            chainBuilder.getBlockAndStateAtSlot(32),
+            chainBuilder.getBlockAndStateAtSlot(40),
+            forkBlocks.get(0),
+            forkBlocks.get(1),
+            forkBlocks.get(2));
+    for (final SignedBlockAndState checkpointBlock : checkpointBlocks) {
+      assertThat(dao().getStateDiffNode(checkpointBlock.getRoot()))
+          .describedAs("node of checkpoint block at slot %s", checkpointBlock.getSlot())
+          .isPresent();
+      assertThat(database.getHotState(checkpointBlock.getRoot()))
+          .contains(checkpointBlock.getState());
+    }
+    final List<SignedBlockAndState> hotBlocks =
+        Stream.concat(
+                Stream.concat(blocks.stream(), blocksAfterFinalization.stream())
+                    .filter(block -> block.getSlot().isGreaterThan(anchor.getSlot())),
+                Stream.of(anchor))
+            .toList();
+    for (final SignedBlockAndState block : hotBlocks) {
+      assertThat(dao().getHotState(block.getRoot())).isEmpty();
+    }
+    StateDiffDagInvariants.assertConsistent(dao());
+    final StateDiffVerificationReport report = database.verifyStateDiffs();
+    assertThat(report.hasProblems()).describedAs("%s", report).isFalse();
+    assertThat(report.anchorRoot()).contains(anchor.getRoot());
+
+    final UpdatableStore restartedStore = recreateStore();
+
+    assertThat(restartedStore.getLatestFinalized().getRoot()).isEqualTo(anchor.getRoot());
+    for (final SignedBlockAndState block : hotBlocks) {
+      assertThat(restartedStore.retrieveBlockState(block.getRoot()))
+          .describedAs("state of block at slot %s", block.getSlot())
+          .isCompletedWithValue(Optional.of(block.getState()));
+    }
+  }
+
+  @TestTemplate
+  public void stateDiffs_anchorAfterEmptyFirstSlotReconstructs(final DatabaseContext context)
+      throws IOException {
+    assumeTrue(context.isStateDiffsEnabled());
+    initialize(context, StateStorageMode.PRUNE);
+    // The first slot of epoch 1 is empty: its checkpoint block is the block at slot 7
+    chainBuilder.generateBlocksUpToSlot(7);
+    chainBuilder.generateBlockAtSlot(9);
+    chainBuilder.generateBlocksUpToSlot(20);
+    chainBuilder.streamBlocksAndStates(1, 20).forEach(block -> addBlocks(block));
+    final SignedBlockAndState anchor = chainBuilder.getLatestBlockAndStateAtEpochBoundary(1);
+    assertThat(anchor.getSlot()).isEqualTo(UInt64.valueOf(7));
+
+    justifyAndFinalizeEpoch(ONE, anchor);
+
+    // The store wrote the anchor's node on import, so finalization did not have to create it
+    assertThat(((KvStoreDatabase) database).getStateDiffAnchorNodesCreatedLate()).isZero();
+    assertThat(database.getHotState(anchor.getRoot())).contains(anchor.getState());
+    assertThat(database.verifyStateDiffs().hasProblems()).isFalse();
+    final UpdatableStore restartedStore = recreateStore();
+    assertThat(restartedStore.getLatestFinalized().getState()).isEqualTo(anchor.getState());
+    final SignedBlockAndState head = chainBuilder.getBlockAndStateAtSlot(20);
+    assertThat(restartedStore.retrieveBlockState(head.getRoot()))
+        .isCompletedWithValue(Optional.of(head.getState()));
+    StateDiffDagInvariants.assertConsistent(dao());
+  }
+
+  @TestTemplate
+  public void stateDiffs_columnSizesReportStateDiffColumns(final DatabaseContext context)
+      throws IOException {
+    assumeTrue(context.isStateDiffsEnabled());
+    initialize(context, StateStorageMode.PRUNE);
+    generateCheckpoints();
+    addBlocks(
+        chainBuilder
+            .streamBlocksAndStates(1, checkpoint3BlockAndState.getSlot().longValue())
+            .toList());
+    storeStateDiffNodesOnChain(
+        List.of(checkpoint1BlockAndState, checkpoint2BlockAndState, checkpoint3BlockAndState));
+    // Flushes the written nodes from the memtables into table files
+    database.compactStorage();
+
+    final Map<String, ColumnSize> sizes = database.getColumnSizes(Optional.empty());
+
+    if (context.isInMemoryStorage() || !isRocksDb(context.getDatabaseVersion())) {
+      // Only RocksDB reports per-column sizes
+      assertThat(sizes).isEmpty();
+      return;
+    }
+    assertThat(sizes).containsKeys("STATE_DIFF_NODES", "STATE_SUPERNODES");
+    assertThat(sizes.keySet()).isEqualTo(dao().getColumnCounts(Optional.empty()).keySet());
+    sizes.forEach(
+        (column, size) -> {
+          assertThat(size.estimateLiveDataSize()).describedAs(column).isNotNegative();
+          assertThat(size.totalSstFilesSize()).describedAs(column).isNotNegative();
+          assertThat(size.totalBlobFileSize()).describedAs(column).isNotNegative();
+        });
+    for (final String column : List.of("STATE_DIFF_NODES", "STATE_SUPERNODES")) {
+      final ColumnSize size = sizes.get(column);
+      assertThat(size.totalSstFilesSize() + size.totalBlobFileSize())
+          .describedAs(column)
+          .isPositive();
+    }
+    assertThat(database.getColumnSizes(Optional.of("state_diff")))
+        .containsOnlyKeys("STATE_DIFF_NODES");
+  }
+
+  private static boolean isRocksDb(final DatabaseVersion databaseVersion) {
+    return switch (databaseVersion) {
+      case V4, V5, V6, ROCKSDB_TREE -> true;
+      default -> false;
+    };
+  }
+
+  @TestTemplate
+  public void legacyBehaviourUnchangedWhenDisabled(final DatabaseContext context)
+      throws IOException {
+    assumeFalse(context.isStateDiffsEnabled());
+    initialize(context, StateStorageMode.PRUNE);
+    generateCheckpoints();
+    addBlocks(
+        chainBuilder
+            .streamBlocksAndStates(1, checkpoint2BlockAndState.getSlot().longValue())
+            .toList());
+    justifyAndFinalizeEpoch(checkpoint1.getEpoch(), checkpoint1BlockAndState);
+
+    assertThat(database.isStateDiffStorageActive()).isFalse();
+    assertThat(dao().getStateDiffMode()).isEmpty();
+    assertThat(dao().getLatestFinalizedState()).contains(checkpoint1BlockAndState.getState());
+    try (final Stream<ColumnEntry<Bytes32, Bytes>> nodes = dao().streamStateDiffNodes()) {
+      assertThat(nodes).isEmpty();
+    }
+    assertThat(database.createMemoryStore().orElseThrow().stateDiffStorageActive()).isFalse();
+    assertThatThrownBy(database::verifyStateDiffs).isInstanceOf(IllegalStateException.class);
+  }
+
+  private KvStoreCombinedDao dao() {
+    return ((KvStoreDatabase) database).dao;
+  }
+
+  private StateDiffNodeRecord stateDiffNode(final Bytes32 blockRoot) {
+    return StateDiffNodeRecordCodec.decode(dao().getStateDiffNode(blockRoot).orElseThrow());
+  }
+
+  /** The nodes needed to reconstruct {@code blockRoot}, following parent pointers to a snapshot. */
+  private Set<Bytes32> stateDiffReconstructionChain(final Bytes32 blockRoot) {
+    final Set<Bytes32> chain = new HashSet<>();
+    Bytes32 current = blockRoot;
+    while (true) {
+      chain.add(current);
+      final StateDiffNodeRecord record = stateDiffNode(current);
+      if (record.snapshot()) {
+        return chain;
+      }
+      current = record.parentNodeRoot();
+    }
+  }
+
+  private Set<Bytes32> storedStateDiffNodeRoots() {
+    try (final Stream<ColumnEntry<Bytes32, Bytes>> nodes = dao().streamStateDiffNodes()) {
+      return nodes.map(ColumnEntry::getKey).collect(Collectors.toSet());
+    }
+  }
+
+  /**
+   * Stores a node for each given block, serving the epoch of its slot, chained from the genesis
+   * anchor, through a storage update that bypasses the store. The store itself keys nodes by the
+   * parent of the first block of each epoch, see {@code
+   * stateDiffs_everyBlockStateRegeneratesAfterRestart}.
+   */
+  private void storeStateDiffNodesOnChain(final List<SignedBlockAndState> checkpointBlocks) {
+    final List<Bytes32> ancestorCheckpointRoots = new ArrayList<>();
+    ancestorCheckpointRoots.add(genesisBlockAndState.getRoot());
+    for (final SignedBlockAndState checkpointBlock : checkpointBlocks) {
+      storeStateDiffNode(
+          checkpointBlock,
+          spec.computeEpochAtSlot(checkpointBlock.getSlot()),
+          List.copyOf(ancestorCheckpointRoots));
+      ancestorCheckpointRoots.addFirst(checkpointBlock.getRoot());
+    }
+  }
+
+  private void storeStateDiffNode(
+      final SignedBlockAndState checkpointBlock,
+      final UInt64 epoch,
+      final List<Bytes32> ancestorCheckpointRoots) {
+    database.update(
+        new StorageUpdate(
+            Optional.empty(),
+            Optional.empty(),
+            Optional.empty(),
+            Optional.empty(),
+            Map.of(),
+            Map.of(checkpointBlock.getRoot(), checkpointBlock.getState()),
+            Map.of(
+                checkpointBlock.getRoot(),
+                new HotStateNodeInfo(epoch, epoch, ancestorCheckpointRoots)),
+            Map.of(),
+            Map.of(),
+            Optional.empty(),
+            Map.of(),
+            Map.of(),
+            false,
+            Optional.empty(),
+            Optional.empty(),
+            Optional.empty(),
+            false,
+            false,
+            false));
   }
 
   private void storeBestLightClientUpdates(final long... periods) {

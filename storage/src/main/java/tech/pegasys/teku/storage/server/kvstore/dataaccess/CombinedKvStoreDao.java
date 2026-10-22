@@ -53,6 +53,7 @@ import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.util.DataColumnSlotAndIdentifier;
 import tech.pegasys.teku.spec.datastructures.util.SlotAndBlockRootAndBlobIndex;
 import tech.pegasys.teku.storage.server.kvstore.ColumnEntry;
+import tech.pegasys.teku.storage.server.kvstore.ColumnSize;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreAccessor;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreAccessor.KvStoreTransaction;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.V4FinalizedStateStorageLogic.FinalizedStateUpdater;
@@ -156,6 +157,44 @@ public class CombinedKvStoreDao<S extends SchemaCombined>
   @Override
   public Optional<BeaconState> getHotState(final Bytes32 root) {
     return db.get(schema.getColumnHotStatesByRoot(), root);
+  }
+
+  @Override
+  public Optional<Bytes> getStateDiffNode(final Bytes32 blockRoot) {
+    return db.get(schema.getColumnStateDiffNodes(), blockRoot);
+  }
+
+  @Override
+  public Optional<Bytes> getStateSupernode(final Bytes32 hash) {
+    return db.get(schema.getColumnStateSupernodes(), hash);
+  }
+
+  @Override
+  public Optional<UInt64> getStateSupernodeRefCount(final Bytes32 hash) {
+    return db.get(schema.getColumnStateSupernodeRefCounts(), hash);
+  }
+
+  @Override
+  public Optional<Bytes> getStateDiffMode() {
+    return db.get(schema.getVariableStateDiffMode());
+  }
+
+  @Override
+  @MustBeClosed
+  public Stream<ColumnEntry<Bytes32, Bytes>> streamStateDiffNodes() {
+    return db.stream(schema.getColumnStateDiffNodes());
+  }
+
+  @Override
+  @MustBeClosed
+  public Stream<ColumnEntry<Bytes32, UInt64>> streamStateSupernodeRefCounts() {
+    return db.stream(schema.getColumnStateSupernodeRefCounts());
+  }
+
+  @Override
+  @MustBeClosed
+  public Stream<Bytes32> streamStateSupernodeHashes() {
+    return db.streamKeys(schema.getColumnStateSupernodes());
   }
 
   @Override
@@ -526,6 +565,21 @@ public class CombinedKvStoreDao<S extends SchemaCombined>
   }
 
   @Override
+  public Map<String, ColumnSize> getColumnSizes(final Optional<String> maybeColumnFilter) {
+    final Map<String, ColumnSize> columnSizes = new LinkedHashMap<>();
+    schema
+        .getColumnMap()
+        .forEach(
+            (k, v) -> {
+              if (maybeColumnFilter.isEmpty()
+                  || k.contains(maybeColumnFilter.get().toUpperCase(Locale.ROOT))) {
+                db.getColumnSize(v).ifPresent(size -> columnSizes.put(k, size));
+              }
+            });
+    return columnSizes;
+  }
+
+  @Override
   public Map<String, Optional<String>> getVariables() {
     final ImmutableMap.Builder<String, Optional<String>> knownVariablesBuilder =
         ImmutableMap.<String, Optional<String>>builder();
@@ -587,7 +641,15 @@ public class CombinedKvStoreDao<S extends SchemaCombined>
                       + state.getSlot()
                       + ", root="
                       + state.hashTreeRoot().toHexString()
-                      + "}");
+                      + "}")
+          // With state diff storage the finalized state is the anchor node of the DAG
+          .or(
+              () ->
+                  getStateDiffMode()
+                      .map(
+                          __ ->
+                              "state diff storage active: reconstruct via verify-state-diffs or "
+                                  + "get-latest-finalized-state"));
     } catch (final Exception e) {
       return Optional.of(e.toString());
     }
@@ -914,6 +976,42 @@ public class CombinedKvStoreDao<S extends SchemaCombined>
     @Override
     public void deleteHotState(final Bytes32 blockRoot) {
       transaction.delete(schema.getColumnHotStatesByRoot(), blockRoot);
+    }
+
+    @Override
+    public void putStateDiffNode(final Bytes32 blockRoot, final Bytes record) {
+      transaction.put(schema.getColumnStateDiffNodes(), blockRoot, record);
+    }
+
+    @Override
+    public void deleteStateDiffNode(final Bytes32 blockRoot) {
+      transaction.delete(schema.getColumnStateDiffNodes(), blockRoot);
+    }
+
+    @Override
+    public void putStateSupernode(final Bytes32 hash, final Bytes ssz) {
+      transaction.put(schema.getColumnStateSupernodes(), hash, ssz);
+    }
+
+    @Override
+    public void setStateSupernodeRefCount(final Bytes32 hash, final UInt64 refCount) {
+      transaction.put(schema.getColumnStateSupernodeRefCounts(), hash, refCount);
+    }
+
+    @Override
+    public void deleteStateSupernode(final Bytes32 hash) {
+      transaction.delete(schema.getColumnStateSupernodes(), hash);
+      transaction.delete(schema.getColumnStateSupernodeRefCounts(), hash);
+    }
+
+    @Override
+    public void setStateDiffMode(final Bytes marker) {
+      transaction.put(schema.getVariableStateDiffMode(), marker);
+    }
+
+    @Override
+    public void deleteLatestFinalizedState() {
+      transaction.delete(schema.getVariableLatestFinalizedState());
     }
 
     @Override

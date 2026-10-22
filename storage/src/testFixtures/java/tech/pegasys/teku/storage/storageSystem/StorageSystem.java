@@ -16,6 +16,7 @@ package tech.pegasys.teku.storage.storageSystem;
 import static tech.pegasys.teku.infrastructure.async.SafeFutureAssert.safeJoin;
 import static tech.pegasys.teku.infrastructure.async.SyncAsyncRunner.SYNC_RUNNER;
 
+import java.util.Optional;
 import tech.pegasys.teku.beacon.pow.api.TrackingEth1EventsChannel;
 import tech.pegasys.teku.dataproviders.lookup.BlindedExecutionPayloadProvider;
 import tech.pegasys.teku.dataproviders.lookup.ExecutionPayloadProvider;
@@ -185,12 +186,22 @@ public class StorageSystem implements AutoCloseable {
   }
 
   public StorageSystem restarted(final StateStorageMode storageMode) {
+    return restarted(storageMode, Optional.empty());
+  }
+
+  /** Restarts with state diff storage requested ({@code true}) or not by the configuration. */
+  public StorageSystem restartedWithStateDiffs(final boolean stateDiffsEnabled) {
+    return restarted(storageMode, Optional.of(stateDiffsEnabled));
+  }
+
+  private StorageSystem restarted(
+      final StateStorageMode storageMode, final Optional<Boolean> stateDiffsEnabled) {
     try {
       database.close();
     } catch (Exception e) {
       throw new RuntimeException(e);
     }
-    return restartedSupplier.restart(storageMode);
+    return restartedSupplier.restart(storageMode, stateDiffsEnabled);
   }
 
   public CombinedChainDataClient combinedChainDataClient() {
@@ -211,6 +222,10 @@ public class StorageSystem implements AutoCloseable {
   }
 
   public interface RestartedStorageSupplier {
-    StorageSystem restart(final StateStorageMode storageMode);
+    /**
+     * @param stateDiffsEnabled the state diffs flag of the restarted database, or empty to keep the
+     *     current one
+     */
+    StorageSystem restart(StateStorageMode storageMode, Optional<Boolean> stateDiffsEnabled);
   }
 }
