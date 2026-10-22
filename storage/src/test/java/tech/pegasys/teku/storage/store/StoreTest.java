@@ -26,6 +26,7 @@ import static tech.pegasys.teku.infrastructure.async.SafeFutureAssert.safeJoin;
 import static tech.pegasys.teku.infrastructure.async.SyncAsyncRunner.SYNC_RUNNER;
 import static tech.pegasys.teku.infrastructure.time.TimeUtilities.millisToSeconds;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -423,6 +424,99 @@ class StoreTest extends AbstractStoreTest {
                 .map(UInt64::intValue)
                 .collect(Collectors.toList()))
         .containsExactlyInAnyOrder(24, 8);
+  }
+
+  @Test
+  public void diffMode_regenerationBaseIsStartSlotBlockWhenPresent() {
+    final List<Bytes32> requestedRoots = new ArrayList<>();
+    final UpdatableStore store =
+        createRegenerationStore(
+            StoreConfig.builder().stateCacheSize(1).stateDiffsEnabled(true).build(),
+            requestedRoots,
+            Optional.empty());
+    final SignedBlockAndState target = chainBuilder.getBlockAndStateAtSlot(38);
+
+    assertThat(store.retrieveBlockState(target.getRoot()))
+        .isCompletedWithValue(Optional.of(target.getState()));
+
+    // The block on the start slot of epoch 4 is its checkpoint block, a state diff node
+    assertThat(requestedRoots).containsExactly(chainBuilder.getBlockAtSlot(32).getRoot());
+  }
+
+  @Test
+  public void diffMode_regenerationBaseIsParentWhenFirstSlotEmpty() {
+    final List<Bytes32> requestedRoots = new ArrayList<>();
+    final UpdatableStore store =
+        createRegenerationStore(
+            StoreConfig.builder().stateCacheSize(1).stateDiffsEnabled(true).build(),
+            requestedRoots,
+            Optional.of(32L));
+    final SignedBlockAndState target = chainBuilder.getBlockAndStateAtSlot(38);
+
+    assertThat(store.retrieveBlockState(target.getRoot()))
+        .isCompletedWithValue(Optional.of(target.getState()));
+
+    // The parent of the first block of epoch 4, whose state is a state diff node
+    assertThat(requestedRoots).containsExactly(chainBuilder.getBlockAtSlot(31).getRoot());
+  }
+
+  @Test
+  public void legacyMode_regenerationBaseIsFirstBlockOfEpoch() {
+    final List<Bytes32> requestedRoots = new ArrayList<>();
+    final UpdatableStore store =
+        createRegenerationStore(
+            StoreConfig.builder().stateCacheSize(1).build(), requestedRoots, Optional.empty());
+    final SignedBlockAndState target = chainBuilder.getBlockAndStateAtSlot(38);
+
+    assertThat(store.retrieveBlockState(target.getRoot()))
+        .isCompletedWithValue(Optional.of(target.getState()));
+
+    assertThat(requestedRoots).containsExactly(chainBuilder.getBlockAtSlot(32).getRoot());
+  }
+
+  @Test
+  public void diffMode_blockStateIfAvailableIncludesEpochStates() {
+    final UpdatableStore store =
+        createGenesisStore(StoreConfig.builder().stateDiffsEnabled(true).build());
+    final SignedBlockAndState block = chainBuilder.generateBlockAtSlot(7);
+    ((Store) store).getEpochStates().orElseThrow().put(block.getRoot(), block);
+
+    assertThat(store.getBlockStateIfAvailable(block.getRoot())).contains(block.getState());
+  }
+
+  @Test
+  public void legacyMode_blockStateIfAvailableIgnoresEpochStates() {
+    final UpdatableStore store = createGenesisStore();
+    final SignedBlockAndState block = chainBuilder.generateBlockAtSlot(7);
+    ((Store) store).getEpochStates().orElseThrow().put(block.getRoot(), block);
+
+    assertThat(store.getBlockStateIfAvailable(block.getRoot())).isEmpty();
+  }
+
+  /**
+   * A store holding blocks at every slot up to 40, except {@code emptySlot}, with only the latest
+   * state in memory, whose persisted states are served from the chain builder while their roots are
+   * recorded.
+   */
+  private UpdatableStore createRegenerationStore(
+      final StoreConfig storeConfig,
+      final List<Bytes32> requestedRoots,
+      final Optional<Long> emptySlot) {
+    final StateAndBlockSummaryProvider stateProvider =
+        root -> {
+          requestedRoots.add(root);
+          return SafeFuture.completedFuture(
+              chainBuilder.getBlockAndState(root).map(StateAndBlockSummary.class::cast));
+        };
+    final UpdatableStore store =
+        createStoreBuilder(storeConfig).stateProvider(stateProvider).build();
+    // One block per transaction, so the state left in memory is the one of slot 40
+    for (long slot = 1; slot <= 40; slot++) {
+      if (emptySlot.isEmpty() || emptySlot.get() != slot) {
+        addBlock(store, chainBuilder.generateBlockAtSlot(slot));
+      }
+    }
+    return store;
   }
 
   private SlotAndBlockRoot stateAndBlockAtSlot(final int i, final ChainBuilder chainBuilder) {

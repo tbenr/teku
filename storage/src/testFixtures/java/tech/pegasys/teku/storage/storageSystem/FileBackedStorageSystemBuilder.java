@@ -27,6 +27,7 @@ import tech.pegasys.teku.storage.server.Database;
 import tech.pegasys.teku.storage.server.DatabaseVersion;
 import tech.pegasys.teku.storage.server.StateStorageMode;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreConfiguration;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.kvstore.schema.V6SchemaCombinedSnapshot;
 import tech.pegasys.teku.storage.server.leveldb.LevelDbDatabaseFactory;
 import tech.pegasys.teku.storage.server.rocksdb.RocksDbDatabaseFactory;
@@ -46,6 +47,7 @@ public class FileBackedStorageSystemBuilder {
   private Path archiveDir;
   private long stateStorageFrequency = 1L;
   private boolean storeNonCanonicalBlocks = false;
+  private boolean stateDiffsEnabled = false;
 
   private int stateRebuildTimeoutSeconds = 120;
 
@@ -66,7 +68,8 @@ public class FileBackedStorageSystemBuilder {
         database,
         createRestartSupplier(),
         storageMode,
-        storeConfig,
+        // State diffs put the store in state diff mode too, as the command line flag does
+        stateDiffsEnabled ? storeConfig.withStateDiffsEnabled() : storeConfig,
         spec,
         ChainBuilder.create(spec, validatorKeys),
         stateRebuildTimeoutSeconds);
@@ -94,7 +97,8 @@ public class FileBackedStorageSystemBuilder {
         .storageMode(storageMode)
         .stateStorageFrequency(stateStorageFrequency)
         .storeConfig(storeConfig)
-        .numberOfValidators(numberOfValidators);
+        .numberOfValidators(numberOfValidators)
+        .stateDiffsEnabled(stateDiffsEnabled);
   }
 
   private void validate() {
@@ -111,6 +115,11 @@ public class FileBackedStorageSystemBuilder {
   public FileBackedStorageSystemBuilder storeNonCanonicalBlocks(
       final boolean storeNonCanonicalBlocks) {
     this.storeNonCanonicalBlocks = storeNonCanonicalBlocks;
+    return this;
+  }
+
+  public FileBackedStorageSystemBuilder stateDiffsEnabled(final boolean stateDiffsEnabled) {
+    this.stateDiffsEnabled = stateDiffsEnabled;
     return this;
   }
 
@@ -156,7 +165,15 @@ public class FileBackedStorageSystemBuilder {
   }
 
   private StorageSystem.RestartedStorageSupplier createRestartSupplier() {
-    return (mode) -> copy().storageMode(mode).build();
+    return (mode, stateDiffs) -> {
+      final FileBackedStorageSystemBuilder copy = copy().storageMode(mode);
+      stateDiffs.ifPresent(copy::stateDiffsEnabled);
+      return copy.build();
+    };
+  }
+
+  private StateDiffDagConfig stateDiffDagConfig() {
+    return stateDiffsEnabled ? StateDiffDagConfig.prune() : StateDiffDagConfig.disabled();
   }
 
   private Database createLevelDb1Database() {
@@ -181,7 +198,8 @@ public class FileBackedStorageSystemBuilder {
         storageMode,
         stateStorageFrequency,
         storeNonCanonicalBlocks,
-        spec);
+        spec,
+        stateDiffDagConfig());
   }
 
   private Database createLevelDb2Database() {
@@ -192,7 +210,8 @@ public class FileBackedStorageSystemBuilder {
         storageMode,
         stateStorageFrequency,
         storeNonCanonicalBlocks,
-        spec);
+        spec,
+        stateDiffDagConfig());
   }
 
   private Database createRocksDbTreeDatabase() {
@@ -203,7 +222,8 @@ public class FileBackedStorageSystemBuilder {
         storageMode,
         storeNonCanonicalBlocks,
         10_000,
-        spec);
+        spec,
+        stateDiffDagConfig());
   }
 
   private Database createLevelDbTrieDatabase() {
@@ -214,7 +234,8 @@ public class FileBackedStorageSystemBuilder {
         storageMode,
         storeNonCanonicalBlocks,
         10_000,
-        spec);
+        spec,
+        stateDiffDagConfig());
   }
 
   private Database createV5Database() {

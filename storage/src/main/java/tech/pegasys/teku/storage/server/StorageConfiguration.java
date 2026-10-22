@@ -30,6 +30,7 @@ import tech.pegasys.teku.infrastructure.exceptions.InvalidConfigurationException
 import tech.pegasys.teku.service.serviceutils.layout.DataConfig;
 import tech.pegasys.teku.service.serviceutils.layout.DataDirLayout;
 import tech.pegasys.teku.spec.Spec;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
 
 public class StorageConfiguration {
   public static final boolean DEFAULT_STORE_NON_CANONICAL_BLOCKS_ENABLED = false;
@@ -78,6 +79,7 @@ public class StorageConfiguration {
   private final boolean forceClearDb;
   private final boolean rocksdbBlobDbEnabled;
   private final Duration pruningWarnTimeout;
+  private final StateDiffDagConfig stateDiffDagConfig;
 
   private StorageConfiguration(
       final Eth1Address eth1DepositContract,
@@ -100,7 +102,8 @@ public class StorageConfiguration {
       final Spec spec,
       final boolean forceClearDb,
       final boolean rocksdbBlobDbEnabled,
-      final Duration pruningWarnTimeout) {
+      final Duration pruningWarnTimeout,
+      final StateDiffDagConfig stateDiffDagConfig) {
     this.eth1DepositContract = eth1DepositContract;
     this.dataStorageMode = dataStorageMode;
     this.dataStorageFrequency = dataStorageFrequency;
@@ -122,6 +125,7 @@ public class StorageConfiguration {
     this.forceClearDb = forceClearDb;
     this.rocksdbBlobDbEnabled = rocksdbBlobDbEnabled;
     this.pruningWarnTimeout = pruningWarnTimeout;
+    this.stateDiffDagConfig = stateDiffDagConfig;
   }
 
   public static Builder builder() {
@@ -212,6 +216,10 @@ public class StorageConfiguration {
     return pruningWarnTimeout;
   }
 
+  public StateDiffDagConfig getStateDiffDagConfig() {
+    return stateDiffDagConfig;
+  }
+
   public static final class Builder {
     private static final Logger LOG = LogManager.getLogger();
     private Eth1Address eth1DepositContract;
@@ -236,6 +244,7 @@ public class StorageConfiguration {
     private boolean forceClearDb = false;
     private boolean rocksdbBlobDbEnabled = DEFAULT_ROCKSDB_BLOB_DB_ENABLED;
     private Duration pruningWarnTimeout = DEFAULT_PRUNING_WARN_TIMEOUT;
+    private boolean stateDiffsEnabled = false;
 
     private Builder() {}
 
@@ -404,6 +413,11 @@ public class StorageConfiguration {
       return this;
     }
 
+    public Builder stateDiffsEnabled(final boolean stateDiffsEnabled) {
+      this.stateDiffsEnabled = stateDiffsEnabled;
+      return this;
+    }
+
     public StorageConfiguration build() {
       determineDataStorageMode();
       validateStatePruningConfiguration();
@@ -428,7 +442,23 @@ public class StorageConfiguration {
           spec,
           forceClearDb,
           rocksdbBlobDbEnabled,
-          pruningWarnTimeout);
+          pruningWarnTimeout,
+          createStateDiffDagConfig());
+    }
+
+    private StateDiffDagConfig createStateDiffDagConfig() {
+      if (!stateDiffsEnabled) {
+        return StateDiffDagConfig.disabled();
+      }
+      if (dataStorageMode.storesFinalizedStates()) {
+        LOG.warn("state diffs with archive mode: archive states still use legacy storage");
+      }
+      if (dataStorageFrequency != DEFAULT_STORAGE_FREQUENCY) {
+        LOG.warn(
+            "--data-storage-archive-frequency ({}) is ignored when state diff storage is enabled",
+            dataStorageFrequency);
+      }
+      return StateDiffDagConfig.prune();
     }
 
     private void determineDataStorageMode() {

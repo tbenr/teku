@@ -81,6 +81,15 @@ public interface SchemaCombined extends Schema {
 
   KvStoreColumn<UInt64, Bytes32> getBestLightClientUpdateSignatureBlockRootsByPeriod();
 
+  /** Encoded state diff DAG node records by block root. */
+  KvStoreColumn<Bytes32, Bytes> getColumnStateDiffNodes();
+
+  /** Immutable supernode SSZ by supernode hash, shared by state diff DAG nodes. */
+  KvStoreColumn<Bytes32, Bytes> getColumnStateSupernodes();
+
+  /** Number of state diff DAG nodes referencing each supernode, by supernode hash. */
+  KvStoreColumn<Bytes32, UInt64> getColumnStateSupernodeRefCounts();
+
   // Variables
   KvStoreVariable<UInt64> getVariableGenesisTime();
 
@@ -115,6 +124,9 @@ public interface SchemaCombined extends Schema {
   KvStoreVariable<DepositTreeSnapshot> getVariableFinalizedDepositSnapshot();
 
   KvStoreVariable<UInt64> getVariableFirstCustodyIncompleteSlot();
+
+  /** Marker recording that hot states are stored in the state diff DAG. */
+  KvStoreVariable<Bytes> getVariableStateDiffMode();
 
   Map<String, KvStoreColumn<?, ?>> getColumnMap();
 

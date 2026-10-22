@@ -25,9 +25,19 @@ public class DatabaseContext {
 
   private final boolean inMemoryStorage;
 
+  private final boolean stateDiffsEnabled;
+
   public DatabaseContext(final DatabaseVersion databaseVersion, final boolean inMemoryStorage) {
+    this(databaseVersion, inMemoryStorage, false);
+  }
+
+  public DatabaseContext(
+      final DatabaseVersion databaseVersion,
+      final boolean inMemoryStorage,
+      final boolean stateDiffsEnabled) {
     this.databaseVersion = databaseVersion;
     this.inMemoryStorage = inMemoryStorage;
+    this.stateDiffsEnabled = stateDiffsEnabled;
   }
 
   public DatabaseVersion getDatabaseVersion() {
@@ -36,6 +46,10 @@ public class DatabaseContext {
 
   public boolean isInMemoryStorage() {
     return inMemoryStorage;
+  }
+
+  public boolean isStateDiffsEnabled() {
+    return stateDiffsEnabled;
   }
 
   public StorageSystem createInMemoryStorage(
@@ -50,6 +64,7 @@ public class DatabaseContext {
         .stateStorageFrequency(1L)
         .storeConfig(storeConfig)
         .storeNonCanonicalBlocks(storeNonCanonicalBlocks)
+        .stateDiffsEnabled(stateDiffsEnabled)
         .build();
   }
 
@@ -68,6 +83,14 @@ public class DatabaseContext {
         .stateStorageFrequency(1L)
         .storeConfig(storeConfig)
         .storeNonCanonicalBlocks(storeNonCanonicalBlocks)
+        .stateDiffsEnabled(stateDiffsEnabled)
         .build();
+  }
+
+  @Override
+  public String toString() {
+    return databaseVersion.name()
+        + (inMemoryStorage ? " (in-memory)" : " (file-storage)")
+        + (stateDiffsEnabled ? " (state-diffs)" : "");
   }
 }

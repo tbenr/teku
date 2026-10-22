@@ -59,6 +59,10 @@ public class SszSuperNode implements TreeNode, LeafDataNode {
     checkArgument(getElementsCount() <= getMaxElements());
   }
 
+  public int getDepth() {
+    return depth;
+  }
+
   private int getMaxElements() {
     return 1 << depth;
   }
@@ -150,6 +154,9 @@ public class SszSuperNode implements TreeNode, LeafDataNode {
   public TreeNode updated(final TreeUpdates newNodes) {
     if (newNodes.isEmpty()) {
       return this;
+    }
+    if (newNodes.isFinal()) {
+      return newNodes.getNode(0);
     }
     long leftmostUpdateIndex = newNodes.getRelativeGIndex(newNodes.size() - 1);
     int leftmostChildIndex = GIndexUtil.gIdxGetChildIndex(leftmostUpdateIndex, depth);

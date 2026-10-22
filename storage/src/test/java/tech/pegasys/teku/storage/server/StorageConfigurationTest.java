@@ -33,6 +33,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import tech.pegasys.infrastructure.logging.LogCaptor;
 import tech.pegasys.teku.ethereum.execution.types.Eth1Address;
 import tech.pegasys.teku.infrastructure.exceptions.InvalidConfigurationException;
 import tech.pegasys.teku.service.serviceutils.layout.DataConfig;
@@ -168,5 +169,33 @@ public class StorageConfigurationTest {
                     .build())
         .isInstanceOf(InvalidConfigurationException.class)
         .hasMessageContaining("State pruner cannot be enabled using tree mode storage");
+  }
+
+  @Test
+  public void warnsThatArchiveFrequencyIsIgnoredWithStateDiffs() {
+    try (LogCaptor logCaptor = LogCaptor.forClass(StorageConfiguration.Builder.class)) {
+      StorageConfiguration.builder()
+          .specProvider(spec)
+          .eth1DepositContract(eth1Address)
+          .dataStorageMode(PRUNE)
+          .dataStorageFrequency(64)
+          .stateDiffsEnabled(true)
+          .build();
+      logCaptor.assertWarnLog(
+          "--data-storage-archive-frequency (64) is ignored when state diff storage is enabled");
+    }
+  }
+
+  @Test
+  public void doesNotWarnAboutDefaultArchiveFrequencyWithStateDiffs() {
+    try (LogCaptor logCaptor = LogCaptor.forClass(StorageConfiguration.Builder.class)) {
+      StorageConfiguration.builder()
+          .specProvider(spec)
+          .eth1DepositContract(eth1Address)
+          .dataStorageMode(PRUNE)
+          .stateDiffsEnabled(true)
+          .build();
+      assertThat(logCaptor.getWarnLogs()).isEmpty();
+    }
   }
 }

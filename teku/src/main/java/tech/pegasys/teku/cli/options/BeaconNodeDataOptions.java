@@ -248,6 +248,19 @@ public class BeaconNodeDataOptions extends ValidatorClientDataOptions {
   private boolean rocksdbBlobDbEnabled = DEFAULT_ROCKSDB_BLOB_DB_ENABLED;
 
   @CommandLine.Option(
+      names = {"--Xdata-storage-state-diffs"},
+      hidden = true,
+      paramLabel = "<BOOLEAN>",
+      showDefaultValue = Visibility.ALWAYS,
+      description =
+          "Store hot states and the latest finalized state as a DAG of state diffs. "
+              + "Requires a V6 database (rocksdb, leveldb2 or a tree variant). Once enabled, the "
+              + "database keeps using state diffs even when this option is removed.",
+      fallbackValue = "true",
+      arity = "0..1")
+  private boolean stateDiffsEnabled = false;
+
+  @CommandLine.Option(
       names = {"--force-clear-db"},
       paramLabel = "<BOOLEAN>",
       showDefaultValue = Visibility.ALWAYS,
@@ -289,7 +302,10 @@ public class BeaconNodeDataOptions extends ValidatorClientDataOptions {
                 .statePruningLimit(statePruningLimit)
                 .forceClearDb(forceClearDb)
                 .rocksdbBlobDbEnabled(rocksdbBlobDbEnabled)
+                .stateDiffsEnabled(stateDiffsEnabled)
                 .pruningWarnTimeout(Duration.ofSeconds(pruningWarnTimeoutSeconds)));
+    // The store persists the checkpoint block state of every epoch as a state diff node
+    builder.store(b -> b.stateDiffsEnabled(stateDiffsEnabled));
     builder.sync(
         b ->
             b.fetchAllHistoricBlocks(dataStorageMode.storesAllBlocks())

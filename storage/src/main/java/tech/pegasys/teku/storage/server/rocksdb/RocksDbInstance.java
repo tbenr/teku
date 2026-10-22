@@ -38,6 +38,7 @@ import org.rocksdb.TransactionDB;
 import tech.pegasys.teku.storage.server.DatabaseStorageException;
 import tech.pegasys.teku.storage.server.ShuttingDownException;
 import tech.pegasys.teku.storage.server.kvstore.ColumnEntry;
+import tech.pegasys.teku.storage.server.kvstore.ColumnSize;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreAccessor;
 import tech.pegasys.teku.storage.server.kvstore.schema.KvStoreColumn;
 import tech.pegasys.teku.storage.server.kvstore.schema.KvStoreVariable;
@@ -105,6 +106,28 @@ public class RocksDbInstance implements KvStoreAccessor {
     assertOpen();
     try (final Stream<?> rawStream = streamRaw(column)) {
       return rawStream.count();
+    }
+  }
+
+  @Override
+  public Optional<ColumnSize> getColumnSize(final KvStoreColumn<?, ?> column) {
+    assertOpen();
+    final ColumnFamilyHandle handle = getColumnHandle(column);
+    if (handle == null) {
+      // The column family is created on its first write
+      return Optional.of(ColumnSize.EMPTY);
+    }
+    final ColumnFamilyDescriptor descriptor = columnDescriptors.get(column);
+    final boolean blobFilesEnabled =
+        descriptor != null && descriptor.getOptions().enableBlobFiles();
+    try {
+      return Optional.of(
+          new ColumnSize(
+              db.getLongProperty(handle, "rocksdb.estimate-live-data-size"),
+              db.getLongProperty(handle, "rocksdb.total-sst-files-size"),
+              blobFilesEnabled ? db.getLongProperty(handle, "rocksdb.total-blob-file-size") : 0L));
+    } catch (final RocksDBException e) {
+      throw RocksDbExceptionUtil.wrapException("Failed to get column family size", e);
     }
   }
 
