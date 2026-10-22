@@ -238,6 +238,9 @@ public class V6SchemaCombinedSnapshot extends V6SchemaCombined
             getBestLightClientUpdateSignatureBlockRootsByPeriod())
         .put("LIGHT_CLIENT_BOOTSTRAPS_BY_SLOT", getLightClientBootstrapsBySlot())
         .put("LIGHT_CLIENT_SYNC_COMMITTEES_BY_PERIOD", getLightClientSyncCommitteesByPeriod())
+        .put("STATE_DIFF_NODES", getColumnStateDiffNodes())
+        .put("STATE_SUPERNODES", getColumnStateSupernodes())
+        .put("STATE_SUPERNODE_REFCOUNTS", getColumnStateSupernodeRefCounts())
         .build();
   }
 

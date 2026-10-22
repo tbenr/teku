@@ -156,6 +156,9 @@ public class SszSuperNode implements TreeNode, LeafDataNode {
     if (newNodes.isEmpty()) {
       return this;
     }
+    if (newNodes.isFinal()) {
+      return newNodes.getNode(0);
+    }
     long leftmostUpdateIndex = newNodes.getRelativeGIndex(newNodes.size() - 1);
     int leftmostChildIndex = GIndexUtil.gIdxGetChildIndex(leftmostUpdateIndex, depth);
     int newSszSize = (leftmostChildIndex + 1) * elementTemplate.getSszLength();

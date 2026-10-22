@@ -15,6 +15,8 @@ package tech.pegasys.teku.storage.store;
 
 import static tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus.PAYLOAD_STATUS_PENDING;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -22,7 +24,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes32;
@@ -41,7 +45,10 @@ import tech.pegasys.teku.spec.datastructures.state.AnchorPoint;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.storage.api.FinalizedChainData;
+import tech.pegasys.teku.storage.api.HotStateNodeInfo;
+import tech.pegasys.teku.storage.protoarray.BlockMetadataStore.HaltableBeaconBlockProcessor;
 import tech.pegasys.teku.storage.protoarray.ExecutionPayloadUpdate;
+import tech.pegasys.teku.storage.protoarray.ForkChoiceStrategy;
 
 class StoreTransactionUpdatesFactory {
   private static final Logger LOG = LogManager.getLogger();
@@ -170,7 +177,13 @@ class StoreTransactionUpdatesFactory {
   }
 
   /** Pull subset of hot states that sit at epoch boundaries to persist */
-  private Map<Bytes32, BeaconState> getHotStatesToPersist() {
+  private HotStatesToPersist getHotStatesToPersist() {
+    return baseStore.isStateDiffMode()
+        ? getCheckpointBlockStatesToPersist()
+        : new HotStatesToPersist(getEpochBoundaryStatesToPersist(), Collections.emptyMap());
+  }
+
+  private Map<Bytes32, BeaconState> getEpochBoundaryStatesToPersist() {
     final Map<Bytes32, BeaconState> statesToPersist =
         hotBlockAndStates.entrySet().stream()
             .filter(
@@ -183,6 +196,169 @@ class StoreTransactionUpdatesFactory {
     }
     return statesToPersist;
   }
+
+  /**
+   * State diff mode: the states of the checkpoint blocks made known by the transaction's blocks,
+   * with where each sits in the chain. For every block {@code B} of the transaction whose epoch is
+   * greater than its parent {@code R}'s:
+   *
+   * <ul>
+   *   <li>on its epoch's start slot, {@code B} is the checkpoint block of its own epoch, and {@code
+   *       R} of the empty epochs in between, if any;
+   *   <li>otherwise {@code R} is the checkpoint block of the epochs after its own up to {@code
+   *       B}'s.
+   * </ul>
+   *
+   * <p>{@code R} on an epoch start slot also serves its own epoch, but that was recorded when
+   * {@code R} itself was imported; the write for an existing node only raises its last epoch.
+   */
+  private HotStatesToPersist getCheckpointBlockStatesToPersist() {
+    final Map<Bytes32, ServedEpochs> checkpointBlocks = new HashMap<>();
+    hotBlockAndStates
+        .values()
+        .forEach(
+            block -> {
+              final Bytes32 parentRoot = block.getParentRoot();
+              final UInt64 blockEpoch = spec.computeEpochAtSlot(block.getSlot());
+              final Optional<UInt64> maybeParentSlot = blockSlot(parentRoot);
+              if (maybeParentSlot.isEmpty()) {
+                return;
+              }
+              final UInt64 parentSlot = maybeParentSlot.get();
+              final UInt64 parentEpoch = spec.computeEpochAtSlot(parentSlot);
+              if (!blockEpoch.isGreaterThan(parentEpoch)) {
+                return;
+              }
+              final UInt64 parentLastEpoch;
+              if (isEpochStartSlot(block.getSlot())) {
+                addServedEpochs(
+                    checkpointBlocks,
+                    block.getRoot(),
+                    new ServedEpochs(block.getSlot(), blockEpoch, blockEpoch));
+                parentLastEpoch = blockEpoch.minus(1);
+              } else {
+                parentLastEpoch = blockEpoch;
+              }
+              final UInt64 parentFirstEpoch = parentEpoch.plus(1);
+              if (parentLastEpoch.isGreaterThanOrEqualTo(parentFirstEpoch)) {
+                addServedEpochs(
+                    checkpointBlocks,
+                    parentRoot,
+                    new ServedEpochs(parentSlot, parentFirstEpoch, parentLastEpoch));
+              }
+            });
+
+    final Map<Bytes32, BeaconState> states = new HashMap<>();
+    final Map<Bytes32, HotStateNodeInfo> nodeInfos = new HashMap<>();
+    checkpointBlocks.forEach(
+        (checkpointRoot, servedEpochs) -> {
+          final Optional<BeaconState> state = getCheckpointBlockState(checkpointRoot);
+          if (state.isEmpty()) {
+            LOG.warn(
+                "Not storing a state diff node for checkpoint block {} at slot {} serving epochs"
+                    + " {}..{}: its state is no longer in memory",
+                checkpointRoot,
+                servedEpochs.slot(),
+                servedEpochs.firstEpoch(),
+                servedEpochs.lastEpoch());
+            baseStore.onStateDiffNodeSkipped();
+            return;
+          }
+          states.put(checkpointRoot, state.get());
+          nodeInfos.put(
+              checkpointRoot,
+              new HotStateNodeInfo(
+                  servedEpochs.firstEpoch(),
+                  servedEpochs.lastEpoch(),
+                  collectAncestorCheckpointRoots(checkpointRoot)));
+        });
+    if (!states.isEmpty()) {
+      LOG.trace("Persist {} checkpoint block states as state diff nodes", states.size());
+    }
+    return new HotStatesToPersist(states, nodeInfos);
+  }
+
+  private static void addServedEpochs(
+      final Map<Bytes32, ServedEpochs> checkpointBlocks,
+      final Bytes32 root,
+      final ServedEpochs servedEpochs) {
+    checkpointBlocks.merge(
+        root,
+        servedEpochs,
+        (a, b) ->
+            new ServedEpochs(
+                a.slot(), a.firstEpoch().min(b.firstEpoch()), a.lastEpoch().max(b.lastEpoch())));
+  }
+
+  private boolean isEpochStartSlot(final UInt64 slot) {
+    return spec.computeStartSlotAtEpoch(spec.computeEpochAtSlot(slot)).equals(slot);
+  }
+
+  private Optional<BeaconState> getCheckpointBlockState(final Bytes32 checkpointRoot) {
+    // The epoch states cache, consulted by the store in state diff mode, normally holds it
+    final Optional<BeaconState> state = tx.getBlockStateIfAvailable(checkpointRoot);
+    if (state.isPresent()) {
+      return state;
+    }
+    // The finalized anchor always has a node; only its served epochs may need extending
+    return Stream.of(latestFinalized, baseStore.getLatestFinalized())
+        .filter(anchor -> anchor.getRoot().equals(checkpointRoot))
+        .map(AnchorPoint::getState)
+        .findFirst();
+  }
+
+  /**
+   * The checkpoint blocks among the ancestors of {@code checkpointRoot}, nearest first, ending with
+   * the finalized block of the store this transaction applies to. An ancestor is a checkpoint block
+   * when it sits on an epoch start slot or its child is in a later epoch. That finalized block
+   * always has a node, so the list always resolves to a previous node, while the ones above it are
+   * the nodes that may exist.
+   */
+  private List<Bytes32> collectAncestorCheckpointRoots(final Bytes32 checkpointRoot) {
+    final Bytes32 finalizedRoot = baseStore.getLatestFinalized().getRoot();
+    final List<Bytes32> ancestorRoots = new ArrayList<>();
+    // The epoch of the previously visited block, the child of the next one; empty before the start
+    final AtomicReference<Optional<UInt64>> childEpoch = new AtomicReference<>(Optional.empty());
+    // Returns whether to continue to the parent of the visited block
+    final HaltableBeaconBlockProcessor visitor =
+        (root, slot, parentRoot) -> {
+          if (root.equals(finalizedRoot)) {
+            return false;
+          }
+          final UInt64 epoch = spec.computeEpochAtSlot(slot);
+          final boolean isCheckpointBlock =
+              isEpochStartSlot(slot) || childEpoch.get().map(epoch::isLessThan).orElse(false);
+          if (!root.equals(checkpointRoot) && isCheckpointBlock) {
+            ancestorRoots.add(root);
+          }
+          childEpoch.set(Optional.of(epoch));
+          return true;
+        };
+
+    // Blocks of this transaction, including those it prunes, are not in fork choice yet
+    Bytes32 current = checkpointRoot;
+    SignedBlockAndState txBlock = tx.blockData.get(current);
+    while (txBlock != null) {
+      if (!visitor.process(current, txBlock.getSlot(), txBlock.getParentRoot())) {
+        break;
+      }
+      current = txBlock.getParentRoot();
+      txBlock = tx.blockData.get(current);
+    }
+    final ForkChoiceStrategy forkChoiceStrategy = baseStore.getForkChoiceStrategy();
+    if (txBlock == null && !current.equals(finalizedRoot) && forkChoiceStrategy.contains(current)) {
+      forkChoiceStrategy.processBeaconBlockChainWhile(current, visitor);
+    }
+    ancestorRoots.add(finalizedRoot);
+    return ancestorRoots;
+  }
+
+  /** The epochs a checkpoint block at {@code slot} is known to serve. */
+  private record ServedEpochs(UInt64 slot, UInt64 firstEpoch, UInt64 lastEpoch) {}
+
+  /** The hot states to persist and, in state diff mode, where each sits in the chain. */
+  private record HotStatesToPersist(
+      Map<Bytes32, BeaconState> states, Map<Bytes32, HotStateNodeInfo> nodeInfos) {}
 
   private Optional<UInt64> blockSlot(final Bytes32 root) {
     return Optional.ofNullable(hotBlockAndStates.get(root))
@@ -271,12 +447,14 @@ class StoreTransactionUpdatesFactory {
       final boolean optimisticTransitionBlockRootSet,
       final Optional<Bytes32> optimisticTransitionBlockRoot,
       final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads) {
+    final HotStatesToPersist hotStatesToPersist = getHotStatesToPersist();
     return new StoreTransactionUpdates(
         tx,
         finalizedChainData,
         hotBlocks,
         hotBlockAndStates,
-        getHotStatesToPersist(),
+        hotStatesToPersist.states(),
+        hotStatesToPersist.nodeInfos(),
         blobSidecars,
         maybeEarliestBlobSidecarSlot,
         prunedHotBlockRoots,

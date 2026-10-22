@@ -34,4 +34,35 @@ public record OnDiskStoreData(
     Map<UInt64, VoteTracker> votes,
     Optional<Bytes32> latestCanonicalBlockRoot,
     Optional<UInt64> custodyGroupCount,
-    Optional<Bytes32> fastConfirmedRoot) {}
+    Optional<Bytes32> fastConfirmedRoot,
+    boolean stateDiffStorageActive) {
+
+  public OnDiskStoreData(
+      final UInt64 time,
+      final Optional<Checkpoint> anchor,
+      final UInt64 genesisTime,
+      final AnchorPoint latestFinalized,
+      final Optional<SlotAndExecutionPayloadSummary> finalizedOptimisticTransitionPayload,
+      final Checkpoint justifiedCheckpoint,
+      final Checkpoint bestJustifiedCheckpoint,
+      final Map<Bytes32, StoredBlockMetadata> blockInformation,
+      final Map<UInt64, VoteTracker> votes,
+      final Optional<Bytes32> latestCanonicalBlockRoot,
+      final Optional<UInt64> custodyGroupCount,
+      final Optional<Bytes32> fastConfirmedRoot) {
+    this(
+        time,
+        anchor,
+        genesisTime,
+        latestFinalized,
+        finalizedOptimisticTransitionPayload,
+        justifiedCheckpoint,
+        bestJustifiedCheckpoint,
+        blockInformation,
+        votes,
+        latestCanonicalBlockRoot,
+        custodyGroupCount,
+        fastConfirmedRoot,
+        false);
+  }
+}
