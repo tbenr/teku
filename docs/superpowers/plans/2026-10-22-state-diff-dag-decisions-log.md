@@ -405,3 +405,41 @@ writes are therefore ~140 ms (down from ~540 ms); the cold-cache base
 reconstruction on the live node is far slower than the offline verifier's
 3.1 s and needs profiling (candidates: thousands of supernode point reads for
 coarse nodes, GC during sync start-up).
+
+Memory A/B on mainnet (2026-10-23, same build, same -Xmx8g, both nodes in sync
+at head 15,490,920 / finalized 484,089, full GC forced by the class histogram):
+
+| | state-diff node | stock node (flag off, unmigrated copy) |
+|---|---|---|
+| live heap after full GC | 5.30 GB | 4.59 GB |
+| byte[] | 1.30 GB | 0.96 GB |
+| SimpleLeafNode | 5.04 M | 3.25 M |
+| SimpleBranchNode | 5.93 M | 4.05 M |
+| ArrayWrappingBytes32 | 13.2 M | 9.4 M |
+| SszSuperNode | 7.20 M | 7.18 M |
+| non-heap / direct buffers | 137 MB / 231 MB | 135 MB / 201 MB |
+
+The DAG adds ~0.7 GB of live heap: ~1.8 M extra packed-list leaves and ~1.9 M
+branch nodes, i.e. the diverged balances / inactivity / participation subtrees
+of the coarse base trees held by the per-level cache (about 150 MB per distinct
+coarse base, 2-3 bases resident). Supernode object counts are identical, so
+the 7.2 M per-validator view slices are Teku's existing per-state view caches,
+not the DAG. `baseCacheLevels` trades this memory for a reconstruction every
+16 / 64 / 256 epochs. Single snapshot; RSS was not comparable because the stock
+node had just finished a 3-day catch-up sync.
+
+Soak status 2026-10-23 06:12 UTC (7 h on the final build): both nodes in sync at
+the wall-clock slot, 0 errors/warnings since restart, 0 verification failures.
+Mainnet: 68 nodes written / 72 deleted, first periodic snapshot at epoch
+484096 = 20.9 MB raw, level-3 nodes avg 5.4 MB raw, base cache 66 hits / 1
+miss, 1 skipped node (state evicted) handled by a late anchor; steady-state
+write ~48 ms per node (walk 2.95 s + encode 0.30 s + store 0.03 s over 68
+nodes; the 14.7 s "base" total is the single cold-cache reconstruction after
+restart). Sepolia (Gloas): 65 written / 63 deleted, write ~9 ms per node, 4
+reconstructions in 0.35 s.
+Database growth (mainnet 8 -> 42 GB, sepolia 15 -> 28 GB) is Teku's
+HistoricalBlockSyncService backfilling ~1M slots of blocks after checkpoint
+sync (33 GB flushed into FINALIZED_BLOCKS_BY_SLOT, 27 GB of compaction output
+on SIDECAR_BY_COLUMN_SLOT_AND_IDENTIFIER), not the DAG; the state diff columns
+flushed ~6 MB and compacted ~200 MB in the same period. Sepolia node stopped
+after 7 h to preserve disk for the mainnet backfill.
