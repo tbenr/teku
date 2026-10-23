@@ -104,8 +104,19 @@ times, and the on-disk footprint of state storage by about 3.5 times, for about
 
 ## Next steps
 
+- Phase 2, first slice: a retention window. Keep the last W epochs of states
+  (reusing `--Xdata-storage-archive-finalized-states-retained`) plus the
+  reconstruction chain of the oldest one; history starts at the switch or the
+  checkpoint anchor, no genesis backfill. Roughly 0.7 to 1.3 GB per day of
+  mainnet history at today's node sizes, half that once deltas are compressed.
 - Phase 2, archive node: configurable coarse levels above 256 epochs, historical
-  reads through the DAG, `--reconstruct-historic-states` integration (spec 5.11).
+  reads through the DAG (one snapshot plus at most 38 diffs, however old the
+  epoch), `--reconstruct-historic-states` integration (spec 5.11).
+- Phase 2, reconstruction anchor: let a fresh node supply an older finalized
+  state so backfill and reconstruction start there instead of genesis; the
+  state is verified against the block's state root once the block backfill
+  reaches it, and an anchor older than the peers' required serving window only
+  warns and keeps retrying.
 - Phase 3, frozen exited-validator supernodes: keep only the hash of supernodes
   whose validators are all withdrawn, load on demand from the supernode column,
   skip them in per-epoch iteration (spec section 9).
