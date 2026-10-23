@@ -390,6 +390,46 @@ Pre-migration history on an existing archive node is not served from the
 legacy snapshot or tree columns (D19); `getEarliestAvailableFinalizedStateSlot`
 reports the earliest snapshot node.
 
+Reconstruction chain bound with the archive levels: one snapshot plus at most
+7 + 3 + 7 + 3 + 3 + 15 = 38 diffs, independent of how old the target epoch is.
+Reading a stored historical state never replays blocks beyond the target
+epoch; only producing states the database never had (backfill) replays from
+an older state forward.
+
+**Retention window (phase 2, first slice).** Between prune mode (keep only
+the anchor's chain) and archive mode (keep everything) sits a bounded window:
+keep every canonical node of the last W epochs plus the reconstruction chain
+of the oldest node in the window. That chain is sufficient for the whole
+window, because every node inside the window resolves its coarse parents to
+the nearest coarser node below the window boundary, which the oldest node's
+chain passes through; so the "backbone" below the boundary is at most one
+chain of nodes. Garbage at each finalization is the existing prune rule with
+the anchor replaced by the oldest retained node: the node that just left the
+window unless it is on the new backbone, plus the old backbone minus the new
+one. `--Xdata-storage-archive-finalized-states-retained` (slots) already
+expresses this retention and is reused: 0 is prune behaviour, archive mode
+without it is unbounded. `getEarliestAvailableFinalizedStateSlot` reports the
+window start and the snapshot-mode state pruner is not used. History begins
+at the switch or at the checkpoint-sync anchor; no genesis backfill is needed.
+
+**Reconstruction anchor (phase 2).** A fresh node that wants states older
+than its checkpoint anchor must produce them by replaying blocks forward, and
+today that replay starts at genesis. An operator can instead supply an older
+finalized state (`--Xreconstruct-historic-states-from=<file or URL>`, the same
+shape as `--initial-state`, or an admin API accepting the SSZ; an archive
+node's `/eth/v2/debug/beacon/states/{slot}` is a natural source). The
+historical block sync lowers its backfill target to that state's slot when it
+is older than the default target; once the backfill reaches it, the supplied
+state's hash tree root is checked against the state root carried by the block
+at that slot, which ties it to the checkpoint-anchored chain without added
+trust; reconstruction then replays forward from it to the checkpoint anchor,
+writing one node per epoch (the first as a snapshot), and the two chains meet
+at the anchor's existing node. Peers are only required to serve blocks for
+`MIN_EPOCHS_FOR_BLOCK_REQUESTS`; an older anchor only logs a warning at
+startup, and the backfill keeps retrying until peers that serve those blocks
+are found (public archives or the operator's own nodes), as the historical
+block sync already does when data is missing.
+
 `--data-storage-mode archive` with the flag selects this archive; without the
 flag the snapshot or tree archive is used as today.
 
