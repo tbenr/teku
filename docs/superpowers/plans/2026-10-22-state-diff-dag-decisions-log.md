@@ -443,3 +443,27 @@ sync (33 GB flushed into FINALIZED_BLOCKS_BY_SLOT, 27 GB of compaction output
 on SIDECAR_BY_COLUMN_SLOT_AND_IDENTIFIER), not the DAG; the state diff columns
 flushed ~6 MB and compacted ~200 MB in the same period. Sepolia node stopped
 after 7 h to preserve disk for the mainnet backfill.
+
+## Phase 2 design additions (2026-10-23, discussed with Enrico)
+
+43. **GREY. Retention window reuses the prune retention rule.** Keep every
+    canonical node of the last W epochs plus the reconstruction chain of the
+    oldest node in the window; the garbage rule is the prune-mode one with the
+    anchor replaced by the oldest retained node. Justification: a node inside
+    the window resolves its coarse parents to the nearest coarser node below
+    the boundary, which the oldest node's chain passes through, so one backbone
+    chain serves the whole window. W comes from the existing
+    `--Xdata-storage-archive-finalized-states-retained` option (slots).
+
+44. **GREY. Reconstruction anchor instead of genesis for fresh nodes.** An
+    operator-supplied older finalized state (CLI or API) becomes the start of
+    `--reconstruct-historic-states`; the block backfill target is lowered to
+    its slot, and the state is verified against the block's state root before
+    use. An anchor older than `MIN_EPOCHS_FOR_BLOCK_REQUESTS` only logs a
+    warning: the backfill keeps retrying until peers serving those blocks are
+    found, which may be the operator's own nodes.
+
+45. **DERIVED. Chain bounds.** Prune levels: snapshot + 21 diffs; archive
+    levels `[65536, 8192, 2048, 256, 64, 16, 1]`: snapshot + 38 diffs. Reads of
+    stored states never replay blocks beyond the target epoch; only producing
+    states the database never had replays forward from an older state.
