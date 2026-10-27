@@ -24,7 +24,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicReference;
 import org.apache.tuweni.bytes.Bytes;
 import org.junit.jupiter.api.Test;
 import tech.pegasys.teku.infrastructure.bytes.Bytes4;
@@ -106,11 +105,13 @@ class AbstractByteBufDecoderTest {
     assertThat(first.isReadable()).isFalse();
 
     final Optional<ByteBuf> message = decoder.decodeOneMessage(second);
-    assertThat(message).map(this::readable).contains(Bytes.of(1, 2, 3, 4));
+    assertThat(message).map(AbstractByteBufDecoderTest::readable).contains(Bytes.of(1, 2, 3, 4));
     assertThat(readable(second)).isEqualTo(Bytes.of(5, 6, 7, 8, 9));
 
     final Optional<ByteBuf> nextMessage = decoder.decodeOneMessage(second);
-    assertThat(nextMessage).map(this::readable).contains(Bytes.of(5, 6, 7, 8));
+    assertThat(nextMessage)
+        .map(AbstractByteBufDecoderTest::readable)
+        .contains(Bytes.of(5, 6, 7, 8));
     assertThat(readable(second)).isEqualTo(Bytes.of(9));
 
     message.get().release();
@@ -138,18 +139,7 @@ class AbstractByteBufDecoderTest {
   @Test
   void decodeOneMessage_rejectsMessageThatLeavesEarlierBytesBehind() {
     // completes a message once 4 bytes are buffered but only consumes 1 of them
-    final AtomicReference<ByteBuf> returned = new AtomicReference<>();
-    final AbstractByteBufDecoder<ByteBuf, RuntimeException> decoder =
-        new FixedLengthDecoder(4) {
-          @Override
-          protected Optional<ByteBuf> decodeOneImpl(final ByteBuf in) {
-            if (in.readableBytes() < 4) {
-              return Optional.empty();
-            }
-            returned.set(in.readRetainedSlice(1));
-            return Optional.of(returned.get());
-          }
-        };
+    final FixedLengthDecoder decoder = new FixedLengthDecoder(4, 1);
     final ByteBuf first = Unpooled.wrappedBuffer(Bytes.of(1, 2, 3).toArray());
     final ByteBuf second = Unpooled.wrappedBuffer(Bytes.of(4).toArray());
 
@@ -157,29 +147,38 @@ class AbstractByteBufDecoderTest {
     assertThatThrownBy(() -> decoder.decodeOneMessage(second))
         .isInstanceOf(IllegalStateException.class);
 
-    assertThat(returned.get().refCnt()).isZero();
+    assertThat(decoder.lastReturned.refCnt()).isZero();
     first.release();
     second.release();
   }
 
-  private Bytes readable(final ByteBuf buf) {
+  private static Bytes readable(final ByteBuf buf) {
     return Bytes.wrap(ByteBufUtil.getBytes(buf));
   }
 
+  /** Returns a slice of {@code consumed} bytes once {@code required} bytes are buffered. */
   private static class FixedLengthDecoder
       extends AbstractByteBufDecoder<ByteBuf, RuntimeException> {
-    private final int messageLength;
+    private final int required;
+    private final int consumed;
+    private ByteBuf lastReturned;
 
     private FixedLengthDecoder(final int messageLength) {
-      this.messageLength = messageLength;
+      this(messageLength, messageLength);
+    }
+
+    private FixedLengthDecoder(final int required, final int consumed) {
+      this.required = required;
+      this.consumed = consumed;
     }
 
     @Override
     protected Optional<ByteBuf> decodeOneImpl(final ByteBuf in) {
-      if (in.readableBytes() < messageLength) {
+      if (in.readableBytes() < required) {
         return Optional.empty();
       }
-      return Optional.of(in.readRetainedSlice(messageLength));
+      lastReturned = in.readRetainedSlice(consumed);
+      return Optional.of(lastReturned);
     }
 
     @Override

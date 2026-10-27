@@ -19,6 +19,16 @@ import java.util.zip.CRC32C;
 
 class SnappyUtil {
 
+  /**
+   * Worst-case snappy encoded length of {@code uncompressedLength} bytes.
+   *
+   * @see <a
+   *     href="https://github.com/google/snappy/blob/537f4ad6240e586970fe554614542e9717df7902/snappy.cc#L98">snappy.cc</a>
+   */
+  static int maxCompressedLength(final int uncompressedLength) {
+    return 32 + uncompressedLength + uncompressedLength / 6;
+  }
+
   static int calculateChecksum(final ByteBuf data) {
     return calculateChecksum(data, data.readerIndex(), data.readableBytes());
   }

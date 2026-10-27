@@ -51,8 +51,7 @@ public abstract class AbstractByteBufDecoder<TMessage, TException extends Except
   private Optional<TMessage> decodeFromInput(final ByteBuf in) throws TException {
     final Optional<TMessage> outBuf = decodeAvailable(in);
     if (outBuf.isEmpty() && in.isReadable()) {
-      cumulation = Unpooled.buffer(in.readableBytes());
-      cumulation.writeBytes(in);
+      cumulation = Unpooled.buffer(in.readableBytes()).writeBytes(in);
     }
     return outBuf;
   }
@@ -73,12 +72,21 @@ public abstract class AbstractByteBufDecoder<TMessage, TException extends Except
             "Decoded message left " + leftover + " bytes but only " + inputBytes + " were added");
       }
       in.skipBytes(inputBytes - leftover);
-      cumulation.release();
-      cumulation = null;
+      releaseCumulation();
     } else {
       in.skipBytes(inputBytes);
+      if (!cumulation.isReadable()) {
+        releaseCumulation();
+      }
     }
     return outBuf;
+  }
+
+  private void releaseCumulation() {
+    if (cumulation != null) {
+      cumulation.release();
+      cumulation = null;
+    }
   }
 
   private Optional<TMessage> decodeAvailable(final ByteBuf buf) throws TException {
@@ -95,7 +103,7 @@ public abstract class AbstractByteBufDecoder<TMessage, TException extends Except
   public void complete() throws TException {
     assertNotClosed();
     try {
-      if (cumulation != null && cumulation.isReadable()) {
+      if (cumulation != null) {
         throwUnprocessedDataException(cumulation.readableBytes());
       }
     } finally {
@@ -107,10 +115,7 @@ public abstract class AbstractByteBufDecoder<TMessage, TException extends Except
   public void close() {
     if (!closed) {
       closed = true;
-      if (cumulation != null) {
-        cumulation.release();
-        cumulation = null;
-      }
+      releaseCumulation();
     }
   }
 

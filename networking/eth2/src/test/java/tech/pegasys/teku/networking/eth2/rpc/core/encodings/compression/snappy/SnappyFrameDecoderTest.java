@@ -25,12 +25,15 @@ import tech.pegasys.teku.networking.eth2.rpc.core.encodings.compression.exceptio
 public class SnappyFrameDecoderTest {
 
   private static final Bytes STREAM_IDENTIFIER = Bytes.fromHexString("0xff060000734e61507059");
-  // checksum plus snappy's worst-case encoded length of a 65536-byte block: 32 + n + n / 6
-  private static final int MAX_COMPRESSED_CHUNK_LENGTH = 4 + 32 + 65536 + 65536 / 6;
+
+  @Test
+  void maxCompressedChunkSizeIsChecksumPlusWorstCaseEncodingOf64KiB() {
+    assertThat(SnappyFrameDecoder.MAX_COMPRESSED_CHUNK_SIZE).isEqualTo(76_494);
+  }
 
   @Test
   void acceptsCompressedChunkHeaderAtMaxEncodedLength() throws Exception {
-    final ByteBuf in = compressedChunkHeader(MAX_COMPRESSED_CHUNK_LENGTH);
+    final ByteBuf in = compressedChunkHeader(SnappyFrameDecoder.MAX_COMPRESSED_CHUNK_SIZE);
     final SnappyFrameDecoder decoder = new AircompressorSnappyFrameDecoder();
 
     assertThat(decoder.decodeOneMessage(in)).isEmpty();
@@ -41,7 +44,7 @@ public class SnappyFrameDecoderTest {
 
   @Test
   void rejectsCompressedChunkLongerThanMaxEncodedLength() {
-    final ByteBuf in = compressedChunkHeader(MAX_COMPRESSED_CHUNK_LENGTH + 1);
+    final ByteBuf in = compressedChunkHeader(SnappyFrameDecoder.MAX_COMPRESSED_CHUNK_SIZE + 1);
     final SnappyFrameDecoder decoder = new AircompressorSnappyFrameDecoder();
 
     assertThatThrownBy(() -> decoder.decodeOneMessage(in)).isInstanceOf(CompressionException.class);

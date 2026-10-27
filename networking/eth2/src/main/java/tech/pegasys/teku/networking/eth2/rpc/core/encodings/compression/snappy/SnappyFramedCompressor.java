@@ -152,9 +152,6 @@ public class SnappyFramedCompressor implements Compressor {
 
   @Override
   public int getMaxCompressedLength(final int uncompressedLength) {
-    // Return worst-case compression size
-    // See:
-    // https://github.com/google/snappy/blob/537f4ad6240e586970fe554614542e9717df7902/snappy.cc#L98
-    return 32 + uncompressedLength + uncompressedLength / 6;
+    return SnappyUtil.maxCompressedLength(uncompressedLength);
   }
 }
