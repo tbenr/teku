@@ -16,7 +16,6 @@ package tech.pegasys.teku.networking.eth2.rpc.core.encodings.compression.snappy;
 import static tech.pegasys.teku.networking.eth2.rpc.core.encodings.compression.snappy.SnappyUtil.validateChecksum;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.handler.codec.compression.DecompressionException;
 import java.util.Optional;
 import tech.pegasys.teku.networking.eth2.rpc.core.encodings.AbstractByteBufDecoder;
 import tech.pegasys.teku.networking.eth2.rpc.core.encodings.compression.exceptions.CompressionException;
@@ -47,8 +46,10 @@ public abstract class SnappyFrameDecoder
   private static final int MAX_UNCOMPRESSED_DATA_SIZE = 65536 + 4;
   // See https://github.com/google/snappy/blob/1.1.9/framing_format.txt#L82
   protected static final int MAX_DECOMPRESSED_DATA_SIZE = 65536;
-  // See https://github.com/google/snappy/blob/1.1.9/framing_format.txt#L82
-  private static final int MAX_COMPRESSED_CHUNK_SIZE = 16777216 - 1;
+  // A compressed chunk holds a checksum and at most MAX_DECOMPRESSED_DATA_SIZE bytes compressed, so
+  // it can't exceed snappy's worst-case encoded length of that size (32 + n + n / 6)
+  private static final int MAX_COMPRESSED_CHUNK_SIZE =
+      4 + 32 + MAX_DECOMPRESSED_DATA_SIZE + MAX_DECOMPRESSED_DATA_SIZE / 6;
 
   private final boolean validateChecksums;
 
@@ -169,7 +170,7 @@ public abstract class SnappyFrameDecoder
           }
 
           if (chunkLength > MAX_COMPRESSED_CHUNK_SIZE) {
-            throw new DecompressionException(
+            throw new CompressionException(
                 "Received COMPRESSED_DATA that contains"
                     + " chunk that exceeds "
                     + MAX_COMPRESSED_CHUNK_SIZE

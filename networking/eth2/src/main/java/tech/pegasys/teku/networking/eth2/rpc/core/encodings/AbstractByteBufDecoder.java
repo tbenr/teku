@@ -14,8 +14,8 @@
 package tech.pegasys.teku.networking.eth2.rpc.core.encodings;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.util.ReferenceCountUtil;
 import java.util.Optional;
 
 /**
@@ -29,7 +29,9 @@ import java.util.Optional;
 public abstract class AbstractByteBufDecoder<TMessage, TException extends Exception>
     implements ByteBufDecoder<TMessage, TException> {
 
-  private CompositeByteBuf compositeByteBuf = Unpooled.compositeBuffer();
+  // Bytes of earlier inputs that did not complete a message, appended to one growable buffer so
+  // the copying stays proportional to the bytes received
+  private ByteBuf cumulation;
   private boolean closed = false;
 
   @Override
@@ -38,29 +40,54 @@ public abstract class AbstractByteBufDecoder<TMessage, TException extends Except
       return Optional.empty();
     }
 
-    compositeByteBuf.addComponent(true, in.retainedSlice());
     try {
-      Optional<TMessage> outBuf;
-      while (true) {
-        int readerIndex = compositeByteBuf.readerIndex();
-        outBuf = decodeOneImpl(compositeByteBuf);
-        if (outBuf.isPresent()
-            || readerIndex == compositeByteBuf.readerIndex()
-            || compositeByteBuf.readableBytes() == 0) {
-          break;
-        }
-      }
-      if (outBuf.isPresent()) {
-        in.skipBytes(in.readableBytes() - compositeByteBuf.readableBytes());
-        compositeByteBuf.release();
-        compositeByteBuf = Unpooled.compositeBuffer();
-      } else {
-        in.skipBytes(in.readableBytes());
-      }
-      return outBuf;
+      return cumulation == null ? decodeFromInput(in) : decodeFromCumulation(in);
     } catch (Throwable t) {
       close();
       throw t;
+    }
+  }
+
+  private Optional<TMessage> decodeFromInput(final ByteBuf in) throws TException {
+    final Optional<TMessage> outBuf = decodeAvailable(in);
+    if (outBuf.isEmpty() && in.isReadable()) {
+      cumulation = Unpooled.buffer(in.readableBytes());
+      cumulation.writeBytes(in);
+    }
+    return outBuf;
+  }
+
+  private Optional<TMessage> decodeFromCumulation(final ByteBuf in) throws TException {
+    final int inputBytes = in.readableBytes();
+    // no slice of the cumulation has been handed out yet, so read bytes can be dropped in place
+    cumulation.discardSomeReadBytes();
+    cumulation.writeBytes(in, in.readerIndex(), inputBytes);
+    final Optional<TMessage> outBuf = decodeAvailable(cumulation);
+    if (outBuf.isPresent()) {
+      // earlier bytes alone could not complete a message, so whatever is left came from this
+      // input: leave it there for the caller
+      final int leftover = cumulation.readableBytes();
+      if (leftover > inputBytes) {
+        ReferenceCountUtil.release(outBuf.get());
+        throw new IllegalStateException(
+            "Decoded message left " + leftover + " bytes but only " + inputBytes + " were added");
+      }
+      in.skipBytes(inputBytes - leftover);
+      cumulation.release();
+      cumulation = null;
+    } else {
+      in.skipBytes(inputBytes);
+    }
+    return outBuf;
+  }
+
+  private Optional<TMessage> decodeAvailable(final ByteBuf buf) throws TException {
+    while (true) {
+      final int readerIndex = buf.readerIndex();
+      final Optional<TMessage> outBuf = decodeOneImpl(buf);
+      if (outBuf.isPresent() || readerIndex == buf.readerIndex() || !buf.isReadable()) {
+        return outBuf;
+      }
     }
   }
 
@@ -68,8 +95,8 @@ public abstract class AbstractByteBufDecoder<TMessage, TException extends Except
   public void complete() throws TException {
     assertNotClosed();
     try {
-      if (compositeByteBuf.isReadable()) {
-        throwUnprocessedDataException(compositeByteBuf.readableBytes());
+      if (cumulation != null && cumulation.isReadable()) {
+        throwUnprocessedDataException(cumulation.readableBytes());
       }
     } finally {
       close();
@@ -80,7 +107,10 @@ public abstract class AbstractByteBufDecoder<TMessage, TException extends Except
   public void close() {
     if (!closed) {
       closed = true;
-      compositeByteBuf.release();
+      if (cumulation != null) {
+        cumulation.release();
+        cumulation = null;
+      }
     }
   }
 
