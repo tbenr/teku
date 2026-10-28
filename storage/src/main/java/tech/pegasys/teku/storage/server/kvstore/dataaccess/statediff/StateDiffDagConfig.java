@@ -13,8 +13,6 @@
 
 package tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff;
 
-import static com.google.common.base.Preconditions.checkArgument;
-
 import java.util.List;
 import tech.pegasys.teku.infrastructure.statediff.DiffLevels;
 
@@ -24,34 +22,25 @@ import tech.pegasys.teku.infrastructure.statediff.DiffLevels;
  * @param enabled whether hot states are stored as DAG nodes
  * @param levels epoch periods of the diff levels, coarsest first, each dividing the previous and
  *     ending with 1
- * @param baseCacheLevels how many of the finest levels keep their latest node's state in memory as
- *     the next diff base; coarser levels reconstruct their base from the DAG when needed
  */
-public record StateDiffDagConfig(boolean enabled, List<Long> levels, int baseCacheLevels) {
+public record StateDiffDagConfig(boolean enabled, List<Long> levels) {
 
   private static final List<Long> PRUNE_LEVELS = List.of(256L, 64L, 16L, 1L);
 
-  public StateDiffDagConfig(
-      final boolean enabled, final List<Long> levels, final int baseCacheLevels) {
+  public StateDiffDagConfig(final boolean enabled, final List<Long> levels) {
     this.enabled = enabled;
     this.levels = List.copyOf(levels);
     // Validates the period list
     DiffLevels.of(this.levels);
-    checkArgument(
-        baseCacheLevels >= 0 && baseCacheLevels <= this.levels.size(),
-        "Base cache levels %s must be between 0 and the number of levels %s",
-        baseCacheLevels,
-        this.levels.size());
-    this.baseCacheLevels = baseCacheLevels;
   }
 
   public static StateDiffDagConfig disabled() {
-    return new StateDiffDagConfig(false, PRUNE_LEVELS, PRUNE_LEVELS.size());
+    return new StateDiffDagConfig(false, PRUNE_LEVELS);
   }
 
-  /** Prune mode defaults: levels {@code [256, 64, 16, 1]}, every level cached. */
+  /** Prune mode defaults: levels {@code [256, 64, 16, 1]}. */
   public static StateDiffDagConfig prune() {
-    return new StateDiffDagConfig(true, PRUNE_LEVELS, PRUNE_LEVELS.size());
+    return new StateDiffDagConfig(true, PRUNE_LEVELS);
   }
 
   public DiffLevels diffLevels() {

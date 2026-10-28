@@ -75,7 +75,8 @@ class StateDiffMetrics {
         metricsSystem.createHistogram(
             TekuMetricCategory.STORAGE,
             "state_diff_reconstruct_chain_length",
-            "Number of nodes, snapshot included, applied to reconstruct a state",
+            "Number of nodes applied to reconstruct a state: down to the snapshot, included, or to"
+                + " the nearest node whose state is cached, excluded",
             CHAIN_LENGTH_BUCKETS);
     this.baseCache =
         metricsSystem.createLabelledCounter(

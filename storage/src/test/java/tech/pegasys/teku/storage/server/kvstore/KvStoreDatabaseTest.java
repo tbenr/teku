@@ -50,6 +50,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InOrder;
 import org.mockito.invocation.InvocationOnMock;
 import tech.pegasys.teku.infrastructure.metrics.StubMetricsSystem;
+import tech.pegasys.teku.infrastructure.metrics.TekuMetricCategory;
 import tech.pegasys.teku.infrastructure.statediff.MissingSupernodeException;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiffCodec;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
@@ -60,6 +61,7 @@ import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedEx
 import tech.pegasys.teku.spec.datastructures.lightclient.LightClientUpdate;
 import tech.pegasys.teku.spec.datastructures.state.AnchorPoint;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
+import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.util.DataColumnSlotAndIdentifier;
 import tech.pegasys.teku.spec.generator.ChainBuilder;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
@@ -77,7 +79,9 @@ import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.FinalizedUpdater;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.HotUpdater;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.V4FinalizedStateSnapshotStorageLogic;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDag;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagTransaction;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffNodeRecordCodec;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationException;
 import tech.pegasys.teku.storage.server.kvstore.schema.KvStoreColumn;
@@ -698,6 +702,43 @@ class KvStoreDatabaseTest {
 
     verify(dao, never()).getStateDiffNode(any());
     assertThat(database.getFinalizedBlockAtSlot(UInt64.ZERO)).contains(genesis.getBlock());
+  }
+
+  @Test
+  void stateDiffs_anchorLoadedWithTheStoreIsTheDiffBaseOfTheNextNode() {
+    final StateDiffFixture fixture = new StateDiffFixture();
+    fixture.open(StateDiffDagConfig.prune()).storeInitialAnchor(fixture.genesis);
+    // As after a restart: nothing is cached until the store is loaded
+    final StubMetricsSystem metricsSystem = new StubMetricsSystem();
+    final StateDiffDag dag =
+        new StateDiffDag(fixture.spec, StateDiffDagConfig.prune(), metricsSystem);
+    final StateDiffHotStateStorage storage = new StateDiffHotStateStorage(fixture.dao, dag, false);
+    final BeaconState anchorState = storage.loadLatestFinalizedState().orElseThrow();
+    final BeaconState childState =
+        anchorState.updated(
+            state -> state.setSlot(fixture.spec.computeStartSlotAtEpoch(UInt64.ONE)));
+
+    try (final HotUpdater updater = fixture.dao.hotUpdater()) {
+      final StateDiffDagTransaction transaction = dag.begin(fixture.dao, updater);
+      transaction.writeNode(
+          Bytes32.fromHexStringLenient("0x01"),
+          childState,
+          UInt64.ONE,
+          UInt64.ONE,
+          List.of(fixture.genesis.getRoot()),
+          false);
+      transaction.commit();
+      updater.commit();
+    }
+
+    assertThat(
+            metricsSystem.getLabelledCounterValue(
+                TekuMetricCategory.STORAGE, "state_diff_base_cache_total", "hit"))
+        .isEqualTo(1);
+    assertThat(
+            metricsSystem.getLabelledCounterValue(
+                TekuMetricCategory.STORAGE, "state_diff_base_cache_total", "miss"))
+        .isZero();
   }
 
   @Test
