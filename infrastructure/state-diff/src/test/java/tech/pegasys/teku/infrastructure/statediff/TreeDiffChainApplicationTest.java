@@ -70,6 +70,29 @@ class TreeDiffChainApplicationTest {
   }
 
   @Test
+  void foldedChainFromALiveBaseTreeSeedsDeltaFieldsFromTheBase() {
+    final List<TreeNode> states = new ArrayList<>();
+    TreeNode state = SyntheticState.create(random, VALIDATOR_COUNT);
+    for (int link = 0; link < LINKS; link++) {
+      states.add(state);
+      state = evolve(state, link);
+    }
+    final List<TreeDiff> diffs = chainDiffs(states);
+    final int baseIndex = LINKS / 2;
+
+    // The base is the state tree the diffs were taken against, not one rebuilt from diffs
+    final TreeDiffApplier.ChainApplication chain =
+        applier.startChain(states.get(baseIndex), source);
+    diffs.subList(baseIndex + 1, LINKS).forEach(chain::apply);
+    final TreeNode folded = chain.finish();
+
+    assertThat(folded.hashTreeRoot()).isEqualTo(states.getLast().hashTreeRoot());
+    assertThat(SyntheticState.serialize(folded))
+        .isEqualTo(SyntheticState.serialize(states.getLast()));
+    assertThat(chain.listBuilds()).isEqualTo(1);
+  }
+
+  @Test
   void rejectsDiffAddressingDeltaField() {
     final TreeNode s0 = SyntheticState.create(random, VALIDATOR_COUNT);
     final TreeNode s1 = SyntheticState.setBalance(s0, 3, 1234);

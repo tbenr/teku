@@ -516,3 +516,18 @@ after 7 h to preserve disk for the mainnet backfill.
     throttle; the anchor-root rethrow and the unrecoverable startup error stay
     in `StateDiffHotStateStorage`. The shadow `AtomicLong` counters are gone;
     tests read `state_diff_nodes_total` from the database's `StubMetricsSystem`.
+
+49. **DERIVED. Base cache sizing and the chain shortcut (2026-10-28 base cache
+    wave).** The base cache keeps 3 trees at the finest level and 1 at each
+    coarser one, every level cached (`baseCacheLevels` removed); a coarse entry
+    pins up to its period of diverged state, so the extra coarse slots plausibly
+    held most of the measured +0.7 GB, for rare coarse-boundary siblings (not
+    re-measured). Slots are `LimitedMap` LRUs; a diff base is looked up by root
+    in any slot. `loadLatestFinalizedState` reconstructs the anchor with
+    `reconstructAndCache`, so it is cached at its level from startup. Every
+    reconstruction (diff base or committed read) loads its chain only down to
+    the first node below the requested one whose tree is cached or written in
+    the transaction and whose tree root equals that node's recorded state root,
+    and folds the links above it onto that tree (delta fields start from its
+    values). The requested node's own payload is always applied, and retention
+    still loads whole chains.

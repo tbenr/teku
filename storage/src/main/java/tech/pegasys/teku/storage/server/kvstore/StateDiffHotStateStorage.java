@@ -76,31 +76,47 @@ class StateDiffHotStateStorage implements HotStateStorage {
    */
   @Override
   public Optional<BeaconState> getLatestFinalizedState() {
-    final Optional<ReconstructedAnchor> anchor = reconstructedAnchor;
-    return dao.getFinalizedCheckpoint()
-        .map(
-            checkpoint ->
-                anchor
-                    .filter(reconstructed -> reconstructed.blockRoot().equals(checkpoint.getRoot()))
-                    .map(ReconstructedAnchor::state)
-                    .orElseGet(() -> reconstructFinalizedState(checkpoint)));
+    return dao.getFinalizedCheckpoint().map(checkpoint -> finalizedState(checkpoint, false));
   }
 
+  /**
+   * {@inheritDoc}
+   *
+   * <p>The reconstructed anchor node, which is also put in the DAG's base cache: the first nodes
+   * written after a restart diff against it or reconstruct their base from it.
+   *
+   * @throws DatabaseStorageException an unrecoverable one naming the way out when the anchor node
+   *     cannot be reconstructed
+   */
   @Override
   public Optional<BeaconState> loadLatestFinalizedState() {
     final Optional<Checkpoint> finalizedCheckpoint = dao.getFinalizedCheckpoint();
-    final Optional<BeaconState> finalizedState = getLatestFinalizedState();
-    if (finalizedCheckpoint.isPresent() && finalizedState.isPresent()) {
-      reconstructedAnchor =
-          Optional.of(
-              new ReconstructedAnchor(finalizedCheckpoint.get().getRoot(), finalizedState.get()));
-    }
+    final Optional<BeaconState> finalizedState =
+        finalizedCheckpoint.map(checkpoint -> finalizedState(checkpoint, true));
+    finalizedState.ifPresent(
+        state ->
+            reconstructedAnchor =
+                Optional.of(
+                    new ReconstructedAnchor(finalizedCheckpoint.orElseThrow().getRoot(), state)));
     return finalizedState;
   }
 
-  private BeaconState reconstructFinalizedState(final Checkpoint checkpoint) {
+  /**
+   * The memoized anchor state when it is the state of {@code checkpoint}, or else reconstructs it.
+   */
+  private BeaconState finalizedState(final Checkpoint checkpoint, final boolean cacheAsDiffBase) {
+    return reconstructedAnchor
+        .filter(reconstructed -> reconstructed.blockRoot().equals(checkpoint.getRoot()))
+        .map(ReconstructedAnchor::state)
+        .orElseGet(() -> reconstructFinalizedState(checkpoint, cacheAsDiffBase));
+  }
+
+  private BeaconState reconstructFinalizedState(
+      final Checkpoint checkpoint, final boolean cacheAsDiffBase) {
     try {
-      return dag.reconstruct(dao, checkpoint.getRoot())
+      return (cacheAsDiffBase
+              ? dag.reconstructAndCache(dao, checkpoint.getRoot())
+              : dag.reconstruct(dao, checkpoint.getRoot()))
           .orElseThrow(
               () ->
                   new StateDiffVerificationException(
