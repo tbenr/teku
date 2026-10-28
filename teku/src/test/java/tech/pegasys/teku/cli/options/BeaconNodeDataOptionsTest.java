@@ -290,6 +290,17 @@ public class BeaconNodeDataOptionsTest extends AbstractBeaconNodeCommandTest {
   }
 
   @Test
+  void stateDiffsKeepTheArchiveRetentionWindow() {
+    final TekuConfiguration tekuConfig =
+        getTekuConfigurationFromArguments(
+            "--Xdata-storage-state-diffs",
+            "--data-storage-mode=archive",
+            "--Xdata-storage-archive-finalized-states-retained=4096");
+    assertThat(tekuConfig.storageConfiguration().getStateDiffDagConfig())
+        .isEqualTo(StateDiffDagConfig.prune().withRetainedSlots(4096));
+  }
+
+  @Test
   void stateDiffsFlagAcceptsFalse() {
     final TekuConfiguration tekuConfig =
         getTekuConfigurationFromArguments("--Xdata-storage-state-diffs=false");

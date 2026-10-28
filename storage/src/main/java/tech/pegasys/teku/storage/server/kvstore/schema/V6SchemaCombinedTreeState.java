@@ -221,6 +221,7 @@ public class V6SchemaCombinedTreeState extends V6SchemaCombined implements Schem
         .put("LAST_DATA_COLUMN_SLOT_PRUNED", getVariableLastDataColumnSidecarPrunedSlot())
         .put("LAST_DATA_COLUMN_SLOT_ARCHIVED", getVariableLastDataColumnSidecarArchivedSlot())
         .put("STATE_DIFF_MODE", getVariableStateDiffMode())
+        .put("STATE_DIFF_WINDOW_START", getVariableStateDiffWindowStart())
         .build();
   }
 

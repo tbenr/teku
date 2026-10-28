@@ -164,6 +164,14 @@ public interface KvStoreCombinedDao extends AutoCloseable {
     return Optional.empty();
   }
 
+  /**
+   * The first epoch whose finalized state an archive database serves from the state diff DAG: the
+   * start of its retention window, or of its unbounded history.
+   */
+  default Optional<UInt64> getStateDiffWindowStart() {
+    return Optional.empty();
+  }
+
   /** All encoded state diff DAG node records, by block root. */
   @MustBeClosed
   default Stream<ColumnEntry<Bytes32, Bytes>> streamStateDiffNodes() {
@@ -376,6 +384,14 @@ public interface KvStoreCombinedDao extends AutoCloseable {
     }
 
     default void setStateDiffMode(final Bytes marker) {
+      throw stateDiffStorageUnsupported();
+    }
+
+    default void setStateDiffWindowStart(final UInt64 epoch) {
+      throw stateDiffStorageUnsupported();
+    }
+
+    default void deleteStateDiffWindowStart() {
       throw stateDiffStorageUnsupported();
     }
 
