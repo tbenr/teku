@@ -39,7 +39,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
-import org.hyperledger.besu.plugin.services.metrics.Counter;
 import tech.pegasys.teku.dataproviders.generators.CachingTaskQueue;
 import tech.pegasys.teku.dataproviders.generators.StateAtSlotTask;
 import tech.pegasys.teku.dataproviders.generators.StateGenerationTask;
@@ -89,13 +88,7 @@ class Store extends CacheableStore {
   private static final Logger LOG = LogManager.getLogger();
   public static final int VOTE_TRACKER_SPARE_CAPACITY = 1000;
 
-  private final int hotStatePersistenceFrequencyInEpochs;
-
-  /**
-   * Whether hot states are persisted as state diff DAG nodes: the state of each epoch's checkpoint
-   * block, which is then also the persisted base for regeneration.
-   */
-  private final boolean stateDiffMode;
+  private final HotStatePersistencePolicy persistencePolicy;
 
   private final ReadWriteLock votesLock = new ReentrantReadWriteLock();
   private final Lock readVotesLock = votesLock.readLock();
@@ -107,7 +100,6 @@ class Store extends CacheableStore {
   private Optional<SettableGauge> executionPayloadCountGauge = Optional.empty();
   private Optional<SettableGauge> epochStatesCountGauge = Optional.empty();
   private Optional<SettableGauge> blobSidecarsBlocksCountGauge = Optional.empty();
-  private Optional<Counter> stateDiffNodesSkippedCounter = Optional.empty();
 
   private final Optional<Map<Bytes32, StateAndBlockSummary>> maybeEpochStates;
 
@@ -142,8 +134,7 @@ class Store extends CacheableStore {
   private Store(
       final MetricsSystem metricsSystem,
       final Spec spec,
-      final int hotStatePersistenceFrequencyInEpochs,
-      final boolean stateDiffMode,
+      final HotStatePersistencePolicy persistencePolicy,
       final BlockProvider blockProvider,
       final ExecutionPayloadProvider executionPayloadProvider,
       final BlindedExecutionPayloadProvider blindedExecutionPayloadProvider,
@@ -170,9 +161,7 @@ class Store extends CacheableStore {
         "Time must be greater than or equal to genesisTime");
     this.forkChoiceStrategy = forkChoiceStrategy;
     this.stateProvider = stateProvider;
-    LOG.trace(
-        "Create store with hot state persistence configured to {}",
-        hotStatePersistenceFrequencyInEpochs);
+    LOG.trace("Create store with hot state persistence configured to {}", persistencePolicy);
 
     // Set up metrics
     this.metricsSystem = metricsSystem;
@@ -182,8 +171,7 @@ class Store extends CacheableStore {
 
     // Store instance variables
     this.initialCheckpoint = initialCheckpoint;
-    this.hotStatePersistenceFrequencyInEpochs = hotStatePersistenceFrequencyInEpochs;
-    this.stateDiffMode = stateDiffMode;
+    this.persistencePolicy = persistencePolicy;
     this.timeMillis = secondsToMillis(time);
     this.genesisTime = genesisTime;
     this.justifiedCheckpoint = justifiedCheckpoint;
@@ -297,6 +285,7 @@ class Store extends CacheableStore {
       final Checkpoint bestJustifiedCheckpoint,
       final Map<UInt64, VoteTracker> votes,
       final StoreConfig config,
+      final HotStatePersistencePolicy persistencePolicy,
       final ForkChoiceStrategy forkChoiceStrategy,
       final Optional<UInt64> custodyGroupCount) {
     final Map<Bytes32, SignedBeaconBlock> blocks =
@@ -322,8 +311,7 @@ class Store extends CacheableStore {
     return new Store(
         metricsSystem,
         spec,
-        config.getHotStatePersistenceFrequencyInEpochs(),
-        config.isStateDiffsEnabled(),
+        persistencePolicy,
         blockProvider,
         executionPayloadProvider,
         blindedExecutionPayloadProvider,
@@ -367,6 +355,7 @@ class Store extends CacheableStore {
       final Optional<Bytes32> initialCanonicalBlockRoot,
       final Map<UInt64, VoteTracker> votes,
       final StoreConfig config,
+      final HotStatePersistencePolicy persistencePolicy,
       final Optional<UInt64> custodyGroupCount) {
     final UInt64 currentEpoch = spec.computeEpochAtSlot(spec.getCurrentSlot(time, genesisTime));
     final ForkChoiceStrategy forkChoiceStrategy =
@@ -398,6 +387,7 @@ class Store extends CacheableStore {
         bestJustifiedCheckpoint,
         votes,
         config,
+        persistencePolicy,
         forkChoiceStrategy,
         custodyGroupCount);
   }
@@ -510,15 +500,7 @@ class Store extends CacheableStore {
                   TekuMetricCategory.STORAGE,
                   "memory_execution_payload_count",
                   "Number of execution payload envelopes held in the in-memory store"));
-      if (stateDiffMode) {
-        stateDiffNodesSkippedCounter =
-            Optional.of(
-                metricsSystem.createCounter(
-                    TekuMetricCategory.STORAGE,
-                    "store_state_diff_nodes_skipped_total",
-                    "Checkpoint block states not stored as state diff nodes because they were no"
-                        + " longer in memory"));
-      }
+      persistencePolicy.startMetrics(metricsSystem);
       blockStates.startMetrics();
       checkpointStates.startMetrics();
     } finally {
@@ -686,30 +668,15 @@ class Store extends CacheableStore {
     }
   }
 
-  /**
-   * The post-state of {@code blockRoot} if it is in memory. In state diff mode the epoch states
-   * cache is consulted too: it keeps the pre-epoch-transition parent states, which are the
-   * checkpoint block states persisted as state diff nodes.
-   */
+  /** The post-state of {@code blockRoot} if it is in memory, where the persistence policy looks. */
   @Override
   public Optional<BeaconState> getBlockStateIfAvailable(final Bytes32 blockRoot) {
-    final Optional<BeaconState> blockState =
-        blockStates.getIfAvailable(blockRoot).map(StateAndBlockSummary::getState);
-    if (blockState.isPresent() || !stateDiffMode) {
-      return blockState;
-    }
-    return maybeEpochStates
-        .flatMap(epochStates -> Optional.ofNullable(epochStates.get(blockRoot)))
-        .map(StateAndBlockSummary::getState);
+    return persistencePolicy.getBlockStateIfAvailable(
+        blockRoot, blockStates::getIfAvailable, maybeEpochStates);
   }
 
-  boolean isStateDiffMode() {
-    return stateDiffMode;
-  }
-
-  /** Counts a checkpoint block state that could not be stored as a state diff node. */
-  void onStateDiffNodeSkipped() {
-    stateDiffNodesSkippedCounter.ifPresent(Counter::inc);
+  HotStatePersistencePolicy getHotStatePersistencePolicy() {
+    return persistencePolicy;
   }
 
   @Override
@@ -1113,7 +1080,7 @@ class Store extends CacheableStore {
       }
 
       final Map<Bytes32, StateAndBlockSummary> epochStates = maybeEpochStates.get();
-      if (!slot.mod(spec.getSlotsPerEpoch(slot)).isZero()) {
+      if (!persistencePolicy.isEpochStartSlot(slot)) {
         // pre-epoch transition state
         // This will be referenced during epoch transition if the first slot of the epoch is empty
         final Optional<StateAndBlockSummary> maybeParentStateAndBlockSummary =
@@ -1144,9 +1111,7 @@ class Store extends CacheableStore {
     }
 
     // Create a hash tree from the finalized root to the target state
-    // Capture the latest epoch boundary root along the way: the first block of the epoch, or in
-    // state diff mode the nearest checkpoint block, whose state is the persisted one: a block on
-    // an epoch start slot, or the parent of the first block of an epoch
+    // Capture the nearest block with a persisted state along the way, as the policy places them
     final HashTree.Builder treeBuilder = HashTree.builder();
     final AtomicReference<SlotAndBlockRoot> latestEpochBoundary = new AtomicReference<>();
     readLock.lock();
@@ -1158,19 +1123,9 @@ class Store extends CacheableStore {
             if (latestEpochBoundary.get() != null) {
               return;
             }
-            if (!stateDiffMode) {
-              if (shouldPersistState(slot, parent)) {
-                latestEpochBoundary.set(new SlotAndBlockRoot(slot, root));
-              }
-            } else if (spec.computeStartSlotAtEpoch(spec.computeEpochAtSlot(slot)).equals(slot)) {
-              latestEpochBoundary.set(new SlotAndBlockRoot(slot, root));
-            } else if (shouldPersistState(slot, parent)) {
-              forkChoiceStrategy
-                  .blockSlot(parent)
-                  .ifPresent(
-                      parentSlot ->
-                          latestEpochBoundary.set(new SlotAndBlockRoot(parentSlot, parent)));
-            }
+            persistencePolicy
+                .getPersistedBase(slot, root, parent, forkChoiceStrategy::blockSlot)
+                .ifPresent(latestEpochBoundary::set);
           });
       treeBuilder.rootHash(finalizedAnchor.getRoot());
     } finally {
@@ -1190,7 +1145,7 @@ class Store extends CacheableStore {
                     () -> getClosestAvailableBlockRootAndState(blockRoot),
                     stateProvider,
                     Optional.empty(),
-                    hotStatePersistenceFrequencyInEpochs))));
+                    persistencePolicy.getReplayToleranceInEpochs()))));
   }
 
   private Optional<BlockRootAndState> getClosestAvailableBlockRootAndState(
@@ -1238,23 +1193,6 @@ class Store extends CacheableStore {
     }
 
     return Optional.of(new BlockRootAndState(baseBlockRoot.get(), baseState.get()));
-  }
-
-  boolean shouldPersistState(final UInt64 blockSlot, final Bytes32 parentRoot) {
-    return hotStatePersistenceFrequencyInEpochs > 0
-        && isSlotAtNthEpochBoundary(blockSlot, parentRoot, hotStatePersistenceFrequencyInEpochs);
-  }
-
-  boolean shouldPersistState(final UInt64 blockSlot, final Optional<UInt64> parentSlot) {
-    return hotStatePersistenceFrequencyInEpochs > 0
-        && parentSlot
-            .map(
-                slot ->
-                    spec.getGenesisSpec()
-                        .miscHelpers()
-                        .isSlotAtNthEpochBoundary(
-                            blockSlot, slot, hotStatePersistenceFrequencyInEpochs))
-            .orElse(false);
   }
 
   private boolean isSlotAtNthEpochBoundary(

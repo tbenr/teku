@@ -17,14 +17,10 @@ import static com.google.common.base.Preconditions.checkArgument;
 
 import java.util.Objects;
 import java.util.Optional;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.exceptions.InvalidConfigurationException;
 
 public class StoreConfig {
-  private static final Logger LOG = LogManager.getLogger();
-
   public static final int MAX_CACHE_SIZE = 10_000;
 
   public static final int DEFAULT_STATE_CACHE_SIZE = 8;
@@ -58,13 +54,6 @@ public class StoreConfig {
     this.epochStateCacheSize = epochStateCacheSize;
     this.initialCanonicalBlockRoot = initialCanonicalBlockRoot;
     this.stateDiffsEnabled = stateDiffsEnabled;
-    if (stateDiffsEnabled
-        && hotStatePersistenceFrequencyInEpochs
-            != DEFAULT_HOT_STATE_PERSISTENCE_FREQUENCY_IN_EPOCHS) {
-      LOG.warn(
-          "--Xhot-state-persistence-frequency ({}) is ignored when state diff storage is enabled",
-          hotStatePersistenceFrequencyInEpochs);
-    }
   }
 
   public static Builder builder() {
@@ -92,11 +81,11 @@ public class StoreConfig {
   }
 
   /**
-   * How often, in epochs, the store persists a hot state. With state diff storage the state of
-   * every epoch's checkpoint block is persisted, so this is 1 whatever was configured.
+   * How often, in epochs, the store persists a hot state. Not used when the store persists
+   * checkpoint block states as state diff nodes.
    */
   public int getHotStatePersistenceFrequencyInEpochs() {
-    return stateDiffsEnabled ? 1 : hotStatePersistenceFrequencyInEpochs;
+    return hotStatePersistenceFrequencyInEpochs;
   }
 
   public Optional<Bytes32> getInitialCanonicalBlockRoot() {
@@ -104,26 +93,12 @@ public class StoreConfig {
   }
 
   /**
-   * Whether hot states are persisted as state diff DAG nodes: the state of the checkpoint block of
-   * every epoch, with where it sits in the chain.
+   * Whether state diff storage is requested ({@code --Xdata-storage-state-diffs}). It only decides
+   * how a chain started from an anchor persists its hot states; a store loaded from a database
+   * follows what the database resolved, see {@code OnDiskStoreData.stateDiffStorageActive}.
    */
   public boolean isStateDiffsEnabled() {
     return stateDiffsEnabled;
-  }
-
-  /** This configuration with state diffs enabled, for a database already using them. */
-  public StoreConfig withStateDiffsEnabled() {
-    if (stateDiffsEnabled) {
-      return this;
-    }
-    return new StoreConfig(
-        stateCacheSize,
-        blockCacheSize,
-        checkpointStateCacheSize,
-        hotStatePersistenceFrequencyInEpochs,
-        epochStateCacheSize,
-        initialCanonicalBlockRoot,
-        true);
   }
 
   @Override
@@ -169,10 +144,6 @@ public class StoreConfig {
 
     private Builder() {}
 
-    /**
-     * Builds the configuration; logs a WARN when state diffs are enabled and the hot state
-     * persistence frequency was changed, since it is then ignored.
-     */
     public StoreConfig build() {
       return new StoreConfig(
           stateCacheSize,
