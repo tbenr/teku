@@ -470,3 +470,18 @@ after 7 h to preserve disk for the mainnet backfill.
     levels `[65536, 8192, 2048, 256, 64, 16, 1]`: snapshot + 38 diffs. Reads of
     stored states never replay blocks beyond the target epoch; only producing
     states the database never had replays forward from an older state.
+
+46. **DERIVED. Mode wiring resolved once (2026-10-28 wiring cleanup).**
+    `KvStoreDatabase` resolves flag || marker once and hands it to the Store as
+    `OnDiskStoreData.stateDiffStorageActive`. `StoreBuilder` turns that into a
+    `HotStatePersistencePolicy` (`everyNthEpoch` / `checkpointBlocks`).
+    `StoreConfig.stateDiffsEnabled` stays only because a chain started from an
+    anchor builds its store before the new database stores the anchor (34);
+    `StoreBuilder` ignores it for a loaded store. `KvStoreDatabase` delegates to
+    one `HotStateStorage` strategy (Legacy / StateDiff), swapped at most once,
+    after the activating commit. `StorageUpdate` carries `HotState(state,
+    Optional placement)`; on a state diff database, a hot state without a
+    placement now fails the update instead of being skipped, since that path is
+    unreachable (`skipped_no_info` removed). The
+    `--data-storage-archive-frequency` WARN still does not fire on a marker-only
+    database (pre-existing gap, left as is).
