@@ -33,6 +33,7 @@ import java.util.stream.IntStream;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.Test;
+import tech.pegasys.infrastructure.logging.LogCaptor;
 import tech.pegasys.teku.infrastructure.metrics.StubMetricsSystem;
 import tech.pegasys.teku.infrastructure.metrics.TekuMetricCategory;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
@@ -342,8 +343,14 @@ class StateDiffDagTest {
     updateDao(updater -> updater.deleteStateSupernode(hash));
 
     assertThatThrownBy(() -> dag.reconstruct(dao, roots.get(0)))
-        .isInstanceOf(MissingSupernodeException.class)
-        .hasMessageContaining(hash.toHexString());
+        .isInstanceOf(StateDiffVerificationException.class)
+        .hasMessageContaining(hash.toHexString())
+        .hasMessageContaining(roots.get(0).toHexString())
+        .hasCauseInstanceOf(MissingSupernodeException.class);
+    assertThat(
+            metricsSystem.getCounterValue(
+                TekuMetricCategory.STORAGE, "state_diff_verification_failures_total"))
+        .isEqualTo(1);
   }
 
   @Test
@@ -627,7 +634,7 @@ class StateDiffDagTest {
   }
 
   @Test
-  void repairAnchorRewritesAnchorAsSnapshotAndDropsReadablePreviousChain() {
+  void anchorWhoseChainCannotBeLoadedIsRewrittenAsSnapshotAndDropsReadablePreviousChain() {
     buildChain(10);
     writeEpochs(0, 9);
     retain(Optional.empty(), 5);
@@ -636,16 +643,29 @@ class StateDiffDagTest {
     assertThatThrownBy(() -> dag.reconstruct(dao, roots.get(7)))
         .isInstanceOf(StateDiffVerificationException.class);
 
-    update(
-        tx ->
-            tx.repairAnchor(
-                Optional.of(roots.get(5)),
-                roots.get(7),
-                states.get(7),
-                epoch(7),
-                List.of(roots.get(6), roots.get(7)),
-                false));
+    try (final LogCaptor logCaptor = LogCaptor.forClass(StateDiffDagTransaction.class)) {
+      update(
+          tx ->
+              tx.onAnchorFinalized(
+                  Optional.of(roots.get(5)),
+                  roots.get(7),
+                  states.get(7),
+                  epoch(7),
+                  List.of(roots.get(6), roots.get(5)),
+                  List.of(roots.get(6), roots.get(7)),
+                  false));
 
+      assertThat(logCaptor.getErrorLogs())
+          .singleElement()
+          .satisfies(
+              log ->
+                  assertThat(log)
+                      .contains(roots.get(7).toHexString())
+                      .contains("its chain or the previous anchor's cannot be loaded"));
+    }
+
+    assertThat(nodeCount("anchor_repaired")).isEqualTo(1);
+    assertThat(nodeCount("anchor_created_late")).isZero();
     final StateDiffNodeRecord repaired = record(roots.get(7));
     assertThat(repaired.snapshot()).isTrue();
     assertThat(repaired.firstEpoch()).isEqualTo(epoch(7));
@@ -768,27 +788,71 @@ class StateDiffDagTest {
     buildChain(3);
     writeEpochs(0, 1);
     final long sectionEntriesBefore = sectionEntries("leaves") + sectionEntries("deltas");
+    // The snapshot below the previous anchor is lost. The anchor node of epoch 2 can still be
+    // created against the cached node 1, but the previous anchor's chain no longer loads
+    updateDao(updater -> updater.deleteStateDiffNode(roots.get(0)));
 
     // The anchor of epoch 2 is created late, then rewritten by a repair in the same transaction
     update(
-        tx -> {
-          assertThat(tx.ensureNode(roots.get(2), states.get(2), epoch(2), ancestorsBefore(2)))
-              .isTrue();
-          tx.repairAnchor(
-              Optional.of(roots.get(1)),
-              roots.get(2),
-              states.get(2),
-              epoch(2),
-              List.of(roots.get(2)),
-              true);
-        });
+        tx ->
+            tx.onAnchorFinalized(
+                Optional.of(roots.get(1)),
+                roots.get(2),
+                states.get(2),
+                epoch(2),
+                ancestorsBefore(2),
+                List.of(roots.get(2)),
+                false));
 
+    assertThat(nodeCount("anchor_created_late")).isEqualTo(1);
+    assertThat(nodeCount("anchor_repaired")).isEqualTo(1);
     assertThat(record(roots.get(2)).snapshot()).isTrue();
     assertThat(nodeCount("written")).isEqualTo(3);
     assertThat(snapshots("forced")).isEqualTo(1);
     final TreeDiff repaired = TreeDiffCodec.deserialize(record(roots.get(2)).payload());
     assertThat(sectionEntries("leaves") + sectionEntries("deltas") - sectionEntriesBefore)
         .isEqualTo(repaired.leaves().size() + repaired.deltas().size());
+    assertReconstructs(2);
+  }
+
+  @Test
+  void anchorNodeThatCannotBeCreatedIsWrittenAsSnapshot() {
+    buildChain(3);
+    writeEpochs(0, 1);
+    // Node 0 is lost and, after a restart, node 1, the diff base of a late anchor node of epoch 2,
+    // is not cached: it cannot be reconstructed
+    updateDao(updater -> updater.deleteStateDiffNode(roots.get(0)));
+    dag = new StateDiffDag(spec, StateDiffDagConfig.prune(), metricsSystem);
+
+    try (final LogCaptor logCaptor = LogCaptor.forClass(StateDiffDagTransaction.class)) {
+      update(
+          tx ->
+              tx.onAnchorFinalized(
+                  Optional.of(roots.get(1)),
+                  roots.get(2),
+                  states.get(2),
+                  epoch(2),
+                  ancestorsBefore(2),
+                  List.of(roots.get(2)),
+                  false));
+
+      assertThat(logCaptor.getErrorLogs())
+          .singleElement()
+          .satisfies(
+              log ->
+                  assertThat(log)
+                      .contains(roots.get(2).toHexString())
+                      .contains("its missing node cannot be created"));
+    }
+
+    assertThat(nodeCount("anchor_created_late")).isZero();
+    assertThat(nodeCount("anchor_repaired")).isEqualTo(1);
+    final StateDiffNodeRecord repaired = record(roots.get(2));
+    assertThat(repaired.snapshot()).isTrue();
+    assertThat(repaired.firstEpoch()).isEqualTo(epoch(2));
+    assertThat(repaired.lastEpoch()).isEqualTo(epoch(2));
+    // The readable prefix of the previous anchor's chain is dropped
+    assertStoredEpochs(Set.of(2));
     assertReconstructs(2);
   }
 
