@@ -656,7 +656,7 @@ phase 2.
   by reconstructions; one per delta field that changed along each chain, since
   the delta sections of a chain are folded before the list is built
 - `storage_state_diff_base_cache_total{result=hit|miss}`
-- `storage_state_diff_nodes_total{state=written|deleted|deleted_corrupt|skipped_no_state|skipped_no_info|anchor_created_late|anchor_repaired}`
+- `storage_state_diff_nodes_total{state=written|deleted|deleted_corrupt|skipped_no_info|anchor_created_late|anchor_repaired}`
   (`skipped_no_info`: a hot state stored without the information placing it in
   the DAG; `deleted_corrupt`: a node deleted on retention or repair whose
   record or payload could not be decoded, so its supernode references were not

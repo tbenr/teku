@@ -126,6 +126,7 @@ are judgment calls where a different choice is defensible; entries marked
 
 25. **DERIVED. V4-era split databases simply host the new columns** rather
     than throwing; their hot store is separate, so no ID clash.
+    (2026-10-28: V4 now exposes the columns but not the DAO operations: reads are empty and writes throw, since V4 cannot enable state diffs.)
 
 26. **DERIVED. Two engine fixes forced by real beacon states.** The applier
     expands a non-branch node on the update path into a zero tree before
@@ -301,6 +302,7 @@ are judgment calls where a different choice is defensible; entries marked
     references (`nodes_total{state=deleted_corrupt}`, ERROR) instead of
     triggering an anchor repair, which is now reserved for anchor-node
     creation and chain-load failures and logs which of the two happened.
+    (2026-10-28 cleanup: the element-API fallback for unknown `SszUInt64ListSchema` implementations and the write-pending fallback of `ChainApplication` are gone; an unknown schema is rejected, a link addressing a delta field outside its delta section is rejected, and the differ no longer offers delta fields as copy sources, which no beacon state schema had a use for.)
 
 ## Soak notes (2026-10-22, local Mac, copies of the user's sepolia and mainnet MINIMAL databases, stub execution engine)
 
@@ -351,6 +353,7 @@ anchor chain 22, reconstruction 3,147 ms (old build; the perf wave was
 measured at ~17x faster per chain in isolation), no problems.
 
 `get-column-sizes` (RocksDB SST bytes, i.e. on disk):
+(2026-10-28: the tool was folded into `teku debug-tools rocksdb usage --filter=STATE_`, which now also prints the estimated live data size.)
 
 | column | sepolia | mainnet |
 |---|---|---|

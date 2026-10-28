@@ -47,12 +47,13 @@ teku debug-tools db verify-state-diffs --network=mainnet --data-path=<dir>
 ```
 
 ```bash
-teku debug-tools db get-column-sizes --network=mainnet --data-path=<dir>
+teku debug-tools rocksdb usage --network=mainnet --data-path=<dir> --filter=STATE_
 ```
 
 `verify-state-diffs` recounts supernode references, checks every node's parent,
-reconstructs the finalized anchor and exits 1 on any problem. `get-column-sizes`
-prints RocksDB live and SST bytes per column.
+reconstructs the finalized anchor and exits 1 on any problem. `rocksdb usage`
+prints RocksDB keys, total, SST, blob and estimated live bytes per column family;
+`--filter` keeps the columns whose name contains it, ignoring case.
 
 Metrics (Prometheus, `storage_state_diff_*`): `nodes_total{state}`,
 `snapshots_total{reason}`, `node_bytes{level}`, `section_bytes_total{section}`,
