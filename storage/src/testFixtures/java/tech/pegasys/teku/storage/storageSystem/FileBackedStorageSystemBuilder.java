@@ -48,6 +48,7 @@ public class FileBackedStorageSystemBuilder {
   private long stateStorageFrequency = 1L;
   private boolean storeNonCanonicalBlocks = false;
   private boolean stateDiffsEnabled = false;
+  private long stateDiffRetainedSlots = 0;
 
   private int stateRebuildTimeoutSeconds = 120;
 
@@ -99,7 +100,8 @@ public class FileBackedStorageSystemBuilder {
         .stateStorageFrequency(stateStorageFrequency)
         .storeConfig(storeConfig)
         .numberOfValidators(numberOfValidators)
-        .stateDiffsEnabled(stateDiffsEnabled);
+        .stateDiffsEnabled(stateDiffsEnabled)
+        .stateDiffRetainedSlots(stateDiffRetainedSlots);
   }
 
   private void validate() {
@@ -121,6 +123,12 @@ public class FileBackedStorageSystemBuilder {
 
   public FileBackedStorageSystemBuilder stateDiffsEnabled(final boolean stateDiffsEnabled) {
     this.stateDiffsEnabled = stateDiffsEnabled;
+    return this;
+  }
+
+  /** The retention window of an archive database with state diff storage, in slots. */
+  public FileBackedStorageSystemBuilder stateDiffRetainedSlots(final long stateDiffRetainedSlots) {
+    this.stateDiffRetainedSlots = stateDiffRetainedSlots;
     return this;
   }
 
@@ -174,7 +182,8 @@ public class FileBackedStorageSystemBuilder {
   }
 
   private StateDiffDagConfig stateDiffDagConfig() {
-    return stateDiffsEnabled ? StateDiffDagConfig.prune() : StateDiffDagConfig.disabled();
+    return (stateDiffsEnabled ? StateDiffDagConfig.prune() : StateDiffDagConfig.disabled())
+        .withRetainedSlots(stateDiffRetainedSlots);
   }
 
   private Database createLevelDb1Database(final StubMetricsSystem metricsSystem) {

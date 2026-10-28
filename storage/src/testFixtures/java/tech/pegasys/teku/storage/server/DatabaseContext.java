@@ -57,6 +57,19 @@ public class DatabaseContext {
       final StateStorageMode storageMode,
       final StoreConfig storeConfig,
       final boolean storeNonCanonicalBlocks) {
+    return createInMemoryStorage(spec, storageMode, storeConfig, storeNonCanonicalBlocks, 0);
+  }
+
+  /**
+   * @param stateDiffRetainedSlots the retention window of an archive database with state diff
+   *     storage, in slots; 0 keeps all finalized history
+   */
+  public StorageSystem createInMemoryStorage(
+      final Spec spec,
+      final StateStorageMode storageMode,
+      final StoreConfig storeConfig,
+      final boolean storeNonCanonicalBlocks,
+      final long stateDiffRetainedSlots) {
     return InMemoryStorageSystemBuilder.create()
         .specProvider(spec)
         .version(getDatabaseVersion())
@@ -65,6 +78,7 @@ public class DatabaseContext {
         .storeConfig(storeConfig)
         .storeNonCanonicalBlocks(storeNonCanonicalBlocks)
         .stateDiffsEnabled(stateDiffsEnabled)
+        .stateDiffRetainedSlots(stateDiffRetainedSlots)
         .build();
   }
 
@@ -74,6 +88,21 @@ public class DatabaseContext {
       final StateStorageMode storageMode,
       final StoreConfig storeConfig,
       final boolean storeNonCanonicalBlocks) {
+    return createFileBasedStorage(
+        spec, tmpDir, storageMode, storeConfig, storeNonCanonicalBlocks, 0);
+  }
+
+  /**
+   * @param stateDiffRetainedSlots the retention window of an archive database with state diff
+   *     storage, in slots; 0 keeps all finalized history
+   */
+  public StorageSystem createFileBasedStorage(
+      final Spec spec,
+      final Path tmpDir,
+      final StateStorageMode storageMode,
+      final StoreConfig storeConfig,
+      final boolean storeNonCanonicalBlocks,
+      final long stateDiffRetainedSlots) {
 
     return FileBackedStorageSystemBuilder.create()
         .specProvider(spec)
@@ -84,6 +113,7 @@ public class DatabaseContext {
         .storeConfig(storeConfig)
         .storeNonCanonicalBlocks(storeNonCanonicalBlocks)
         .stateDiffsEnabled(stateDiffsEnabled)
+        .stateDiffRetainedSlots(stateDiffRetainedSlots)
         .build();
   }
 

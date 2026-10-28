@@ -446,19 +446,20 @@ public class StorageConfiguration {
           createStateDiffDagConfig());
     }
 
+    /**
+     * The retained slots are part of the DAG configuration even when the flag is off: a database
+     * carrying the state diff marker uses the DAG whatever the flag says.
+     */
     private StateDiffDagConfig createStateDiffDagConfig() {
       if (!stateDiffsEnabled) {
-        return StateDiffDagConfig.disabled();
-      }
-      if (dataStorageMode.storesFinalizedStates()) {
-        LOG.warn("state diffs with archive mode: archive states still use legacy storage");
+        return StateDiffDagConfig.disabled().withRetainedSlots(retainedSlots);
       }
       if (dataStorageFrequency != DEFAULT_STORAGE_FREQUENCY) {
         LOG.warn(
             "--data-storage-archive-frequency ({}) is ignored when state diff storage is enabled",
             dataStorageFrequency);
       }
-      return StateDiffDagConfig.prune();
+      return StateDiffDagConfig.prune().withRetainedSlots(retainedSlots);
     }
 
     private void determineDataStorageMode() {

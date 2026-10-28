@@ -583,3 +583,100 @@ checkpoint nodes went through the DAG.
   payload format can already express as gIndex-level `copied` entries; the
   differ only looks for field-level copies today. Candidate for the payload v2
   wave.
+
+## Phase 2, first slice: archive finalized states and the retention window (2026-10-28)
+
+51. **DERIVED. Archive finalized states live in the DAG; window retention
+    (wave "window").** With state diff storage on an archive database:
+    `getLatestAvailableFinalizedState(maxSlot)` reconstructs the node of the
+    checkpoint block of `epoch(maxSlot)` (floor lookup on the finalized blocks at
+    the epoch start slot, decision 33) and `StateCacheLoader` replays as before;
+    a reconstruction failure surfaces to the caller. `updateFinalizedDataArchiveMode`
+    and `storeInitialAnchor` no longer write `addFinalizedState`; the
+    `StateRootRecorder` (state root -> slot index) is still fed every finalized
+    state the update has, as before. The legacy `StatePruner` is not started
+    when the flag or the marker is on. `--Xdata-storage-archive-finalized-states-retained`
+    (W slots, 0 = unbounded) travels in `StateDiffDagConfig.retainedSlots`. At
+    each finalization the window start `S = anchor_epoch - W / slots_per_epoch`
+    advances from the persisted start `S'` by at most 256 epochs; the
+    transaction's `FinalizedRetention.Window` resolves `O` as the last
+    checkpoint root of epochs `S'..S` that has a node and calls the prune
+    deletion (renamed `deleteFinalizedNodesOutsideChain`, the protected root a
+    parameter) with candidates `chain(O') ∪ roots(S'..S)` and protected
+    `chain(O)`. The start is a new hot variable `STATE_DIFF_WINDOW_START` (14),
+    gauge `storage_state_diff_window_start_epoch`. The delta section is broken
+    down per field in `storage_state_diff_delta_field_{bytes,entries}_total{field}`.
+    `Database.getEarliestAvailableFinalizedStateSlot()` is new: no REST or
+    service code read the earliest finalized state slot before (only the legacy
+    pruner, through the DAO), so it serves tests and tools. Legacy-column
+    readers left: `debug-tools db get-state-summary` and
+    `get-finalized-state-indices` (`streamFinalizedStateSlots`), the legacy
+    pruner (not started) and `storeReconstructedFinalizedState`'s own lookup of
+    the previous reconstructed state, which keeps reading the legacy column.
+
+52. **GREY. The window start also bounds unbounded archive history.** The
+    variable is written with the anchor snapshot when an archive database
+    switches to state diff storage or is created with it (the anchor's epoch),
+    and reads below it return empty in both archive variants. A database
+    without it (prune mode switched to archive, or an archive switched before
+    this wave) records the previous anchor's epoch at its next finalization and
+    deletes nothing that time; a prune database drops a leftover variable.
+    Rejected: scanning the node column for the earliest finalized node (reads
+    every record, MBs each) or assuming epoch 0 (would walk and claim history
+    that does not exist). Cost: an archive switched before this wave stops
+    serving the nodes it kept before its previous anchor and never deletes them.
+
+53. **GREY. The earliest available slot is the start slot of the window start
+    epoch,** not the block slot of the earliest node as spec 5.11 said: reads
+    are decided by epoch, so that is what is actually served.
+
+54. **GREY. A skipped checkpoint node falls back to the previous checkpoint
+    block's node,** for reads (down to the window start) and for choosing `O`
+    (the latest checkpoint root of `S'..S` with a node; the previous `O` is
+    re-found the same way, walking back from `S'` on committed nodes). Rejected:
+    returning empty / deleting nothing for that epoch. The fallback keeps the
+    chain argument of decision 43 valid, since no node lies between the earlier
+    node and `S`.
+
+55. **GREY. Window retention never repairs the anchor.** It does not load the
+    anchor's chain (as unbounded archive retention did not), reads the previous
+    `O`'s chain prefix-only, and when `O`'s chain cannot be loaded it logs ERROR,
+    deletes nothing and keeps the start for a retry at the next finalization.
+    Rejected: running it under the existing repair path, which would rewrite
+    the anchor as a snapshot at every finalization while the broken node stays
+    in range, and would not fix a broken `O` chain anyway. Consequence: as
+    before for archive mode, a broken anchor chain is caught only by the
+    ensure step, by reads, or at restart.
+
+56. **GREY. The window start moves by at most 256 epochs per finalization,**
+    which bounds the floor lookups (one finalized block read per epoch) and the
+    candidates of one transaction; the number of nodes leaving is at most that
+    of epochs. A raised W keeps the old start (deleted history does not
+    return).
+
+57. **GREY. The legacy pruner is skipped when `isStateDiffStorageActive()` or
+    the flag is set,** checked in `StorageService.doStart`: a legacy database
+    with the flag only switches when the store is loaded, after the service
+    starts. A switched archive database's pre-switch legacy finalized states
+    are therefore never pruned (they are not served either); a one-off cleanup
+    is left for later.
+
+58. **GREY. Five legacy archive `DatabaseTest`s compare regenerated states in
+    state-diff contexts** (`assertFinalizedStateAvailable`: the state at the
+    slot from `ChainStorage.getLatestFinalizedStateAtSlot`) instead of being
+    skipped: the database now stores checkpoint-block states only, and the
+    regenerated per-slot states are what the tests are really about.
+
+59. **GREY. `--reconstruct-historic-states` with state diffs is left as is,**
+    not rejected in `TekuConfiguration`: it still writes legacy reconstructed
+    states (and their state roots), which DAG-backed reads do not serve. Its
+    integration is the next slice (spec 5.11).
+
+60. **GREY. Per-field delta metrics are separate counters**
+    (`delta_field_bytes_total{field}`, `delta_field_entries_total{field}`)
+    rather than a second label on the section metrics, so the existing
+    dashboards' series keep their label set. The window gauge is a
+    lazily-registered label-less `SettableLabelledGauge`, because several DAG
+    instances share one metrics system in tests and a plain gauge cannot be
+    registered twice.
+

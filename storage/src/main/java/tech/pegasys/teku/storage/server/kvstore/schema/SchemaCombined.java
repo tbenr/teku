@@ -132,6 +132,12 @@ public interface SchemaCombined extends Schema {
   /** Marker recording that hot states are stored in the state diff DAG. */
   KvStoreVariable<Bytes> getVariableStateDiffMode();
 
+  /**
+   * The first epoch whose finalized state an archive database with state diff storage serves from
+   * the DAG: the start of its retention window, or of its unbounded history.
+   */
+  KvStoreVariable<UInt64> getVariableStateDiffWindowStart();
+
   Map<String, KvStoreColumn<?, ?>> getColumnMap();
 
   Map<String, KvStoreVariable<?>> getVariableMap();

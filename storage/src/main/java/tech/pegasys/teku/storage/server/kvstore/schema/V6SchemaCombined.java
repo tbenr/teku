@@ -108,6 +108,8 @@ public abstract class V6SchemaCombined implements SchemaCombined {
       KvStoreVariable.create(12, UINT64_SERIALIZER);
   private static final KvStoreVariable<Bytes> STATE_DIFF_MODE =
       KvStoreVariable.create(13, BYTES_SERIALIZER);
+  private static final KvStoreVariable<UInt64> STATE_DIFF_WINDOW_START =
+      KvStoreVariable.create(14, UINT64_SERIALIZER);
 
   private final KvStoreVariable<UInt64> optimisticTransitionBlockSlot;
   private final KvStoreVariable<UInt64> earliestBlobSidecarSlot;
@@ -313,6 +315,11 @@ public abstract class V6SchemaCombined implements SchemaCombined {
   }
 
   @Override
+  public KvStoreVariable<UInt64> getVariableStateDiffWindowStart() {
+    return STATE_DIFF_WINDOW_START;
+  }
+
+  @Override
   public Map<String, KvStoreColumn<?, ?>> getColumnMap() {
     return ImmutableMap.<String, KvStoreColumn<?, ?>>builder()
         .put("HOT_BLOCKS_BY_ROOT", getColumnHotBlocksByRoot())
@@ -366,6 +373,7 @@ public abstract class V6SchemaCombined implements SchemaCombined {
         .put("EARLIEST_AVAILABLE_DATA_COLUMN_SLOT", getVariableEarliestAvailableDataColumnSlot())
         .put("LAST_DATA_COLUMN_SLOT_PRUNED", getVariableLastDataColumnSidecarPrunedSlot())
         .put("STATE_DIFF_MODE", getVariableStateDiffMode())
+        .put("STATE_DIFF_WINDOW_START", getVariableStateDiffWindowStart())
         .build();
   }
 

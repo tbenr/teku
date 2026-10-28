@@ -1321,10 +1321,8 @@ public class DatabaseTest {
     transaction.setFinalizedCheckpoint(finalizedCheckpoint, false);
     commit(transaction);
 
-    assertThat(database.getLatestAvailableFinalizedState(block2.getSlot()))
-        .contains(block2.getState());
-    assertThat(database.getLatestAvailableFinalizedState(block1.getSlot()))
-        .contains(block1.getState());
+    assertFinalizedStateAvailable(block2.getState());
+    assertFinalizedStateAvailable(block1.getState());
   }
 
   @TestTemplate
@@ -3849,6 +3847,21 @@ public class DatabaseTest {
 
   private void assertFinalizedStatesAvailable(final Map<Bytes32, BeaconState> states) {
     for (BeaconState state : states.values()) {
+      assertFinalizedStateAvailable(state);
+    }
+  }
+
+  /**
+   * Checks that the finalized {@code state} is stored, or with state diff storage, which stores the
+   * states of checkpoint blocks only, that it is regenerated from the stored ones.
+   */
+  private void assertFinalizedStateAvailable(final BeaconState state) {
+    if (database.isStateDiffStorageActive()) {
+      assertThat(
+              safeJoin(storageSystem.chainStorage().getLatestFinalizedStateAtSlot(state.getSlot())))
+          .describedAs("regenerated finalized state at slot %s", state.getSlot())
+          .contains(state);
+    } else {
       assertThat(database.getLatestAvailableFinalizedState(state.getSlot())).contains(state);
     }
   }
@@ -4039,16 +4052,36 @@ public class DatabaseTest {
       final StoreConfig storeConfig,
       final boolean storeNonCanonicalBlocks)
       throws IOException {
+    createStorageSystem(context, storageMode, storeConfig, storeNonCanonicalBlocks, 0);
+  }
+
+  /**
+   * @param stateDiffRetainedSlots the retention window of an archive database with state diff
+   *     storage, in slots; 0 keeps all finalized history
+   */
+  private void createStorageSystem(
+      final DatabaseContext context,
+      final StateStorageMode storageMode,
+      final StoreConfig storeConfig,
+      final boolean storeNonCanonicalBlocks,
+      final long stateDiffRetainedSlots)
+      throws IOException {
     this.storageMode = storageMode;
     if (context.isInMemoryStorage()) {
       setDefaultStorage(
-          context.createInMemoryStorage(spec, storageMode, storeConfig, storeNonCanonicalBlocks));
+          context.createInMemoryStorage(
+              spec, storageMode, storeConfig, storeNonCanonicalBlocks, stateDiffRetainedSlots));
     } else {
       final Path tmpDir = Files.createTempDirectory("storageTest");
       tmpDirectories.add(tmpDir.toFile());
       setDefaultStorage(
           context.createFileBasedStorage(
-              spec, tmpDir, storageMode, storeConfig, storeNonCanonicalBlocks));
+              spec,
+              tmpDir,
+              storageMode,
+              storeConfig,
+              storeNonCanonicalBlocks,
+              stateDiffRetainedSlots));
     }
   }
 
@@ -4671,6 +4704,142 @@ public class DatabaseTest {
   }
 
   @TestTemplate
+  public void stateDiffs_archiveServesFinalizedStatesFromDagWithoutLegacyStates(
+      final DatabaseContext context) throws IOException {
+    assumeTrue(context.isStateDiffsEnabled());
+    initialize(context, StateStorageMode.ARCHIVE);
+    // The first slot of epoch 2 is empty: its checkpoint block is the block at slot 15
+    chainBuilder.generateBlocksUpToSlot(15);
+    chainBuilder.generateBlockAtSlot(17);
+    chainBuilder.generateBlocksUpToSlot(40);
+    chainBuilder.streamBlocksAndStates(1, 40).forEach(block -> addBlocks(block));
+    final SignedBlockAndState anchor = chainBuilder.getLatestBlockAndStateAtEpochBoundary(4);
+
+    justifyAndFinalizeEpoch(UInt64.valueOf(4), anchor);
+
+    // The DAG holds the finalized states: none is written to the legacy finalized state storage
+    try (final Stream<UInt64> slots = database.streamFinalizedStateSlots(ZERO, anchor.getSlot())) {
+      assertThat(slots).isEmpty();
+    }
+    // History starts at the genesis anchor
+    assertThat(database.getEarliestAvailableFinalizedStateSlot()).contains(ZERO);
+    assertFinalizedStatesServedFromDag(ZERO, anchor.getSlot());
+    // Without any state in memory
+    restartStorage();
+    assertFinalizedStatesServedFromDag(ZERO, anchor.getSlot());
+  }
+
+  @TestTemplate
+  public void stateDiffs_archiveWindowKeepsWindowNodesAndOldestChain(final DatabaseContext context)
+      throws IOException {
+    assumeTrue(context.isStateDiffsEnabled());
+    final int windowEpochs = 3;
+    createStorageSystem(
+        context,
+        StateStorageMode.ARCHIVE,
+        StoreConfig.builder().stateCacheSize(32).build(),
+        false,
+        (long) windowEpochs * spec.getSlotsPerEpoch(ZERO));
+    initGenesis();
+    // Nodes below epoch 16 are all at the finest level, so no node leaves the window before the
+    // oldest node's chain passes through the epoch 16 node instead of its predecessors
+    final int headEpoch = 22;
+    chainBuilder.generateBlocksUpToSlot(spec.computeStartSlotAtEpoch(UInt64.valueOf(headEpoch)));
+    chainBuilder.streamBlocksAndStates(1).forEach(block -> addBlocks(block));
+
+    for (final int finalizedEpoch : List.of(4, 9, 18, 21)) {
+      final SignedBlockAndState anchor =
+          chainBuilder.getLatestBlockAndStateAtEpochBoundary(finalizedEpoch);
+      justifyAndFinalizeEpoch(UInt64.valueOf(finalizedEpoch), anchor);
+
+      // Every node of the window and the chain of its oldest node, which is all the window needs
+      final int windowStart = finalizedEpoch - windowEpochs;
+      final Set<Bytes32> expected =
+          new HashSet<>(
+              stateDiffReconstructionChain(
+                  chainBuilder.getLatestBlockAndStateAtEpochBoundary(windowStart).getRoot()));
+      IntStream.rangeClosed(windowStart, headEpoch)
+          .mapToObj(epoch -> chainBuilder.getLatestBlockAndStateAtEpochBoundary(epoch).getRoot())
+          .forEach(expected::add);
+      assertThat(storedStateDiffNodeRoots())
+          .describedAs("nodes after finalizing epoch %s", finalizedEpoch)
+          .isEqualTo(expected);
+      final UInt64 windowStartSlot = spec.computeStartSlotAtEpoch(UInt64.valueOf(windowStart));
+      assertThat(database.getEarliestAvailableFinalizedStateSlot()).contains(windowStartSlot);
+      assertThat(database.getLatestAvailableFinalizedState(windowStartSlot.minus(ONE))).isEmpty();
+      assertFinalizedStatesServedFromDag(windowStartSlot, anchor.getSlot());
+      StateDiffDagInvariants.assertConsistent(dao());
+      final StateDiffVerificationReport report = database.verifyStateDiffs();
+      assertThat(report.hasProblems()).describedAs("%s", report).isFalse();
+    }
+    assertThat(stateDiffNodeCount("deleted")).isPositive();
+    assertThat(
+            storageSystem
+                .getDatabaseMetricsSystem()
+                .getLabelledGauge(TekuMetricCategory.STORAGE, "state_diff_window_start_epoch")
+                .getValue())
+        .hasValue(18);
+
+    // The window survives a restart
+    restartStorage();
+    assertThat(database.getEarliestAvailableFinalizedStateSlot())
+        .contains(spec.computeStartSlotAtEpoch(UInt64.valueOf(18)));
+    assertFinalizedStatesServedFromDag(
+        spec.computeStartSlotAtEpoch(UInt64.valueOf(18)),
+        chainBuilder.getLatestBlockAndStateAtEpochBoundary(21).getSlot());
+  }
+
+  @TestTemplate
+  public void stateDiffs_archiveWindowDrainsBacklogInBoundedSteps(final DatabaseContext context)
+      throws IOException {
+    assumeTrue(context.isStateDiffsEnabled());
+    // A window of one epoch
+    createStorageSystem(
+        context,
+        StateStorageMode.ARCHIVE,
+        StoreConfig.builder().stateCacheSize(32).build(),
+        false,
+        spec.getSlotsPerEpoch(ZERO));
+    initGenesis();
+    // Epochs 2 to 299 are empty: the block at slot 9 is their checkpoint block
+    chainBuilder.generateBlocksUpToSlot(9);
+    final UInt64 epoch300StartSlot = spec.computeStartSlotAtEpoch(UInt64.valueOf(300));
+    chainBuilder.generateBlockAtSlot(epoch300StartSlot);
+    chainBuilder.generateBlocksUpToSlot(epoch300StartSlot.plus(17));
+    chainBuilder.streamBlocksAndStates(1).forEach(block -> addBlocks(block));
+    final SignedBlockAndState gapCheckpointBlock = chainBuilder.getBlockAndStateAtSlot(9);
+    final SignedBlockAndState epoch1CheckpointBlock = chainBuilder.getBlockAndStateAtSlot(8);
+    assertThat(stateDiffNode(gapCheckpointBlock.getRoot()).lastEpoch())
+        .isEqualTo(UInt64.valueOf(299));
+
+    justifyAndFinalizeEpoch(
+        UInt64.valueOf(300), chainBuilder.getLatestBlockAndStateAtEpochBoundary(300));
+
+    // The window should start at epoch 299, but at most 256 epochs leave per finalization
+    assertThat(dao().getStateDiffWindowStart()).contains(UInt64.valueOf(256));
+    assertThat(storedStateDiffNodeRoots())
+        .contains(gapCheckpointBlock.getRoot())
+        .doesNotContain(genesisBlockAndState.getRoot(), epoch1CheckpointBlock.getRoot());
+    final UInt64 epoch256StartSlot = spec.computeStartSlotAtEpoch(UInt64.valueOf(256));
+    assertThat(database.getLatestAvailableFinalizedState(epoch256StartSlot))
+        .map(BeaconState::hashTreeRoot)
+        .contains(gapCheckpointBlock.getState().hashTreeRoot());
+    assertThat(database.getLatestAvailableFinalizedState(epoch256StartSlot.minus(ONE))).isEmpty();
+
+    // The next finalization drains the rest
+    justifyAndFinalizeEpoch(
+        UInt64.valueOf(302), chainBuilder.getLatestBlockAndStateAtEpochBoundary(302));
+
+    assertThat(dao().getStateDiffWindowStart()).contains(UInt64.valueOf(301));
+    assertThat(database.getEarliestAvailableFinalizedStateSlot())
+        .contains(spec.computeStartSlotAtEpoch(UInt64.valueOf(301)));
+    assertThat(database.getLatestAvailableFinalizedState(epoch300StartSlot)).isEmpty();
+    StateDiffDagInvariants.assertConsistent(dao());
+    final StateDiffVerificationReport report = database.verifyStateDiffs();
+    assertThat(report.hasProblems()).describedAs("%s", report).isFalse();
+  }
+
+  @TestTemplate
   public void legacyBehaviourUnchangedWhenDisabled(final DatabaseContext context)
       throws IOException {
     assumeFalse(context.isStateDiffsEnabled());
@@ -4694,6 +4863,32 @@ public class DatabaseTest {
 
   private KvStoreCombinedDao dao() {
     return ((KvStoreDatabase) database).dao;
+  }
+
+  /**
+   * Checks that every slot from {@code fromSlot} to {@code toSlot} reads the state of its epoch's
+   * checkpoint block from the database, that the state of every block in that range is regenerated
+   * from it, and that the root of that state is indexed.
+   */
+  private void assertFinalizedStatesServedFromDag(final UInt64 fromSlot, final UInt64 toSlot) {
+    for (UInt64 slot = fromSlot; slot.isLessThanOrEqualTo(toSlot); slot = slot.increment()) {
+      final SignedBlockAndState checkpointBlock =
+          chainBuilder.getLatestBlockAndStateAtEpochBoundary(spec.computeEpochAtSlot(slot));
+      assertThat(database.getLatestAvailableFinalizedState(slot))
+          .describedAs("stored state for slot %s", slot)
+          .map(BeaconState::hashTreeRoot)
+          .contains(checkpointBlock.getState().hashTreeRoot());
+      final SignedBlockAndState block = chainBuilder.getBlockAndStateAtSlot(slot);
+      if (block == null) {
+        continue;
+      }
+      assertThat(safeJoin(storageSystem.chainStorage().getLatestFinalizedStateAtSlot(slot)))
+          .describedAs("regenerated state for slot %s", slot)
+          .map(BeaconState::hashTreeRoot)
+          .contains(block.getState().hashTreeRoot());
+      assertThat(database.getSlotForFinalizedStateRoot(block.getState().hashTreeRoot()))
+          .contains(slot);
+    }
   }
 
   /**

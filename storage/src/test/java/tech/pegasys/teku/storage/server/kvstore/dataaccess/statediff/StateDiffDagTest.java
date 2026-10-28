@@ -482,7 +482,10 @@ class StateDiffDagTest {
     update(
         tx ->
             tx.retainFinalizedChain(
-                Optional.of(roots.get(5)), roots.get(20), roots.subList(6, 21), false));
+                Optional.of(roots.get(5)),
+                roots.get(20),
+                roots.subList(6, 21),
+                FinalizedRetention.anchorChain()));
 
     final List<Object> nodeReads =
         mockingDetails(db).getInvocations().stream()
@@ -539,7 +542,10 @@ class StateDiffDagTest {
         tx -> {
           tx.ensureNode(roots.get(10), states.get(10), epoch(10), List.of(roots.get(5)));
           tx.retainFinalizedChain(
-              Optional.of(roots.get(5)), roots.get(10), roots.subList(6, 11), false);
+              Optional.of(roots.get(5)),
+              roots.get(10),
+              roots.subList(6, 11),
+              FinalizedRetention.anchorChain());
         });
 
     assertThat(record(roots.get(10)).prevNodeRoot()).isEqualTo(roots.get(5));
@@ -578,7 +584,10 @@ class StateDiffDagTest {
               epoch(5),
               List.of(roots.get(4), roots.get(3), roots.get(2)));
           tx.retainFinalizedChain(
-              Optional.of(roots.get(2)), roots.get(5), roots.subList(3, 6), false);
+              Optional.of(roots.get(2)),
+              roots.get(5),
+              roots.subList(3, 6),
+              FinalizedRetention.anchorChain());
         });
 
     assertThat(record(roots.get(5)).parentNodeRoot()).isEqualTo(roots.get(4));
@@ -613,7 +622,7 @@ class StateDiffDagTest {
               Optional.of(roots.get(15)),
               roots.get(16),
               List.of(roots.get(15), roots.get(16)),
-              false);
+              FinalizedRetention.anchorChain());
         });
 
     final StateDiffNodeRecord late = record(roots.get(16));
@@ -656,7 +665,7 @@ class StateDiffDagTest {
                   epoch(7),
                   List.of(roots.get(6), roots.get(5)),
                   List.of(roots.get(6), roots.get(7)),
-                  false));
+                  FinalizedRetention.anchorChain()));
 
       assertThat(logCaptor.getErrorLogs())
           .singleElement()
@@ -805,7 +814,7 @@ class StateDiffDagTest {
                 epoch(2),
                 ancestorsBefore(2),
                 List.of(roots.get(2)),
-                false));
+                FinalizedRetention.anchorChain()));
 
     assertThat(nodeCount("anchor_created_late")).isEqualTo(1);
     assertThat(nodeCount("anchor_repaired")).isEqualTo(1);
@@ -837,7 +846,7 @@ class StateDiffDagTest {
                   epoch(2),
                   ancestorsBefore(2),
                   List.of(roots.get(2)),
-                  false));
+                  FinalizedRetention.anchorChain()));
 
       assertThat(logCaptor.getErrorLogs())
           .singleElement()
@@ -886,7 +895,10 @@ class StateDiffDagTest {
     update(
         tx ->
             tx.retainFinalizedChain(
-                Optional.of(roots.get(5)), roots.get(20), roots.subList(6, 21), false));
+                Optional.of(roots.get(5)),
+                roots.get(20),
+                roots.subList(6, 21),
+                FinalizedRetention.anchorChain()));
 
     assertThat(nodeCount("deleted_corrupt")).isEqualTo(1);
     // Nodes 1..5 of the previous chain and 6..15 but the corrupt one
@@ -1051,7 +1063,10 @@ class StateDiffDagTest {
       assertThatThrownBy(
               () ->
                   transaction.retainFinalizedChain(
-                      Optional.empty(), dataStructureUtil.randomBytes32(), List.of(), false))
+                      Optional.empty(),
+                      dataStructureUtil.randomBytes32(),
+                      List.of(),
+                      FinalizedRetention.anchorChain()))
           .isInstanceOf(IllegalStateException.class);
     }
 
@@ -1080,6 +1095,12 @@ class StateDiffDagTest {
     // Balances and inactivity scores are delta sections
     assertThat(sectionEntries("deltas")).isPositive();
     assertThat(sectionBytes("deltas")).isPositive();
+    // Each delta entry is counted under its field too, by schema field name
+    assertThat(deltaFieldEntries("balances")).isPositive();
+    assertThat(deltaFieldEntries("balances") + deltaFieldEntries("inactivity_scores"))
+        .isEqualTo(sectionEntries("deltas"));
+    assertThat(deltaFieldBytes("balances") + deltaFieldBytes("inactivity_scores"))
+        .isEqualTo(sectionBytes("deltas"));
   }
 
   @Test
@@ -1113,9 +1134,158 @@ class StateDiffDagTest {
     buildChain(21);
     writeEpochs(0, 20);
 
-    retain(Optional.of(roots.get(0)), 20, true);
+    retain(Optional.of(roots.get(0)), 20, FinalizedRetention.all());
 
     assertStoredEpochs(range(0, 20));
+  }
+
+  @Test
+  void windowKeepsTheWindowNodesAndTheChainOfTheOldestOne() {
+    buildChain(40);
+    writeEpochs(0, 39);
+
+    // Node 20's chain runs through nodes 19..16 to the snapshot: nodes 1..15 left the window
+    retainWindow(Optional.empty(), 20);
+    assertStoredEpochs(union(Set.of(0), range(16, 39)));
+    assertThat(dao.getStateDiffWindowStart()).contains(epoch(20));
+
+    // Node 33's chain is 32, 16 and the snapshot: nodes 17..31 left, the previous chain with them
+    retainWindow(Optional.of(20), 33);
+    final Set<Integer> retained = union(Set.of(0, 16), range(32, 39));
+    assertStoredEpochs(retained);
+    assertThat(dao.getStateDiffWindowStart()).contains(epoch(33));
+    assertThat(windowStartGauge()).isEqualTo(33);
+    assertThat(nodeCount("deleted")).isEqualTo(30);
+    for (final int epoch : retained) {
+      assertReconstructs(epoch);
+    }
+  }
+
+  @Test
+  void windowKeepsTheSnapshotThatStartsTheNewOldestChain() {
+    dag = new StateDiffDag(spec, new StateDiffDagConfig(true, List.of(4L, 2L, 1L)), metricsSystem);
+    buildChain(12);
+    writeEpochs(0, 11);
+    // Epochs 0, 4 and 8, the coarsest level, are snapshots
+    assertThat(record(roots.get(4)).snapshot()).isTrue();
+    assertThat(record(roots.get(8)).snapshot()).isTrue();
+
+    retainWindow(Optional.empty(), 3);
+    assertStoredEpochs(union(Set.of(0, 2), range(3, 11)));
+
+    // Node 4 left the window range of the previous start, but it is the snapshot of node 5's chain
+    retainWindow(Optional.of(3), 5);
+    assertStoredEpochs(range(4, 11));
+
+    retainWindow(Optional.of(5), 9);
+    assertStoredEpochs(range(8, 11));
+    for (int epoch = 8; epoch < 12; epoch++) {
+      assertReconstructs(epoch);
+    }
+  }
+
+  @Test
+  void windowKeepsTheParentOfAHotNodeWhenItsOldestNodeWasCreatedLate() {
+    buildChain(19);
+    writeEpochs(0, 15);
+    // Node 14's chain is every node down to the snapshot: nothing leaves
+    retainWindow(Optional.empty(), 14);
+    assertStoredEpochs(range(0, 15));
+    // The node of epoch 16 was skipped, so the node of epoch 17 diffs against epoch 15
+    update(
+        tx ->
+            tx.writeNode(
+                roots.get(17), states.get(17), epoch(17), epoch(17), ancestorsBefore(17), false));
+
+    // Finalizing epoch 16 with the window starting there creates node 16 late, at the finest
+    // level: its chain contains node 15, the parent of node 17
+    update(
+        tx ->
+            tx.onAnchorFinalized(
+                Optional.of(roots.get(15)),
+                roots.get(16),
+                states.get(16),
+                epoch(16),
+                ancestorsBefore(16),
+                List.of(roots.get(16)),
+                FinalizedRetention.window(
+                    epoch(16), Optional.of(roots.get(14)), roots.subList(14, 17))));
+
+    assertThat(nodeCount("anchor_created_late")).isEqualTo(1);
+    assertThat(record(roots.get(16)).parentNodeRoot()).isEqualTo(roots.get(15));
+    assertStoredEpochs(range(0, 17));
+    assertThat(dao.getStateDiffWindowStart()).contains(epoch(16));
+    assertReconstructs(16);
+    assertReconstructs(17);
+    StateDiffDagInvariants.assertConsistent(dao);
+
+    // The next window move drops node 16 alone
+    retainWindow(Optional.of(16), 17);
+    assertStoredEpochs(union(range(0, 15), Set.of(17)));
+    assertReconstructs(17);
+  }
+
+  @Test
+  void windowStartsAtTheLatestNodeBeforeASkippedCheckpointNode() {
+    buildChain(22);
+    writeEpochs(0, 19);
+    // The node of epoch 20 was skipped
+    writeEpochs(21, 21);
+
+    retainWindow(Optional.empty(), 20);
+
+    // The oldest retained node is node 19, whose chain runs through 16 to the snapshot
+    assertStoredEpochs(union(Set.of(0), Set.of(16, 17, 18, 19, 21)));
+    assertThat(dao.getStateDiffWindowStart()).contains(epoch(20));
+    assertReconstructs(21);
+  }
+
+  @Test
+  void windowWithoutAnyNodeKeepsEverything() {
+    buildChain(4);
+    writeEpochs(0, 3);
+
+    update(
+        tx ->
+            tx.retainFinalizedChain(
+                Optional.empty(),
+                roots.get(3),
+                List.of(),
+                FinalizedRetention.window(
+                    epoch(3),
+                    Optional.of(roots.get(0)),
+                    List.of(
+                        dataStructureUtil.randomBytes32(), dataStructureUtil.randomBytes32()))));
+
+    assertStoredEpochs(range(0, 3));
+    assertThat(dao.getStateDiffWindowStart()).isEmpty();
+  }
+
+  @Test
+  void windowWhoseOldestChainCannotBeLoadedKeepsEverythingAndItsStart() {
+    buildChain(21);
+    writeEpochs(0, 20);
+    retainWindow(Optional.empty(), 5);
+    // Node 17 is lost: node 20's chain cannot be loaded
+    updateDao(updater -> updater.deleteStateDiffNode(roots.get(17)));
+
+    try (final LogCaptor logCaptor = LogCaptor.forClass(StateDiffDagTransaction.class)) {
+      update(
+          tx ->
+              tx.retainFinalizedChain(
+                  Optional.empty(),
+                  roots.get(20),
+                  List.of(),
+                  FinalizedRetention.window(
+                      epoch(20), Optional.of(roots.get(5)), roots.subList(5, 21))));
+
+      assertThat(logCaptor.getErrorLogs())
+          .singleElement()
+          .asString()
+          .contains("oldest retained state diff node " + roots.get(20));
+    }
+    assertStoredEpochs(union(range(0, 16), range(18, 20)));
+    assertThat(dao.getStateDiffWindowStart()).contains(epoch(5));
   }
 
   @Test
@@ -1491,7 +1661,7 @@ class StateDiffDagTest {
   }
 
   private void retain(final Optional<Bytes32> previousAnchor, final int newAnchorEpoch) {
-    retain(previousAnchor, newAnchorEpoch, false);
+    retain(previousAnchor, newAnchorEpoch, FinalizedRetention.anchorChain());
   }
 
   /**
@@ -1499,18 +1669,46 @@ class StateDiffDagTest {
    * to and including the new one (from epoch 0 when there is no previous anchor).
    */
   private void retain(
-      final Optional<Bytes32> previousAnchor, final int newAnchorEpoch, final boolean retainAll) {
+      final Optional<Bytes32> previousAnchor,
+      final int newAnchorEpoch,
+      final FinalizedRetention retention) {
     final int firstNewlyFinalized = previousAnchor.map(root -> roots.indexOf(root) + 1).orElse(0);
     final List<Bytes32> newlyFinalizedRoots =
         List.copyOf(roots.subList(firstNewlyFinalized, newAnchorEpoch + 1));
     update(
         tx ->
             tx.retainFinalizedChain(
-                previousAnchor, roots.get(newAnchorEpoch), newlyFinalizedRoots, retainAll));
+                previousAnchor, roots.get(newAnchorEpoch), newlyFinalizedRoots, retention));
     for (final Bytes32 root : dag.reconstructionChain(dao, roots.get(newAnchorEpoch))) {
       assertThat(dao.getStateDiffNode(root)).isPresent();
     }
     StateDiffDagInvariants.assertConsistent(dao);
+  }
+
+  /**
+   * Moves the retention window start from {@code previousStart} (the history from epoch 0 when
+   * empty) to {@code newStart}, every epoch's checkpoint block being the block of its own node.
+   */
+  private void retainWindow(final Optional<Integer> previousStart, final int newStart) {
+    final int from = previousStart.orElse(0);
+    update(
+        tx ->
+            tx.retainFinalizedChain(
+                Optional.empty(),
+                roots.get(newStart),
+                List.of(),
+                FinalizedRetention.window(
+                    epoch(newStart),
+                    previousStart.map(roots::get),
+                    roots.subList(from, newStart + 1))));
+    StateDiffDagInvariants.assertConsistent(dao);
+  }
+
+  private double windowStartGauge() {
+    return metricsSystem
+        .getLabelledGauge(TekuMetricCategory.STORAGE, "state_diff_window_start_epoch")
+        .getValue()
+        .orElseThrow();
   }
 
   private void assertStoredEpochs(final Set<Integer> expected) {
@@ -1657,6 +1855,16 @@ class StateDiffDagTest {
   private long sectionBytes(final String section) {
     return metricsSystem.getLabelledCounterValue(
         TekuMetricCategory.STORAGE, "state_diff_section_bytes_total", section);
+  }
+
+  private long deltaFieldEntries(final String field) {
+    return metricsSystem.getLabelledCounterValue(
+        TekuMetricCategory.STORAGE, "state_diff_delta_field_entries_total", field);
+  }
+
+  private long deltaFieldBytes(final String field) {
+    return metricsSystem.getLabelledCounterValue(
+        TekuMetricCategory.STORAGE, "state_diff_delta_field_bytes_total", field);
   }
 
   private long listBuilds() {

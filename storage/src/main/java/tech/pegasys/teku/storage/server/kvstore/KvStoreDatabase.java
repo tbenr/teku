@@ -182,12 +182,14 @@ public class KvStoreDatabase implements Database {
       LOG.info(
           "The database uses state diff storage, which remains in use although "
               + "--Xdata-storage-state-diffs is not enabled");
-      effectiveConfig = StateDiffDagConfig.prune();
+      effectiveConfig =
+          StateDiffDagConfig.prune().withRetainedSlots(stateDiffDagConfig.retainedSlots());
     }
     final StateDiffHotStateStorage stateDiffStorage =
         new StateDiffHotStateStorage(
             dao,
             new StateDiffDag(spec, effectiveConfig, metricsSystem),
+            spec,
             stateStorageMode.storesFinalizedStates());
     return marked
         ? stateDiffStorage
@@ -791,7 +793,8 @@ public class KvStoreDatabase implements Database {
             storeAnchorStateAndBlock(updater, anchorState, block);
           });
 
-      putFinalizedState(updater, anchorRoot, anchorState);
+      putFinalizedState(
+          updater, anchorRoot, anchorState, nextHotStateStorage.holdsFinalizedStates());
       if (initialAnchor.isGenesis()
           && spec.atSlot(initialAnchor.getSlot())
               .getMilestone()
@@ -882,8 +885,9 @@ public class KvStoreDatabase implements Database {
 
   private void handleAddFinalizedStateRoot(
       final BeaconState state, final FinalizedUpdater updater) {
+    // The legacy storage, which holds the reconstructed states, whatever serves finalized states
     final Optional<BeaconState> maybeLastState =
-        getLatestAvailableFinalizedState(state.getSlot().minusMinZero(ONE));
+        dao.getLatestAvailableFinalizedState(state.getSlot().minusMinZero(ONE));
     maybeLastState.ifPresentOrElse(
         lastState -> {
           final StateRootRecorder recorder =
@@ -1097,7 +1101,12 @@ public class KvStoreDatabase implements Database {
 
   @Override
   public Optional<BeaconState> getLatestAvailableFinalizedState(final UInt64 maxSlot) {
-    return dao.getLatestAvailableFinalizedState(maxSlot);
+    return hotStateStorage.getLatestAvailableFinalizedState(maxSlot);
+  }
+
+  @Override
+  public Optional<UInt64> getEarliestAvailableFinalizedStateSlot() {
+    return hotStateStorage.getEarliestAvailableFinalizedStateSlot();
   }
 
   @Override
@@ -2159,6 +2168,8 @@ public class KvStoreDatabase implements Database {
     // Get previously finalized block to build on top of
     final BeaconBlockSummary baseBlock = getLatestFinalizedBlockOrSummary();
 
+    // With state diff storage the finalized states are DAG nodes; only their roots are indexed
+    final boolean writeFinalizedStates = !hotStateStorage.holdsFinalizedStates();
     final List<Bytes32> finalizedRoots =
         HashTree.builder()
             .rootHash(baseBlock.getRoot())
@@ -2187,7 +2198,9 @@ public class KvStoreDatabase implements Database {
               .or(() -> getHotState(blockRoot))
               .ifPresent(
                   state -> {
-                    updater.addFinalizedState(blockRoot, state);
+                    if (writeFinalizedStates) {
+                      updater.addFinalizedState(blockRoot, state);
+                    }
                     recorder.acceptNextState(state);
                   });
 
@@ -2373,10 +2386,19 @@ public class KvStoreDatabase implements Database {
         () -> new IllegalStateException("Unable to reconstruct latest finalized block summary"));
   }
 
+  /**
+   * Writes the finalized state of {@code blockRoot} in archive mode, or only indexes its root when
+   * {@code stateHeldByDag}, the state diff DAG holding it as a node.
+   */
   private void putFinalizedState(
-      final FinalizedUpdater updater, final Bytes32 blockRoot, final BeaconState state) {
+      final FinalizedUpdater updater,
+      final Bytes32 blockRoot,
+      final BeaconState state,
+      final boolean stateHeldByDag) {
     if (stateStorageMode.storesFinalizedStates()) {
-      updater.addFinalizedState(blockRoot, state);
+      if (!stateHeldByDag) {
+        updater.addFinalizedState(blockRoot, state);
+      }
       updater.addFinalizedStateRoot(state.hashTreeRoot(), state.getSlot());
     }
   }
