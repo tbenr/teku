@@ -51,6 +51,7 @@ public class StorageSystem implements AutoCloseable {
 
   private final TrackingChainHeadChannel chainHeadChannel;
   private final StubMetricsSystem metricsSystem;
+  private final StubMetricsSystem databaseMetricsSystem;
   private final RecentChainData recentChainData;
   private final StateStorageMode storageMode;
   private final CombinedChainDataClient combinedChainDataClient;
@@ -62,6 +63,7 @@ public class StorageSystem implements AutoCloseable {
 
   private StorageSystem(
       final StubMetricsSystem metricsSystem,
+      final StubMetricsSystem databaseMetricsSystem,
       final TrackingChainHeadChannel chainHeadChannel,
       final StateStorageMode storageMode,
       final ChainStorage chainStorage,
@@ -73,6 +75,7 @@ public class StorageSystem implements AutoCloseable {
       final BlobSidecarManager blobSidecarManager,
       final Spec spec) {
     this.metricsSystem = metricsSystem;
+    this.databaseMetricsSystem = databaseMetricsSystem;
     this.chainStorage = chainStorage;
     this.recentChainData = recentChainData;
     this.chainHeadChannel = chainHeadChannel;
@@ -107,6 +110,7 @@ public class StorageSystem implements AutoCloseable {
 
   static StorageSystem create(
       final Database database,
+      final StubMetricsSystem databaseMetricsSystem,
       final RestartedStorageSupplier restartedSupplier,
       final StateStorageMode storageMode,
       final StoreConfig storeConfig,
@@ -151,6 +155,7 @@ public class StorageSystem implements AutoCloseable {
     // Return storage system
     return new StorageSystem(
         metricsSystem,
+        databaseMetricsSystem,
         chainHeadChannel,
         storageMode,
         chainStorageServer,
@@ -169,6 +174,11 @@ public class StorageSystem implements AutoCloseable {
 
   public StubMetricsSystem getMetricsSystem() {
     return metricsSystem;
+  }
+
+  /** The metrics system {@link #database()} reports to, fresh for each database opened. */
+  public StubMetricsSystem getDatabaseMetricsSystem() {
+    return databaseMetricsSystem;
   }
 
   public RecentChainData recentChainData() {

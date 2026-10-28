@@ -906,27 +906,6 @@ public class KvStoreDatabase implements Database {
     return hotStateStorage.isStateDiffStorage();
   }
 
-  /**
-   * The number of finalized anchors whose state diff node had to be created on finalization since
-   * this database was opened.
-   */
-  @VisibleForTesting
-  long getStateDiffAnchorNodesCreatedLate() {
-    return hotStateStorage
-        .getStateDiffDag()
-        .map(StateDiffDag::getAnchorNodesCreatedLate)
-        .orElse(0L);
-  }
-
-  /**
-   * The number of finalized anchors whose state diff node was rewritten as a snapshot because a
-   * chain could not be loaded, since this database was opened.
-   */
-  @VisibleForTesting
-  long getStateDiffAnchorsRepaired() {
-    return hotStateStorage.getStateDiffDag().map(StateDiffDag::getAnchorsRepaired).orElse(0L);
-  }
-
   @Override
   public StateDiffVerificationReport verifyStateDiffs() {
     return hotStateStorage.verify();

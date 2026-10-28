@@ -68,6 +68,7 @@ import tech.pegasys.teku.dataproviders.lookup.StateAndBlockSummaryProvider;
 import tech.pegasys.teku.ethereum.pow.api.DepositTreeSnapshot;
 import tech.pegasys.teku.ethereum.pow.api.MinGenesisTimeBlockEvent;
 import tech.pegasys.teku.infrastructure.async.AsyncRunner;
+import tech.pegasys.teku.infrastructure.metrics.TekuMetricCategory;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.kzg.KZGProof;
@@ -4267,7 +4268,7 @@ public class DatabaseTest {
     assertThat(dao().getStateDiffNode(forkCheckpointBlock.getRoot())).isEmpty();
     // The new anchor's reconstruction chain is kept: the anchor, on the start slot of epoch 2, got
     // its node from the store as a diff against epoch 1's, down to genesis
-    assertThat(((KvStoreDatabase) database).getStateDiffAnchorNodesCreatedLate()).isZero();
+    assertThat(stateDiffNodeCount("anchor_created_late")).isZero();
     assertThat(stateDiffNode(checkpoint2BlockAndState.getRoot()).parentNodeRoot())
         .isEqualTo(checkpoint1BlockAndState.getRoot());
     assertThat(stateDiffReconstructionChain(checkpoint2BlockAndState.getRoot()))
@@ -4314,12 +4315,12 @@ public class DatabaseTest {
     addBlocks(chainBuilder.streamBlocksAndStates(40, 48).toList());
     assertThat(dao().getStateDiffNode(anchor5)).isEmpty();
     assertThat(stateDiffNode(epoch6NodeBlock.getRoot()).parentNodeRoot()).isEqualTo(epoch4NodeRoot);
-    assertThat(((KvStoreDatabase) database).getStateDiffAnchorNodesCreatedLate()).isZero();
+    assertThat(stateDiffNodeCount("anchor_created_late")).isZero();
 
     justifyAndFinalizeEpoch(UInt64.valueOf(5), checkpointBlocks.get(5));
 
     // The late anchor node chains through its finalized ancestors, keeping node 6's parent
-    assertThat(((KvStoreDatabase) database).getStateDiffAnchorNodesCreatedLate()).isEqualTo(1);
+    assertThat(stateDiffNodeCount("anchor_created_late")).isEqualTo(1);
     assertThat(stateDiffNode(anchor5).prevNodeRoot()).isEqualTo(epoch4NodeRoot);
     final Set<Bytes32> expected = new HashSet<>(stateDiffReconstructionChain(anchor5));
     expected.add(epoch6NodeBlock.getRoot());
@@ -4377,7 +4378,7 @@ public class DatabaseTest {
     justifyAndFinalizeEpoch(UInt64.valueOf(16), checkpointBlocks.get(16));
 
     // The late anchor node is at the finest level whatever its epoch, so it keeps node 15
-    assertThat(((KvStoreDatabase) database).getStateDiffAnchorNodesCreatedLate()).isEqualTo(1);
+    assertThat(stateDiffNodeCount("anchor_created_late")).isEqualTo(1);
     final StateDiffNodeRecord lateNode = stateDiffNode(anchor16);
     assertThat(lateNode.snapshot()).isFalse();
     assertThat(lateNode.level()).isEqualTo(3);
@@ -4391,7 +4392,7 @@ public class DatabaseTest {
     justifyAndFinalizeEpoch(UInt64.valueOf(17), checkpointBlocks.get(17));
     justifyAndFinalizeEpoch(UInt64.valueOf(18), checkpointBlocks.get(18));
 
-    assertThat(((KvStoreDatabase) database).getStateDiffAnchorsRepaired()).isZero();
+    assertThat(stateDiffNodeCount("anchor_repaired")).isZero();
     final Set<Bytes32> expected =
         new HashSet<>(stateDiffReconstructionChain(checkpointRoots.get(18)));
     expected.add(checkpointRoots.get(19));
@@ -4429,7 +4430,7 @@ public class DatabaseTest {
 
     justifyAndFinalizeEpoch(checkpoint3.getEpoch(), checkpoint3BlockAndState);
 
-    assertThat(((KvStoreDatabase) database).getStateDiffAnchorsRepaired()).isEqualTo(1);
+    assertThat(stateDiffNodeCount("anchor_repaired")).isEqualTo(1);
     assertThat(stateDiffNode(anchor3).snapshot()).isTrue();
     assertThat(dao().getStateDiffNode(anchor2)).isEmpty();
     assertThat(database.getHotState(anchor3)).contains(checkpoint3BlockAndState.getState());
@@ -4444,7 +4445,7 @@ public class DatabaseTest {
             .streamBlocksAndStates(checkpoint3BlockAndState.getSlot().longValue() + 1, 33)
             .toList());
     justifyAndFinalizeEpoch(UInt64.valueOf(4), checkpoint4BlockAndState);
-    assertThat(((KvStoreDatabase) database).getStateDiffAnchorsRepaired()).isZero();
+    assertThat(stateDiffNodeCount("anchor_repaired")).isZero();
     assertThat(stateDiffNode(checkpoint4BlockAndState.getRoot()).parentNodeRoot())
         .isEqualTo(anchor3);
     assertThat(database.getHotState(checkpoint4BlockAndState.getRoot()))
@@ -4507,7 +4508,7 @@ public class DatabaseTest {
     assertThat(stateDiffNode(checkpoint1BlockAndState.getRoot()).parentNodeRoot())
         .isEqualTo(genesisBlockAndState.getRoot());
     justifyAndFinalizeEpoch(checkpoint1.getEpoch(), checkpoint1BlockAndState);
-    assertThat(((KvStoreDatabase) database).getStateDiffAnchorNodesCreatedLate()).isZero();
+    assertThat(stateDiffNodeCount("anchor_created_late")).isZero();
 
     final UpdatableStore result = recreateStore();
 
@@ -4567,7 +4568,7 @@ public class DatabaseTest {
     final SignedBlockAndState anchor = chainBuilder.getLatestBlockAndStateAtEpochBoundary(1);
     assertThat(dao().getStateDiffNode(anchor.getRoot())).isPresent();
     justifyAndFinalizeEpoch(ONE, anchor);
-    assertThat(((KvStoreDatabase) database).getStateDiffAnchorNodesCreatedLate()).isZero();
+    assertThat(stateDiffNodeCount("anchor_created_late")).isZero();
     final List<SignedBlockAndState> blocksAfterFinalization =
         chainBuilder.generateBlocksUpToSlot(42);
     blocksAfterFinalization.forEach(block -> addBlocks(block));
@@ -4631,7 +4632,7 @@ public class DatabaseTest {
     justifyAndFinalizeEpoch(ONE, anchor);
 
     // The store wrote the anchor's node on import, so finalization did not have to create it
-    assertThat(((KvStoreDatabase) database).getStateDiffAnchorNodesCreatedLate()).isZero();
+    assertThat(stateDiffNodeCount("anchor_created_late")).isZero();
     assertThat(database.getHotState(anchor.getRoot())).contains(anchor.getState());
     assertThat(database.verifyStateDiffs().hasProblems()).isFalse();
     final UpdatableStore restartedStore = recreateStore();
@@ -4693,6 +4694,16 @@ public class DatabaseTest {
 
   private KvStoreCombinedDao dao() {
     return ((KvStoreDatabase) database).dao;
+  }
+
+  /**
+   * {@code storage_state_diff_nodes_total{state}} of the current database, counted since it was
+   * opened.
+   */
+  private long stateDiffNodeCount(final String state) {
+    return storageSystem
+        .getDatabaseMetricsSystem()
+        .getLabelledCounterValue(TekuMetricCategory.STORAGE, "state_diff_nodes_total", state);
   }
 
   private StateDiffNodeRecord stateDiffNode(final Bytes32 blockRoot) {

@@ -500,3 +500,19 @@ after 7 h to preserve disk for the mainnet backfill.
     (85 -> 8 ms snapshot, 88 -> 12 ms 10-link chain), nearly all from not
     rehashing. The template getter is named `getSupernodeElementTemplate` so
     AssertJ's recursive comparison does not build templates through it.
+
+48. **DERIVED. Recovery owned by the DAG, one exception type (2026-10-28
+    recovery cleanup).** Every reason the DAG cannot serve a state leaves
+    `StateDiffDag` / `StateDiffDagTransaction` as a `StateDiffVerificationException`:
+    `reconstructChain` wraps the applier's `MissingSupernodeException` naming the
+    hash, the referencing node and the chain; codec `IllegalArgumentException`s
+    were already wrapped (38) and no other one can escape, so callers no longer
+    catch either. `StateDiffDagTransaction.onAnchorFinalized` does ensure ->
+    retain and, on failure, logs one ERROR naming the failed step, counts
+    `anchor_repaired` (and `anchor_created_late`) itself and repairs; repair and
+    retention share one candidate-and-delete method (prefix vs strict loading of
+    the previous chain). `writeNodeOrSnapshot` owns the hot-node snapshot
+    fallback and `StateDiffDag.reconstructOrEmpty` the once-a-minute ERROR
+    throttle; the anchor-root rethrow and the unrecoverable startup error stay
+    in `StateDiffHotStateStorage`. The shadow `AtomicLong` counters are gone;
+    tests read `state_diff_nodes_total` from the database's `StubMetricsSystem`.

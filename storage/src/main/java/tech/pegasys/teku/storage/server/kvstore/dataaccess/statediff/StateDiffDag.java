@@ -25,6 +25,8 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
@@ -55,6 +57,8 @@ import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao;
  */
 public class StateDiffDag {
 
+  private static final Logger LOG = LogManager.getLogger();
+
   /** Upper bound on any pointer walk, so a corrupted pointer cycle fails instead of looping. */
   static final int MAX_WALK_LENGTH = 1 << 16;
 
@@ -63,13 +67,15 @@ public class StateDiffDag {
   /** The number of supernodes {@link #verify} loads in one batch to check their content. */
   private static final int VERIFY_SUPERNODE_BATCH_SIZE = 1024;
 
+  private static final long RECONSTRUCTION_FAILURE_LOG_INTERVAL_MILLIS = 60_000;
+
   private final StateDiffDagConfig config;
   private final DiffLevels levels;
   private final BeaconStateDiffSupport support;
   private final LevelBaseCache baseCache;
   private final StateDiffMetrics metrics;
-  private final AtomicLong anchorNodesCreatedLate = new AtomicLong();
-  private final AtomicLong anchorsRepaired = new AtomicLong();
+  private final AtomicLong lastReconstructionFailureLogMillis = new AtomicLong(Long.MIN_VALUE);
+  private final AtomicLong suppressedReconstructionFailureLogs = new AtomicLong();
 
   public StateDiffDag(
       final Spec spec, final StateDiffDagConfig config, final MetricsSystem metricsSystem) {
@@ -89,11 +95,47 @@ public class StateDiffDag {
    *
    * @return empty when there is no node for {@code blockRoot}
    * @throws StateDiffVerificationException when the chain is broken, a node record or payload is
-   *     corrupt, or the reconstructed state root differs from the recorded one
-   * @throws MissingSupernodeException when a referenced supernode is absent
+   *     corrupt, a referenced supernode is absent, or the reconstructed state root differs from the
+   *     recorded one
    */
   public Optional<BeaconState> reconstruct(final KvStoreCombinedDao dao, final Bytes32 blockRoot) {
     return reconstruct(new CommittedNodeReader(dao), blockRoot);
+  }
+
+  /**
+   * Reconstructs the state of the node stored for {@code blockRoot}, reporting a node that cannot
+   * be reconstructed as absent. The failure is logged at ERROR at most once a minute, with the
+   * count of the failures not logged since.
+   *
+   * @return empty when there is no node for {@code blockRoot} or it cannot be reconstructed
+   */
+  public Optional<BeaconState> reconstructOrEmpty(
+      final KvStoreCombinedDao dao, final Bytes32 blockRoot) {
+    try {
+      return reconstruct(dao, blockRoot);
+    } catch (final StateDiffVerificationException e) {
+      logReconstructionFailure(blockRoot, e);
+      return Optional.empty();
+    }
+  }
+
+  /** Logs a reconstruction failure at most once per interval, counting the others. */
+  private void logReconstructionFailure(
+      final Bytes32 blockRoot, final StateDiffVerificationException e) {
+    final long now = System.currentTimeMillis();
+    final long last = lastReconstructionFailureLogMillis.get();
+    final boolean due =
+        last == Long.MIN_VALUE || now - last >= RECONSTRUCTION_FAILURE_LOG_INTERVAL_MILLIS;
+    if (!due || !lastReconstructionFailureLogMillis.compareAndSet(last, now)) {
+      suppressedReconstructionFailureLogs.incrementAndGet();
+      return;
+    }
+    LOG.error(
+        "Cannot reconstruct the state of block {} from state diff storage, regenerating it by"
+            + " replaying blocks instead ({} similar errors not logged since the last one)",
+        blockRoot,
+        suppressedReconstructionFailureLogs.getAndSet(0),
+        e);
   }
 
   /**
@@ -277,34 +319,6 @@ public class StateDiffDag {
     return new StateDiffDagTransaction(this, dao, updater);
   }
 
-  /**
-   * Counts a finalized anchor whose node was rewritten as a snapshot because its chain, or the
-   * previous anchor's, could not be loaded.
-   */
-  public void recordAnchorRepaired() {
-    anchorsRepaired.incrementAndGet();
-    metrics.onAnchorRepaired();
-  }
-
-  /** The number of anchors repaired since this instance was created. */
-  public long getAnchorsRepaired() {
-    return anchorsRepaired.get();
-  }
-
-  /**
-   * Counts a finalized anchor whose node had to be created on finalization because none was written
-   * when its epoch was imported.
-   */
-  public void recordAnchorCreatedLate() {
-    anchorNodesCreatedLate.incrementAndGet();
-    metrics.onAnchorCreatedLate();
-  }
-
-  /** The number of anchor nodes created on finalization since this instance was created. */
-  public long getAnchorNodesCreatedLate() {
-    return anchorNodesCreatedLate.get();
-  }
-
   DiffLevels levels() {
     return levels;
   }
@@ -323,13 +337,14 @@ public class StateDiffDag {
 
   /**
    * Reconstructs the state of {@code blockRoot}, counting any failure as a verification failure.
-   * Codec errors in a payload are reported as a {@link StateDiffVerificationException} naming the
-   * node, so that one type carries all corruption besides a missing supernode.
+   * Codec errors in a node record or payload and a missing supernode are reported as a {@link
+   * StateDiffVerificationException} naming the node, so that one type carries every reason the DAG
+   * cannot serve a state.
    */
   Optional<BeaconState> reconstruct(final NodeReader reader, final Bytes32 blockRoot) {
     try {
       return reconstructChain(reader, blockRoot);
-    } catch (final StateDiffVerificationException | MissingSupernodeException e) {
+    } catch (final StateDiffVerificationException e) {
       metrics.onVerificationFailure();
       throw e;
     }
@@ -365,6 +380,17 @@ public class StateDiffDag {
         application.apply(TreeDiffCodec.deserialize(record.payload()));
       } catch (final IllegalArgumentException e) {
         throw corruptPayload(chain.get(i).root(), blockRoot, chain, e);
+      } catch (final MissingSupernodeException e) {
+        throw new StateDiffVerificationException(
+            "Missing supernode "
+                + e.getHash()
+                + " referenced by node "
+                + chain.get(i).root()
+                + " in the reconstruction chain of node "
+                + blockRoot
+                + "; chain from node to snapshot: "
+                + describe(chain),
+            e);
       }
     }
     final TreeNode tree;

@@ -50,6 +50,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InOrder;
 import org.mockito.invocation.InvocationOnMock;
 import tech.pegasys.teku.infrastructure.metrics.StubMetricsSystem;
+import tech.pegasys.teku.infrastructure.statediff.MissingSupernodeException;
+import tech.pegasys.teku.infrastructure.statediff.TreeDiffCodec;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecFactory;
@@ -76,6 +78,7 @@ import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.Fi
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.HotUpdater;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.V4FinalizedStateSnapshotStorageLogic;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffNodeRecordCodec;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationException;
 import tech.pegasys.teku.storage.server.kvstore.schema.KvStoreColumn;
 import tech.pegasys.teku.storage.server.kvstore.schema.V6SchemaCombinedSnapshot;
@@ -620,6 +623,37 @@ class KvStoreDatabaseTest {
         .hasMessageContaining(genesis.getRoot().toHexString())
         .hasMessageContaining("teku debug-tools db verify-state-diffs")
         .hasMessageContaining("re-syncing from a checkpoint")
+        .hasCauseInstanceOf(StateDiffVerificationException.class);
+  }
+
+  @Test
+  void stateDiffs_missingSupernodeOfTheAnchorSurfacesAsVerificationFailure() {
+    final StateDiffFixture fixture = new StateDiffFixture();
+    fixture.open(StateDiffDagConfig.prune()).storeInitialAnchor(fixture.genesis);
+    final Bytes32 anchorRoot = fixture.genesis.getRoot();
+    final Bytes32 hash =
+        TreeDiffCodec.supernodeHashes(
+                StateDiffNodeRecordCodec.decode(
+                        fixture.dao.getStateDiffNode(anchorRoot).orElseThrow())
+                    .payload())
+            .getFirst();
+    try (final HotUpdater updater = fixture.dao.hotUpdater()) {
+      updater.deleteStateSupernode(hash);
+      updater.commit();
+    }
+
+    final Database database = fixture.open(StateDiffDagConfig.prune());
+
+    // The anchor's node has no fallback: the failure surfaces as the DAG's one exception type
+    assertThatThrownBy(() -> database.getHotState(anchorRoot))
+        .isInstanceOf(StateDiffVerificationException.class)
+        .hasMessageContaining(hash.toHexString())
+        .hasMessageContaining(anchorRoot.toHexString())
+        .hasCauseInstanceOf(MissingSupernodeException.class);
+    assertThatThrownBy(database::createMemoryStore)
+        .isInstanceOfSatisfying(
+            DatabaseStorageException.class, e -> assertThat(e.isUnrecoverable()).isTrue())
+        .hasMessageContaining(hash.toHexString())
         .hasCauseInstanceOf(StateDiffVerificationException.class);
   }
 
