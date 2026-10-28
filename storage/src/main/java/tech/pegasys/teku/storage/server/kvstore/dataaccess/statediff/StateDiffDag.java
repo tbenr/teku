@@ -31,7 +31,6 @@ import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.statediff.DiffLevels;
 import tech.pegasys.teku.infrastructure.statediff.MissingSupernodeException;
 import tech.pegasys.teku.infrastructure.statediff.SupernodeSource;
-import tech.pegasys.teku.infrastructure.statediff.TreeDiff.SupernodeEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiffApplier;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiffCodec;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
@@ -119,13 +118,10 @@ public class StateDiffDag {
           entry -> {
             nodeRoots.add(entry.getKey());
             final StateDiffNodeRecord record;
-            final Set<Bytes32> hashes = new HashSet<>();
+            final Set<Bytes32> hashes;
             try {
               record = StateDiffNodeRecordCodec.decode(entry.getValue());
-              for (final SupernodeEntry supernode :
-                  TreeDiffCodec.deserialize(record.payload()).supernodes()) {
-                hashes.add(supernode.hash());
-              }
+              hashes = new HashSet<>(TreeDiffCodec.supernodeHashes(record.payload()));
             } catch (final IllegalArgumentException e) {
               corruptNodes.add(entry.getKey());
               return;
@@ -226,11 +222,6 @@ public class StateDiffDag {
     return new StateDiffDagTransaction(this, dao, updater);
   }
 
-  /** Counts a checkpoint block whose state was not available, so no node was written for it. */
-  public void recordSkippedNoState() {
-    metrics.onNodeSkippedNoState();
-  }
-
   /** Counts a hot state stored without the information placing it in the DAG, so not written. */
   public void recordSkippedNoInfo() {
     metrics.onNodeSkippedNoInfo();
@@ -262,11 +253,6 @@ public class StateDiffDag {
   /** The number of anchor nodes created on finalization since this instance was created. */
   public long getAnchorNodesCreatedLate() {
     return anchorNodesCreatedLate.get();
-  }
-
-  /** Drops the per-level diff bases, as after a restart. */
-  public void clearBaseCache() {
-    baseCache.clear();
   }
 
   DiffLevels levels() {

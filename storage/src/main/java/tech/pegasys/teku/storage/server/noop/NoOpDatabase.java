@@ -51,7 +51,6 @@ import tech.pegasys.teku.storage.api.WeakSubjectivityState;
 import tech.pegasys.teku.storage.api.WeakSubjectivityUpdate;
 import tech.pegasys.teku.storage.archive.BlobSidecarsArchiver;
 import tech.pegasys.teku.storage.server.Database;
-import tech.pegasys.teku.storage.server.kvstore.ColumnSize;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationReport;
 
 public class NoOpDatabase implements Database {
@@ -299,11 +298,6 @@ public class NoOpDatabase implements Database {
 
   @Override
   public Map<String, Long> getColumnCounts(final Optional<String> maybeColumnFilter) {
-    return new HashMap<>();
-  }
-
-  @Override
-  public Map<String, ColumnSize> getColumnSizes(final Optional<String> maybeColumnFilter) {
     return new HashMap<>();
   }
 

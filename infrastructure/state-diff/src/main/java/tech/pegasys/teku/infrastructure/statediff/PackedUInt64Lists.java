@@ -19,8 +19,6 @@ import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.tuweni.bytes.Bytes;
-import tech.pegasys.teku.infrastructure.ssz.collections.SszUInt64List;
-import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.AbstractSszProgressiveListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.ListSchemaUtil;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszUInt64ListSchema;
@@ -33,7 +31,6 @@ import tech.pegasys.teku.infrastructure.ssz.tree.ProgressiveTreeUtil;
 import tech.pegasys.teku.infrastructure.ssz.tree.SszSuperNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeUtil;
-import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
 /**
  * Converts packed uint64 list trees (balances, inactivity scores) to and from long arrays.
@@ -42,7 +39,7 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
  * the remaining values. Bounded lists ({@link AbstractSszListSchema}) keep the chunks in a balanced
  * data tree of the schema's depth; progressive lists ({@link AbstractSszProgressiveListSchema}) in
  * a spine of balanced level subtrees. Both are read and built at chunk level, without boxing an
- * element. Any other {@link SszUInt64ListSchema} implementation goes through its element API.
+ * element. Any other {@link SszUInt64ListSchema} implementation is rejected.
  */
 public final class PackedUInt64Lists {
 
@@ -54,10 +51,7 @@ public final class PackedUInt64Lists {
   private PackedUInt64Lists() {}
 
   public static long[] read(final SszUInt64ListSchema<?> schema, final TreeNode listNode) {
-    final boolean progressive = schema instanceof AbstractSszProgressiveListSchema<?, ?>;
-    if (!progressive && !(schema instanceof AbstractSszListSchema<?, ?>)) {
-      return readElements(schema, listNode);
-    }
+    final boolean progressive = isProgressive(schema);
     final long[] values = new long[ListSchemaUtil.getLength(listNode)];
     if (values.length == 0) {
       return values;
@@ -73,10 +67,7 @@ public final class PackedUInt64Lists {
   }
 
   public static TreeNode write(final SszUInt64ListSchema<?> schema, final long[] values) {
-    final boolean progressive = schema instanceof AbstractSszProgressiveListSchema<?, ?>;
-    if (!progressive && !(schema instanceof AbstractSszListSchema<?, ?>)) {
-      return writeElements(schema, values);
-    }
+    final boolean progressive = isProgressive(schema);
     if (values.length > schema.getMaxLength()) {
       throw new IllegalArgumentException(
           values.length + " elements exceed the maximum length " + schema.getMaxLength());
@@ -105,6 +96,17 @@ public final class PackedUInt64Lists {
     return BranchNode.create(
         TreeUtil.createTree(chunks, schema.treeDepth()),
         ListSchemaUtil.toLengthNode(values.length));
+  }
+
+  private static boolean isProgressive(final SszUInt64ListSchema<?> schema) {
+    if (schema instanceof AbstractSszProgressiveListSchema<?, ?>) {
+      return true;
+    }
+    if (schema instanceof AbstractSszListSchema<?, ?>) {
+      return false;
+    }
+    throw new IllegalArgumentException(
+        "Unsupported uint64 list schema " + schema.getClass().getName());
   }
 
   private static int chunkCount(final int length) {
@@ -175,22 +177,5 @@ public final class PackedUInt64Lists {
     for (int i = 0; i < count; i++) {
       values[first + i] = (long) LONG_LE.get(bytes, i * ELEMENT_BYTES);
     }
-  }
-
-  private static long[] readElements(final SszUInt64ListSchema<?> schema, final TreeNode listNode) {
-    final SszUInt64List list = schema.createFromBackingNode(listNode);
-    final long[] values = new long[list.size()];
-    for (int i = 0; i < values.length; i++) {
-      values[i] = list.getElement(i).longValue();
-    }
-    return values;
-  }
-
-  private static TreeNode writeElements(final SszUInt64ListSchema<?> schema, final long[] values) {
-    final List<SszUInt64> elements = new ArrayList<>(values.length);
-    for (final long value : values) {
-      elements.add(SszUInt64.of(UInt64.fromLongBits(value)));
-    }
-    return schema.createTreeFromElements(elements);
   }
 }
