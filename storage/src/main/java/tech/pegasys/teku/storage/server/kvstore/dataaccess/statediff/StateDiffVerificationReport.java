@@ -42,10 +42,9 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
  * @param anchorRoot the root of the finalized checkpoint, empty when the database has none
  * @param anchorChainLength the number of nodes in the anchor's reconstruction chain, 0 when the
  *     chain cannot be loaded
- * @param anchorReconstructionOk whether the anchor state was reconstructed and matched its recorded
- *     state root
  * @param anchorReconstructionMillis the time the anchor reconstruction took
- * @param anchorReconstructionError why the anchor could not be reconstructed
+ * @param anchorReconstructionError why the anchor could not be reconstructed, empty when it was
+ *     reconstructed and matched its recorded state root
  */
 public record StateDiffVerificationReport(
     long nodeCount,
@@ -59,7 +58,6 @@ public record StateDiffVerificationReport(
     List<Bytes32> corruptNodes,
     Optional<Bytes32> anchorRoot,
     int anchorChainLength,
-    boolean anchorReconstructionOk,
     long anchorReconstructionMillis,
     Optional<String> anchorReconstructionError) {
 
@@ -75,7 +73,6 @@ public record StateDiffVerificationReport(
       final List<Bytes32> corruptNodes,
       final Optional<Bytes32> anchorRoot,
       final int anchorChainLength,
-      final boolean anchorReconstructionOk,
       final long anchorReconstructionMillis,
       final Optional<String> anchorReconstructionError) {
     this.nodeCount = nodeCount;
@@ -89,9 +86,13 @@ public record StateDiffVerificationReport(
     this.corruptNodes = List.copyOf(corruptNodes);
     this.anchorRoot = anchorRoot;
     this.anchorChainLength = anchorChainLength;
-    this.anchorReconstructionOk = anchorReconstructionOk;
     this.anchorReconstructionMillis = anchorReconstructionMillis;
     this.anchorReconstructionError = anchorReconstructionError;
+  }
+
+  /** Whether the anchor state was reconstructed and matched its recorded state root. */
+  public boolean anchorReconstructionOk() {
+    return anchorReconstructionError.isEmpty();
   }
 
   /** Whether any check failed. */
@@ -102,7 +103,7 @@ public record StateDiffVerificationReport(
         || !supernodeHashMismatches.isEmpty()
         || !nodesWithMissingParent.isEmpty()
         || !corruptNodes.isEmpty()
-        || !anchorReconstructionOk;
+        || !anchorReconstructionOk();
   }
 
   /**

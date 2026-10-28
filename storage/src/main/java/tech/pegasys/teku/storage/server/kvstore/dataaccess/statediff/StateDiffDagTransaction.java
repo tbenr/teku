@@ -421,13 +421,7 @@ public class StateDiffDagTransaction {
       setPendingNode(anchorRoot, Optional.empty());
     }
     writeNode(anchorRoot, state, firstEpoch, lastEpoch, List.of(), true);
-    switch (retention) {
-      case FinalizedRetention.AnchorChain.INSTANCE ->
-          deleteFinalizedNodesOutsideChain(
-              previousAnchorRoot, anchorRoot, newlyFinalizedRoots, true);
-      case FinalizedRetention.All.INSTANCE -> {}
-      case FinalizedRetention.Window window -> retainWindow(window);
-    }
+    applyRetention(previousAnchorRoot, anchorRoot, newlyFinalizedRoots, retention, true);
   }
 
   /**
@@ -544,10 +538,27 @@ public class StateDiffDagTransaction {
       final Collection<Bytes32> newlyFinalizedRoots,
       final FinalizedRetention retention) {
     checkNotCommitted();
+    applyRetention(previousAnchorRoot, newAnchorRoot, newlyFinalizedRoots, retention, false);
+  }
+
+  /**
+   * Deletes the finalized-chain nodes {@code retention} no longer keeps once the anchor moves to
+   * {@code newAnchorRoot}; see {@link #retainFinalizedChain}.
+   *
+   * @param previousChainPrefixOnly retaining the anchor chain, read only the part of the previous
+   *     anchor's chain that can be read, as a repair does; a window always reads its previous
+   *     oldest node's chain that way
+   */
+  private void applyRetention(
+      final Optional<Bytes32> previousAnchorRoot,
+      final Bytes32 newAnchorRoot,
+      final Collection<Bytes32> newlyFinalizedRoots,
+      final FinalizedRetention retention,
+      final boolean previousChainPrefixOnly) {
     switch (retention) {
       case FinalizedRetention.AnchorChain.INSTANCE ->
           deleteFinalizedNodesOutsideChain(
-              previousAnchorRoot, newAnchorRoot, newlyFinalizedRoots, false);
+              previousAnchorRoot, newAnchorRoot, newlyFinalizedRoots, previousChainPrefixOnly);
       case FinalizedRetention.All.INSTANCE -> {}
       case FinalizedRetention.Window window -> retainWindow(window);
     }

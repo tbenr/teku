@@ -386,7 +386,9 @@ checkpoint block root for `epoch(maxSlot)` via the finalized block-by-slot
 index (floor lookup at the epoch start slot), reconstructs that node and
 returns it. `StateCacheLoader` then replays finalized blocks to the requested
 slot as today. If that checkpoint block has no node (a skipped node, 5.4), the
-previous checkpoint block's node is used, down to the window start. A
+previous checkpoint block's node is used, down to the window start, and then
+the one checkpoint block before the start epoch's: when the start epoch's own
+node was skipped, the oldest retained node lies there (decision 62). A
 reconstruction failure is an error for the caller, not an empty result.
 Epochs before the window start are not served.
 
@@ -414,6 +416,10 @@ exists when needed and the per-level base cache applies. The service also
 drives `StateRootRecorder` through `getLatestAvailableFinalizedState(slot - 1)`
 per block today; in diff mode the writer must keep the previously reconstructed
 state in memory for that call rather than reconstructing a node per block.
+Until this is implemented, the configuration rejects
+`--reconstruct-historic-states` when state diff storage is requested by the
+flag (decision 62); a database in state diff mode by its marker alone is not
+known at configuration time.
 
 Pre-migration history on an existing archive node is not served from the
 legacy snapshot or tree columns (D19); `getEarliestAvailableFinalizedStateSlot`

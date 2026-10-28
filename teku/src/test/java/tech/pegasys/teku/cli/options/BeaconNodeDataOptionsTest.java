@@ -161,6 +161,21 @@ public class BeaconNodeDataOptionsTest extends AbstractBeaconNodeCommandTest {
   }
 
   @Test
+  void stateDiffs_expectInvalidReconstructHistoricStatesValue() {
+    assertThatThrownBy(
+            () ->
+                createConfigBuilder()
+                    .eth2NetworkConfig(b -> b.customGenesisState(GENESIS_STATE))
+                    .storageConfiguration(b -> b.dataStorageMode(ARCHIVE).stateDiffsEnabled(true))
+                    .sync(b -> b.reconstructHistoricStatesEnabled(true))
+                    .build())
+        .isInstanceOf(InvalidConfigurationException.class)
+        .hasMessage(
+            "Cannot reconstruct historic states with state diff storage: the integration is not"
+                + " available yet");
+  }
+
+  @Test
   void shouldSetBlockPruningOptions() {
     final TekuConfiguration config =
         getTekuConfigurationFromArguments(

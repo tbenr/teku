@@ -670,7 +670,7 @@ checkpoint nodes went through the DAG.
 59. **GREY. `--reconstruct-historic-states` with state diffs is left as is,**
     not rejected in `TekuConfiguration`: it still writes legacy reconstructed
     states (and their state roots), which DAG-backed reads do not serve. Its
-    integration is the next slice (spec 5.11).
+    integration is the next slice (spec 5.11). Superseded by 62.
 
 60. **GREY. Per-field delta metrics are separate counters**
     (`delta_field_bytes_total{field}`, `delta_field_entries_total{field}`)
@@ -706,3 +706,38 @@ checkpoint nodes went through the DAG.
     run (sync plus steady state). Restart with the window on: start persisted,
     one 1.3 s startup reconstruction, no deletions on restart.
 
+## Pre-v2 cleanup wave (2026-10-29)
+
+62. **GREY. `--reconstruct-historic-states` is rejected with state diffs; a
+    skipped window-start node reads the oldest retained node (wave "pre-v2
+    cleanup", supersedes 59).** `TekuConfiguration` throws
+    `InvalidConfigurationException` ("Cannot reconstruct historic states with
+    state diff storage: the integration is not available yet") when
+    `StorageConfiguration`'s `StateDiffDagConfig` is enabled and the option is
+    on, instead of letting it write legacy states the DAG-backed reads do not
+    serve. A database in state diff mode by its marker alone (flag removed) is
+    not known at configuration time and is left as is: it still writes those
+    legacy states. Reads (decision 54): at exactly the window start `S`, when
+    `S`'s checkpoint node was skipped, `O` lies below `S` and is kept by
+    retention, but the fallback stopped at `S` and returned empty.
+    `findCheckpointNode` now walks down to the checkpoint block of its lowest
+    epoch and then tries the one checkpoint block before it: that is `O` when a
+    single node was skipped at `S`; when that block has no node (deleted, or a
+    second consecutive skip) the read is empty, rather than walking on to an
+    older node far below and replaying its blocks. Reads below `S` stay empty;
+    without a recorded start only the epoch's own checkpoint block is looked up,
+    as before; retention's lookup of the previous `O` walks to epoch 0 and is
+    unchanged. Rejected: an unbounded walk below `S` (one finalized block read
+    per epoch on a broken database, and a possibly long replay from a node of
+    `O`'s chain when `O` itself is missing). Test:
+    `StateDiffDatabaseTest.stateDiffs_archiveWindowStartWithSkippedNodeReadsOldestRetainedNode`.
+    Same wave, behaviour-neutral: (1) `PackedUInt64ListsBenchmarkTest` deleted
+    (its checks are covered by `PackedUInt64ListsTest`,
+    `TreeDiffChainApplicationTest` and `TreeDiffRoundTripPropertyTest`),
+    `StateDiffDagInvariants` replaced by `verify` reports (it checked nothing
+    `verify` does not), `StateDiffVerificationReport.anchorReconstructionOk`
+    derived from the error, and `verify` loads the anchor chain once and applies
+    it whole from its snapshot (no base-cache shortcut); (2) one
+    `applyRetention` method serves `repairAnchor` and `retainFinalizedChain`;
+    (5) the state diff `DatabaseTest`s moved to `StateDiffDatabaseTest`, sharing
+    the fixture through `AbstractDatabaseTest`.

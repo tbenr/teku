@@ -153,7 +153,7 @@ class StateDiffDagTest {
     // Every diff base came from the per-level cache
     assertThat(baseCache(metricsSystem, "hit")).isEqualTo(39);
     assertThat(baseCache(metricsSystem, "miss")).isZero();
-    StateDiffDagInvariants.assertConsistent(dao);
+    assertDagConsistent();
   }
 
   @Test
@@ -335,7 +335,7 @@ class StateDiffDagTest {
       assertThat(dao.getStateSupernode(hash)).isPresent();
     }
     assertThat(supernodeOps("inserted")).isEqualTo(hashes.size());
-    StateDiffDagInvariants.assertConsistent(dao);
+    assertDagConsistent();
   }
 
   @Test
@@ -375,7 +375,7 @@ class StateDiffDagTest {
     }
     assertThat(nodeCount("deleted")).isEqualTo(2);
     assertThat(supernodeOps("deleted")).isEqualTo(supernodeOps("inserted"));
-    StateDiffDagInvariants.assertConsistent(dao);
+    assertDagConsistent();
   }
 
   @Test
@@ -438,7 +438,7 @@ class StateDiffDagTest {
       assertThat(dao.getStateSupernode(hash)).isPresent();
     }
     assertReconstructs(rootB, states.get(0));
-    StateDiffDagInvariants.assertConsistent(dao);
+    assertDagConsistent();
   }
 
   @Test
@@ -560,7 +560,7 @@ class StateDiffDagTest {
             roots.get(1),
             roots.get(0));
     assertReconstructs(10);
-    StateDiffDagInvariants.assertConsistent(dao);
+    assertDagConsistent();
   }
 
   @Test
@@ -593,7 +593,7 @@ class StateDiffDagTest {
     assertThat(record(roots.get(5)).parentNodeRoot()).isEqualTo(roots.get(4));
     assertStoredEpochs(range(0, 6));
     assertReconstructs(6);
-    StateDiffDagInvariants.assertConsistent(dao);
+    assertDagConsistent();
 
     // The next anchor move drops the node of epoch 5 alone
     retain(Optional.of(roots.get(5)), 6);
@@ -632,7 +632,7 @@ class StateDiffDagTest {
     assertThat(late.prevNodeRoot()).isEqualTo(roots.get(15));
     assertReconstructs(16);
     assertReconstructs(17);
-    StateDiffDagInvariants.assertConsistent(dao);
+    assertDagConsistent();
 
     // The next two finalizations load every chain they need
     retain(Optional.of(roots.get(16)), 17);
@@ -1126,7 +1126,7 @@ class StateDiffDagTest {
     assertThat(snapshots("periodic")).isEqualTo(1);
     assertThat(snapshots("no_parent") + snapshots("forced") + snapshots("milestone")).isZero();
     assertReconstructs(64);
-    StateDiffDagInvariants.assertConsistent(dao);
+    assertDagConsistent();
   }
 
   @Test
@@ -1217,7 +1217,7 @@ class StateDiffDagTest {
     assertThat(dao.getStateDiffWindowStart()).contains(epoch(16));
     assertReconstructs(16);
     assertReconstructs(17);
-    StateDiffDagInvariants.assertConsistent(dao);
+    assertDagConsistent();
 
     // The next window move drops node 16 alone
     retainWindow(Optional.of(16), 17);
@@ -1587,6 +1587,25 @@ class StateDiffDagTest {
     dag = new StateDiffDag(spec, StateDiffDagConfig.prune(), metricsSystem);
   }
 
+  /**
+   * Checks the stored nodes and supernodes with {@link StateDiffDag#verify}: reference counts,
+   * supernode content and parent pointers. Its anchor reconstruction is not asserted: most tests
+   * store no finalized checkpoint.
+   */
+  private void assertDagConsistent() {
+    final StateDiffVerificationReport report = dag.verify(dao);
+    assertThat(
+            List.of(
+                report.refCountMismatches(),
+                report.missingSupernodes(),
+                report.unreferencedSupernodes(),
+                report.supernodeHashMismatches(),
+                report.nodesWithMissingParent(),
+                report.corruptNodes()))
+        .describedAs("%s", report)
+        .allSatisfy(problems -> assertThat(problems).isEmpty());
+  }
+
   private void setFinalizedCheckpoint(final int epoch) {
     updateDao(
         updater -> updater.setFinalizedCheckpoint(new Checkpoint(epoch(epoch), roots.get(epoch))));
@@ -1682,7 +1701,7 @@ class StateDiffDagTest {
     for (final Bytes32 root : dag.reconstructionChain(dao, roots.get(newAnchorEpoch))) {
       assertThat(dao.getStateDiffNode(root)).isPresent();
     }
-    StateDiffDagInvariants.assertConsistent(dao);
+    assertDagConsistent();
   }
 
   /**
@@ -1701,7 +1720,7 @@ class StateDiffDagTest {
                     epoch(newStart),
                     previousStart.map(roots::get),
                     roots.subList(from, newStart + 1))));
-    StateDiffDagInvariants.assertConsistent(dao);
+    assertDagConsistent();
   }
 
   private double windowStartGauge() {
