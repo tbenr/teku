@@ -549,3 +549,37 @@ after 7 h to preserve disk for the mainnet backfill.
     item 3 of docs/state-diff-storage.md, now closed). Heap vs stock not
     re-measured. The 2026-10-22 soak copies under the earlier session's /tmp
     scratchpad had been removed by the macOS temporary-file cleanup.
+
+## Fork crossing on a kurtosis devnet (2026-10-28, Fulu genesis, Gloas at epoch 3)
+
+Enclave `sdfork` (ethereum-package, mainnet preset, geth v1.17.8): a Lighthouse
+node (128 validators), a stock Teku node and a Teku node with
+`--Xdata-storage-state-diffs` (64 validators each), image
+`local/teku:develop-ea51ab069c`. The package forces `--data-storage-mode=ARCHIVE`
+(a package constant), so finalized states stayed in the legacy column; the hot
+checkpoint nodes went through the DAG.
+
+- Node records after epoch 6 (dumped offline): genesis snapshot 2.28 MB; epochs
+  1-2 Fulu diffs of 6.7 KB chained to genesis; epoch 3 (first Gloas block, slot
+  96) written as a **snapshot with no parent**, 2.58 MB (reason `milestone`);
+  epochs 4-6 Gloas diffs of 424 KB chained to it.
+- `verify-state-diffs` on the copied database: 7 nodes, 5 supernodes, 0
+  mismatches of any kind, anchor (epoch 4) chain length 2, reconstruction OK in
+  139 ms.
+- Node restarted at slot ~206 with finalized epoch 4: the anchor was
+  reconstructed from the Gloas chain (no legacy finalized state exists), the
+  node resynced and resumed duties; the only ERROR was one missed
+  sync_signature at the restart slot.
+- REST `GET /eth/v2/debug/beacon/states/{slot}` as SSZ, compared byte for byte
+  with the stock node, before and after the restart: slots 16, 32, 40, 49, 63,
+  64, 70, 95, 96, 97, 100, 103, 128, 129, 131, 140, 145, 159, 160, 170, 177,
+  190, 195 all identical (Fulu states 2.77 MB, Gloas 3.18 MB), served in 40-350
+  ms; the regeneration log lines show 2-45 blocks replayed from the nearest
+  persisted node or in-memory state.
+- The Gloas diffs are 60x the Fulu ones because of `ptc_window` (96 slots x 512
+  validator indices x 8 B = 393 KB), which rotates by one epoch every epoch, so
+  every leaf changes. Same absolute size on mainnet (PTC_SIZE is fixed): about
+  +0.4 MB per Gloas epoch node. Two thirds of it is a shift by 32 slots that the
+  payload format can already express as gIndex-level `copied` entries; the
+  differ only looks for field-level copies today. Candidate for the payload v2
+  wave.
