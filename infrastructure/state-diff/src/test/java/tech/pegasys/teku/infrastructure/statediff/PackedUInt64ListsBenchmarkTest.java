@@ -52,7 +52,8 @@ class PackedUInt64ListsBenchmarkTest {
 
   private final Random random = new Random(42);
   private final TreeDiffer differ = new TreeDiffer(SCHEMA, IntSet.of(LIST_FIELD));
-  private final TreeDiffApplier applier = new TreeDiffApplier(SCHEMA, hash -> Optional.empty());
+  private final SupernodeSource source = hash -> Optional.empty();
+  private final TreeDiffApplier applier = new TreeDiffApplier(SCHEMA);
 
   @Test
   void timePackedListPaths() {
@@ -86,8 +87,8 @@ class PackedUInt64ListsBenchmarkTest {
 
     final TreeDiff single = diffs.get(1);
     final TreeNode singleBase = states.get(0);
-    final double applyMs = time(() -> applier.apply(singleBase, single));
-    assertThat(applier.apply(singleBase, single).hashTreeRoot())
+    final double applyMs = time(() -> applier.apply(singleBase, single, source));
+    assertThat(applier.apply(singleBase, single, source).hashTreeRoot())
         .isEqualTo(states.get(1).hashTreeRoot());
 
     final double chainMs = time(() -> reconstructPerLink(diffs));
@@ -104,13 +105,14 @@ class PackedUInt64ListsBenchmarkTest {
   private TreeNode reconstructPerLink(final List<TreeDiff> diffs) {
     TreeNode tree = SCHEMA.getDefaultTree();
     for (final TreeDiff diff : diffs) {
-      tree = applier.apply(tree, diff);
+      tree = applier.apply(tree, diff, source);
     }
     return tree;
   }
 
   private TreeNode reconstructFolded(final List<TreeDiff> diffs) {
-    final TreeDiffApplier.ChainApplication chain = applier.startChain(SCHEMA.getDefaultTree());
+    final TreeDiffApplier.ChainApplication chain =
+        applier.startChain(SCHEMA.getDefaultTree(), source);
     diffs.forEach(chain::apply);
     return chain.finish();
   }

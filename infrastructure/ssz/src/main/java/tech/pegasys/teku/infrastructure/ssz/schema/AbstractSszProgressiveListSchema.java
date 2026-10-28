@@ -153,6 +153,11 @@ public abstract class AbstractSszProgressiveListSchema<
   }
 
   @Override
+  public SszNodeTemplate getSupernodeElementTemplate() {
+    return elementSszSupernodeTemplate.get();
+  }
+
+  @Override
   public TreeNode createTreeFromElements(final List<? extends ElementDataT> elements) {
     checkArgument(
         elements.size() <= maxLength,

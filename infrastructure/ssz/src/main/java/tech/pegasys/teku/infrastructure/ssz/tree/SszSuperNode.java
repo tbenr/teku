@@ -59,6 +59,23 @@ public class SszSuperNode implements TreeNode, LeafDataNode {
     checkArgument(getElementsCount() <= getMaxElements());
   }
 
+  /**
+   * Creates a supernode whose hash tree root is already known, for instance because its content was
+   * stored under that root, so that {@link #hashTreeRoot()} does not hash the content.
+   *
+   * <p>The root is trusted, not checked: when it does not match the content, every root computed
+   * over this node is wrong.
+   */
+  public static SszSuperNode createWithKnownRoot(
+      final int depth,
+      final SszNodeTemplate elementTemplate,
+      final Bytes ssz,
+      final Bytes32 hashTreeRoot) {
+    final SszSuperNode node = new SszSuperNode(depth, elementTemplate, ssz);
+    node.cachedHash = hashTreeRoot;
+    return node;
+  }
+
   public int getDepth() {
     return depth;
   }

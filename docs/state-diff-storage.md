@@ -50,8 +50,10 @@ teku debug-tools db verify-state-diffs --network=mainnet --data-path=<dir>
 teku debug-tools rocksdb usage --network=mainnet --data-path=<dir> --filter=STATE_
 ```
 
-`verify-state-diffs` recounts supernode references, checks every node's parent,
-reconstructs the finalized anchor and exits 1 on any problem. `rocksdb usage`
+`verify-state-diffs` recounts supernode references, checks that every referenced
+supernode's content hashes to its key (reconstruction trusts it to), checks
+every node's parent, reconstructs the finalized anchor and exits 1 on any
+problem. `rocksdb usage`
 prints RocksDB keys, total, SST, blob and estimated live bytes per column family;
 `--filter` keeps the columns whose name contains it, ignoring case.
 

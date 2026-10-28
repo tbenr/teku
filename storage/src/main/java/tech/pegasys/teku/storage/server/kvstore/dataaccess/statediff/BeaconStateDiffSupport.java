@@ -19,7 +19,6 @@ import it.unimi.dsi.fastutil.ints.IntSets;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszFieldName;
-import tech.pegasys.teku.infrastructure.statediff.SupernodeSource;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiffApplier;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiffer;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
@@ -37,9 +36,8 @@ import tech.pegasys.teku.spec.datastructures.state.beaconstate.common.BeaconStat
  * schema.createFromBackingNode(tree)}. A diff is only meaningful between trees of the same schema,
  * so a base from another milestone (see {@link #sameMilestone}) needs a snapshot instead.
  *
- * <p>Differs are memoized per milestone. Appliers are bound to a {@link SupernodeSource}, so one is
- * memoized per milestone together with the source it was created for and is reused while callers
- * keep passing that same source instance.
+ * <p>Differs and appliers are memoized per milestone. An applier takes the supernode source of each
+ * application as an argument, so one serves every reader.
  */
 public class BeaconStateDiffSupport {
 
@@ -49,7 +47,7 @@ public class BeaconStateDiffSupport {
 
   private final Spec spec;
   private final Map<SpecMilestone, TreeDiffer> differs = new ConcurrentHashMap<>();
-  private final Map<SpecMilestone, SourceBoundApplier> appliers = new ConcurrentHashMap<>();
+  private final Map<SpecMilestone, TreeDiffApplier> appliers = new ConcurrentHashMap<>();
 
   public BeaconStateDiffSupport(final Spec spec) {
     this.spec = spec;
@@ -64,16 +62,9 @@ public class BeaconStateDiffSupport {
         });
   }
 
-  @SuppressWarnings({"ReferenceEquality", "ReferenceComparison"})
-  public TreeDiffApplier applierFor(final UInt64 slot, final SupernodeSource source) {
-    return appliers
-        .compute(
-            milestoneAt(slot),
-            (milestone, memoized) ->
-                memoized != null && memoized.source() == source
-                    ? memoized
-                    : new SourceBoundApplier(source, new TreeDiffApplier(schemaFor(slot), source)))
-        .applier();
+  public TreeDiffApplier applierFor(final UInt64 slot) {
+    return appliers.computeIfAbsent(
+        milestoneAt(slot), milestone -> new TreeDiffApplier(schemaFor(slot)));
   }
 
   public BeaconStateSchema<?, ?> schemaFor(final UInt64 slot) {
@@ -98,6 +89,4 @@ public class BeaconStateDiffSupport {
   private SpecMilestone milestoneAt(final UInt64 slot) {
     return spec.atSlot(slot).getMilestone();
   }
-
-  private record SourceBoundApplier(SupernodeSource source, TreeDiffApplier applier) {}
 }

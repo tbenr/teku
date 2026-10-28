@@ -91,6 +91,16 @@ public abstract class AbstractSszCollectionSchema<
     return elementSchema;
   }
 
+  /**
+   * The template of one element as packed into the {@link SszSuperNode}s of this collection's tree.
+   * Built once per schema.
+   */
+  // Named unlike the field: reflective property readers such as AssertJ's recursive comparison
+  // prefer a getter matching a field's name, and would build every template while walking schemas
+  public SszNodeTemplate getSupernodeElementTemplate() {
+    return elementSszSupernodeTemplate.get();
+  }
+
   @Override
   public SszSchema<?> getChildSchema(final int index) {
     if (index >= maxLength) {
