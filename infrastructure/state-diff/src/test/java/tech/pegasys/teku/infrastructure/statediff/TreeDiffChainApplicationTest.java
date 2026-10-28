@@ -43,8 +43,8 @@ class TreeDiffChainApplicationTest {
   private final Random random = new Random(5);
   private final Map<Bytes32, Bytes> supernodeStore = new HashMap<>();
   private final TreeDiffer differ = new TreeDiffer(SCHEMA, SyntheticState.DELTA_FIELDS);
-  private final TreeDiffApplier applier =
-      new TreeDiffApplier(SCHEMA, hash -> Optional.ofNullable(supernodeStore.get(hash)));
+  private final SupernodeSource source = hash -> Optional.ofNullable(supernodeStore.get(hash));
+  private final TreeDiffApplier applier = new TreeDiffApplier(SCHEMA);
 
   @Test
   void foldedChainEqualsPerLinkApplicationAndBuildsEachListOnce() {
@@ -56,7 +56,8 @@ class TreeDiffChainApplicationTest {
     }
     final List<TreeDiff> diffs = chainDiffs(states);
 
-    final TreeDiffApplier.ChainApplication chain = applier.startChain(SCHEMA.getDefaultTree());
+    final TreeDiffApplier.ChainApplication chain =
+        applier.startChain(SCHEMA.getDefaultTree(), source);
     diffs.forEach(chain::apply);
     final TreeNode folded = chain.finish();
 
@@ -91,12 +92,14 @@ class TreeDiffChainApplicationTest {
             List.of(),
             diff(s1, s2).deltas());
 
-    final TreeDiffApplier.ChainApplication chain = applier.startChain(SCHEMA.getDefaultTree());
+    final TreeDiffApplier.ChainApplication chain =
+        applier.startChain(SCHEMA.getDefaultTree(), source);
     diffs.forEach(chain::apply);
     assertThatThrownBy(() -> chain.apply(copyFromPending))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("delta field");
-    assertThatThrownBy(() -> applier.startChain(SCHEMA.getDefaultTree()).apply(leafInOwnDeltaField))
+    assertThatThrownBy(
+            () -> applier.startChain(SCHEMA.getDefaultTree(), source).apply(leafInOwnDeltaField))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("delta field");
   }
@@ -108,15 +111,16 @@ class TreeDiffChainApplicationTest {
     final TreeDiff duplicate =
         new TreeDiff(List.of(), List.of(), List.of(), List.of(), List.of(delta, delta));
 
-    assertThatThrownBy(() -> applier.apply(SCHEMA.getDefaultTree(), duplicate))
+    assertThatThrownBy(() -> applier.apply(SCHEMA.getDefaultTree(), duplicate, source))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> applier.startChain(SCHEMA.getDefaultTree()).apply(duplicate))
+    assertThatThrownBy(() -> applier.startChain(SCHEMA.getDefaultTree(), source).apply(duplicate))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   void rejectsUseAfterFinish() {
-    final TreeDiffApplier.ChainApplication chain = applier.startChain(SCHEMA.getDefaultTree());
+    final TreeDiffApplier.ChainApplication chain =
+        applier.startChain(SCHEMA.getDefaultTree(), source);
     chain.finish();
 
     assertThatThrownBy(chain::finish).isInstanceOf(IllegalStateException.class);
@@ -162,7 +166,7 @@ class TreeDiffChainApplicationTest {
   private TreeNode applyPerLink(final List<TreeDiff> diffs) {
     TreeNode tree = SCHEMA.getDefaultTree();
     for (final TreeDiff diff : diffs) {
-      tree = applier.apply(tree, diff);
+      tree = applier.apply(tree, diff, source);
     }
     return tree;
   }

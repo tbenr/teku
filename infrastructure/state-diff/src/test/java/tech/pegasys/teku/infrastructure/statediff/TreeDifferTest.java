@@ -27,6 +27,8 @@ import static tech.pegasys.teku.infrastructure.statediff.SyntheticState.VALIDATO
 import static tech.pegasys.teku.infrastructure.statediff.SyntheticState.fieldGIndex;
 
 import it.unimi.dsi.fastutil.ints.IntSet;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +53,7 @@ import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
 import tech.pegasys.teku.infrastructure.ssz.tree.BranchNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.GIndexUtil;
 import tech.pegasys.teku.infrastructure.ssz.tree.LeafNode;
+import tech.pegasys.teku.infrastructure.ssz.tree.SszSuperNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.CopiedEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.DeltaEntry;
@@ -66,8 +69,8 @@ class TreeDifferTest {
 
   private final Map<Bytes32, Bytes> supernodeStore = new HashMap<>();
   private final TreeDiffer differ = new TreeDiffer(SCHEMA, SyntheticState.DELTA_FIELDS);
-  private final TreeDiffApplier applier =
-      new TreeDiffApplier(SCHEMA, hash -> Optional.ofNullable(supernodeStore.get(hash)));
+  private final SupernodeSource source = hash -> Optional.ofNullable(supernodeStore.get(hash));
+  private final TreeDiffApplier applier = new TreeDiffApplier(SCHEMA);
 
   @Test
   void baseValidatorsAreSupernodeBacked() {
@@ -193,7 +196,7 @@ class TreeDifferTest {
     final TreeNode target = mutation.apply(BASE);
     final TreeDiff diff = TreeDiffCodec.deserialize(TreeDiffCodec.serialize(diff(BASE, target)));
 
-    final TreeNode applied = applier.apply(BASE, diff);
+    final TreeNode applied = applier.apply(BASE, diff, source);
 
     assertThat(applied.hashTreeRoot()).isEqualTo(target.hashTreeRoot());
     assertThat(SyntheticState.serialize(applied)).isEqualTo(SyntheticState.serialize(target));
@@ -232,13 +235,59 @@ class TreeDifferTest {
         SyntheticState.setValidatorField(
             BASE, CHANGED_VALIDATOR, VALIDATOR_EFFECTIVE_BALANCE, SszUInt64.of(UInt64.valueOf(31)));
     final TreeDiff diff = diff(BASE, target);
-    final TreeDiffApplier emptySourceApplier =
-        new TreeDiffApplier(SCHEMA, hash -> Optional.empty());
 
-    assertThatThrownBy(() -> emptySourceApplier.apply(BASE, diff))
+    assertThatThrownBy(() -> applier.apply(BASE, diff, hash -> Optional.empty()))
         .isInstanceOfSatisfying(
             MissingSupernodeException.class,
             e -> assertThat(e.getHash()).isEqualTo(diff.supernodes().getFirst().hash()));
+  }
+
+  @Test
+  void applyLoadsTheSupernodesOfADiffInOneBatch() {
+    final TreeNode defaultTree = SCHEMA.getDefaultTree();
+    final TreeDiff diff = diff(defaultTree, BASE);
+    assertThat(diff.supernodes()).hasSizeGreaterThan(1);
+    final List<List<Bytes32>> batches = new ArrayList<>();
+    final SupernodeSource batchOnlySource =
+        new SupernodeSource() {
+          @Override
+          public Optional<Bytes> load(final Bytes32 hash) {
+            throw new AssertionError("Supernode " + hash + " loaded on its own");
+          }
+
+          @Override
+          public Map<Bytes32, Bytes> loadAll(final Collection<Bytes32> hashes) {
+            batches.add(List.copyOf(hashes));
+            return source.loadAll(hashes);
+          }
+        };
+
+    final TreeNode applied = applier.apply(defaultTree, diff, batchOnlySource);
+
+    assertThat(applied.hashTreeRoot()).isEqualTo(BASE.hashTreeRoot());
+    assertThat(batches)
+        .containsExactly(diff.supernodes().stream().map(SupernodeEntry::hash).distinct().toList());
+  }
+
+  @Test
+  void appliedSupernodeTakesItsRootFromTheEntryInsteadOfHashingItsContent() {
+    final TreeNode target =
+        SyntheticState.setValidatorField(
+            BASE, CHANGED_VALIDATOR, VALIDATOR_EFFECTIVE_BALANCE, SszUInt64.of(UInt64.valueOf(31)));
+    final TreeDiff diff = diff(BASE, target);
+    final SupernodeEntry entry = diff.supernodes().getFirst();
+    final Bytes stored = supernodeStore.get(entry.hash());
+    final Bytes tampered =
+        Bytes.concatenate(
+            stored.slice(0, stored.size() - 1), Bytes.of((byte) ~stored.get(stored.size() - 1)));
+
+    final TreeNode applied = applier.apply(BASE, diff, hash -> Optional.of(tampered));
+
+    // The content is trusted to match its store key, so tampering goes unnoticed by the root
+    assertThat(applied.get(entry.gIndex())).isInstanceOf(SszSuperNode.class);
+    assertThat(((SszSuperNode) applied.get(entry.gIndex())).getData()).isEqualTo(tampered);
+    assertThat(applied.get(entry.gIndex()).hashTreeRoot()).isEqualTo(entry.hash());
+    assertThat(applied.hashTreeRoot()).isEqualTo(target.hashTreeRoot());
   }
 
   @Test
@@ -248,7 +297,7 @@ class TreeDifferTest {
         TreeDiffCodec.deserialize(TreeDiffCodec.serialize(diff(defaultTree, BASE)));
 
     assertThat(diff.supernodes()).isNotEmpty();
-    final TreeNode applied = applier.apply(defaultTree, diff);
+    final TreeNode applied = applier.apply(defaultTree, diff, source);
 
     assertThat(applied.hashTreeRoot()).isEqualTo(BASE.hashTreeRoot());
     assertThat(SyntheticState.serialize(applied)).isEqualTo(SyntheticState.serialize(BASE));
@@ -280,9 +329,7 @@ class TreeDifferTest {
             TreeDiffCodec.serialize(
                 new TreeDiffer(schema, IntSet.of()).diff(base, target, supernodeStore::put)));
 
-    final TreeNode applied =
-        new TreeDiffApplier(schema, hash -> Optional.ofNullable(supernodeStore.get(hash)))
-            .apply(base, diff);
+    final TreeNode applied = new TreeDiffApplier(schema).apply(base, diff, source);
 
     assertThat(applied.hashTreeRoot()).isEqualTo(target.hashTreeRoot());
     assertThat(schema.createFromBackingNode(applied).sszSerialize())

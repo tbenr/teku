@@ -13,13 +13,31 @@
 
 package tech.pegasys.teku.infrastructure.statediff;
 
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 
-/** Loads the content of a supernode referenced by hash from a {@link TreeDiff}. */
+/**
+ * Loads the content of a supernode referenced by hash from a {@link TreeDiff}. The hash is the
+ * supernode's hash tree root, and {@link TreeDiffApplier} trusts the loaded content to match it.
+ */
 @FunctionalInterface
 public interface SupernodeSource {
 
   Optional<Bytes> load(Bytes32 hash);
+
+  /**
+   * Loads the supernodes {@code hashes}, by hash, omitting those the source lacks. This default
+   * loads them one by one; a source over a store with batched point lookups reads them at once.
+   */
+  default Map<Bytes32, Bytes> loadAll(final Collection<Bytes32> hashes) {
+    final Map<Bytes32, Bytes> loaded = new HashMap<>();
+    for (final Bytes32 hash : hashes) {
+      load(hash).ifPresent(ssz -> loaded.put(hash, ssz));
+    }
+    return loaded;
+  }
 }

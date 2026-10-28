@@ -131,6 +131,25 @@ class StateDiffDaoTest {
   }
 
   @Test
+  void supernodesBatchRead() {
+    final Bytes32 hashA = dataStructureUtil.randomBytes32();
+    final Bytes32 hashB = dataStructureUtil.randomBytes32();
+    final Bytes32 missing = dataStructureUtil.randomBytes32();
+    final Bytes sszA = dataStructureUtil.randomBytes(512);
+    final Bytes sszB = dataStructureUtil.randomBytes(256);
+    update(
+        dao,
+        updater -> {
+          updater.putStateSupernode(hashA, sszA);
+          updater.putStateSupernode(hashB, sszB);
+        });
+
+    assertThat(dao.getStateSupernodes(List.of(hashA, missing, hashB)))
+        .containsExactlyInAnyOrderEntriesOf(Map.of(hashA, sszA, hashB, sszB));
+    assertThat(dao.getStateSupernodes(List.of())).isEmpty();
+  }
+
+  @Test
   void deleteSupernodeRemovesRefCount() {
     final Bytes32 hash = dataStructureUtil.randomBytes32();
     final Bytes32 otherHash = dataStructureUtil.randomBytes32();
@@ -240,6 +259,7 @@ class StateDiffDaoTest {
     assertThat(v4Dao.getStateSupernode(hash)).isEmpty();
     assertThat(v4Dao.getStateSupernodeRefCount(hash)).isEmpty();
     assertThat(v4Dao.getStateSupernodeRefCounts(List.of(hash))).isEmpty();
+    assertThat(v4Dao.getStateSupernodes(List.of(hash))).isEmpty();
     assertThat(v4Dao.getStateDiffMode()).isEmpty();
     try (final Stream<?> nodes = v4Dao.streamStateDiffNodes()) {
       assertThat(nodes).isEmpty();
