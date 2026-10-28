@@ -58,7 +58,8 @@ public class FileBackedStorageSystemBuilder {
   }
 
   public StorageSystem build() {
-    final Database database = buildDatabase();
+    final StubMetricsSystem databaseMetricsSystem = new StubMetricsSystem();
+    final Database database = buildDatabase(databaseMetricsSystem);
 
     validate();
 
@@ -66,6 +67,7 @@ public class FileBackedStorageSystemBuilder {
         new MockStartValidatorKeyPairFactory().generateKeyPairs(0, numberOfValidators);
     return StorageSystem.create(
         database,
+        databaseMetricsSystem,
         createRestartSupplier(),
         storageMode,
         stateDiffsEnabled ? StorageSystem.requestingStateDiffs(storeConfig) : storeConfig,
@@ -74,15 +76,15 @@ public class FileBackedStorageSystemBuilder {
         stateRebuildTimeoutSeconds);
   }
 
-  private Database buildDatabase() {
+  private Database buildDatabase(final StubMetricsSystem metricsSystem) {
     return switch (version) {
-      case ROCKSDB_TREE -> createRocksDbTreeDatabase();
-      case LEVELDB_TREE -> createLevelDbTrieDatabase();
-      case LEVELDB2 -> createLevelDb2Database();
-      case LEVELDB1 -> createLevelDb1Database();
-      case V6 -> createV6Database();
-      case V5 -> createV5Database();
-      case V4 -> createV4Database();
+      case ROCKSDB_TREE -> createRocksDbTreeDatabase(metricsSystem);
+      case LEVELDB_TREE -> createLevelDbTrieDatabase(metricsSystem);
+      case LEVELDB2 -> createLevelDb2Database(metricsSystem);
+      case LEVELDB1 -> createLevelDb1Database(metricsSystem);
+      case V6 -> createV6Database(metricsSystem);
+      case V5 -> createV5Database(metricsSystem);
+      case V4 -> createV4Database(metricsSystem);
       default ->
           throw new UnsupportedOperationException("Unsupported database version: " + version);
     };
@@ -175,9 +177,9 @@ public class FileBackedStorageSystemBuilder {
     return stateDiffsEnabled ? StateDiffDagConfig.prune() : StateDiffDagConfig.disabled();
   }
 
-  private Database createLevelDb1Database() {
+  private Database createLevelDb1Database(final StubMetricsSystem metricsSystem) {
     return LevelDbDatabaseFactory.createLevelDb(
-        new StubMetricsSystem(),
+        metricsSystem,
         KvStoreConfiguration.v5HotDefaults().withDatabaseDir(hotDir),
         KvStoreConfiguration.v5ArchiveDefaults().withDatabaseDir(archiveDir),
         storageMode,
@@ -186,12 +188,12 @@ public class FileBackedStorageSystemBuilder {
         spec);
   }
 
-  private Database createV6Database() {
+  private Database createV6Database(final StubMetricsSystem metricsSystem) {
     KvStoreConfiguration configDefault = KvStoreConfiguration.v6SingleDefaults();
 
     final V6SchemaCombinedSnapshot schema = V6SchemaCombinedSnapshot.createV6(spec);
     return RocksDbDatabaseFactory.createV6(
-        new StubMetricsSystem(),
+        metricsSystem,
         configDefault.withDatabaseDir(hotDir),
         schema,
         storageMode,
@@ -201,10 +203,10 @@ public class FileBackedStorageSystemBuilder {
         stateDiffDagConfig());
   }
 
-  private Database createLevelDb2Database() {
+  private Database createLevelDb2Database(final StubMetricsSystem metricsSystem) {
     KvStoreConfiguration configDefault = KvStoreConfiguration.v6SingleDefaults();
     return LevelDbDatabaseFactory.createLevelDbV2(
-        new StubMetricsSystem(),
+        metricsSystem,
         configDefault.withDatabaseDir(hotDir),
         storageMode,
         stateStorageFrequency,
@@ -213,10 +215,10 @@ public class FileBackedStorageSystemBuilder {
         stateDiffDagConfig());
   }
 
-  private Database createRocksDbTreeDatabase() {
+  private Database createRocksDbTreeDatabase(final StubMetricsSystem metricsSystem) {
     KvStoreConfiguration configDefault = KvStoreConfiguration.v6SingleDefaults();
     return RocksDbDatabaseFactory.createV6Tree(
-        new StubMetricsSystem(),
+        metricsSystem,
         configDefault.withDatabaseDir(hotDir),
         storageMode,
         storeNonCanonicalBlocks,
@@ -225,10 +227,10 @@ public class FileBackedStorageSystemBuilder {
         stateDiffDagConfig());
   }
 
-  private Database createLevelDbTrieDatabase() {
+  private Database createLevelDbTrieDatabase(final StubMetricsSystem metricsSystem) {
     KvStoreConfiguration configDefault = KvStoreConfiguration.v6SingleDefaults();
     return LevelDbDatabaseFactory.createLevelDbTree(
-        new StubMetricsSystem(),
+        metricsSystem,
         configDefault.withDatabaseDir(hotDir),
         storageMode,
         storeNonCanonicalBlocks,
@@ -237,9 +239,9 @@ public class FileBackedStorageSystemBuilder {
         stateDiffDagConfig());
   }
 
-  private Database createV5Database() {
+  private Database createV5Database(final StubMetricsSystem metricsSystem) {
     return RocksDbDatabaseFactory.createV4(
-        new StubMetricsSystem(),
+        metricsSystem,
         KvStoreConfiguration.v5HotDefaults().withDatabaseDir(hotDir),
         KvStoreConfiguration.v5ArchiveDefaults().withDatabaseDir(archiveDir),
         storageMode,
@@ -248,9 +250,9 @@ public class FileBackedStorageSystemBuilder {
         spec);
   }
 
-  private Database createV4Database() {
+  private Database createV4Database(final StubMetricsSystem metricsSystem) {
     return RocksDbDatabaseFactory.createV4(
-        new StubMetricsSystem(),
+        metricsSystem,
         KvStoreConfiguration.v4Settings(hotDir),
         KvStoreConfiguration.v4Settings(archiveDir),
         storageMode,

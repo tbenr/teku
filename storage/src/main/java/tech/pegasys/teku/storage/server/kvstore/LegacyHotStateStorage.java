@@ -24,7 +24,6 @@ import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.storage.api.StorageUpdate;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.HotUpdater;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDag;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationReport;
 
 /**
@@ -148,10 +147,5 @@ class LegacyHotStateStorage implements HotStateStorage {
   @Override
   public StateDiffVerificationReport verify() {
     throw new IllegalStateException("State diff storage is not active");
-  }
-
-  @Override
-  public Optional<StateDiffDag> getStateDiffDag() {
-    return Optional.empty();
   }
 }

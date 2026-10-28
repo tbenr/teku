@@ -17,6 +17,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 import java.util.List;
 import tech.pegasys.teku.bls.BLSKeyPair;
+import tech.pegasys.teku.infrastructure.metrics.StubMetricsSystem;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.interop.MockStartValidatorKeyPairFactory;
@@ -79,15 +80,14 @@ public class InMemoryStorageSystemBuilder {
   }
 
   public StorageSystem build() {
+    final StubMetricsSystem databaseMetricsSystem = new StubMetricsSystem();
     final Database database =
         switch (version) {
-          case LEVELDB_TREE, ROCKSDB_TREE ->
-              createTreeDatabase(); // Tree only varies by db type which doesn't apply to
-          // in-memory
-          case LEVELDB2, V6 ->
-              createV6Database(); // Leveldb only varies by db type which doesn't apply to in-memory
-          case LEVELDB1, V5 -> createV5Database();
-          case V4 -> createV4Database();
+          // Tree and Leveldb only vary by db type, which doesn't apply to in-memory
+          case LEVELDB_TREE, ROCKSDB_TREE -> createTreeDatabase(databaseMetricsSystem);
+          case LEVELDB2, V6 -> createV6Database(databaseMetricsSystem);
+          case LEVELDB1, V5 -> createV5Database(databaseMetricsSystem);
+          case V4 -> createV4Database(databaseMetricsSystem);
           default ->
               throw new UnsupportedOperationException("Unsupported database version: " + version);
         };
@@ -96,6 +96,7 @@ public class InMemoryStorageSystemBuilder {
         new MockStartValidatorKeyPairFactory().generateKeyPairs(0, numberOfValidators);
     return StorageSystem.create(
         database,
+        databaseMetricsSystem,
         createRestartSupplier(),
         storageMode,
         stateDiffsEnabled ? StorageSystem.requestingStateDiffs(storeConfig) : storeConfig,
@@ -181,16 +182,16 @@ public class InMemoryStorageSystemBuilder {
     };
   }
 
-  private Database createTreeDatabase() {
+  private Database createTreeDatabase(final StubMetricsSystem metricsSystem) {
     if (hotDb == null) {
       final V6SchemaCombinedTreeState schema = new V6SchemaCombinedTreeState(spec);
       hotDb = MockKvStoreInstance.createEmpty(schema.getAllColumns(), schema.getAllVariables());
     }
     return InMemoryKvStoreDatabaseFactory.createTree(
-        hotDb, storageMode, storeNonCanonicalBlocks, spec, stateDiffDagConfig());
+        hotDb, storageMode, storeNonCanonicalBlocks, spec, stateDiffDagConfig(), metricsSystem);
   }
 
-  private Database createV6Database() {
+  private Database createV6Database(final StubMetricsSystem metricsSystem) {
     if (hotDb == null) {
       final V6SchemaCombinedSnapshot schema = V6SchemaCombinedSnapshot.createV6(spec);
       hotDb = MockKvStoreInstance.createEmpty(schema.getAllColumns(), schema.getAllVariables());
@@ -201,7 +202,8 @@ public class InMemoryStorageSystemBuilder {
         stateStorageFrequency,
         storeNonCanonicalBlocks,
         spec,
-        stateDiffDagConfig());
+        stateDiffDagConfig(),
+        metricsSystem);
   }
 
   private StateDiffDagConfig stateDiffDagConfig() {
@@ -209,11 +211,11 @@ public class InMemoryStorageSystemBuilder {
   }
 
   // V5 only differs by the RocksDB configuration which doesn't apply to the in-memory version
-  private Database createV5Database() {
-    return createV4Database();
+  private Database createV5Database(final StubMetricsSystem metricsSystem) {
+    return createV4Database(metricsSystem);
   }
 
-  private Database createV4Database() {
+  private Database createV4Database(final StubMetricsSystem metricsSystem) {
     final V6SchemaCombinedSnapshot combinedSchema = V6SchemaCombinedSnapshot.createV4(spec);
     if (hotDb == null) {
       final Schema v4SchemaHot = combinedSchema.asSchemaHot();
@@ -229,7 +231,13 @@ public class InMemoryStorageSystemBuilder {
               v4SchemaFinalized.getAllColumns(), v4SchemaFinalized.getAllVariables());
     }
     return InMemoryKvStoreDatabaseFactory.createV4(
-        hotDb, coldDb, storageMode, stateStorageFrequency, storeNonCanonicalBlocks, spec);
+        hotDb,
+        coldDb,
+        storageMode,
+        stateStorageFrequency,
+        storeNonCanonicalBlocks,
+        spec,
+        metricsSystem);
   }
 
   private void reopenDatabases() {
