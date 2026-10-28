@@ -19,6 +19,7 @@ import static tech.pegasys.teku.infrastructure.async.SyncAsyncRunner.SYNC_RUNNER
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import tech.pegasys.infrastructure.logging.LogCaptor;
 import tech.pegasys.teku.dataproviders.lookup.BlockProvider;
 import tech.pegasys.teku.dataproviders.lookup.EarliestBlobSidecarSlotProvider;
 import tech.pegasys.teku.dataproviders.lookup.StateAndBlockSummaryProvider;
@@ -76,6 +77,73 @@ class StoreBuilderTest {
     assertThat(anchorState.getSlot()).isNotEqualTo(anchorBlock.getSlot());
 
     assertStoreRebuiltFromOnDiskStoreDataUsesBlockSlot(anchor);
+  }
+
+  @Test
+  void build_persistsEveryNthEpochBoundaryStateWithoutStateDiffStorage() {
+    final Store store = buildStore(false, StoreConfig.builder().build());
+
+    final HotStatePersistencePolicy policy = store.getHotStatePersistencePolicy();
+    assertThat(policy).hasToString("every 2 epochs");
+    assertThat(policy.getReplayToleranceInEpochs())
+        .isEqualTo(StoreConfig.DEFAULT_HOT_STATE_PERSISTENCE_FREQUENCY_IN_EPOCHS);
+  }
+
+  @Test
+  void build_persistsCheckpointBlockStatesWithStateDiffStorage() {
+    // The data says so, whether or not the configuration requests state diffs (sticky mode)
+    final Store store =
+        buildStore(true, StoreConfig.builder().hotStatePersistenceFrequencyInEpochs(0).build());
+
+    final HotStatePersistencePolicy policy = store.getHotStatePersistencePolicy();
+    assertThat(policy).hasToString("checkpoint blocks");
+    assertThat(policy.getReplayToleranceInEpochs()).isEqualTo(1);
+  }
+
+  @Test
+  void build_ignoresStateDiffRequestOfTheConfiguration() {
+    // Only a chain started from an anchor follows the request, through its store data
+    final Store store = buildStore(false, StoreConfig.builder().stateDiffsEnabled(true).build());
+
+    assertThat(store.getHotStatePersistencePolicy()).hasToString("every 2 epochs");
+  }
+
+  @Test
+  void build_warnsThatHotStatePersistenceFrequencyIsIgnoredWithStateDiffs() {
+    try (LogCaptor logCaptor = LogCaptor.forClass(StoreBuilder.class)) {
+      buildStore(true, StoreConfig.builder().hotStatePersistenceFrequencyInEpochs(5).build());
+
+      logCaptor.assertWarnLog(
+          "--Xhot-state-persistence-frequency (5) is ignored when state diff storage is enabled");
+    }
+  }
+
+  @Test
+  void build_doesNotWarnAboutDefaultHotStatePersistenceFrequency() {
+    try (LogCaptor logCaptor = LogCaptor.forClass(StoreBuilder.class)) {
+      buildStore(true, StoreConfig.createDefault());
+      buildStore(false, StoreConfig.builder().hotStatePersistenceFrequencyInEpochs(5).build());
+
+      assertThat(logCaptor.getWarnLogs()).isEmpty();
+    }
+  }
+
+  private Store buildStore(final boolean stateDiffStorageActive, final StoreConfig storeConfig) {
+    final AnchorPoint anchor =
+        AnchorPoint.fromGenesisState(spec, ChainBuilder.create(spec).generateGenesis().getState());
+    return (Store)
+        StoreBuilder.create()
+            .onDiskStoreData(
+                StoreBuilder.forkChoiceStoreBuilder(
+                    spec, anchor, UInt64.ZERO, stateDiffStorageActive))
+            .asyncRunner(SYNC_RUNNER)
+            .metricsSystem(new StubMetricsSystem())
+            .specProvider(spec)
+            .blockProvider(BlockProvider.NOOP)
+            .stateProvider(StateAndBlockSummaryProvider.NOOP)
+            .earliestBlobSidecarSlotProvider(EarliestBlobSidecarSlotProvider.NOOP)
+            .storeConfig(storeConfig)
+            .build();
   }
 
   private void assertStoreRebuiltFromOnDiskStoreDataUsesBlockSlot(final AnchorPoint anchor) {

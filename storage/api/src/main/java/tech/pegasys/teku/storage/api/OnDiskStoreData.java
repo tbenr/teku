@@ -22,6 +22,14 @@ import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.state.AnchorPoint;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 
+/**
+ * The data a store is built from.
+ *
+ * @param stateDiffStorageActive whether the store persists the state of every epoch's checkpoint
+ *     block as a state diff DAG node instead of every n-th epoch boundary state: for a loaded
+ *     database, what the database resolved from the configuration and its own mode marker; for a
+ *     chain started from an anchor, what the configuration requests
+ */
 public record OnDiskStoreData(
     UInt64 time,
     Optional<Checkpoint> anchor,
@@ -34,32 +42,4 @@ public record OnDiskStoreData(
     Map<UInt64, VoteTracker> votes,
     Optional<Bytes32> latestCanonicalBlockRoot,
     Optional<UInt64> custodyGroupCount,
-    boolean stateDiffStorageActive) {
-
-  public OnDiskStoreData(
-      final UInt64 time,
-      final Optional<Checkpoint> anchor,
-      final UInt64 genesisTime,
-      final AnchorPoint latestFinalized,
-      final Optional<SlotAndExecutionPayloadSummary> finalizedOptimisticTransitionPayload,
-      final Checkpoint justifiedCheckpoint,
-      final Checkpoint bestJustifiedCheckpoint,
-      final Map<Bytes32, StoredBlockMetadata> blockInformation,
-      final Map<UInt64, VoteTracker> votes,
-      final Optional<Bytes32> latestCanonicalBlockRoot,
-      final Optional<UInt64> custodyGroupCount) {
-    this(
-        time,
-        anchor,
-        genesisTime,
-        latestFinalized,
-        finalizedOptimisticTransitionPayload,
-        justifiedCheckpoint,
-        bestJustifiedCheckpoint,
-        blockInformation,
-        votes,
-        latestCanonicalBlockRoot,
-        custodyGroupCount,
-        false);
-  }
-}
+    boolean stateDiffStorageActive) {}

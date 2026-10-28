@@ -25,6 +25,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -39,6 +40,7 @@ import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.state.AnchorPoint;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
+import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.generator.ChainBuilder;
 import tech.pegasys.teku.storage.api.HotStateNodeInfo;
 import tech.pegasys.teku.storage.api.StorageUpdate;
@@ -143,7 +145,7 @@ class StoreTransactionUpdatesFactoryTest {
 
   @Test
   void diffMode_persistsCheckpointBlockStateWithAncestors() {
-    final UpdatableStore store = createGenesisStore(diffModeConfig());
+    final UpdatableStore store = createGenesisStore(StoreConfig.createDefault(), true);
     final SignedBlockAndState genesis = chainBuilder.getGenesis();
     // Epochs 1 and 2 start with a block; the first slot of epoch 3 is empty
     chainBuilder.generateBlocksUpToSlot(23);
@@ -158,10 +160,10 @@ class StoreTransactionUpdatesFactoryTest {
     final List<StorageUpdate> updates = importOneBlockPerTransaction(store, 1, 25);
 
     final StorageUpdate epoch1Update = updates.get(7);
-    assertThat(epoch1Update.getHotStates())
+    assertThat(states(epoch1Update))
         .containsExactly(Map.entry(checkpointBlock1.getRoot(), checkpointBlock1.getState()));
     // Nearest first, ending with the finalized anchor root
-    assertThat(epoch1Update.getHotStateNodeInfos())
+    assertThat(nodeInfos(epoch1Update))
         .containsExactly(
             Map.entry(
                 checkpointBlock1.getRoot(),
@@ -169,9 +171,9 @@ class StoreTransactionUpdatesFactoryTest {
                     UInt64.ONE, UInt64.ONE, List.of(block7Root, genesis.getRoot()))));
 
     final StorageUpdate epoch2Update = updates.get(15);
-    assertThat(epoch2Update.getHotStates())
+    assertThat(states(epoch2Update))
         .containsExactly(Map.entry(checkpointBlock2.getRoot(), checkpointBlock2.getState()));
-    assertThat(epoch2Update.getHotStateNodeInfos())
+    assertThat(nodeInfos(epoch2Update))
         .containsExactly(
             Map.entry(
                 checkpointBlock2.getRoot(),
@@ -183,9 +185,9 @@ class StoreTransactionUpdatesFactoryTest {
 
     // The first slot of epoch 3 is empty: the parent of its first block is its checkpoint block
     final StorageUpdate epoch3Update = updates.getLast();
-    assertThat(epoch3Update.getHotStates())
+    assertThat(states(epoch3Update))
         .containsExactly(Map.entry(checkpointBlock3.getRoot(), checkpointBlock3.getState()));
-    assertThat(epoch3Update.getHotStateNodeInfos().get(checkpointBlock3.getRoot()))
+    assertThat(nodeInfos(epoch3Update).get(checkpointBlock3.getRoot()))
         .isEqualTo(
             new HotStateNodeInfo(
                 UInt64.valueOf(3),
@@ -200,15 +202,15 @@ class StoreTransactionUpdatesFactoryTest {
     // No other block crosses an epoch boundary
     for (int i = 0; i < updates.size() - 1; i++) {
       if (i != 7 && i != 15) {
-        assertThat(updates.get(i).getHotStates()).isEmpty();
-        assertThat(updates.get(i).getHotStateNodeInfos()).isEmpty();
+        assertThat(states(updates.get(i))).isEmpty();
+        assertThat(nodeInfos(updates.get(i))).isEmpty();
       }
     }
   }
 
   @Test
   void diffMode_blockAtEpochStartIsItsOwnNode() {
-    final UpdatableStore store = createGenesisStore(diffModeConfig());
+    final UpdatableStore store = createGenesisStore(StoreConfig.createDefault(), true);
     final SignedBlockAndState genesis = chainBuilder.getGenesis();
     final SignedBlockAndState block3 = chainBuilder.generateBlockAtSlot(3);
     final SignedBlockAndState epochStartBlock = chainBuilder.generateBlockAtSlot(8);
@@ -217,9 +219,9 @@ class StoreTransactionUpdatesFactoryTest {
     final StorageUpdate update = commitAndCapture(store, List.of(epochStartBlock));
 
     // The parent serves no epoch: there is no empty epoch in between
-    assertThat(update.getHotStates())
+    assertThat(states(update))
         .containsExactly(Map.entry(epochStartBlock.getRoot(), epochStartBlock.getState()));
-    assertThat(update.getHotStateNodeInfos())
+    assertThat(nodeInfos(update))
         .containsExactly(
             Map.entry(
                 epochStartBlock.getRoot(),
@@ -229,7 +231,7 @@ class StoreTransactionUpdatesFactoryTest {
 
   @Test
   void diffMode_emptyFirstSlotUsesParent() {
-    final UpdatableStore store = createGenesisStore(diffModeConfig());
+    final UpdatableStore store = createGenesisStore(StoreConfig.createDefault(), true);
     final SignedBlockAndState genesis = chainBuilder.getGenesis();
     final SignedBlockAndState block5 = chainBuilder.generateBlockAtSlot(5);
     final SignedBlockAndState block10 = chainBuilder.generateBlockAtSlot(10);
@@ -237,9 +239,8 @@ class StoreTransactionUpdatesFactoryTest {
     commitAndCapture(store, List.of(block5));
     final StorageUpdate update = commitAndCapture(store, List.of(block10));
 
-    assertThat(update.getHotStates())
-        .containsExactly(Map.entry(block5.getRoot(), block5.getState()));
-    assertThat(update.getHotStateNodeInfos())
+    assertThat(states(update)).containsExactly(Map.entry(block5.getRoot(), block5.getState()));
+    assertThat(nodeInfos(update))
         .containsExactly(
             Map.entry(
                 block5.getRoot(),
@@ -248,7 +249,7 @@ class StoreTransactionUpdatesFactoryTest {
 
   @Test
   void diffMode_emptyEpochsServedByParentAndStartSlotBlock() {
-    final UpdatableStore store = createGenesisStore(diffModeConfig());
+    final UpdatableStore store = createGenesisStore(StoreConfig.createDefault(), true);
     final SignedBlockAndState genesis = chainBuilder.getGenesis();
     // Epochs 1 and 2 are empty; the next block is on the start slot of epoch 3
     final SignedBlockAndState block5 = chainBuilder.generateBlockAtSlot(5);
@@ -257,11 +258,11 @@ class StoreTransactionUpdatesFactoryTest {
     commitAndCapture(store, List.of(block5));
     final StorageUpdate update = commitAndCapture(store, List.of(block24));
 
-    assertThat(update.getHotStates())
+    assertThat(states(update))
         .containsOnly(
             Map.entry(block5.getRoot(), block5.getState()),
             Map.entry(block24.getRoot(), block24.getState()));
-    assertThat(update.getHotStateNodeInfos())
+    assertThat(nodeInfos(update))
         .containsOnly(
             Map.entry(
                 block5.getRoot(),
@@ -276,7 +277,7 @@ class StoreTransactionUpdatesFactoryTest {
 
   @Test
   void diffMode_servedEpochsSpanEmptyEpochs() {
-    final UpdatableStore store = createGenesisStore(diffModeConfig());
+    final UpdatableStore store = createGenesisStore(StoreConfig.createDefault(), true);
     final SignedBlockAndState genesis = chainBuilder.getGenesis();
     // A block exactly on the start slot of epoch 1, then epochs 2 and 3 are empty until slot 25
     final SignedBlockAndState block3 = chainBuilder.generateBlockAtSlot(3);
@@ -288,9 +289,9 @@ class StoreTransactionUpdatesFactoryTest {
     final StorageUpdate update = commitAndCapture(store, List.of(block3, epochStartBlock, block25));
 
     // Block 3 serves no epoch: epoch 1 starts with a block
-    assertThat(update.getHotStates())
+    assertThat(states(update))
         .containsOnly(Map.entry(epochStartBlock.getRoot(), epochStartBlock.getState()));
-    assertThat(update.getHotStateNodeInfos())
+    assertThat(nodeInfos(update))
         .containsOnly(
             // On an epoch start slot: serves its own epoch and the empty ones up to its child's
             Map.entry(
@@ -301,7 +302,7 @@ class StoreTransactionUpdatesFactoryTest {
 
   @Test
   void diffMode_lastEpochIsMaximumOverChildrenOnForks() {
-    final UpdatableStore store = createGenesisStore(diffModeConfig());
+    final UpdatableStore store = createGenesisStore(StoreConfig.createDefault(), true);
     final SignedBlockAndState genesis = chainBuilder.getGenesis();
     final SignedBlockAndState checkpointBlock = chainBuilder.generateBlockAtSlot(6);
     final ChainBuilder fork = chainBuilder.fork();
@@ -311,9 +312,9 @@ class StoreTransactionUpdatesFactoryTest {
     final StorageUpdate update =
         commitAndCapture(store, List.of(checkpointBlock, childInEpoch1, childInEpoch2));
 
-    assertThat(update.getHotStates())
+    assertThat(states(update))
         .containsExactly(Map.entry(checkpointBlock.getRoot(), checkpointBlock.getState()));
-    assertThat(update.getHotStateNodeInfos())
+    assertThat(nodeInfos(update))
         .containsExactly(
             Map.entry(
                 checkpointBlock.getRoot(),
@@ -322,7 +323,7 @@ class StoreTransactionUpdatesFactoryTest {
 
   @Test
   void diffMode_ancestorsEndWithFinalizedRoot() {
-    final UpdatableStore store = createGenesisStore(diffModeConfig());
+    final UpdatableStore store = createGenesisStore(StoreConfig.createDefault(), true);
     chainBuilder.generateBlocksUpToSlot(spec.computeStartSlotAtEpoch(UInt64.valueOf(4)));
     importOneBlockPerTransaction(store, 1, 24);
     final SignedBlockAndState finalizedBlock = chainBuilder.getBlockAndStateAtSlot(16);
@@ -335,8 +336,7 @@ class StoreTransactionUpdatesFactoryTest {
     final List<StorageUpdate> updates = importOneBlockPerTransaction(store, 25, 32);
 
     final SignedBlockAndState checkpointBlock = chainBuilder.getBlockAndStateAtSlot(32);
-    final HotStateNodeInfo nodeInfo =
-        updates.getLast().getHotStateNodeInfos().get(checkpointBlock.getRoot());
+    final HotStateNodeInfo nodeInfo = nodeInfos(updates.getLast()).get(checkpointBlock.getRoot());
     // The checkpoint blocks above the finalized block, then the finalized block itself; the
     // walk stops there although fork choice still holds older blocks
     assertThat(nodeInfo.ancestorCheckpointRoots())
@@ -349,7 +349,7 @@ class StoreTransactionUpdatesFactoryTest {
 
   @Test
   void diffMode_skipsWhenParentStateNotCached() {
-    final UpdatableStore store = createGenesisStore(diffModeConfig());
+    final UpdatableStore store = createGenesisStore(StoreConfig.createDefault(), true);
     store.startMetrics();
     chainBuilder.generateBlocksUpToSlot(7);
     final SignedBlockAndState firstBlockOfEpoch = chainBuilder.generateBlockAtSlot(9);
@@ -362,8 +362,8 @@ class StoreTransactionUpdatesFactoryTest {
     final StorageUpdate update = commitAndCapture(store, List.of(firstBlockOfEpoch));
 
     assertThat(update.getHotBlocks()).containsKey(firstBlockOfEpoch.getRoot());
-    assertThat(update.getHotStates()).isEmpty();
-    assertThat(update.getHotStateNodeInfos()).isEmpty();
+    assertThat(states(update)).isEmpty();
+    assertThat(nodeInfos(update)).isEmpty();
     assertThat(
             metricsSystem.getCounterValue(
                 TekuMetricCategory.STORAGE, "store_state_diff_nodes_skipped_total"))
@@ -372,7 +372,7 @@ class StoreTransactionUpdatesFactoryTest {
 
   @Test
   void diffMode_usesEpochStatesWhenBlockStateEvicted() {
-    final UpdatableStore store = createGenesisStore(diffModeConfig());
+    final UpdatableStore store = createGenesisStore(StoreConfig.createDefault(), true);
     chainBuilder.generateBlocksUpToSlot(7);
     final SignedBlockAndState firstBlockOfEpoch = chainBuilder.generateBlockAtSlot(9);
     importOneBlockPerTransaction(store, 1, 7);
@@ -383,14 +383,14 @@ class StoreTransactionUpdatesFactoryTest {
 
     final StorageUpdate update = commitAndCapture(store, List.of(firstBlockOfEpoch));
 
-    assertThat(update.getHotStates())
+    assertThat(states(update))
         .containsExactly(Map.entry(checkpointBlock.getRoot(), checkpointBlock.getState()));
-    assertThat(update.getHotStateNodeInfos()).containsKey(checkpointBlock.getRoot());
+    assertThat(nodeInfos(update)).containsKey(checkpointBlock.getRoot());
   }
 
   @Test
   void legacyMode_unchanged() {
-    final UpdatableStore store = createGenesisStore(StoreConfig.createDefault());
+    final UpdatableStore store = createGenesisStore(StoreConfig.createDefault(), false);
     chainBuilder.generateBlocksUpToSlot(spec.computeStartSlotAtEpoch(UInt64.valueOf(4)));
 
     final List<StorageUpdate> updates = importOneBlockPerTransaction(store, 1, 32);
@@ -398,22 +398,18 @@ class StoreTransactionUpdatesFactoryTest {
     // The first block of every second epoch, without node infos
     for (int slot = 1; slot <= 32; slot++) {
       final StorageUpdate update = updates.get(slot - 1);
-      assertThat(update.getHotStateNodeInfos()).isEmpty();
+      assertThat(nodeInfos(update)).isEmpty();
       final SignedBlockAndState block = chainBuilder.getBlockAndStateAtSlot(slot);
       if (slot == 16 || slot == 32) {
-        assertThat(update.getHotStates())
-            .containsExactly(Map.entry(block.getRoot(), block.getState()));
+        assertThat(states(update)).containsExactly(Map.entry(block.getRoot(), block.getState()));
       } else {
-        assertThat(update.getHotStates()).isEmpty();
+        assertThat(states(update)).isEmpty();
       }
     }
   }
 
-  private static StoreConfig diffModeConfig() {
-    return StoreConfig.builder().stateDiffsEnabled(true).build();
-  }
-
-  private UpdatableStore createGenesisStore(final StoreConfig storeConfig) {
+  private UpdatableStore createGenesisStore(
+      final StoreConfig storeConfig, final boolean stateDiffStorageActive) {
     final SignedBlockAndState genesis = chainBuilder.generateGenesis();
     final Checkpoint genesisCheckpoint = chainBuilder.getCurrentCheckpointForEpoch(0);
     return StoreBuilder.create()
@@ -441,9 +437,25 @@ class StoreTransactionUpdatesFactoryTest {
                     genesis.getExecutionBlockHash(),
                     Optional.of(spec.calculateBlockCheckpoints(genesis.getState())))))
         .storeConfig(storeConfig)
+        .stateDiffStorageActive(stateDiffStorageActive)
         .votes(Collections.emptyMap())
         .latestCanonicalBlockRoot(Optional.empty())
         .build();
+  }
+
+  /** The hot states of {@code update}, without their places in the state diff DAG. */
+  private static Map<Bytes32, BeaconState> states(final StorageUpdate update) {
+    return update.getHotStates().entrySet().stream()
+        .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().state()));
+  }
+
+  /** The places in the state diff DAG of the hot states of {@code update} that have one. */
+  private static Map<Bytes32, HotStateNodeInfo> nodeInfos(final StorageUpdate update) {
+    return update.getHotStates().entrySet().stream()
+        .filter(entry -> entry.getValue().nodeInfo().isPresent())
+        .collect(
+            Collectors.toMap(
+                Map.Entry::getKey, entry -> entry.getValue().nodeInfo().orElseThrow()));
   }
 
   /** Imports the chain builder blocks at slots {@code from..to}, one transaction each. */
