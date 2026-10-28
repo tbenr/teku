@@ -181,6 +181,17 @@ class StateDiffDaoTest {
   }
 
   @Test
+  void windowStartVariableRoundTrip() {
+    assertThat(dao.getStateDiffWindowStart()).isEmpty();
+
+    update(dao, updater -> updater.setStateDiffWindowStart(UInt64.valueOf(42)));
+    assertThat(dao.getStateDiffWindowStart()).contains(UInt64.valueOf(42));
+
+    update(dao, HotUpdater::deleteStateDiffWindowStart);
+    assertThat(dao.getStateDiffWindowStart()).isEmpty();
+  }
+
+  @Test
   void deleteLatestFinalizedStateRemovesVariable() {
     update(
         dao, updater -> updater.setLatestFinalizedState(dataStructureUtil.randomBeaconState(16)));
@@ -201,12 +212,15 @@ class StateDiffDaoTest {
         .isEqualTo(KvStoreColumn.asColumnId(13));
     assertThat(schema.getVariableStateDiffMode().getId())
         .isEqualTo(KvStoreVariable.asVariableId(13));
+    assertThat(schema.getVariableStateDiffWindowStart().getId())
+        .isEqualTo(KvStoreVariable.asVariableId(14));
     assertThat(schema.getColumnMap())
         .containsEntry("STATE_DIFF_NODES", schema.getColumnStateDiffNodes())
         .containsEntry("STATE_SUPERNODES", schema.getColumnStateSupernodes())
         .containsEntry("STATE_SUPERNODE_REFCOUNTS", schema.getColumnStateSupernodeRefCounts());
     assertThat(schema.getVariableMap())
-        .containsEntry("STATE_DIFF_MODE", schema.getVariableStateDiffMode());
+        .containsEntry("STATE_DIFF_MODE", schema.getVariableStateDiffMode())
+        .containsEntry("STATE_DIFF_WINDOW_START", schema.getVariableStateDiffWindowStart());
     assertThat(schema.getAllColumns().stream().map(KvStoreColumn::getId))
         .doesNotHaveDuplicates()
         .doesNotContainAnyElementsOf(schema.getDeletedColumnIds());
@@ -233,7 +247,8 @@ class StateDiffDaoTest {
         .containsEntry("STATE_SUPERNODES", v4Schema.getColumnStateSupernodes())
         .containsEntry("STATE_SUPERNODE_REFCOUNTS", v4Schema.getColumnStateSupernodeRefCounts());
     assertThat(hotSchema.getVariableMap())
-        .containsEntry("STATE_DIFF_MODE", v4Schema.getVariableStateDiffMode());
+        .containsEntry("STATE_DIFF_MODE", v4Schema.getVariableStateDiffMode())
+        .containsEntry("STATE_DIFF_WINDOW_START", v4Schema.getVariableStateDiffWindowStart());
     // The V4 hot store is opened with these ids alone (the hot adapter declares no deleted ids)
     assertThat(hotSchema.getDeletedColumnIds()).isEmpty();
     assertThat(hotSchema.getAllColumns().stream().map(KvStoreColumn::getId))

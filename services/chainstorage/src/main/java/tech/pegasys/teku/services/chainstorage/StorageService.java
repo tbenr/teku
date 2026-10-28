@@ -155,12 +155,21 @@ public class StorageService extends Service implements StorageServiceFacade {
               }
               if (config.getDataStorageMode().storesFinalizedStates()
                   && config.getRetainedSlots() > 0) {
-                configureStatePruner(
-                    config.getRetainedSlots(),
-                    storagePrunerAsyncRunner,
-                    config.getStatePruningInterval(),
-                    pruningTimingsLabelledGauge,
-                    pruningActiveLabelledGauge);
+                // The database switches to state diff storage when the store is loaded, after this
+                if (database.isStateDiffStorageActive()
+                    || config.getStateDiffDagConfig().enabled()) {
+                  LOG.info(
+                      "State diff storage keeps the finalized states of the last {} slots; the state"
+                          + " pruner is not used",
+                      config.getRetainedSlots());
+                } else {
+                  configureStatePruner(
+                      config.getRetainedSlots(),
+                      storagePrunerAsyncRunner,
+                      config.getStatePruningInterval(),
+                      pruningTimingsLabelledGauge,
+                      pruningActiveLabelledGauge);
+                }
               } else if (!config.getDataStorageMode().storesFinalizedStates()) {
                 final Duration statePruningInterval =
                     config

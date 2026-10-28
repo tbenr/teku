@@ -930,7 +930,8 @@ class KvStoreDatabaseTest {
     final StubMetricsSystem metricsSystem = new StubMetricsSystem();
     final StateDiffDag dag =
         new StateDiffDag(fixture.spec, StateDiffDagConfig.prune(), metricsSystem);
-    final StateDiffHotStateStorage storage = new StateDiffHotStateStorage(fixture.dao, dag, false);
+    final StateDiffHotStateStorage storage =
+        new StateDiffHotStateStorage(fixture.dao, dag, fixture.spec, false);
     final BeaconState anchorState = storage.loadLatestFinalizedState().orElseThrow();
     final BeaconState childState =
         anchorState.updated(
