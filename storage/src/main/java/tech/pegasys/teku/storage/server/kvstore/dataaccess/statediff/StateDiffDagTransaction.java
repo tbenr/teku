@@ -31,7 +31,6 @@ import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff;
-import tech.pegasys.teku.infrastructure.statediff.TreeDiff.SupernodeEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiffCodec;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
@@ -65,6 +64,16 @@ public class StateDiffDagTransaction {
 
   /** Node records written (present) or deleted (empty) in this transaction. */
   private final Map<Bytes32, Optional<Bytes>> pendingNodes = new HashMap<>();
+
+  /**
+   * Node records read and decoded in this transaction, absent ones included, so that a record of
+   * several MB is read and decoded once however many operations of the transaction visit it. An
+   * entry is dropped when this transaction writes or deletes its node.
+   */
+  private final Map<Bytes32, Optional<StateDiffNodeRecord>> decodedNodes = new HashMap<>();
+
+  /** Committed records read in this transaction, absent ones included, by block root. */
+  private final Map<Bytes32, Optional<Bytes>> committedNodes = new HashMap<>();
 
   /** SSZ of the supernodes referenced by nodes written in this transaction. */
   private final Map<Bytes32, Bytes> pendingSupernodes = new HashMap<>();
@@ -101,7 +110,20 @@ public class StateDiffDagTransaction {
             if (pendingNodes.containsKey(blockRoot)) {
               return pending;
             }
-            return dao.getStateDiffNode(blockRoot);
+            return committedNodes.computeIfAbsent(blockRoot, dao::getStateDiffNode);
+          }
+
+          @Override
+          public Optional<StateDiffNodeRecord> getNode(final Bytes32 blockRoot) {
+            final Optional<StateDiffNodeRecord> decoded = decodedNodes.get(blockRoot);
+            if (decoded != null) {
+              return decoded;
+            }
+            // Not memoized when decoding throws, so a later read fails the same way
+            final Optional<StateDiffNodeRecord> record =
+                getEncodedNode(blockRoot).map(encoded -> NodeReader.decode(blockRoot, encoded));
+            decodedNodes.put(blockRoot, record);
+            return record;
           }
 
           @Override
@@ -319,7 +341,7 @@ public class StateDiffDagTransaction {
     // by every store
     if (reader.getEncodedNode(anchorRoot).isPresent()) {
       releaseReferencesTolerantly(anchorRoot);
-      pendingNodes.put(anchorRoot, Optional.empty());
+      setPendingNode(anchorRoot, Optional.empty());
     }
     writeNode(anchorRoot, state, firstEpoch, lastEpoch, List.of(), true);
     if (retainAll) {
@@ -359,7 +381,7 @@ public class StateDiffDagTransaction {
         continue;
       }
       final boolean released = releaseReferencesTolerantly(blockRoot);
-      pendingNodes.put(blockRoot, Optional.empty());
+      setPendingNode(blockRoot, Optional.empty());
       updater.deleteStateDiffNode(blockRoot);
       if (released) {
         dag.metrics().onNodeDeleted();
@@ -441,13 +463,21 @@ public class StateDiffDagTransaction {
   public void commit() {
     checkNotCommitted();
     committed = true;
+    final List<Bytes32> touchedHashes = new ArrayList<>();
+    refCountDeltas.forEach(
+        (hash, delta) -> {
+          if (delta != 0) {
+            touchedHashes.add(hash);
+          }
+        });
+    final Map<Bytes32, UInt64> currentCounts = dao.getStateSupernodeRefCounts(touchedHashes);
     final List<Runnable> writes = new ArrayList<>();
     refCountDeltas.forEach(
         (hash, delta) -> {
           if (delta == 0) {
             return;
           }
-          final Optional<UInt64> current = dao.getStateSupernodeRefCount(hash);
+          final Optional<UInt64> current = Optional.ofNullable(currentCounts.get(hash));
           if (delta < 0 && current.isEmpty()) {
             throw new IllegalStateException(
                 "Releasing " + -delta + " references of supernode " + hash + " without a count");
@@ -525,8 +555,14 @@ public class StateDiffDagTransaction {
   }
 
   private void putNode(final Bytes32 blockRoot, final Bytes encoded) {
-    pendingNodes.put(blockRoot, Optional.of(encoded));
+    setPendingNode(blockRoot, Optional.of(encoded));
     updater.putStateDiffNode(blockRoot, encoded);
+  }
+
+  /** Records a write (present) or deletion (empty) of a node, superseding any record read. */
+  private void setPendingNode(final Bytes32 blockRoot, final Optional<Bytes> encoded) {
+    pendingNodes.put(blockRoot, encoded);
+    decodedNodes.remove(blockRoot);
   }
 
   private void addRefCountDelta(final Bytes32 hash, final long delta) {
@@ -603,18 +639,12 @@ public class StateDiffDagTransaction {
    */
   private static Set<Bytes32> supernodeHashes(
       final Bytes32 blockRoot, final StateDiffNodeRecord record) {
-    final List<SupernodeEntry> supernodes;
     try {
-      supernodes = TreeDiffCodec.deserialize(record.payload()).supernodes();
+      return new LinkedHashSet<>(TreeDiffCodec.supernodeHashes(record.payload()));
     } catch (final IllegalArgumentException e) {
       throw new StateDiffVerificationException(
           "Corrupt payload of state diff node " + blockRoot + ": " + e.getMessage(), e);
     }
-    final Set<Bytes32> hashes = new LinkedHashSet<>();
-    for (final SupernodeEntry entry : supernodes) {
-      hashes.add(entry.hash());
-    }
-    return hashes;
   }
 
   private record WrittenNode(

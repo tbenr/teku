@@ -14,8 +14,12 @@
 package tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.metrics.noop.NoOpMetricsSystem;
@@ -109,6 +113,24 @@ class StateDiffDaoTest {
   }
 
   @Test
+  void refCountsBatchRead() {
+    final Bytes32 hashA = dataStructureUtil.randomBytes32();
+    final Bytes32 hashB = dataStructureUtil.randomBytes32();
+    final Bytes32 missing = dataStructureUtil.randomBytes32();
+    update(
+        dao,
+        updater -> {
+          updater.setStateSupernodeRefCount(hashA, UInt64.valueOf(2));
+          updater.setStateSupernodeRefCount(hashB, UInt64.valueOf(5));
+        });
+
+    assertThat(dao.getStateSupernodeRefCounts(List.of(hashA, missing, hashB)))
+        .containsExactlyInAnyOrderEntriesOf(
+            Map.of(hashA, UInt64.valueOf(2), hashB, UInt64.valueOf(5)));
+    assertThat(dao.getStateSupernodeRefCounts(List.of())).isEmpty();
+  }
+
+  @Test
   void deleteSupernodeRemovesRefCount() {
     final Bytes32 hash = dataStructureUtil.randomBytes32();
     final Bytes32 otherHash = dataStructureUtil.randomBytes32();
@@ -182,10 +204,11 @@ class StateDiffDaoTest {
   }
 
   @Test
-  void v4HotDatabaseStoresStateDiffData() {
+  void v4HotDatabaseHostsColumnsButNotStateDiffOperations() {
     final V6SchemaCombinedSnapshot v4Schema = V6SchemaCombinedSnapshot.createV4(spec);
     final SchemaHotAdapter hotSchema = v4Schema.asSchemaHot();
     final SchemaFinalizedSnapshotStateAdapter finalizedSchema = v4Schema.asSchemaFinalized();
+    // The columns stay declared: the column families of opened databases must not change
     assertThat(hotSchema.getColumnMap())
         .containsEntry("STATE_DIFF_NODES", v4Schema.getColumnStateDiffNodes())
         .containsEntry("STATE_SUPERNODES", v4Schema.getColumnStateSupernodes())
@@ -212,38 +235,43 @@ class StateDiffDaoTest {
                 new V4FinalizedStateSnapshotStorageLogic<>(1)));
     final Bytes32 blockRoot = dataStructureUtil.randomBytes32();
     final Bytes32 hash = dataStructureUtil.randomBytes32();
-    final Bytes record = dataStructureUtil.randomBytes(64);
-    final Bytes supernode = dataStructureUtil.randomBytes(64);
-    final Bytes marker = Bytes.fromHexString("0x01");
-
-    update(
-        v4Dao,
-        updater -> {
-          updater.putStateDiffNode(blockRoot, record);
-          updater.putStateSupernode(hash, supernode);
-          updater.setStateSupernodeRefCount(hash, UInt64.valueOf(3));
-          updater.setStateDiffMode(marker);
-          updater.setLatestFinalizedState(dataStructureUtil.randomBeaconState(16));
-        });
-
-    assertThat(v4Dao.getStateDiffNode(blockRoot)).contains(record);
-    assertThat(v4Dao.getStateSupernode(hash)).contains(supernode);
-    assertThat(v4Dao.getStateSupernodeRefCount(hash)).contains(UInt64.valueOf(3));
-    assertThat(v4Dao.getStateDiffMode()).contains(marker);
-    assertThat(v4Dao.getLatestFinalizedState()).isPresent();
-
-    update(
-        v4Dao,
-        updater -> {
-          updater.deleteStateDiffNode(blockRoot);
-          updater.deleteStateSupernode(hash);
-          updater.deleteLatestFinalizedState();
-        });
 
     assertThat(v4Dao.getStateDiffNode(blockRoot)).isEmpty();
     assertThat(v4Dao.getStateSupernode(hash)).isEmpty();
     assertThat(v4Dao.getStateSupernodeRefCount(hash)).isEmpty();
-    assertThat(v4Dao.getLatestFinalizedState()).isEmpty();
+    assertThat(v4Dao.getStateSupernodeRefCounts(List.of(hash))).isEmpty();
+    assertThat(v4Dao.getStateDiffMode()).isEmpty();
+    try (final Stream<?> nodes = v4Dao.streamStateDiffNodes()) {
+      assertThat(nodes).isEmpty();
+    }
+    try (final Stream<?> counts = v4Dao.streamStateSupernodeRefCounts()) {
+      assertThat(counts).isEmpty();
+    }
+    try (final Stream<?> hashes = v4Dao.streamStateSupernodeHashes()) {
+      assertThat(hashes).isEmpty();
+    }
+
+    final List<Consumer<HotUpdater>> writes =
+        List.of(
+            updater -> updater.putStateDiffNode(blockRoot, Bytes.of(1)),
+            updater -> updater.deleteStateDiffNode(blockRoot),
+            updater -> updater.putStateSupernode(hash, Bytes.of(1)),
+            updater -> updater.setStateSupernodeRefCount(hash, UInt64.ONE),
+            updater -> updater.deleteStateSupernode(hash),
+            updater -> updater.setStateDiffMode(Bytes.of(1)),
+            HotUpdater::deleteLatestFinalizedState);
+    for (final Consumer<HotUpdater> write : writes) {
+      try (final HotUpdater updater = v4Dao.hotUpdater()) {
+        assertThatThrownBy(() -> write.accept(updater))
+            .isInstanceOf(UnsupportedOperationException.class)
+            .hasMessage("State diff storage requires a V6 database");
+      }
+    }
+
+    // The legacy latest finalized state is unaffected
+    update(
+        v4Dao, updater -> updater.setLatestFinalizedState(dataStructureUtil.randomBeaconState(16)));
+    assertThat(v4Dao.getLatestFinalizedState()).isPresent();
   }
 
   @Test

@@ -14,6 +14,8 @@
 package tech.pegasys.teku.storage.server.kvstore;
 
 import com.google.errorprone.annotations.MustBeClosed;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -36,17 +38,19 @@ public interface KvStoreAccessor extends AutoCloseable {
    */
   long size(KvStoreColumn<?, ?> column);
 
-  /**
-   * Returns the storage engine's on-disk size estimates of the given column, read from its
-   * properties without scanning it.
-   *
-   * @return the sizes, or empty when the storage engine has no per-column sizes
-   */
-  default Optional<ColumnSize> getColumnSize(final KvStoreColumn<?, ?> column) {
-    return Optional.empty();
-  }
-
   <K, V> Map<K, V> getAll(KvStoreColumn<K, V> column);
+
+  /**
+   * Returns the values stored in {@code column} for {@code keys}, omitting keys without a value.
+   * Storage engines with a batched point lookup override this to read all keys at once.
+   */
+  default <K, V> Map<K, V> getAll(final KvStoreColumn<K, V> column, final Collection<K> keys) {
+    final Map<K, V> values = new HashMap<>();
+    for (final K key : keys) {
+      get(column, key).ifPresent(value -> values.put(key, value));
+    }
+    return values;
+  }
 
   /**
    * Returns the last entry with a key less than or equal to the given key.

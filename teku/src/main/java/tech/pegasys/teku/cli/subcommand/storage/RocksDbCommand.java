@@ -60,14 +60,21 @@ public class RocksDbCommand implements Runnable {
       versionProvider = PicoCliVersionProvider.class)
   public int usage(
       @Mixin final BeaconNodeDataOptions beaconNodeDataOptions,
-      @Mixin final Eth2NetworkOptions eth2NetworkOptions) {
+      @Mixin final Eth2NetworkOptions eth2NetworkOptions,
+      @CommandLine.Option(
+              names = {"--filter"},
+              description =
+                  "Only show the columns whose name contains the specified filter, ignoring case.")
+          final String filter) {
+    final Optional<String> maybeFilter = Optional.ofNullable(filter);
     final DatabaseVersion dbVersion = beaconNodeDataOptions.parseDatabaseVersion();
     switch (dbVersion) {
       case V4, V5 -> {
-        getUsage(beaconNodeDataOptions, eth2NetworkOptions, "archive");
-        getUsage(beaconNodeDataOptions, eth2NetworkOptions, "db");
+        getUsage(beaconNodeDataOptions, eth2NetworkOptions, maybeFilter, "archive");
+        getUsage(beaconNodeDataOptions, eth2NetworkOptions, maybeFilter, "db");
       }
-      case V6, ROCKSDB_TREE -> getUsage(beaconNodeDataOptions, eth2NetworkOptions, "db");
+      case V6, ROCKSDB_TREE ->
+          getUsage(beaconNodeDataOptions, eth2NetworkOptions, maybeFilter, "db");
       default -> {
         SUB_COMMAND_LOG.error("LevelDB is not supported in this command");
         return 1;
@@ -79,6 +86,7 @@ public class RocksDbCommand implements Runnable {
   private void getUsage(
       final BeaconNodeDataOptions beaconNodeDataOptions,
       final Eth2NetworkOptions eth2NetworkOptions,
+      final Optional<String> maybeFilter,
       final String folder) {
     SUB_COMMAND_LOG.display("\nDisplaying column usage from RocksDB folder /" + folder);
     final DataConfig dataConfig = beaconNodeDataOptions.getDataConfig();
@@ -91,17 +99,20 @@ public class RocksDbCommand implements Runnable {
 
     final Spec spec = networkConfiguration.getSpec();
     final List<RocksDbHelper.ColumnFamilyUsage> columnFamilyUsages = new ArrayList<>();
+    final Function<byte[], String> columnName =
+        findColumnNameInDatabaseColumns(folder, dbVersion, spec);
     RocksDbHelper.forEachColumnFamily(
         dbPath,
         networkConfiguration,
         (rocksdb, cfHandle) -> {
           try {
+            if (!RocksDbHelper.matchesColumnFilter(
+                columnName.apply(cfHandle.getName()), maybeFilter)) {
+              return;
+            }
             columnFamilyUsages.add(
                 RocksDbHelper.getAndPrintUsageForColumnFamily(
-                    rocksdb,
-                    cfHandle,
-                    SUB_COMMAND_LOG,
-                    findColumnNameInDatabaseColumns(folder, dbVersion, spec)));
+                    rocksdb, cfHandle, SUB_COMMAND_LOG, columnName));
           } catch (final RocksDBException e) {
             throw new RuntimeException(e);
           }

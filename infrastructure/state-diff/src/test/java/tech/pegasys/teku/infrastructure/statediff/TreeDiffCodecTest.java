@@ -64,6 +64,41 @@ class TreeDiffCodecTest {
   }
 
   @Test
+  void supernodeHashesMatchesFullDecode() {
+    final Bytes32 hashC = Bytes32.repeat((byte) 0xcc);
+    final TreeDiff diff =
+        new TreeDiff(
+            List.of(
+                new LeafEntry(5, Bytes.wrap(sequentialBytes(40))), new LeafEntry(9, Bytes.of(1))),
+            List.of(
+                new SupernodeEntry(4, 40, 2, HASH_B),
+                new SupernodeEntry(3, 9, 2, HASH_A),
+                new SupernodeEntry(3, 7, 2, hashC),
+                new SupernodeEntry(4, 41, 2, HASH_B)),
+            List.of(new ZeroedEntry(13, HASH_B), new ZeroedEntry(15, HASH_A)),
+            List.of(new CopiedEntry(13, 5)),
+            List.of(new DeltaEntry(12, sequentialBytes(70)), new DeltaEntry(14, new byte[0])));
+    final Bytes serialized = TreeDiffCodec.serialize(diff);
+
+    assertThat(TreeDiffCodec.supernodeHashes(serialized))
+        .isEqualTo(
+            TreeDiffCodec.deserialize(serialized).supernodes().stream()
+                .map(SupernodeEntry::hash)
+                .toList())
+        .containsExactly(hashC, HASH_A, HASH_B, HASH_B);
+    assertThat(TreeDiffCodec.supernodeHashes(TreeDiffCodec.serialize(TreeDiff.empty()))).isEmpty();
+    // Rejects what a full decode rejects, in any section
+    for (int length = 0; length < serialized.size(); length++) {
+      final Bytes truncated = serialized.slice(0, length);
+      assertThatThrownBy(() -> TreeDiffCodec.supernodeHashes(truncated))
+          .isInstanceOf(IllegalArgumentException.class);
+    }
+    assertThatThrownBy(
+            () -> TreeDiffCodec.supernodeHashes(Bytes.concatenate(serialized, Bytes.of(0))))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
   void sortsLeavesByGIndex() {
     final TreeDiff diff =
         new TreeDiff(

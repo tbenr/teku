@@ -53,7 +53,6 @@ import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.util.DataColumnSlotAndIdentifier;
 import tech.pegasys.teku.spec.datastructures.util.SlotAndBlockRootAndBlobIndex;
 import tech.pegasys.teku.storage.server.kvstore.ColumnEntry;
-import tech.pegasys.teku.storage.server.kvstore.ColumnSize;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreAccessor;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreAccessor.KvStoreTransaction;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.V4FinalizedStateStorageLogic.FinalizedStateUpdater;
@@ -172,6 +171,11 @@ public class CombinedKvStoreDao<S extends SchemaCombined>
   @Override
   public Optional<UInt64> getStateSupernodeRefCount(final Bytes32 hash) {
     return db.get(schema.getColumnStateSupernodeRefCounts(), hash);
+  }
+
+  @Override
+  public Map<Bytes32, UInt64> getStateSupernodeRefCounts(final Collection<Bytes32> hashes) {
+    return db.getAll(schema.getColumnStateSupernodeRefCounts(), hashes);
   }
 
   @Override
@@ -562,21 +566,6 @@ public class CombinedKvStoreDao<S extends SchemaCombined>
               }
             });
     return columnCounts;
-  }
-
-  @Override
-  public Map<String, ColumnSize> getColumnSizes(final Optional<String> maybeColumnFilter) {
-    final Map<String, ColumnSize> columnSizes = new LinkedHashMap<>();
-    schema
-        .getColumnMap()
-        .forEach(
-            (k, v) -> {
-              if (maybeColumnFilter.isEmpty()
-                  || k.contains(maybeColumnFilter.get().toUpperCase(Locale.ROOT))) {
-                db.getColumnSize(v).ifPresent(size -> columnSizes.put(k, size));
-              }
-            });
-    return columnSizes;
   }
 
   @Override

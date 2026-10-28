@@ -19,11 +19,13 @@ import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -618,6 +620,49 @@ class KvStoreDatabaseTest {
         .hasMessageContaining("teku debug-tools db verify-state-diffs")
         .hasMessageContaining("re-syncing from a checkpoint")
         .hasCauseInstanceOf(StateDiffVerificationException.class);
+  }
+
+  @Test
+  void stateDiffs_finalizedBlockSummaryReusesAnchorStateReconstructedOnLoad() {
+    final Spec spec = TestSpecFactory.createMinimalAltair();
+    final V6SchemaCombinedSnapshot schema = V6SchemaCombinedSnapshot.createV6(spec);
+    final MockKvStoreInstance db =
+        MockKvStoreInstance.createEmpty(schema.getAllColumns(), schema.getAllVariables());
+    final SignedBlockAndState genesis = ChainBuilder.create(spec).generateGenesis();
+    // A checkpoint-synced anchor: its block is not stored, so the summary comes from its state
+    final AnchorPoint anchor =
+        AnchorPoint.create(
+            spec,
+            new Checkpoint(UInt64.ZERO, genesis.getRoot()),
+            genesis.getState(),
+            Optional.empty());
+    final KvStoreCombinedDao dao =
+        spy(
+            new CombinedKvStoreDao<>(
+                db,
+                schema,
+                new V4FinalizedStateSnapshotStorageLogic<>(1),
+                new StubMetricsSystem()));
+    final KvStoreDatabase database =
+        new KvStoreDatabase(
+            dao,
+            StateStorageMode.PRUNE,
+            false,
+            spec,
+            StateDiffDagConfig.prune(),
+            new StubMetricsSystem());
+    database.storeInitialAnchor(anchor);
+    clearInvocations(dao);
+    assertThat(database.createMemoryStore()).isPresent();
+    verify(dao).getStateDiffNode(genesis.getRoot());
+    clearInvocations(dao);
+
+    // Backfilling down from the anchor needs the finalized block summary
+    database.storeFinalizedBlocks(
+        List.of(genesis.getBlock()), Map.of(), Map.of(), Optional.empty());
+
+    verify(dao, never()).getStateDiffNode(any());
+    assertThat(database.getFinalizedBlockAtSlot(UInt64.ZERO)).contains(genesis.getBlock());
   }
 
   private KvStoreDatabase database(final UInt64 firstFuluSlot, final long... slots) {

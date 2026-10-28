@@ -18,6 +18,9 @@ import com.google.common.collect.ImmutableMap;
 import com.google.errorprone.annotations.MustBeClosed;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -43,7 +46,6 @@ import org.rocksdb.TransactionDB;
 import tech.pegasys.teku.storage.server.DatabaseStorageException;
 import tech.pegasys.teku.storage.server.ShuttingDownException;
 import tech.pegasys.teku.storage.server.kvstore.ColumnEntry;
-import tech.pegasys.teku.storage.server.kvstore.ColumnSize;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreAccessor;
 import tech.pegasys.teku.storage.server.kvstore.schema.KvStoreColumn;
 import tech.pegasys.teku.storage.server.kvstore.schema.KvStoreVariable;
@@ -115,25 +117,31 @@ public class RocksDbInstance implements KvStoreAccessor {
   }
 
   @Override
-  public Optional<ColumnSize> getColumnSize(final KvStoreColumn<?, ?> column) {
+  public <K, V> Map<K, V> getAll(final KvStoreColumn<K, V> column, final Collection<K> keys) {
     assertOpen();
     final ColumnFamilyHandle handle = getColumnHandle(column);
-    if (handle == null) {
-      // The column family is created on its first write
-      return Optional.of(ColumnSize.EMPTY);
+    final Map<K, V> values = new HashMap<>();
+    if (handle == null || keys.isEmpty()) {
+      return values;
     }
-    final ColumnFamilyDescriptor descriptor = columnDescriptors.get(column);
-    final boolean blobFilesEnabled =
-        descriptor != null && descriptor.getOptions().enableBlobFiles();
+    final List<K> keyList = new ArrayList<>(keys);
+    final List<byte[]> keyBytes = new ArrayList<>(keyList.size());
+    for (final K key : keyList) {
+      keyBytes.add(column.getKeySerializer().serialize(key));
+    }
+    final List<byte[]> rawValues;
     try {
-      return Optional.of(
-          new ColumnSize(
-              db.getLongProperty(handle, "rocksdb.estimate-live-data-size"),
-              db.getLongProperty(handle, "rocksdb.total-sst-files-size"),
-              blobFilesEnabled ? db.getLongProperty(handle, "rocksdb.total-blob-file-size") : 0L));
-    } catch (final RocksDBException e) {
-      throw RocksDbExceptionUtil.wrapException("Failed to get column family size", e);
+      rawValues = db.multiGetAsList(Collections.nCopies(keyBytes.size(), handle), keyBytes);
+    } catch (RocksDBException e) {
+      throw RocksDbExceptionUtil.wrapException("Failed to get values", e);
     }
+    for (int i = 0; i < keyList.size(); i++) {
+      final byte[] rawValue = rawValues.get(i);
+      if (rawValue != null) {
+        values.put(keyList.get(i), column.getValueSerializer().deserialize(rawValue));
+      }
+    }
+    return values;
   }
 
   @Override

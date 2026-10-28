@@ -114,7 +114,6 @@ import tech.pegasys.teku.storage.client.ChainUpdater;
 import tech.pegasys.teku.storage.client.RecentChainData;
 import tech.pegasys.teku.storage.server.Database;
 import tech.pegasys.teku.storage.server.DatabaseContext;
-import tech.pegasys.teku.storage.server.DatabaseVersion;
 import tech.pegasys.teku.storage.server.ShuttingDownException;
 import tech.pegasys.teku.storage.server.StateStorageMode;
 import tech.pegasys.teku.storage.server.TestDatabaseContext;
@@ -4655,8 +4654,8 @@ public class DatabaseTest {
   }
 
   @TestTemplate
-  public void stateDiffs_columnSizesReportStateDiffColumns(final DatabaseContext context)
-      throws IOException {
+  public void stateDiffs_supernodeRefCountsBatchReadMatchesSingleReads(
+      final DatabaseContext context) throws IOException {
     assumeTrue(context.isStateDiffsEnabled());
     initialize(context, StateStorageMode.PRUNE);
     generateCheckpoints();
@@ -4666,39 +4665,19 @@ public class DatabaseTest {
             .toList());
     storeStateDiffNodesOnChain(
         List.of(checkpoint1BlockAndState, checkpoint2BlockAndState, checkpoint3BlockAndState));
-    // Flushes the written nodes from the memtables into table files
-    database.compactStorage();
-
-    final Map<String, ColumnSize> sizes = database.getColumnSizes(Optional.empty());
-
-    if (context.isInMemoryStorage() || !isRocksDb(context.getDatabaseVersion())) {
-      // Only RocksDB reports per-column sizes
-      assertThat(sizes).isEmpty();
-      return;
+    final List<Bytes32> hashes = new ArrayList<>();
+    try (final Stream<ColumnEntry<Bytes32, UInt64>> counts =
+        dao().streamStateSupernodeRefCounts()) {
+      counts.forEach(entry -> hashes.add(entry.getKey()));
     }
-    assertThat(sizes).containsKeys("STATE_DIFF_NODES", "STATE_SUPERNODES");
-    assertThat(sizes.keySet()).isEqualTo(dao().getColumnCounts(Optional.empty()).keySet());
-    sizes.forEach(
-        (column, size) -> {
-          assertThat(size.estimateLiveDataSize()).describedAs(column).isNotNegative();
-          assertThat(size.totalSstFilesSize()).describedAs(column).isNotNegative();
-          assertThat(size.totalBlobFileSize()).describedAs(column).isNotNegative();
-        });
-    for (final String column : List.of("STATE_DIFF_NODES", "STATE_SUPERNODES")) {
-      final ColumnSize size = sizes.get(column);
-      assertThat(size.totalSstFilesSize() + size.totalBlobFileSize())
-          .describedAs(column)
-          .isPositive();
-    }
-    assertThat(database.getColumnSizes(Optional.of("state_diff")))
-        .containsOnlyKeys("STATE_DIFF_NODES");
-  }
+    assertThat(hashes).isNotEmpty();
+    hashes.add(dataStructureUtil.randomBytes32());
 
-  private static boolean isRocksDb(final DatabaseVersion databaseVersion) {
-    return switch (databaseVersion) {
-      case V4, V5, V6, ROCKSDB_TREE -> true;
-      default -> false;
-    };
+    final Map<Bytes32, UInt64> singleReads = new HashMap<>();
+    hashes.forEach(
+        hash -> dao().getStateSupernodeRefCount(hash).ifPresent(c -> singleReads.put(hash, c)));
+    assertThat(singleReads).hasSize(hashes.size() - 1);
+    assertThat(dao().getStateSupernodeRefCounts(hashes)).isEqualTo(singleReads);
   }
 
   @TestTemplate

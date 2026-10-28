@@ -15,6 +15,9 @@ package tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.mockingDetails;
+import static org.mockito.Mockito.spy;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -223,7 +226,11 @@ class StateDiffDagTest {
     final StateDiffNodeRecord extended = record(root15);
     assertThat(extended.firstEpoch()).isEqualTo(epoch(15));
     assertThat(extended.lastEpoch()).isEqualTo(epoch(17));
-    assertThat(extended).isEqualTo(original.withLastEpoch(epoch(17)));
+    assertThat(extended)
+        .isEqualTo(
+            StateDiffNodeRecordCodec.decode(
+                StateDiffNodeRecordCodec.patchLastEpoch(
+                    StateDiffNodeRecordCodec.encode(original), epoch(17))));
 
     // A smaller last epoch never lowers the stored one
     update(
@@ -443,6 +450,39 @@ class StateDiffDagTest {
     for (final int epoch : afterAnchor39) {
       assertReconstructs(epoch);
     }
+  }
+
+  @Test
+  void retainFinalizedChainReadsEachNodeRecordOnce() {
+    final V6SchemaCombinedSnapshot schema = V6SchemaCombinedSnapshot.createV6(spec);
+    final KvStoreAccessor db =
+        spy(MockKvStoreInstance.createEmpty(schema.getAllColumns(), schema.getAllVariables()));
+    dao =
+        new CombinedKvStoreDao<>(
+            db, schema, new V4FinalizedStateSnapshotStorageLogic<>(1), new StubMetricsSystem());
+    buildChain(21);
+    writeEpochs(0, 20);
+    retain(Optional.empty(), 5);
+    clearInvocations(db);
+
+    // Both anchor chains share the snapshot, and the previous chain's nodes are also deleted
+    update(
+        tx ->
+            tx.retainFinalizedChain(
+                Optional.of(roots.get(5)), roots.get(20), roots.subList(6, 21), false));
+
+    final List<Object> nodeReads =
+        mockingDetails(db).getInvocations().stream()
+            .filter(
+                invocation ->
+                    invocation.getMethod().getName().equals("get")
+                        && invocation.getArguments().length == 2
+                        && invocation.getArgument(0).equals(schema.getColumnStateDiffNodes()))
+            .map(invocation -> invocation.getArgument(1))
+            .toList();
+    assertThat(nodeReads).contains(roots.get(0), roots.get(5), roots.get(20));
+    assertThat(nodeReads).doesNotHaveDuplicates();
+    assertStoredEpochs(union(Set.of(0), range(16, 20)));
   }
 
   @Test

@@ -73,7 +73,17 @@ class StateDiffNodeRecordCodecTest {
     final Bytes patched = StateDiffNodeRecordCodec.patchLastEpoch(encoded, newLastEpoch);
 
     assertThat(StateDiffNodeRecordCodec.decode(patched))
-        .isEqualTo(diffRecord.withLastEpoch(newLastEpoch));
+        .isEqualTo(
+            new StateDiffNodeRecord(
+                diffRecord.blockSlot(),
+                diffRecord.stateRoot(),
+                diffRecord.firstEpoch(),
+                newLastEpoch,
+                diffRecord.level(),
+                diffRecord.snapshot(),
+                diffRecord.prevNodeRoot(),
+                diffRecord.parentNodeRoot(),
+                diffRecord.payload()));
     assertThat(patched.size()).isEqualTo(encoded.size());
     assertThat(patched.slice(0, LAST_EPOCH_OFFSET)).isEqualTo(encoded.slice(0, LAST_EPOCH_OFFSET));
     assertThat(patched.slice(LAST_EPOCH_OFFSET, 8))

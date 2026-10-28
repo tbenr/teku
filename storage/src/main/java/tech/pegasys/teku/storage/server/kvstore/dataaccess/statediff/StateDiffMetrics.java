@@ -166,11 +166,6 @@ class StateDiffMetrics {
     nodes.labels("deleted_corrupt").inc();
   }
 
-  /** For the caller that could not find the state of a checkpoint block (Task 12). */
-  void onNodeSkippedNoState() {
-    nodes.labels("skipped_no_state").inc();
-  }
-
   /** For a hot state stored without the information placing it in the DAG. */
   void onNodeSkippedNoInfo() {
     nodes.labels("skipped_no_info").inc();
