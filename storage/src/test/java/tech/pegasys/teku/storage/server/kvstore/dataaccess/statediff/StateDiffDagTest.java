@@ -32,6 +32,10 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
+import org.hyperledger.besu.plugin.services.metrics.Counter;
+import org.hyperledger.besu.plugin.services.metrics.Histogram;
+import org.hyperledger.besu.plugin.services.metrics.LabelledMetric;
+import org.hyperledger.besu.plugin.services.metrics.MetricCategory;
 import org.junit.jupiter.api.Test;
 import tech.pegasys.infrastructure.logging.LogCaptor;
 import tech.pegasys.teku.infrastructure.metrics.StubMetricsSystem;
@@ -496,8 +500,7 @@ class StateDiffDagTest {
 
   @Test
   void retainFinalizedChainDropsOldSnapshotAfterNewOne() {
-    dag =
-        new StateDiffDag(spec, new StateDiffDagConfig(true, List.of(4L, 2L, 1L), 3), metricsSystem);
+    dag = new StateDiffDag(spec, new StateDiffDagConfig(true, List.of(4L, 2L, 1L)), metricsSystem);
     buildChain(10);
     writeEpochs(0, 5);
     // A forced snapshot at epoch 6, as written for a new anchor
@@ -759,7 +762,7 @@ class StateDiffDagTest {
     }
     final long listBuildsBefore = listBuilds();
 
-    final BeaconState folded = dag.reconstruct(dao, roots.get(9)).orElseThrow();
+    final BeaconState folded = uncachedDag().reconstruct(dao, roots.get(9)).orElseThrow();
 
     assertThat(folded.hashTreeRoot()).isEqualTo(perLink.hashTreeRoot());
     assertThat(folded.sszSerialize())
@@ -896,8 +899,7 @@ class StateDiffDagTest {
 
   @Test
   void writesPeriodicSnapshotAtCoarsestLevel() {
-    dag =
-        new StateDiffDag(spec, new StateDiffDagConfig(true, List.of(4L, 2L, 1L), 3), metricsSystem);
+    dag = new StateDiffDag(spec, new StateDiffDagConfig(true, List.of(4L, 2L, 1L)), metricsSystem);
     buildChain(21);
 
     writeEpochs(0, 20);
@@ -959,6 +961,81 @@ class StateDiffDagTest {
   }
 
   @Test
+  void reconstructionStartsFromTheNearestCachedNodeOfTheChain() {
+    buildChain(10);
+    writeEpochs(0, 9);
+    final Map<String, List<Double>> histograms = new HashMap<>();
+    dag = new StateDiffDag(spec, StateDiffDagConfig.prune(), recordingMetrics(histograms));
+    final BeaconState fullChain = dag.reconstruct(dao, roots.get(9)).orElseThrow();
+    assertThat(dag.reconstructionChain(dao, roots.get(9))).hasSize(10);
+
+    // Node 5 is cached: reconstructing node 9 applies only the four nodes above it
+    assertThat(dag.reconstructAndCache(dao, roots.get(5))).contains(states.get(5));
+    final BeaconState fromCachedNode = dag.reconstruct(dao, roots.get(9)).orElseThrow();
+
+    assertThat(fromCachedNode.hashTreeRoot()).isEqualTo(fullChain.hashTreeRoot());
+    // Balances change every epoch, so the folded delta fields start from node 5's values
+    assertThat(fromCachedNode).isEqualTo(states.get(9));
+    assertThat(histograms.get("state_diff_reconstruct_chain_length"))
+        .containsExactly(10.0, 6.0, 4.0);
+  }
+
+  @Test
+  void reconstructionAppliesTheNodeItselfEvenWhenItsStateIsCached() {
+    buildChain(2);
+    writeEpochs(0, 1);
+    final Map<String, List<Double>> histograms = new HashMap<>();
+    dag = new StateDiffDag(spec, StateDiffDagConfig.prune(), recordingMetrics(histograms));
+    assertThat(dag.reconstructAndCache(dao, roots.get(1))).isPresent();
+
+    assertReconstructs(1);
+    // Starts from the snapshot, as node 1 is the head and node 0 is not cached
+    assertThat(histograms.get("state_diff_reconstruct_chain_length")).containsExactly(2.0, 2.0);
+  }
+
+  @Test
+  void firstWriteAfterRestartDiffsAgainstTheCachedAnchor() {
+    buildChain(12);
+    writeEpochs(0, 10);
+    final StubMetricsSystem restartedMetrics = new StubMetricsSystem();
+    final Map<String, List<Double>> histograms = new HashMap<>();
+    dag =
+        new StateDiffDag(
+            spec, StateDiffDagConfig.prune(), recordingMetrics(restartedMetrics, histograms));
+    // The finalized anchor, reconstructed when the store is loaded
+    assertThat(dag.reconstructAndCache(dao, roots.get(10))).isPresent();
+    final int reconstructions = histograms.get("state_diff_reconstruct_chain_length").size();
+
+    writeEpochs(11, 11);
+
+    assertThat(record(roots.get(11)).parentNodeRoot()).isEqualTo(roots.get(10));
+    assertThat(baseCache(restartedMetrics, "hit")).isEqualTo(1);
+    assertThat(baseCache(restartedMetrics, "miss")).isZero();
+    assertThat(histograms.get("state_diff_reconstruct_chain_length")).hasSize(reconstructions);
+    assertReconstructs(11);
+  }
+
+  @Test
+  void missedDiffBaseIsReconstructedFromTheNearestCachedNodeOfItsChain() {
+    buildChain(14);
+    writeEpochs(0, 12);
+    final StubMetricsSystem restartedMetrics = new StubMetricsSystem();
+    final Map<String, List<Double>> histograms = new HashMap<>();
+    dag =
+        new StateDiffDag(
+            spec, StateDiffDagConfig.prune(), recordingMetrics(restartedMetrics, histograms));
+    assertThat(dag.reconstructAndCache(dao, roots.get(8))).isPresent();
+
+    // The parent, node 12, is not cached: nodes 9 to 12 are applied to the cached node 8
+    writeEpochs(13, 13);
+
+    assertThat(record(roots.get(13)).parentNodeRoot()).isEqualTo(roots.get(12));
+    assertThat(baseCache(restartedMetrics, "miss")).isEqualTo(1);
+    assertThat(histograms.get("state_diff_reconstruct_chain_length")).containsExactly(9.0, 4.0);
+    assertReconstructs(13);
+  }
+
+  @Test
   void failedTransactionDoesNotCountOrCacheItsNodes() {
     buildChain(2);
     writeEpochs(0, 0);
@@ -982,9 +1059,7 @@ class StateDiffDagTest {
     assertThat(nodeCount("written")).isEqualTo(written);
     assertThat(snapshots("periodic")).isEqualTo(periodic);
     assertThat(sectionEntries("leaves")).isEqualTo(leafEntries);
-    for (int level = 0; level < 4; level++) {
-      assertThat(dag.baseCache().get(level, roots.get(1))).isEmpty();
-    }
+    assertThat(dag.baseCache().find(roots.get(1))).isEmpty();
   }
 
   @Test
@@ -1227,7 +1302,7 @@ class StateDiffDagTest {
     assertThat(linksWithSupernodes).isPositive();
     clearInvocations(dao);
 
-    assertReconstructs(2);
+    assertThat(uncachedDag().reconstruct(dao, roots.get(2)).orElseThrow()).isEqualTo(states.get(2));
 
     final List<String> supernodeReads =
         mockingDetails(dao).getInvocations().stream()
@@ -1509,14 +1584,54 @@ class StateDiffDagTest {
     assertReconstructs(roots.get(epoch), states.get(epoch));
   }
 
+  /**
+   * Reconstructs {@code root} from its whole chain, as after a restart, and through the base cache
+   * of {@link #dag}, from the nearest cached node of the chain.
+   */
   private void assertReconstructs(final Bytes32 root, final BeaconState expected) {
-    final BeaconState reconstructed = dag.reconstruct(dao, root).orElseThrow();
-    assertThat(reconstructed.hashTreeRoot()).isEqualTo(expected.hashTreeRoot());
-    assertThat(reconstructed).isEqualTo(expected);
+    for (final StateDiffDag reader : List.of(uncachedDag(), dag)) {
+      final BeaconState reconstructed = reader.reconstruct(dao, root).orElseThrow();
+      assertThat(reconstructed.hashTreeRoot()).isEqualTo(expected.hashTreeRoot());
+      assertThat(reconstructed).isEqualTo(expected);
+    }
+  }
+
+  /** A DAG over the same database with nothing cached, as after a restart. */
+  private StateDiffDag uncachedDag() {
+    return new StateDiffDag(spec, dag.getConfig(), metricsSystem);
   }
 
   private static UInt64 epoch(final int epoch) {
     return UInt64.valueOf(epoch);
+  }
+
+  private static StubMetricsSystem recordingMetrics(final Map<String, List<Double>> histograms) {
+    return recordingMetrics(new StubMetricsSystem(), histograms);
+  }
+
+  /** {@code metrics}' counters, with the observations of every histogram recorded by name. */
+  private static StubMetricsSystem recordingMetrics(
+      final StubMetricsSystem metrics, final Map<String, List<Double>> histograms) {
+    return new StubMetricsSystem() {
+      @Override
+      public LabelledMetric<Counter> createLabelledCounter(
+          final MetricCategory category,
+          final String name,
+          final String help,
+          final String... labelNames) {
+        return metrics.createLabelledCounter(category, name, help, labelNames);
+      }
+
+      @Override
+      public Histogram createHistogram(
+          final MetricCategory category,
+          final String name,
+          final String help,
+          final double[] buckets) {
+        final List<Double> observations = histograms.computeIfAbsent(name, __ -> new ArrayList<>());
+        return observations::add;
+      }
+    };
   }
 
   private long baseCache(final StubMetricsSystem metrics, final String result) {
