@@ -13,7 +13,7 @@
 
 package tech.pegasys.teku.storage.server.kvstore;
 
-import tech.pegasys.teku.infrastructure.metrics.StubMetricsSystem;
+import org.hyperledger.besu.plugin.services.MetricsSystem;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.storage.server.Database;
 import tech.pegasys.teku.storage.server.StateStorageMode;
@@ -30,13 +30,14 @@ public class InMemoryKvStoreDatabaseFactory {
       final StateStorageMode storageMode,
       final long stateStorageFrequency,
       final boolean storeNonCanonicalBlocks,
-      final Spec spec) {
+      final Spec spec,
+      final MetricsSystem metricsSystem) {
 
     final V6SchemaCombinedSnapshot combinedSchema = V6SchemaCombinedSnapshot.createV4(spec);
     final SchemaHotAdapter schemaHot = combinedSchema.asSchemaHot();
     final SchemaFinalizedSnapshotStateAdapter schemaFinalized = combinedSchema.asSchemaFinalized();
     return KvStoreDatabase.createV4(
-        new StubMetricsSystem(),
+        metricsSystem,
         hotDb,
         coldDb,
         schemaHot,
@@ -53,7 +54,8 @@ public class InMemoryKvStoreDatabaseFactory {
       final long stateStorageFrequency,
       final boolean storeNonCanonicalBlocks,
       final Spec spec,
-      final StateDiffDagConfig stateDiffDagConfig) {
+      final StateDiffDagConfig stateDiffDagConfig,
+      final MetricsSystem metricsSystem) {
     final V6SchemaCombinedSnapshot combinedSchema = V6SchemaCombinedSnapshot.createV6(spec);
     return KvStoreDatabase.createWithStateSnapshots(
         db,
@@ -63,7 +65,7 @@ public class InMemoryKvStoreDatabaseFactory {
         storeNonCanonicalBlocks,
         spec,
         stateDiffDagConfig,
-        new StubMetricsSystem());
+        metricsSystem);
   }
 
   public static Database createTree(
@@ -71,10 +73,11 @@ public class InMemoryKvStoreDatabaseFactory {
       final StateStorageMode storageMode,
       final boolean storeNonCanonicalBlocks,
       final Spec spec,
-      final StateDiffDagConfig stateDiffDagConfig) {
+      final StateDiffDagConfig stateDiffDagConfig,
+      final MetricsSystem metricsSystem) {
     final V6SchemaCombinedTreeState schema = new V6SchemaCombinedTreeState(spec);
     return KvStoreDatabase.createWithStateTree(
-        new StubMetricsSystem(),
+        metricsSystem,
         db,
         schema,
         storageMode,
