@@ -23,6 +23,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
@@ -49,8 +52,9 @@ import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao;
  * states, down to a snapshot (a diff against the default state tree).
  *
  * <p>Writes go through a {@link StateDiffDagTransaction} bound to one {@link
- * KvStoreCombinedDao.HotUpdater}. Reads follow each node's parent pointer to its snapshot and apply
- * the payloads in order; they never consult the level configuration.
+ * KvStoreCombinedDao.HotUpdater}. Reads follow each node's parent pointer to its snapshot, or to
+ * the nearest ancestor whose state is in the base cache, and apply the payloads above it in order;
+ * they never consult the level configuration.
  *
  * <p>The instance holds the per-level diff base cache, so one instance should live as long as the
  * database it writes to. It is meant to be used from the storage thread.
@@ -69,6 +73,9 @@ public class StateDiffDag {
 
   private static final long RECONSTRUCTION_FAILURE_LOG_INTERVAL_MILLIS = 60_000;
 
+  private static final Function<Bytes32, Optional<TreeNode>> NO_KNOWN_TREES =
+      root -> Optional.empty();
+
   private final StateDiffDagConfig config;
   private final DiffLevels levels;
   private final BeaconStateDiffSupport support;
@@ -82,7 +89,7 @@ public class StateDiffDag {
     this.config = config;
     this.levels = config.diffLevels();
     this.support = new BeaconStateDiffSupport(spec);
-    this.baseCache = new LevelBaseCache(levels.levelCount(), config.baseCacheLevels());
+    this.baseCache = new LevelBaseCache(levels.levelCount());
     this.metrics = new StateDiffMetrics(metricsSystem);
   }
 
@@ -100,6 +107,22 @@ public class StateDiffDag {
    */
   public Optional<BeaconState> reconstruct(final KvStoreCombinedDao dao, final Bytes32 blockRoot) {
     return reconstruct(new CommittedNodeReader(dao), blockRoot);
+  }
+
+  /**
+   * Reconstructs the state of the node stored for {@code blockRoot} as {@link
+   * #reconstruct(KvStoreCombinedDao, Bytes32)} does, then puts it in the base cache at the node's
+   * level: the diff base of the next nodes written above it and the start of the reconstructions
+   * whose chain passes through it. For the finalized anchor when the store is loaded.
+   */
+  public Optional<BeaconState> reconstructAndCache(
+      final KvStoreCombinedDao dao, final Bytes32 blockRoot) {
+    return reconstructNode(new CommittedNodeReader(dao), blockRoot, NO_KNOWN_TREES)
+        .map(
+            node -> {
+              baseCache.put(LevelBaseCache.cacheLevel(node.record()), blockRoot, node.state());
+              return node.state();
+            });
   }
 
   /**
@@ -342,38 +365,90 @@ public class StateDiffDag {
    * cannot serve a state.
    */
   Optional<BeaconState> reconstruct(final NodeReader reader, final Bytes32 blockRoot) {
+    return reconstruct(reader, blockRoot, NO_KNOWN_TREES);
+  }
+
+  /**
+   * Reconstructs the state of {@code blockRoot} as {@link #reconstruct(NodeReader, Bytes32)} does,
+   * also starting from a state tree of {@code knownTrees}, such as one written in the running
+   * transaction, when its node is in the chain.
+   */
+  Optional<BeaconState> reconstruct(
+      final NodeReader reader,
+      final Bytes32 blockRoot,
+      final Function<Bytes32, Optional<TreeNode>> knownTrees) {
+    return reconstructNode(reader, blockRoot, knownTrees).map(ReconstructedNode::state);
+  }
+
+  private Optional<ReconstructedNode> reconstructNode(
+      final NodeReader reader,
+      final Bytes32 blockRoot,
+      final Function<Bytes32, Optional<TreeNode>> knownTrees) {
     try {
-      return reconstructChain(reader, blockRoot);
+      return reconstructChain(reader, blockRoot, knownTrees);
     } catch (final StateDiffVerificationException e) {
       metrics.onVerificationFailure();
       throw e;
     }
   }
 
-  private Optional<BeaconState> reconstructChain(final NodeReader reader, final Bytes32 blockRoot) {
+  /**
+   * Loads the chain of {@code blockRoot} down to its snapshot or to the first link below the node
+   * whose state tree is known, from {@code knownTrees} or the base cache, and applies the payloads
+   * above it. The node's own payload is always applied, so a read never skips the record it asks
+   * for. The state root of the result is checked against the node's record either way.
+   */
+  private Optional<ReconstructedNode> reconstructChain(
+      final NodeReader reader,
+      final Bytes32 blockRoot,
+      final Function<Bytes32, Optional<TreeNode>> knownTrees) {
     final long start = System.nanoTime();
-    final List<ChainLink> chain = loadChain(reader, blockRoot);
+    // Set by the link that ends the chain when its state tree is known
+    final AtomicReference<TreeNode> knownStartTree = new AtomicReference<>();
+    final List<ChainLink> chain =
+        loadChain(
+            reader,
+            blockRoot,
+            link -> {
+              final Optional<TreeNode> tree =
+                  knownTrees.apply(link.root()).or(() -> baseCache.find(link.root()));
+              // A cached tree of another state than the record's never starts a chain
+              final boolean usable =
+                  tree.map(known -> known.hashTreeRoot().equals(link.record().stateRoot()))
+                      .orElse(false);
+              if (usable) {
+                knownStartTree.set(tree.get());
+              }
+              return usable;
+            });
     if (chain.isEmpty()) {
       return Optional.empty();
     }
     // Every link of a chain has the milestone of its snapshot, since a node whose parent is from
     // another milestone is written as a snapshot; the folded delta fields rely on one schema
-    final StateDiffNodeRecord snapshot = chain.getLast().record();
+    final ChainLink last = chain.getLast();
+    final Optional<TreeNode> startTree = Optional.ofNullable(knownStartTree.get());
+    final int appliedLinks = startTree.isPresent() ? chain.size() - 1 : chain.size();
+    final StateDiffNodeRecord bottom = last.record();
     final TreeDiffApplier.ChainApplication application =
         support
-            .applierFor(snapshot.blockSlot())
-            .startChain(support.schemaFor(snapshot.blockSlot()).getDefaultTree(), reader);
-    for (int i = chain.size() - 1; i >= 0; i--) {
+            .applierFor(bottom.blockSlot())
+            .startChain(
+                startTree.orElseGet(() -> support.schemaFor(bottom.blockSlot()).getDefaultTree()),
+                reader);
+    for (int i = appliedLinks - 1; i >= 0; i--) {
       final StateDiffNodeRecord record = chain.get(i).record();
-      if (!support.sameMilestone(record.blockSlot(), snapshot.blockSlot())) {
+      if (!support.sameMilestone(record.blockSlot(), bottom.blockSlot())) {
         throw new StateDiffVerificationException(
             "Node "
                 + chain.get(i).root()
                 + " at slot "
                 + record.blockSlot()
-                + " is from another milestone than its snapshot at slot "
-                + snapshot.blockSlot()
-                + "; chain from node to snapshot: "
+                + " is from another milestone than node "
+                + last.root()
+                + " at slot "
+                + bottom.blockSlot()
+                + " below it; chain from node to snapshot or cached node: "
                 + describe(chain));
       }
       try {
@@ -388,7 +463,7 @@ public class StateDiffDag {
                 + chain.get(i).root()
                 + " in the reconstruction chain of node "
                 + blockRoot
-                + "; chain from node to snapshot: "
+                + "; chain from node to snapshot or cached node: "
                 + describe(chain),
             e);
       }
@@ -411,11 +486,11 @@ public class StateDiffDag {
               + actualRoot
               + " but the node records "
               + head.stateRoot()
-              + "; chain from node to snapshot: "
+              + "; chain from node to snapshot or cached node: "
               + describe(chain));
     }
-    metrics.onReconstruct(System.nanoTime() - start, chain.size());
-    return Optional.of(state);
+    metrics.onReconstruct(System.nanoTime() - start, appliedLinks);
+    return Optional.of(new ReconstructedNode(head, state));
   }
 
   private static StateDiffVerificationException corruptPayload(
@@ -430,13 +505,22 @@ public class StateDiffDag {
             + blockRoot
             + ": "
             + cause.getMessage()
-            + "; chain from node to snapshot: "
+            + "; chain from node to snapshot or cached node: "
             + describe(chain),
         cause);
   }
 
   /** Loads the chain from {@code blockRoot} to its snapshot, node first. */
   List<ChainLink> loadChain(final NodeReader reader, final Bytes32 blockRoot) {
+    return loadChain(reader, blockRoot, link -> false);
+  }
+
+  /**
+   * Loads the chain from {@code blockRoot} towards its snapshot, node first, ending at the snapshot
+   * or at the first link after the node that {@code isLast} accepts.
+   */
+  private List<ChainLink> loadChain(
+      final NodeReader reader, final Bytes32 blockRoot, final Predicate<ChainLink> isLast) {
     final Optional<StateDiffNodeRecord> head = reader.getNode(blockRoot);
     if (head.isEmpty()) {
       return List.of();
@@ -462,6 +546,9 @@ public class StateDiffDag {
       }
       link = new ChainLink(parentRoot, parent.get());
       chain.add(link);
+      if (isLast.test(link)) {
+        break;
+      }
     }
     return chain;
   }
@@ -499,6 +586,8 @@ public class StateDiffDag {
   }
 
   record ChainLink(Bytes32 root, StateDiffNodeRecord record) {}
+
+  private record ReconstructedNode(StateDiffNodeRecord record, BeaconState state) {}
 
   /** A supernode entry of a stored node, with the slot of that node's block. */
   private record SupernodeReference(UInt64 blockSlot, SupernodeEntry entry) {}

@@ -90,8 +90,9 @@ public final class TreeDiffApplier {
    * Starts applying a chain of diffs to {@code base}, each diff taken against the result of the
    * previous one. The result equals applying the diffs one by one with {@link #apply}, but delta
    * sections compose: they are folded into one value array per field and each such field is built
-   * once, by {@link ChainApplication#finish()}, instead of once per diff. The supernodes of every
-   * diff of the chain are loaded from {@code source}.
+   * once, by {@link ChainApplication#finish()}, instead of once per diff. A folded field starts
+   * from its values in {@code base}, which can be any tree of the schema, a live state's included.
+   * The supernodes of every diff of the chain are loaded from {@code source}.
    */
   public ChainApplication startChain(final TreeNode base, final SupernodeSource source) {
     return new ChainApplication(base, source);

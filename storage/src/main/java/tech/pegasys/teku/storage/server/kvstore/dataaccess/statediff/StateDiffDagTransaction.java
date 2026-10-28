@@ -90,7 +90,10 @@ public class StateDiffDagTransaction {
    */
   private final Map<Bytes32, WrittenNode> writtenNodes = new LinkedHashMap<>();
 
-  /** State trees of the nodes written in this transaction, the diff bases of later nodes in it. */
+  /**
+   * State trees of the nodes written in this transaction: the diff bases of later nodes in it and
+   * the start of the reconstructions through them.
+   */
   private final Map<Bytes32, TreeNode> writtenTrees = new HashMap<>();
 
   private boolean committed;
@@ -271,7 +274,7 @@ public class StateDiffDagTransaction {
     final TreeNode base =
         snapshot
             ? dag.support().schemaFor(state.getSlot()).getDefaultTree()
-            : diffBase(level, parent.get());
+            : diffBase(parent.get());
     final long walkStart = System.nanoTime();
     final Map<Bytes32, Bytes> referencedSupernodes = new LinkedHashMap<>();
     final TreeDiff diff =
@@ -639,7 +642,7 @@ public class StateDiffDagTransaction {
     // A node deleted later in this transaction is not cached. One rewritten, as by an anchor
     // repair, is recorded once as last written and has the same state either way
     if (pendingNodes.getOrDefault(node.blockRoot(), Optional.empty()).isPresent()) {
-      dag.baseCache().put(cacheLevel(record), node.blockRoot(), node.state());
+      dag.baseCache().put(LevelBaseCache.cacheLevel(record), node.blockRoot(), node.state());
     }
     dag.metrics().onNodeWritten(record.level(), record.snapshot(), node.encodedBytes());
     node.snapshotReason().ifPresent(reason -> dag.metrics().onSnapshotWritten(reason));
@@ -725,26 +728,28 @@ public class StateDiffDagTransaction {
     return record.snapshot() || record.level() <= level;
   }
 
-  /** A snapshot is a valid base for every level, so it is cached as the coarsest level. */
-  private static int cacheLevel(final StateDiffNodeRecord record) {
-    return record.snapshot() ? 0 : record.level();
-  }
-
-  private TreeNode diffBase(final int level, final ChainLink parent) {
+  /**
+   * The state tree of {@code parent}: written in this transaction, cached, or else reconstructed
+   * from the nearest node of its chain that is either, and then cached.
+   */
+  private TreeNode diffBase(final ChainLink parent) {
     final Optional<TreeNode> cached =
-        Optional.ofNullable(writtenTrees.get(parent.root()))
-            .or(() -> dag.baseCache().get(level, parent.root()));
+        writtenTree(parent.root()).or(() -> dag.baseCache().find(parent.root()));
     if (cached.isPresent()) {
       dag.metrics().onBaseCacheHit();
       return cached.get();
     }
     dag.metrics().onBaseCacheMiss();
     final BeaconState parentState =
-        dag.reconstruct(reader, parent.root())
+        dag.reconstruct(reader, parent.root(), this::writtenTree)
             .orElseThrow(
                 () -> new StateDiffVerificationException("Missing parent node " + parent.root()));
-    dag.baseCache().put(cacheLevel(parent.record()), parent.root(), parentState);
+    dag.baseCache().put(LevelBaseCache.cacheLevel(parent.record()), parent.root(), parentState);
     return parentState.getBackingNode();
+  }
+
+  private Optional<TreeNode> writtenTree(final Bytes32 blockRoot) {
+    return Optional.ofNullable(writtenTrees.get(blockRoot));
   }
 
   /**
