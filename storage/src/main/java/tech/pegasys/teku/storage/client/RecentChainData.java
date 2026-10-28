@@ -200,7 +200,11 @@ public abstract class RecentChainData
   public void initializeFromAnchorPoint(final AnchorPoint anchorPoint, final UInt64 currentTime) {
     final UpdatableStore store =
         StoreBuilder.create()
-            .onDiskStoreData(StoreBuilder.forkChoiceStoreBuilder(spec, anchorPoint, currentTime))
+            // A chain started from an anchor has a new database: it uses state diff storage when
+            // the configuration requests it
+            .onDiskStoreData(
+                StoreBuilder.forkChoiceStoreBuilder(
+                    spec, anchorPoint, currentTime, storeConfig.isStateDiffsEnabled()))
             .asyncRunner(asyncRunner)
             .metricsSystem(metricsSystem)
             .specProvider(spec)

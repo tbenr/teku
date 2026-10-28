@@ -27,9 +27,8 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.storage.api.FinalizedChainData;
-import tech.pegasys.teku.storage.api.HotStateNodeInfo;
+import tech.pegasys.teku.storage.api.HotState;
 import tech.pegasys.teku.storage.api.StorageUpdate;
 import tech.pegasys.teku.storage.api.UpdateResult;
 import tech.pegasys.teku.storage.protoarray.ExecutionPayloadUpdate;
@@ -41,9 +40,7 @@ class StoreTransactionUpdates {
   private final Map<Bytes32, BlockAndCheckpoints> hotBlocks;
   private final Map<Bytes32, SignedBlockAndState> hotBlockAndStates;
   // A subset of hot states to be persisted to disk
-  private final Map<Bytes32, BeaconState> hotStatesToPersist;
-  // Where each persisted hot state sits in the chain, for state diff storage
-  private final Map<Bytes32, HotStateNodeInfo> hotStateNodeInfos;
+  private final Map<Bytes32, HotState> hotStatesToPersist;
   private final Map<SlotAndBlockRoot, List<BlobSidecar>> blobSidecars;
   private final Optional<UInt64> maybeEarliestBlobSidecarSlot;
   private final Map<Bytes32, SlotAndBlockRoot> stateRoots;
@@ -63,8 +60,7 @@ class StoreTransactionUpdates {
       final Optional<FinalizedChainData> finalizedChainData,
       final Map<Bytes32, BlockAndCheckpoints> hotBlocks,
       final Map<Bytes32, SignedBlockAndState> hotBlockAndStates,
-      final Map<Bytes32, BeaconState> hotStatesToPersist,
-      final Map<Bytes32, HotStateNodeInfo> hotStateNodeInfos,
+      final Map<Bytes32, HotState> hotStatesToPersist,
       final Map<SlotAndBlockRoot, List<BlobSidecar>> blobSidecars,
       final Optional<UInt64> maybeEarliestBlobSidecarSlot,
       final Map<Bytes32, UInt64> prunedHotBlockRoots,
@@ -83,7 +79,6 @@ class StoreTransactionUpdates {
     checkNotNull(hotBlocks, "Hot blocks are required");
     checkNotNull(hotBlockAndStates, "Hot block states are required");
     checkNotNull(hotStatesToPersist, "Hot states to persist are required");
-    checkNotNull(hotStateNodeInfos, "Hot state node infos are required");
     checkNotNull(blobSidecars, "BlobSidecars are required");
     checkNotNull(maybeEarliestBlobSidecarSlot, "Hot maybe earliest blobSidecar slot is required");
     checkNotNull(prunedHotBlockRoots, "Pruned roots are required");
@@ -99,7 +94,6 @@ class StoreTransactionUpdates {
     this.hotBlocks = hotBlocks;
     this.hotBlockAndStates = hotBlockAndStates;
     this.hotStatesToPersist = hotStatesToPersist;
-    this.hotStateNodeInfos = hotStateNodeInfos;
     this.blobSidecars = blobSidecars;
     this.maybeEarliestBlobSidecarSlot = maybeEarliestBlobSidecarSlot;
     this.prunedHotBlockRoots = prunedHotBlockRoots;
@@ -123,7 +117,6 @@ class StoreTransactionUpdates {
         tx.bestJustifiedCheckpoint,
         hotBlocks,
         hotStatesToPersist,
-        hotStateNodeInfos,
         blindedExecutionPayloads,
         blobSidecars,
         maybeEarliestBlobSidecarSlot,

@@ -1,0 +1,100 @@
+/*
+ * Copyright (c) 2026 Consensys Incorporated. All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+ * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+package tech.pegasys.teku.storage.server.kvstore;
+
+import java.util.Optional;
+import org.apache.tuweni.bytes.Bytes32;
+import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
+import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
+import tech.pegasys.teku.storage.api.StorageUpdate;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.HotUpdater;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDag;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationReport;
+
+/**
+ * How the database stores hot states and the state of the finalized checkpoint block: whole states
+ * in the legacy columns ({@link LegacyHotStateStorage}), or nodes of the state diff DAG ({@link
+ * StateDiffHotStateStorage}). Chosen when the database is opened, from the configuration and the
+ * database's state diff mode marker, and replaced at most once, when state diff storage is
+ * activated: by migrating a database that has a legacy finalized state, or by storing the initial
+ * anchor of a new database.
+ */
+interface HotStateStorage {
+
+  /** Whether hot states are stored as state diff DAG nodes. */
+  boolean isStateDiffStorage();
+
+  /** The state of the finalized checkpoint block. */
+  Optional<BeaconState> getLatestFinalizedState();
+
+  /**
+   * The state of the finalized checkpoint block when the store is loaded; state diff storage keeps
+   * it while the finalized checkpoint keeps its block root, so later reads do not reconstruct it.
+   */
+  Optional<BeaconState> loadLatestFinalizedState();
+
+  /** The in-place switch to state diff storage due on this database, if any. */
+  Optional<Activation> getPendingActivation();
+
+  /**
+   * Writes the state of the initial anchor of a new database to {@code updater}.
+   *
+   * @return the storage to use once {@code updater} is committed
+   */
+  HotStateStorage storeInitialAnchor(
+      HotUpdater updater, Checkpoint anchorCheckpoint, BeaconState anchorState);
+
+  /** Reads what writing {@code update} needs before any of its hot changes is written. */
+  HotStateUpdate startUpdate(StorageUpdate update);
+
+  /** The persisted state of the hot block {@code root}, if any. */
+  Optional<BeaconState> getHotState(Bytes32 root);
+
+  /**
+   * Verifies the state diff DAG.
+   *
+   * @throws IllegalStateException when state diff storage is not active
+   */
+  StateDiffVerificationReport verify();
+
+  /** The state diff DAG of an active state diff storage, for tests reading its counters. */
+  Optional<StateDiffDag> getStateDiffDag();
+
+  /** The hot state changes of one storage update, written to its hot transaction. */
+  interface HotStateUpdate {
+
+    /** Writes the state of the new finalized checkpoint block, if the update finalizes one. */
+    void writeLatestFinalizedState(HotUpdater updater);
+
+    /** Writes the hot states of the update and the other changes they imply. */
+    void writeHotStates(HotUpdater updater);
+
+    /** Describes how long {@link #writeHotStates} took, appended to the slow update log line. */
+    String describeHotStatesWriteTime(long millis);
+  }
+
+  /** A switch of a legacy database to state diff storage. */
+  interface Activation {
+
+    /**
+     * Writes the switch to {@code updater}.
+     *
+     * @return the storage to use once {@code updater} is committed
+     */
+    HotStateStorage write(HotUpdater updater);
+
+    /** Logs the switch, once it is committed. */
+    void logActivated();
+  }
+}
