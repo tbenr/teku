@@ -264,20 +264,27 @@ public class StateDiffDag {
 
     final Optional<Bytes32> anchorRoot = dao.getFinalizedCheckpoint().map(Checkpoint::getRoot);
     int anchorChainLength = 0;
-    boolean anchorReconstructionOk = false;
     Optional<String> anchorReconstructionError = Optional.empty();
     final long start = System.nanoTime();
     if (anchorRoot.isEmpty()) {
       anchorReconstructionError = Optional.of("No finalized checkpoint");
     } else {
       try {
-        anchorChainLength = reconstructionChain(dao, anchorRoot.get()).size();
-        if (reconstruct(dao, anchorRoot.get()).isPresent()) {
-          anchorReconstructionOk = true;
-        } else {
+        // Loaded once down to the snapshot and applied whole, whatever the base cache holds
+        final NodeReader reader = new CommittedNodeReader(dao);
+        final List<ChainLink> chain = loadChain(reader, anchorRoot.get());
+        anchorChainLength = chain.size();
+        if (chain.isEmpty()) {
           anchorReconstructionError =
               Optional.of(
                   "No state diff node for the finalized checkpoint root " + anchorRoot.get());
+        } else {
+          try {
+            applyChain(reader, anchorRoot.get(), chain, Optional.empty(), start);
+          } catch (final StateDiffVerificationException e) {
+            metrics.onVerificationFailure();
+            throw e;
+          }
         }
       } catch (final RuntimeException e) {
         anchorReconstructionError = Optional.of(e.toString());
@@ -297,7 +304,6 @@ public class StateDiffDag {
         corruptNodes,
         anchorRoot,
         anchorChainLength,
-        anchorReconstructionOk,
         anchorReconstructionMillis,
         anchorReconstructionError);
   }
@@ -429,10 +435,26 @@ public class StateDiffDag {
     if (chain.isEmpty()) {
       return Optional.empty();
     }
+    return Optional.of(
+        applyChain(reader, blockRoot, chain, Optional.ofNullable(knownStartTree.get()), start));
+  }
+
+  /**
+   * Applies the payloads of {@code chain}, the loaded chain of {@code blockRoot} (node first), on
+   * {@code startTree}, the state tree of its last link, or when empty on the default tree of the
+   * last link, its snapshot. Checks the state root of the result against the node's record.
+   *
+   * @param startNanos when the reconstruction started, for the reconstruction time metric
+   */
+  private ReconstructedNode applyChain(
+      final NodeReader reader,
+      final Bytes32 blockRoot,
+      final List<ChainLink> chain,
+      final Optional<TreeNode> startTree,
+      final long startNanos) {
     // Every link of a chain has the milestone of its snapshot, since a node whose parent is from
     // another milestone is written as a snapshot; the folded delta fields rely on one schema
     final ChainLink last = chain.getLast();
-    final Optional<TreeNode> startTree = Optional.ofNullable(knownStartTree.get());
     final int appliedLinks = startTree.isPresent() ? chain.size() - 1 : chain.size();
     final StateDiffNodeRecord bottom = last.record();
     final TreeDiffApplier.ChainApplication application =
@@ -494,8 +516,8 @@ public class StateDiffDag {
               + "; chain from node to snapshot or cached node: "
               + describe(chain));
     }
-    metrics.onReconstruct(System.nanoTime() - start, appliedLinks);
-    return Optional.of(new ReconstructedNode(head, state));
+    metrics.onReconstruct(System.nanoTime() - startNanos, appliedLinks);
+    return new ReconstructedNode(head, state);
   }
 
   private static StateDiffVerificationException corruptPayload(

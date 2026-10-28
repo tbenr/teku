@@ -310,6 +310,14 @@ public class TekuConfiguration {
         }
       }
 
+      // A database switched to state diff storage by its marker alone is not known here
+      if (syncConfig.isReconstructHistoricStatesEnabled()
+          && storageConfiguration.getStateDiffDagConfig().enabled()) {
+        throw new InvalidConfigurationException(
+            "Cannot reconstruct historic states with state diff storage: the integration is not"
+                + " available yet");
+      }
+
       if (storageConfiguration.getRetainedSlots() > 0) {
         if (!storageConfiguration.getDataStorageMode().storesFinalizedStates()) {
           throw new InvalidConfigurationException(

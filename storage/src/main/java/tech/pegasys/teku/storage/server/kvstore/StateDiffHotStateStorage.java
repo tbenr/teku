@@ -102,7 +102,9 @@ class StateDiffHotStateStorage implements HotStateStorage {
    * <p>On an archive database, the state of the node of the checkpoint block of {@code maxSlot}'s
    * epoch (the latest finalized block at or before the epoch's start slot), or of the latest
    * earlier checkpoint block with a node when that node was skipped; empty before the window start
-   * (history before the switch to state diff storage is not served, decision 19).
+   * (history before the switch to state diff storage is not served, decision 19). When the window
+   * start epoch's own node was skipped, the oldest retained node lies below the start (decision
+   * 54): the fallback reaches the one checkpoint block before the start epoch's.
    *
    * @throws StateDiffVerificationException when the node cannot be reconstructed
    */
@@ -112,12 +114,15 @@ class StateDiffHotStateStorage implements HotStateStorage {
       return dao.getLatestAvailableFinalizedState(maxSlot);
     }
     final UInt64 epoch = spec.computeEpochAtSlot(maxSlot);
-    // Without a recorded start, only the checkpoint block of the epoch itself is looked up
-    final UInt64 windowStart = dao.getStateDiffWindowStart().orElse(epoch);
-    if (epoch.isLessThan(windowStart)) {
+    final Optional<UInt64> windowStart = dao.getStateDiffWindowStart();
+    if (windowStart.isEmpty()) {
+      // Without a recorded start, only the checkpoint block of the epoch itself is looked up
+      return checkpointBlock(epoch).flatMap(block -> dag.reconstruct(dao, block.getRoot()));
+    }
+    if (epoch.isLessThan(windowStart.get())) {
       return Optional.empty();
     }
-    return findCheckpointNode(epoch, windowStart, root -> dag.reconstruct(dao, root));
+    return findCheckpointNode(epoch, windowStart.get(), root -> dag.reconstruct(dao, root));
   }
 
   /**
@@ -360,8 +365,10 @@ class StateDiffHotStateStorage implements HotStateStorage {
   /**
    * Looks up the node of the checkpoint block of {@code epoch} with {@code load}, or when it has
    * none, of the latest earlier checkpoint block that has one, down to the checkpoint block of
-   * {@code lowestEpoch}. A skipped node is the only reason a checkpoint block in that range has no
-   * node.
+   * {@code lowestEpoch} and then the one checkpoint block before it: the oldest retained node of a
+   * window whose start epoch's node was skipped (decision 54). A skipped node is the only reason a
+   * checkpoint block from {@code lowestEpoch} on has no node; below it, nodes are also deleted, so
+   * the walk stops there rather than reaching an older node far below.
    */
   private <T> Optional<T> findCheckpointNode(
       final UInt64 epoch, final UInt64 lowestEpoch, final Function<Bytes32, Optional<T>> load) {
@@ -375,6 +382,9 @@ class StateDiffHotStateStorage implements HotStateStorage {
       if (loaded.isPresent()) {
         return loaded;
       }
+      if (current.isLessThan(lowestEpoch)) {
+        return Optional.empty();
+      }
       // The next earlier checkpoint block is the one of this block's epoch, or of the epoch before
       // when this block sits on its epoch's start slot
       final UInt64 blockSlot = checkpointBlock.get().getSlot();
@@ -383,11 +393,7 @@ class StateDiffHotStateStorage implements HotStateStorage {
       if (onStartSlot && blockEpoch.isZero()) {
         return Optional.empty();
       }
-      final UInt64 previous = onStartSlot ? blockEpoch.decrement() : blockEpoch;
-      if (previous.isLessThan(lowestEpoch)) {
-        return Optional.empty();
-      }
-      current = previous;
+      current = onStartSlot ? blockEpoch.decrement() : blockEpoch;
     }
   }
 
