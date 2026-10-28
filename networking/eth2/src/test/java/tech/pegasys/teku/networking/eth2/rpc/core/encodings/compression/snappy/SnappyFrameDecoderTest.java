@@ -26,6 +26,9 @@ import tech.pegasys.teku.networking.eth2.rpc.core.encodings.compression.exceptio
 public class SnappyFrameDecoderTest {
 
   private static final Bytes STREAM_IDENTIFIER = Bytes.fromHexString("0xff060000734e61507059");
+  private static final int COMPRESSED = 0x00;
+  private static final int UNCOMPRESSED = 0x01;
+  private static final int SKIPPABLE = 0xfe;
 
   @Test
   void maxCompressedChunkSizeIsChecksumPlusLongestValidEncodingOf64KiB() {
@@ -42,10 +45,7 @@ public class SnappyFrameDecoderTest {
       block.writeByte(0x00);
       block.writeByte(data.get(i));
     }
-    final ByteBuf in = Unpooled.buffer();
-    in.writeBytes(STREAM_IDENTIFIER.toArrayUnsafe());
-    in.writeByte(0x00);
-    in.writeMediumLE(4 + block.readableBytes());
+    final ByteBuf in = chunkHeader(COMPRESSED, 4 + block.readableBytes());
     in.writeIntLE(SnappyUtil.calculateChecksum(Unpooled.wrappedBuffer(data.toArrayUnsafe())));
     in.writeBytes(block);
     block.release();
@@ -61,7 +61,7 @@ public class SnappyFrameDecoderTest {
 
   @Test
   void acceptsCompressedChunkHeaderAtMaxEncodedLength() throws Exception {
-    final ByteBuf in = compressedChunkHeader(SnappyFrameDecoder.MAX_COMPRESSED_CHUNK_SIZE);
+    final ByteBuf in = chunkHeader(COMPRESSED, SnappyFrameDecoder.MAX_COMPRESSED_CHUNK_SIZE);
     final SnappyFrameDecoder decoder = new AircompressorSnappyFrameDecoder();
 
     assertThat(decoder.decodeOneMessage(in)).isEmpty();
@@ -72,7 +72,7 @@ public class SnappyFrameDecoderTest {
 
   @Test
   void rejectsCompressedChunkLongerThanMaxEncodedLength() {
-    final ByteBuf in = compressedChunkHeader(SnappyFrameDecoder.MAX_COMPRESSED_CHUNK_SIZE + 1);
+    final ByteBuf in = chunkHeader(COMPRESSED, SnappyFrameDecoder.MAX_COMPRESSED_CHUNK_SIZE + 1);
     final SnappyFrameDecoder decoder = new AircompressorSnappyFrameDecoder();
 
     assertThatThrownBy(() -> decoder.decodeOneMessage(in)).isInstanceOf(CompressionException.class);
@@ -82,7 +82,7 @@ public class SnappyFrameDecoderTest {
 
   @Test
   void rejectsCompressedChunkShorterThanChecksum() {
-    final ByteBuf in = chunkHeader(0x00, 0);
+    final ByteBuf in = chunkHeader(COMPRESSED, 0);
     in.writeZero(8);
     final SnappyFrameDecoder decoder = new AircompressorSnappyFrameDecoder();
 
@@ -92,8 +92,22 @@ public class SnappyFrameDecoderTest {
   }
 
   @Test
+  void rejectsCompressedChunkWithoutBlock() {
+    // a snappy block always starts with its length varint, so a checksum alone is not a block
+    final ByteBuf in = chunkHeader(COMPRESSED, 4);
+    in.writeZero(8);
+    final SnappyFrameDecoder decoder = new AircompressorSnappyFrameDecoder();
+
+    assertThatThrownBy(() -> decoder.decodeOneMessage(in))
+        .isInstanceOf(CompressionException.class)
+        .hasMessageContaining("shorter than");
+
+    in.release();
+  }
+
+  @Test
   void rejectsUncompressedChunkShorterThanChecksum() {
-    final ByteBuf in = chunkHeader(0x01, 3);
+    final ByteBuf in = chunkHeader(UNCOMPRESSED, 3);
     in.writeZero(8);
     final SnappyFrameDecoder decoder = new AircompressorSnappyFrameDecoder();
 
@@ -104,7 +118,7 @@ public class SnappyFrameDecoderTest {
 
   @Test
   void consumesSkippableChunkAsItArrives() throws Exception {
-    final ByteBuf in = chunkHeader(0xfe, 0xFFFFFF);
+    final ByteBuf in = chunkHeader(SKIPPABLE, 0xFFFFFF);
     in.writeZero(1000);
     final SnappyFrameDecoder decoder = new AircompressorSnappyFrameDecoder();
 
@@ -119,14 +133,14 @@ public class SnappyFrameDecoderTest {
   @Test
   void decodesDataAfterSkippableChunkSplitAcrossInputs() throws Exception {
     final Bytes data = Bytes.of(1, 2, 3);
-    final ByteBuf first = chunkHeader(0xfe, 5);
+    // short inputs are written as a single uncompressed chunk after the stream identifier
+    final Bytes dataChunk =
+        new AircompressorSnappyFrameEncoder().encode(data).slice(STREAM_IDENTIFIER.size());
+    final ByteBuf first = chunkHeader(SKIPPABLE, 5);
     first.writeZero(2);
     final ByteBuf second = Unpooled.buffer();
     second.writeZero(3);
-    second.writeByte(0x01);
-    second.writeMediumLE(4 + data.size());
-    second.writeIntLE(SnappyUtil.calculateChecksum(Unpooled.wrappedBuffer(data.toArrayUnsafe())));
-    second.writeBytes(data.toArrayUnsafe());
+    second.writeBytes(dataChunk.toArrayUnsafe());
     final SnappyFrameDecoder decoder = new AircompressorSnappyFrameDecoder();
 
     assertThat(decoder.decodeOneMessage(first)).isEmpty();
@@ -145,9 +159,5 @@ public class SnappyFrameDecoderTest {
     in.writeByte(chunkType);
     in.writeMediumLE(chunkLength);
     return in;
-  }
-
-  private static ByteBuf compressedChunkHeader(final int chunkLength) {
-    return chunkHeader(0x00, chunkLength);
   }
 }

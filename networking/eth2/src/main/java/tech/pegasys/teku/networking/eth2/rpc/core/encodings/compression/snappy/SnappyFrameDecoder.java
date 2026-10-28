@@ -44,6 +44,10 @@ public abstract class SnappyFrameDecoder
   private static final int SNAPPY_IDENTIFIER_LEN = 6;
   // See https://github.com/google/snappy/blob/1.1.9/framing_format.txt#L95
   private static final int MAX_UNCOMPRESSED_DATA_SIZE = 65536 + 4;
+  // an uncompressed chunk holds at least its checksum
+  private static final int MIN_UNCOMPRESSED_DATA_SIZE = 4;
+  // a compressed chunk holds its checksum and a block, which starts with a length varint
+  private static final int MIN_COMPRESSED_CHUNK_SIZE = 5;
   // See https://github.com/google/snappy/blob/1.1.9/framing_format.txt#L82
   protected static final int MAX_DECOMPRESSED_DATA_SIZE = 65536;
   // A compressed chunk holds a checksum and a snappy block of at most MAX_DECOMPRESSED_DATA_SIZE
@@ -153,11 +157,15 @@ public abstract class SnappyFrameDecoder
                 "Received UNCOMPRESSED_DATA tag before STREAM_IDENTIFIER");
           }
           if (chunkLength > MAX_UNCOMPRESSED_DATA_SIZE) {
-            throw new CompressionException("Received UNCOMPRESSED_DATA larger than 65540 bytes");
-          }
-          if (chunkLength < 4) {
             throw new CompressionException(
-                "Received UNCOMPRESSED_DATA shorter than its 4-byte checksum: " + chunkLength);
+                "Received UNCOMPRESSED_DATA larger than " + MAX_UNCOMPRESSED_DATA_SIZE + " bytes");
+          }
+          if (chunkLength < MIN_UNCOMPRESSED_DATA_SIZE) {
+            throw new CompressionException(
+                "Received UNCOMPRESSED_DATA shorter than "
+                    + MIN_UNCOMPRESSED_DATA_SIZE
+                    + " bytes: "
+                    + chunkLength);
           }
 
           if (inSize < 4 + chunkLength) {
@@ -185,9 +193,12 @@ public abstract class SnappyFrameDecoder
                     + MAX_COMPRESSED_CHUNK_SIZE
                     + " bytes");
           }
-          if (chunkLength < 4) {
+          if (chunkLength < MIN_COMPRESSED_CHUNK_SIZE) {
             throw new CompressionException(
-                "Received COMPRESSED_DATA shorter than its 4-byte checksum: " + chunkLength);
+                "Received COMPRESSED_DATA shorter than "
+                    + MIN_COMPRESSED_CHUNK_SIZE
+                    + " bytes: "
+                    + chunkLength);
           }
 
           if (inSize < 4 + chunkLength) {

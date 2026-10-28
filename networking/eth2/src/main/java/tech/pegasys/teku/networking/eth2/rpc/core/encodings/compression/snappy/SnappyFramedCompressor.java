@@ -152,6 +152,9 @@ public class SnappyFramedCompressor implements Compressor {
 
   @Override
   public int getMaxCompressedLength(final int uncompressedLength) {
-    return SnappyUtil.maxCompressedLength(uncompressedLength);
+    // Longest output of the reference snappy compressor, used by the consensus p2p spec as
+    // max_compressed_len. Valid but less efficient encodings of a single chunk can be longer. See:
+    // https://github.com/google/snappy/blob/537f4ad6240e586970fe554614542e9717df7902/snappy.cc#L98
+    return 32 + uncompressedLength + uncompressedLength / 6;
   }
 }
