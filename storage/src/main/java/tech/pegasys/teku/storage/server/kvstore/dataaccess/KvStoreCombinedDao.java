@@ -128,6 +128,18 @@ public interface KvStoreCombinedDao extends AutoCloseable {
     return Optional.empty();
   }
 
+  /**
+   * The supernode SSZ stored for each of {@code hashes}, read in one batch where the storage engine
+   * supports it. Hashes without a stored supernode are omitted.
+   */
+  default Map<Bytes32, Bytes> getStateSupernodes(final Collection<Bytes32> hashes) {
+    final Map<Bytes32, Bytes> supernodes = new HashMap<>();
+    for (final Bytes32 hash : hashes) {
+      getStateSupernode(hash).ifPresent(ssz -> supernodes.put(hash, ssz));
+    }
+    return supernodes;
+  }
+
   /** The number of state diff DAG nodes referencing the supernode {@code hash}. */
   default Optional<UInt64> getStateSupernodeRefCount(final Bytes32 hash) {
     return Optional.empty();

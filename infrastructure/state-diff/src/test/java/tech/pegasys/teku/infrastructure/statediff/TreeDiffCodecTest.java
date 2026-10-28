@@ -86,6 +86,8 @@ class TreeDiffCodecTest {
                 .map(SupernodeEntry::hash)
                 .toList())
         .containsExactly(hashC, HASH_A, HASH_B, HASH_B);
+    assertThat(TreeDiffCodec.supernodeEntries(serialized))
+        .isEqualTo(TreeDiffCodec.deserialize(serialized).supernodes());
     assertThat(TreeDiffCodec.supernodeHashes(TreeDiffCodec.serialize(TreeDiff.empty()))).isEmpty();
     // Rejects what a full decode rejects, in any section
     for (int length = 0; length < serialized.size(); length++) {

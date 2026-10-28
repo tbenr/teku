@@ -14,6 +14,7 @@
 package tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -31,6 +32,7 @@ import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.statediff.DiffLevels;
 import tech.pegasys.teku.infrastructure.statediff.MissingSupernodeException;
 import tech.pegasys.teku.infrastructure.statediff.SupernodeSource;
+import tech.pegasys.teku.infrastructure.statediff.TreeDiff.SupernodeEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiffApplier;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiffCodec;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
@@ -58,6 +60,9 @@ public class StateDiffDag {
 
   private static final Comparator<Bytes32> BY_HEX = Comparator.comparing(Bytes32::toHexString);
 
+  /** The number of supernodes {@link #verify} loads in one batch to check their content. */
+  private static final int VERIFY_SUPERNODE_BATCH_SIZE = 1024;
+
   private final StateDiffDagConfig config;
   private final DiffLevels levels;
   private final BeaconStateDiffSupport support;
@@ -65,7 +70,6 @@ public class StateDiffDag {
   private final StateDiffMetrics metrics;
   private final AtomicLong anchorNodesCreatedLate = new AtomicLong();
   private final AtomicLong anchorsRepaired = new AtomicLong();
-  private CommittedNodeReader committedReader;
 
   public StateDiffDag(
       final Spec spec, final StateDiffDagConfig config, final MetricsSystem metricsSystem) {
@@ -89,7 +93,7 @@ public class StateDiffDag {
    * @throws MissingSupernodeException when a referenced supernode is absent
    */
   public Optional<BeaconState> reconstruct(final KvStoreCombinedDao dao, final Bytes32 blockRoot) {
-    return reconstruct(readerFor(dao), blockRoot);
+    return reconstruct(new CommittedNodeReader(dao), blockRoot);
   }
 
   /**
@@ -97,19 +101,22 @@ public class StateDiffDag {
    * parent up to and including the snapshot. Empty when there is no node for {@code blockRoot}.
    */
   public List<Bytes32> reconstructionChain(final KvStoreCombinedDao dao, final Bytes32 blockRoot) {
-    return loadChain(readerFor(dao), blockRoot).stream()
+    return loadChain(new CommittedNodeReader(dao), blockRoot).stream()
         .map(ChainLink::root)
         .collect(Collectors.toList());
   }
 
   /**
    * Checks the stored DAG: recounts the supernode references of every stored node against the
-   * stored counts and supernodes, checks that the parent of every node other than a snapshot is
-   * stored, and reconstructs the state of the finalized checkpoint. Reads every node, so it is
-   * meant for offline use.
+   * stored counts and supernodes, checks that the content of every referenced supernode hashes to
+   * the hash it is stored under, checks that the parent of every node other than a snapshot is
+   * stored, and reconstructs the state of the finalized checkpoint. Reads every node and supernode,
+   * so it is meant for offline use.
    */
   public StateDiffVerificationReport verify(final KvStoreCombinedDao dao) {
     final Map<Bytes32, Long> referencingNodes = new HashMap<>();
+    // One referencing entry per hash, with the slot of its node: what hashing the content needs
+    final Map<Bytes32, SupernodeReference> supernodeReferences = new HashMap<>();
     final Map<Bytes32, Bytes32> parentRoots = new HashMap<>();
     final Set<Bytes32> nodeRoots = new HashSet<>();
     final List<Bytes32> corruptNodes = new ArrayList<>();
@@ -118,10 +125,10 @@ public class StateDiffDag {
           entry -> {
             nodeRoots.add(entry.getKey());
             final StateDiffNodeRecord record;
-            final Set<Bytes32> hashes;
+            final List<SupernodeEntry> supernodes;
             try {
               record = StateDiffNodeRecordCodec.decode(entry.getValue());
-              hashes = new HashSet<>(TreeDiffCodec.supernodeHashes(record.payload()));
+              supernodes = TreeDiffCodec.supernodeEntries(record.payload());
             } catch (final IllegalArgumentException e) {
               corruptNodes.add(entry.getKey());
               return;
@@ -129,7 +136,14 @@ public class StateDiffDag {
             if (!record.snapshot()) {
               parentRoots.put(entry.getKey(), record.parentNodeRoot());
             }
-            hashes.forEach(hash -> referencingNodes.merge(hash, 1L, Long::sum));
+            final Set<Bytes32> hashes = new HashSet<>();
+            for (final SupernodeEntry supernode : supernodes) {
+              if (hashes.add(supernode.hash())) {
+                referencingNodes.merge(supernode.hash(), 1L, Long::sum);
+                supernodeReferences.putIfAbsent(
+                    supernode.hash(), new SupernodeReference(record.blockSlot(), supernode));
+              }
+            }
           });
     }
     corruptNodes.sort(BY_HEX);
@@ -172,6 +186,10 @@ public class StateDiffDag {
             .filter(hash -> !referencingNodes.containsKey(hash))
             .sorted(BY_HEX)
             .toList();
+    final List<Bytes32> hashChecked =
+        storedSupernodes.stream().filter(supernodeReferences::containsKey).sorted(BY_HEX).toList();
+    final List<Bytes32> supernodeHashMismatches =
+        findSupernodeHashMismatches(dao, hashChecked, supernodeReferences);
     final List<Bytes32> nodesWithMissingParent =
         parentRoots.entrySet().stream()
             .filter(entry -> !nodeRoots.contains(entry.getValue()))
@@ -208,6 +226,8 @@ public class StateDiffDag {
         refCountMismatches,
         missingSupernodes,
         unreferencedSupernodes,
+        hashChecked.size(),
+        supernodeHashMismatches,
         nodesWithMissingParent,
         corruptNodes,
         anchorRoot,
@@ -215,6 +235,41 @@ public class StateDiffDag {
         anchorReconstructionOk,
         anchorReconstructionMillis,
         anchorReconstructionError);
+  }
+
+  /**
+   * The supernodes among {@code hashes} whose stored content does not hash to the hash it is stored
+   * under, or cannot be the content of the supernode referenced, in the order of {@code hashes}.
+   */
+  private List<Bytes32> findSupernodeHashMismatches(
+      final KvStoreCombinedDao dao,
+      final List<Bytes32> hashes,
+      final Map<Bytes32, SupernodeReference> references) {
+    final List<Bytes32> mismatches = new ArrayList<>();
+    for (int start = 0; start < hashes.size(); start += VERIFY_SUPERNODE_BATCH_SIZE) {
+      final List<Bytes32> batch =
+          hashes.subList(start, Math.min(start + VERIFY_SUPERNODE_BATCH_SIZE, hashes.size()));
+      final Map<Bytes32, Bytes> contents = dao.getStateSupernodes(batch);
+      for (final Bytes32 hash : batch) {
+        final Bytes content = contents.get(hash);
+        final SupernodeReference reference = references.get(hash);
+        if (content != null && !contentMatches(reference, content)) {
+          mismatches.add(hash);
+        }
+      }
+    }
+    return mismatches;
+  }
+
+  private boolean contentMatches(final SupernodeReference reference, final Bytes content) {
+    try {
+      return support
+          .applierFor(reference.blockSlot())
+          .computeSupernodeRoot(reference.entry(), content)
+          .equals(reference.entry().hash());
+    } catch (final IllegalArgumentException e) {
+      return false;
+    }
   }
 
   public StateDiffDagTransaction begin(
@@ -291,8 +346,8 @@ public class StateDiffDag {
     final StateDiffNodeRecord snapshot = chain.getLast().record();
     final TreeDiffApplier.ChainApplication application =
         support
-            .applierFor(snapshot.blockSlot(), reader)
-            .startChain(support.schemaFor(snapshot.blockSlot()).getDefaultTree());
+            .applierFor(snapshot.blockSlot())
+            .startChain(support.schemaFor(snapshot.blockSlot()).getDefaultTree(), reader);
     for (int i = chain.size() - 1; i >= 0; i--) {
       final StateDiffNodeRecord record = chain.get(i).record();
       if (!support.sameMilestone(record.blockSlot(), snapshot.blockSlot())) {
@@ -419,18 +474,8 @@ public class StateDiffDag {
 
   record ChainLink(Bytes32 root, StateDiffNodeRecord record) {}
 
-  /**
-   * Committed reads go through one reader per DAO instance, so the reader, which is also the
-   * supernode source, stays the same object across reconstructions and the applier memoized for it
-   * in {@link BeaconStateDiffSupport#applierFor} is reused.
-   */
-  @SuppressWarnings({"ReferenceEquality", "ReferenceComparison"})
-  private synchronized NodeReader readerFor(final KvStoreCombinedDao dao) {
-    if (committedReader == null || committedReader.dao() != dao) {
-      committedReader = new CommittedNodeReader(dao);
-    }
-    return committedReader;
-  }
+  /** A supernode entry of a stored node, with the slot of that node's block. */
+  private record SupernodeReference(UInt64 blockSlot, SupernodeEntry entry) {}
 
   /**
    * Read access to nodes and supernodes, either committed or as seen inside a transaction. A reader
@@ -469,6 +514,11 @@ public class StateDiffDag {
     @Override
     public Optional<Bytes> load(final Bytes32 hash) {
       return dao.getStateSupernode(hash);
+    }
+
+    @Override
+    public Map<Bytes32, Bytes> loadAll(final Collection<Bytes32> hashes) {
+      return dao.getStateSupernodes(hashes);
     }
   }
 }

@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import org.apache.tuweni.bytes.Bytes;
+import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.Test;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
 
@@ -51,5 +52,28 @@ class SszSuperNodeTest {
     assertThat(updated.get(GIndexUtil.LEFT_CHILD_G_INDEX)).isSameAs(replacement);
     assertThat(updated.hashTreeRoot())
         .isEqualTo(BranchNode.create(replacement, LeafNode.EMPTY_LEAF).hashTreeRoot());
+  }
+
+  @Test
+  void knownRootIsReturnedWithoutHashing() {
+    final Bytes32 seeded = Bytes32.fromHexString("0x01");
+
+    final SszSuperNode node =
+        SszSuperNode.createWithKnownRoot(2, UINT64_TEMPLATE, superNode.getData(), seeded);
+
+    assertThat(node.hashTreeRoot()).isEqualTo(seeded);
+    assertThat(node.getData()).isEqualTo(superNode.getData());
+  }
+
+  @Test
+  void knownRootOfContentEqualsLazilyComputedRoot() {
+    final Bytes ssz = superNode.getData();
+    final Bytes32 computed = new SszSuperNode(2, UINT64_TEMPLATE, ssz).hashTreeRoot();
+
+    final SszSuperNode node = SszSuperNode.createWithKnownRoot(2, UINT64_TEMPLATE, ssz, computed);
+
+    assertThat(node.hashTreeRoot()).isEqualTo(computed);
+    assertThat(BranchNode.create(node, LeafNode.EMPTY_LEAF).hashTreeRoot())
+        .isEqualTo(BranchNode.create(superNode, LeafNode.EMPTY_LEAF).hashTreeRoot());
   }
 }

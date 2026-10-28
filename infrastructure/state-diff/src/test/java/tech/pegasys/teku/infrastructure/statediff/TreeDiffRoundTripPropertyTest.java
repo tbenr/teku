@@ -37,8 +37,8 @@ class TreeDiffRoundTripPropertyTest {
 
   private final Map<Bytes32, Bytes> supernodeStore = new HashMap<>();
   private final TreeDiffer differ = new TreeDiffer(SCHEMA, SyntheticState.DELTA_FIELDS);
-  private final TreeDiffApplier applier =
-      new TreeDiffApplier(SCHEMA, hash -> Optional.ofNullable(supernodeStore.get(hash)));
+  private final SupernodeSource source = hash -> Optional.ofNullable(supernodeStore.get(hash));
+  private final TreeDiffApplier applier = new TreeDiffApplier(SCHEMA);
 
   @Test
   void randomMutationSequencesRoundTrip() {
@@ -54,14 +54,14 @@ class TreeDiffRoundTripPropertyTest {
             TreeDiffCodec.deserialize(
                 TreeDiffCodec.serialize(differ.diff(base, target, supernodeStore::put)));
 
-        assertReproduces(applier.apply(base, decoded), target, iteration, step);
+        assertReproduces(applier.apply(base, decoded, source), target, iteration, step);
         chain.add(decoded);
         base = target;
       }
 
       TreeNode reconstructed = genesis;
       for (final TreeDiff diff : chain) {
-        reconstructed = applier.apply(reconstructed, diff);
+        reconstructed = applier.apply(reconstructed, diff, source);
       }
       assertReproduces(reconstructed, base, iteration, CHAIN_LENGTH);
     }

@@ -303,6 +303,15 @@ the node's recorded state root; a mismatch is a hard error with the chain
 listed. Reconstruction runs on the storage thread like other reads and returns
 through the existing async channel.
 
+Supernodes are content-addressed, so each is rebuilt with its store key as its
+known hash tree root and the root check does not rehash it; the supernodes of a
+link are loaded in one batched read (RocksDB `multiGet`). The root check
+therefore does not see a supernode whose content no longer matches its key:
+RocksDB block checksums cover bit rot, and `verify-state-diffs` hashes the
+content of every referenced supernode against its key. The applier is one per
+milestone and takes the supernode source (the committed or the transaction
+reader) per application.
+
 ### 5.8 Retention and pruning
 
 Orphaned fork nodes: when hot blocks are pruned at finalization (existing

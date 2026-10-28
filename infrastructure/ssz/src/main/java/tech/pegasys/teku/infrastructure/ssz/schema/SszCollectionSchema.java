@@ -21,6 +21,8 @@ import java.util.stream.Collectors;
 import tech.pegasys.teku.infrastructure.ssz.SszCollection;
 import tech.pegasys.teku.infrastructure.ssz.SszData;
 import tech.pegasys.teku.infrastructure.ssz.SszMutableComposite;
+import tech.pegasys.teku.infrastructure.ssz.tree.SszNodeTemplate;
+import tech.pegasys.teku.infrastructure.ssz.tree.SszSuperNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNodeStore;
 
@@ -29,6 +31,14 @@ public interface SszCollectionSchema<
     extends SszCompositeSchema<SszCollectionT> {
 
   SszSchema<SszElementT> getElementSchema();
+
+  /**
+   * The template of one element as packed into the {@link SszSuperNode}s of this collection's tree.
+   * The collection schema implementations memoize it; this default builds a new one per call.
+   */
+  default SszNodeTemplate getSupernodeElementTemplate() {
+    return SszNodeTemplate.createFromType(getElementSchema());
+  }
 
   @Override
   default void storeChildNode(

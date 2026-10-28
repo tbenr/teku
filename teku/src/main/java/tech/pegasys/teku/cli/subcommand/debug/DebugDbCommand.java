@@ -403,8 +403,9 @@ public class DebugDbCommand implements Runnable {
   @Command(
       name = "verify-state-diffs",
       description =
-          "Verify the state diff storage: recount supernode references, check parent pointers and"
-              + " reconstruct the finalized state. Exits with 1 when a problem is found.",
+          "Verify the state diff storage: recount supernode references, check that supernode"
+              + " content hashes to its key, check parent pointers and reconstruct the finalized"
+              + " state. Exits with 1 when a problem is found.",
       mixinStandardHelpOptions = true,
       showDefaultValues = true,
       abbreviateSynopsis = true,
@@ -446,6 +447,9 @@ public class DebugDbCommand implements Runnable {
     report.missingSupernodes().forEach(hash -> System.out.printf("  %s%n", hash));
     System.out.printf("Unreferenced supernodes:     %d%n", report.unreferencedSupernodes().size());
     report.unreferencedSupernodes().forEach(hash -> System.out.printf("  %s%n", hash));
+    System.out.printf("Supernodes hash-checked:     %d%n", report.supernodesHashChecked());
+    System.out.printf("Supernode hash mismatches:   %d%n", report.supernodeHashMismatches().size());
+    report.supernodeHashMismatches().forEach(hash -> System.out.printf("  %s%n", hash));
     System.out.printf("Nodes with missing parent:   %d%n", report.nodesWithMissingParent().size());
     report.nodesWithMissingParent().forEach(root -> System.out.printf("  %s%n", root));
     System.out.printf("Corrupt nodes:               %d%n", report.corruptNodes().size());

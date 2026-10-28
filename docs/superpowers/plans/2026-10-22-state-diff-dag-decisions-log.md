@@ -485,3 +485,18 @@ after 7 h to preserve disk for the mainnet backfill.
     unreachable (`skipped_no_info` removed). The
     `--data-storage-archive-frequency` WARN still does not fire on a marker-only
     database (pre-existing gap, left as is).
+
+47. **GREY. Applier per milestone, known-root supernodes (2026-10-28 applier
+    cleanup).** One `TreeDiffApplier` per milestone; the `SupernodeSource` is
+    passed per application (`apply` / `startChain`), so there is no
+    source-bound memo and no synchronized committed reader. Supernodes are
+    rebuilt with their store key as known root (`SszSuperNode.createWithKnownRoot`)
+    and the supernodes of a diff are loaded in one batched read (`multiGet`).
+    The reconstruction root check therefore no longer detects a supernode whose
+    content does not match its key. Ruling: RocksDB block checksums cover bit
+    rot, and `verify-state-diffs` hashes every referenced supernode's content
+    against its key (`supernodesHashChecked` / `supernodeHashMismatches`).
+    Measured ~10x faster reconstruction on a 100k-validator synthetic chain
+    (85 -> 8 ms snapshot, 88 -> 12 ms 10-link chain), nearly all from not
+    rehashing. The template getter is named `getSupernodeElementTemplate` so
+    AssertJ's recursive comparison does not build templates through it.
