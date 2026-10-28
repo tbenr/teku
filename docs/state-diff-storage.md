@@ -77,7 +77,7 @@ the migration path, with `verify-state-diffs` clean on both.
 | Periodic snapshot (every 256 epochs) | 20.9 MB raw | 3.4 MB |
 | Steady-state state storage on disk | ~255 MB (was ~900 MB) | ~6 MB |
 | Node write on the storage thread | ~48 ms (walk ~43 ms, encode ~4 ms, store <1 ms) | ~9 ms |
-| Finalized anchor reconstruction at startup | 22-link chain in 3.1 s (offline) | 11-link chain in 0.13 s |
+| Finalized anchor reconstruction at startup | 22-link chain in 3.1 s (offline, before the applier wave); 12-link chain in ~1.2 s on the live node after it | 11-link chain in 0.13 s |
 | Extra live heap vs stock node (A/B, same build) | +0.7 GB | |
 | Errors, verification failures, skipped nodes in 7 h | 0 / 0 / 1 (handled) | 0 / 0 / 0 |
 
@@ -96,13 +96,13 @@ times, and the on-disk footprint of state storage by about 3.5 times, for about
 2. **Per-validator supernode patches** (decisions log 41). Changed supernodes
    are stored whole (31 KB); patching only the changed 121-byte validators
    mainly helps coarse nodes and refcount churn.
-3. **Cold base-cache reconstruction on the live node** took 14.5 s for the first
-   node after a restart, against 3.1 s offline. The anchor reconstructed at
-   startup now seeds the base cache, and every reconstruction stops at the
-   first cached node of its chain (decisions log 49), so a first node whose
-   chain passes through the anchor applies only the links above it; a chain
-   that bypasses the anchor through a coarser node still starts at the
-   snapshot. Not yet measured on the live node.
+3. **Cold base-cache reconstruction on the live node**: closed. The anchor
+   reconstructed at startup seeds the base cache and every reconstruction stops
+   at the first cached node of its chain (decisions log 49, measured in 50):
+   after a restart at a mid-period anchor, the startup reconstruction walked 12
+   links in ~1.2 s and the first node write rebuilt its parent in 1 link under
+   0.25 s, where it took 14.5 s before. A chain that bypasses the anchor
+   through a coarser node still starts at the snapshot.
 4. The per-level base cache holds 3 trees at the finest level and 1 at each
    coarser level, every level cached (decisions log 49); not configurable.
 5. Retention after a long non-finality period decodes every intermediate node's
