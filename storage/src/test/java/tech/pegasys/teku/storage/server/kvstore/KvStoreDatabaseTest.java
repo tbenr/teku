@@ -62,6 +62,8 @@ import tech.pegasys.teku.spec.datastructures.util.DataColumnSlotAndIdentifier;
 import tech.pegasys.teku.spec.generator.ChainBuilder;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 import tech.pegasys.teku.storage.api.FinalizedChainData;
+import tech.pegasys.teku.storage.api.HotState;
+import tech.pegasys.teku.storage.api.OnDiskStoreData;
 import tech.pegasys.teku.storage.api.StorageUpdate;
 import tech.pegasys.teku.storage.server.Database;
 import tech.pegasys.teku.storage.server.DatabaseStorageException;
@@ -265,7 +267,6 @@ class KvStoreDatabaseTest {
             Optional.of(finalizedChainData),
             Optional.empty(),
             Optional.empty(),
-            Map.of(),
             Map.of(),
             Map.of(),
             Map.of(parent.getRoot(), parentEnvelope, child.getRoot(), childEnvelope),
@@ -663,6 +664,123 @@ class KvStoreDatabaseTest {
 
     verify(dao, never()).getStateDiffNode(any());
     assertThat(database.getFinalizedBlockAtSlot(UInt64.ZERO)).contains(genesis.getBlock());
+  }
+
+  @Test
+  void stateDiffs_legacyStorageWithoutFlagOrMarker() {
+    final StateDiffFixture fixture = new StateDiffFixture();
+    final Database database = fixture.open(StateDiffDagConfig.disabled());
+    database.storeInitialAnchor(fixture.genesis);
+
+    assertThat(database.isStateDiffStorageActive()).isFalse();
+    assertThat(database.createMemoryStore().orElseThrow().stateDiffStorageActive()).isFalse();
+    assertThat(fixture.dao.getStateDiffMode()).isEmpty();
+    assertThat(fixture.dao.getLatestFinalizedState()).contains(fixture.genesis.getState());
+    assertThatThrownBy(database::verifyStateDiffs)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("State diff storage is not active");
+  }
+
+  @Test
+  void stateDiffs_flagActivatesStateDiffStorageWithTheInitialAnchorOfANewDatabase() {
+    final StateDiffFixture fixture = new StateDiffFixture();
+    final Database database = fixture.open(StateDiffDagConfig.prune());
+    assertThat(database.isStateDiffStorageActive()).isFalse();
+
+    database.storeInitialAnchor(fixture.genesis);
+
+    assertThat(database.isStateDiffStorageActive()).isTrue();
+    assertThat(fixture.dao.getStateDiffMode()).isPresent();
+    assertThat(fixture.dao.getStateDiffNode(fixture.genesis.getRoot())).isPresent();
+    assertThat(fixture.dao.getLatestFinalizedState()).isEmpty();
+    assertThat(database.createMemoryStore().orElseThrow().stateDiffStorageActive()).isTrue();
+  }
+
+  @Test
+  void stateDiffs_flagMigratesALegacyDatabaseWhenTheStoreIsLoaded() {
+    final StateDiffFixture fixture = new StateDiffFixture();
+    fixture.open(StateDiffDagConfig.disabled()).storeInitialAnchor(fixture.genesis);
+    final Database database = fixture.open(StateDiffDagConfig.prune());
+    assertThat(database.isStateDiffStorageActive()).isFalse();
+
+    final OnDiskStoreData storeData = database.createMemoryStore().orElseThrow();
+
+    assertThat(storeData.stateDiffStorageActive()).isTrue();
+    assertThat(storeData.latestFinalized().getState()).isEqualTo(fixture.genesis.getState());
+    assertThat(database.isStateDiffStorageActive()).isTrue();
+    assertThat(fixture.dao.getStateDiffMode()).isPresent();
+    assertThat(fixture.dao.getStateDiffNode(fixture.genesis.getRoot())).isPresent();
+    assertThat(fixture.dao.getLatestFinalizedState()).isEmpty();
+  }
+
+  @Test
+  void stateDiffs_markerKeepsStateDiffStorageWithoutTheFlag() {
+    final StateDiffFixture fixture = new StateDiffFixture();
+    fixture.open(StateDiffDagConfig.prune()).storeInitialAnchor(fixture.genesis);
+
+    final Database database = fixture.open(StateDiffDagConfig.disabled());
+
+    assertThat(database.isStateDiffStorageActive()).isTrue();
+    final OnDiskStoreData storeData = database.createMemoryStore().orElseThrow();
+    assertThat(storeData.stateDiffStorageActive()).isTrue();
+    assertThat(storeData.latestFinalized().getState()).isEqualTo(fixture.genesis.getState());
+    assertThat(database.verifyStateDiffs().hasProblems()).isFalse();
+  }
+
+  @Test
+  void stateDiffs_hotStateWithoutItsPlaceInTheDagFailsTheUpdate() {
+    final StateDiffFixture fixture = new StateDiffFixture();
+    final Database database = fixture.open(StateDiffDagConfig.prune());
+    database.storeInitialAnchor(fixture.genesis);
+    final StorageUpdate update =
+        new StorageUpdate(
+            Optional.empty(),
+            Optional.empty(),
+            Optional.empty(),
+            Optional.empty(),
+            Map.of(),
+            Map.of(fixture.genesis.getRoot(), HotState.withoutNodeInfo(fixture.genesis.getState())),
+            Map.of(),
+            Map.of(),
+            Optional.empty(),
+            Map.of(),
+            Map.of(),
+            false,
+            Optional.empty(),
+            Optional.empty(),
+            Optional.empty(),
+            false,
+            false,
+            false);
+
+    assertThatThrownBy(() -> database.update(update))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("has no place in the state diff DAG");
+  }
+
+  /** An in-memory V6 database holding an Altair genesis, opened with a state diff configuration. */
+  private static class StateDiffFixture {
+    private final Spec spec = TestSpecFactory.createMinimalAltair();
+    private final V6SchemaCombinedSnapshot schema = V6SchemaCombinedSnapshot.createV6(spec);
+    private final MockKvStoreInstance db =
+        MockKvStoreInstance.createEmpty(schema.getAllColumns(), schema.getAllVariables());
+    private final KvStoreCombinedDao dao =
+        new CombinedKvStoreDao<>(
+            db, schema, new V4FinalizedStateSnapshotStorageLogic<>(1), new StubMetricsSystem());
+    private final AnchorPoint genesis =
+        AnchorPoint.fromGenesisState(spec, ChainBuilder.create(spec).generateGenesis().getState());
+
+    private Database open(final StateDiffDagConfig stateDiffDagConfig) {
+      return KvStoreDatabase.createWithStateSnapshots(
+          db,
+          schema,
+          StateStorageMode.PRUNE,
+          1,
+          false,
+          spec,
+          stateDiffDagConfig,
+          new StubMetricsSystem());
+    }
   }
 
   private KvStoreDatabase database(final UInt64 firstFuluSlot, final long... slots) {

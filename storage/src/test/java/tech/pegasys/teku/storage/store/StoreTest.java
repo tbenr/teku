@@ -98,6 +98,8 @@ class StoreTest extends AbstractStoreTest {
                     Optional.empty(),
                     Collections.emptyMap(),
                     defaultStoreConfig,
+                    HotStatePersistencePolicy.everyNthEpoch(
+                        spec, defaultStoreConfig.getHotStatePersistenceFrequencyInEpochs()),
                     Optional.empty()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Time must be greater than or equal to genesisTime");
@@ -431,7 +433,8 @@ class StoreTest extends AbstractStoreTest {
     final List<Bytes32> requestedRoots = new ArrayList<>();
     final UpdatableStore store =
         createRegenerationStore(
-            StoreConfig.builder().stateCacheSize(1).stateDiffsEnabled(true).build(),
+            StoreConfig.builder().stateCacheSize(1).build(),
+            true,
             requestedRoots,
             Optional.empty());
     final SignedBlockAndState target = chainBuilder.getBlockAndStateAtSlot(38);
@@ -448,7 +451,8 @@ class StoreTest extends AbstractStoreTest {
     final List<Bytes32> requestedRoots = new ArrayList<>();
     final UpdatableStore store =
         createRegenerationStore(
-            StoreConfig.builder().stateCacheSize(1).stateDiffsEnabled(true).build(),
+            StoreConfig.builder().stateCacheSize(1).build(),
+            true,
             requestedRoots,
             Optional.of(32L));
     final SignedBlockAndState target = chainBuilder.getBlockAndStateAtSlot(38);
@@ -465,7 +469,10 @@ class StoreTest extends AbstractStoreTest {
     final List<Bytes32> requestedRoots = new ArrayList<>();
     final UpdatableStore store =
         createRegenerationStore(
-            StoreConfig.builder().stateCacheSize(1).build(), requestedRoots, Optional.empty());
+            StoreConfig.builder().stateCacheSize(1).build(),
+            false,
+            requestedRoots,
+            Optional.empty());
     final SignedBlockAndState target = chainBuilder.getBlockAndStateAtSlot(38);
 
     assertThat(store.retrieveBlockState(target.getRoot()))
@@ -477,7 +484,7 @@ class StoreTest extends AbstractStoreTest {
   @Test
   public void diffMode_blockStateIfAvailableIncludesEpochStates() {
     final UpdatableStore store =
-        createGenesisStore(StoreConfig.builder().stateDiffsEnabled(true).build());
+        createStoreBuilder(StoreConfig.createDefault()).stateDiffStorageActive(true).build();
     final SignedBlockAndState block = chainBuilder.generateBlockAtSlot(7);
     ((Store) store).getEpochStates().orElseThrow().put(block.getRoot(), block);
 
@@ -500,6 +507,7 @@ class StoreTest extends AbstractStoreTest {
    */
   private UpdatableStore createRegenerationStore(
       final StoreConfig storeConfig,
+      final boolean stateDiffStorageActive,
       final List<Bytes32> requestedRoots,
       final Optional<Long> emptySlot) {
     final StateAndBlockSummaryProvider stateProvider =
@@ -509,7 +517,10 @@ class StoreTest extends AbstractStoreTest {
               chainBuilder.getBlockAndState(root).map(StateAndBlockSummary.class::cast));
         };
     final UpdatableStore store =
-        createStoreBuilder(storeConfig).stateProvider(stateProvider).build();
+        createStoreBuilder(storeConfig)
+            .stateDiffStorageActive(stateDiffStorageActive)
+            .stateProvider(stateProvider)
+            .build();
     // One block per transaction, so the state left in memory is the one of slot 40
     for (long slot = 1; slot <= 40; slot++) {
       if (emptySlot.isEmpty() || emptySlot.get() != slot) {

@@ -41,8 +41,7 @@ public class StorageUpdate {
   private final Optional<Checkpoint> bestJustifiedCheckpoint;
   private final Map<Bytes32, SlotAndBlockRoot> stateRoots;
   private final Map<Bytes32, BlockAndCheckpoints> hotBlocks;
-  private final Map<Bytes32, BeaconState> hotStates;
-  private final Map<Bytes32, HotStateNodeInfo> hotStateNodeInfos;
+  private final Map<Bytes32, HotState> hotStates;
   private final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads;
   private final Map<Bytes32, UInt64> deletedHotBlocks;
   private final Map<SlotAndBlockRoot, List<BlobSidecar>> blobSidecars;
@@ -62,8 +61,7 @@ public class StorageUpdate {
       final Optional<Checkpoint> justifiedCheckpoint,
       final Optional<Checkpoint> bestJustifiedCheckpoint,
       final Map<Bytes32, BlockAndCheckpoints> hotBlocks,
-      final Map<Bytes32, BeaconState> hotStates,
-      final Map<Bytes32, HotStateNodeInfo> hotStateNodeInfos,
+      final Map<Bytes32, HotState> hotStates,
       final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
       final Map<SlotAndBlockRoot, List<BlobSidecar>> blobSidecars,
       final Optional<UInt64> maybeEarliestBlobSidecarSlot,
@@ -82,7 +80,6 @@ public class StorageUpdate {
     this.bestJustifiedCheckpoint = bestJustifiedCheckpoint;
     this.hotBlocks = hotBlocks;
     this.hotStates = hotStates;
-    this.hotStateNodeInfos = hotStateNodeInfos;
     this.blindedExecutionPayloads = blindedExecutionPayloads;
     this.blobSidecars = blobSidecars;
     this.maybeEarliestBlobSidecarSlot = maybeEarliestBlobSidecarSlot;
@@ -106,7 +103,6 @@ public class StorageUpdate {
             && bestJustifiedCheckpoint.isEmpty()
             && hotBlocks.isEmpty()
             && hotStates.isEmpty()
-            && hotStateNodeInfos.isEmpty()
             && blindedExecutionPayloads.isEmpty()
             && deletedHotBlocks.isEmpty()
             && stateRoots.isEmpty()
@@ -149,16 +145,9 @@ public class StorageUpdate {
     return maybeEarliestBlobSidecarSlot;
   }
 
-  public Map<Bytes32, BeaconState> getHotStates() {
+  /** The hot states to persist by block root, each with its place in the state diff DAG if any. */
+  public Map<Bytes32, HotState> getHotStates() {
     return hotStates;
-  }
-
-  /**
-   * Where each of {@link #getHotStates()} sits in the chain, for state diff storage. A hot state
-   * without an entry cannot be stored as a state diff node.
-   */
-  public Map<Bytes32, HotStateNodeInfo> getHotStateNodeInfos() {
-    return hotStateNodeInfos;
   }
 
   public Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> getBlindedExecutionPayloads() {

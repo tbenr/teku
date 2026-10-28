@@ -16,7 +16,6 @@ package tech.pegasys.teku.storage.store;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
-import tech.pegasys.infrastructure.logging.LogCaptor;
 
 class StoreConfigTest {
 
@@ -30,7 +29,8 @@ class StoreConfigTest {
   }
 
   @Test
-  void stateDiffsPersistEveryEpoch() {
+  void stateDiffsRequestKeepsTheConfiguredFrequency() {
+    // The store's persistence policy, not the configuration, ignores the frequency
     final StoreConfig config =
         StoreConfig.builder()
             .hotStatePersistenceFrequencyInEpochs(0)
@@ -38,40 +38,8 @@ class StoreConfigTest {
             .build();
 
     assertThat(config.isStateDiffsEnabled()).isTrue();
-    assertThat(config.getHotStatePersistenceFrequencyInEpochs()).isEqualTo(1);
-  }
-
-  @Test
-  void warnsThatHotStatePersistenceFrequencyIsIgnoredWithStateDiffs() {
-    try (LogCaptor logCaptor = LogCaptor.forClass(StoreConfig.class)) {
-      StoreConfig.builder().hotStatePersistenceFrequencyInEpochs(5).stateDiffsEnabled(true).build();
-
-      logCaptor.assertWarnLog(
-          "--Xhot-state-persistence-frequency (5) is ignored when state diff storage is enabled");
-    }
-  }
-
-  @Test
-  void doesNotWarnAboutDefaultHotStatePersistenceFrequency() {
-    try (LogCaptor logCaptor = LogCaptor.forClass(StoreConfig.class)) {
-      StoreConfig.builder().stateDiffsEnabled(true).build();
-      StoreConfig.builder().hotStatePersistenceFrequencyInEpochs(5).build();
-
-      assertThat(logCaptor.getWarnLogs()).isEmpty();
-    }
-  }
-
-  @Test
-  void withStateDiffsEnabledKeepsOtherSettings() {
-    final StoreConfig config =
-        StoreConfig.builder().stateCacheSize(3).hotStatePersistenceFrequencyInEpochs(4).build();
-
-    final StoreConfig enabled = config.withStateDiffsEnabled();
-
-    assertThat(enabled.isStateDiffsEnabled()).isTrue();
-    assertThat(enabled.getStateCacheSize()).isEqualTo(3);
-    assertThat(enabled.getHotStatePersistenceFrequencyInEpochs()).isEqualTo(1);
-    assertThat(enabled).isNotEqualTo(config);
-    assertThat(config.withStateDiffsEnabled()).isEqualTo(enabled);
+    assertThat(config.getHotStatePersistenceFrequencyInEpochs()).isZero();
+    assertThat(config)
+        .isNotEqualTo(StoreConfig.builder().hotStatePersistenceFrequencyInEpochs(0).build());
   }
 }

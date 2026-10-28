@@ -14,7 +14,6 @@
 package tech.pegasys.teku.storage.server.kvstore;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
 import static java.util.stream.Collectors.groupingBy;
 import static tech.pegasys.teku.infrastructure.logging.DbLogger.DB_LOGGER;
 import static tech.pegasys.teku.infrastructure.logging.StatusLogger.STATUS_LOG;
@@ -37,7 +36,6 @@ import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -52,7 +50,6 @@ import org.hyperledger.besu.plugin.services.MetricsSystem;
 import tech.pegasys.teku.ethereum.pow.api.DepositTreeSnapshot;
 import tech.pegasys.teku.ethereum.pow.api.DepositsFromBlockEvent;
 import tech.pegasys.teku.ethereum.pow.api.MinGenesisTimeBlockEvent;
-import tech.pegasys.teku.infrastructure.statediff.MissingSupernodeException;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.kzg.KZGProof;
 import tech.pegasys.teku.spec.Spec;
@@ -84,7 +81,6 @@ import tech.pegasys.teku.spec.datastructures.util.DataColumnSlotAndIdentifier;
 import tech.pegasys.teku.spec.datastructures.util.SlotAndBlockRootAndBlobIndex;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitionsAltair;
 import tech.pegasys.teku.storage.api.GloasForkChoiceRebuildData;
-import tech.pegasys.teku.storage.api.HotStateNodeInfo;
 import tech.pegasys.teku.storage.api.OnDiskStoreData;
 import tech.pegasys.teku.storage.api.StorageUpdate;
 import tech.pegasys.teku.storage.api.StoredBlockMetadata;
@@ -93,8 +89,8 @@ import tech.pegasys.teku.storage.api.WeakSubjectivityState;
 import tech.pegasys.teku.storage.api.WeakSubjectivityUpdate;
 import tech.pegasys.teku.storage.archive.BlobSidecarsArchiver;
 import tech.pegasys.teku.storage.server.Database;
-import tech.pegasys.teku.storage.server.DatabaseStorageException;
 import tech.pegasys.teku.storage.server.StateStorageMode;
+import tech.pegasys.teku.storage.server.kvstore.HotStateStorage.HotStateUpdate;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.CombinedKvStoreDao;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.CombinedUpdater;
@@ -108,8 +104,6 @@ import tech.pegasys.teku.storage.server.kvstore.dataaccess.V4FinalizedStateTreeS
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.V4HotKvStoreDao;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDag;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagTransaction;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationException;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationReport;
 import tech.pegasys.teku.storage.server.kvstore.schema.SchemaCombined;
 import tech.pegasys.teku.storage.server.kvstore.schema.SchemaCombinedSnapshotState;
@@ -123,31 +117,16 @@ public class KvStoreDatabase implements Database {
   protected static final int TX_BATCH_SIZE = 500;
   protected static final int BLOBS_TX_BATCH_SIZE = 100;
   private static final Logger LOG = LogManager.getLogger();
-  private static final Bytes STATE_DIFF_MODE_MARKER = Bytes.of(1);
-  private static final long HOT_NODE_FAILURE_LOG_INTERVAL_MILLIS = 60_000;
   protected final Spec spec;
   protected final boolean storeNonCanonicalBlocks;
   @VisibleForTesting final KvStoreCombinedDao dao;
   private final StateStorageMode stateStorageMode;
 
   /**
-   * Present when hot states may be stored in the state diff DAG: requested by the configuration or
-   * already in use by the database.
+   * How hot states and the finalized checkpoint block state are stored; replaced once at most, when
+   * state diff storage is activated.
    */
-  private final Optional<StateDiffDag> stateDiffDag;
-
-  /** Whether the database uses state diff storage, i.e. carries the state diff mode marker. */
-  private volatile boolean stateDiffStorageActive;
-
-  /**
-   * The finalized anchor state reconstructed from the state diff DAG when the store was loaded,
-   * reused while the finalized checkpoint keeps its block root and cleared when an update sets a
-   * finalized checkpoint.
-   */
-  private volatile Optional<ReconstructedAnchor> reconstructedAnchor = Optional.empty();
-
-  private final AtomicLong lastHotNodeFailureLogMillis = new AtomicLong(Long.MIN_VALUE);
-  private final AtomicLong suppressedHotNodeFailureLogs = new AtomicLong();
+  private volatile HotStateStorage hotStateStorage;
 
   enum DataColumnSidecarType {
     CANONICAL("canonical"),
@@ -176,27 +155,43 @@ public class KvStoreDatabase implements Database {
     this.stateStorageMode = stateStorageMode;
     this.storeNonCanonicalBlocks = storeNonCanonicalBlocks;
     this.spec = spec;
-    this.stateDiffStorageActive = dao.getStateDiffMode().isPresent();
-    this.stateDiffDag =
-        createStateDiffDag(spec, stateDiffDagConfig, stateDiffStorageActive, metricsSystem);
+    this.hotStateStorage =
+        resolveHotStateStorage(dao, stateStorageMode, spec, stateDiffDagConfig, metricsSystem);
   }
 
-  private static Optional<StateDiffDag> createStateDiffDag(
+  /**
+   * Resolves the hot state storage once, when the database is opened: state diff storage when the
+   * database carries the state diff mode marker, whatever the configuration (the mode is sticky);
+   * otherwise the legacy storage, which switches to state diff storage when the configuration
+   * requests it.
+   */
+  private static HotStateStorage resolveHotStateStorage(
+      final KvStoreCombinedDao dao,
+      final StateStorageMode stateStorageMode,
       final Spec spec,
       final StateDiffDagConfig stateDiffDagConfig,
-      final boolean stateDiffStorageActive,
       final MetricsSystem metricsSystem) {
-    if (stateDiffDagConfig.enabled()) {
-      return Optional.of(new StateDiffDag(spec, stateDiffDagConfig, metricsSystem));
+    final boolean marked = dao.getStateDiffMode().isPresent();
+    if (!stateDiffDagConfig.enabled() && !marked) {
+      return new LegacyHotStateStorage(dao, Optional.empty());
     }
-    if (stateDiffStorageActive) {
-      // The mode is sticky: the marker, not the flag, selects the storage
+    final StateDiffDagConfig effectiveConfig;
+    if (stateDiffDagConfig.enabled()) {
+      effectiveConfig = stateDiffDagConfig;
+    } else {
       LOG.info(
           "The database uses state diff storage, which remains in use although "
               + "--Xdata-storage-state-diffs is not enabled");
-      return Optional.of(new StateDiffDag(spec, StateDiffDagConfig.prune(), metricsSystem));
+      effectiveConfig = StateDiffDagConfig.prune();
     }
-    return Optional.empty();
+    final StateDiffHotStateStorage stateDiffStorage =
+        new StateDiffHotStateStorage(
+            dao,
+            new StateDiffDag(spec, effectiveConfig, metricsSystem),
+            stateStorageMode.storesFinalizedStates());
+    return marked
+        ? stateDiffStorage
+        : new LegacyHotStateStorage(dao, Optional.of(stateDiffStorage));
   }
 
   public static Database createV4(
@@ -785,11 +780,8 @@ public class KvStoreDatabase implements Database {
       updater.setJustifiedCheckpoint(anchorCheckpoint);
       updater.setBestJustifiedCheckpoint(anchorCheckpoint);
       updater.setFinalizedCheckpoint(anchorCheckpoint);
-      if (stateDiffDag.isPresent()) {
-        writeStateDiffAnchorSnapshot(updater, anchorCheckpoint, anchorState);
-      } else {
-        updater.setLatestFinalizedState(anchorState);
-      }
+      final HotStateStorage nextHotStateStorage =
+          hotStateStorage.storeInitialAnchor(updater, anchorCheckpoint, anchorState);
 
       // We need to store the anchor block in both hot and cold storage so that on restart
       // we're guaranteed to have at least one block / state to load into RecentChainData.
@@ -809,9 +801,7 @@ public class KvStoreDatabase implements Database {
       }
 
       updater.commit();
-    }
-    if (stateDiffDag.isPresent()) {
-      stateDiffStorageActive = true;
+      hotStateStorage = nextHotStateStorage;
     }
   }
 
@@ -913,7 +903,7 @@ public class KvStoreDatabase implements Database {
 
   @Override
   public boolean isStateDiffStorageActive() {
-    return stateDiffStorageActive;
+    return hotStateStorage.isStateDiffStorage();
   }
 
   /**
@@ -922,7 +912,10 @@ public class KvStoreDatabase implements Database {
    */
   @VisibleForTesting
   long getStateDiffAnchorNodesCreatedLate() {
-    return stateDiffDag.map(StateDiffDag::getAnchorNodesCreatedLate).orElse(0L);
+    return hotStateStorage
+        .getStateDiffDag()
+        .map(StateDiffDag::getAnchorNodesCreatedLate)
+        .orElse(0L);
   }
 
   /**
@@ -931,96 +924,31 @@ public class KvStoreDatabase implements Database {
    */
   @VisibleForTesting
   long getStateDiffAnchorsRepaired() {
-    return stateDiffDag.map(StateDiffDag::getAnchorsRepaired).orElse(0L);
+    return hotStateStorage.getStateDiffDag().map(StateDiffDag::getAnchorsRepaired).orElse(0L);
   }
 
   @Override
   public StateDiffVerificationReport verifyStateDiffs() {
-    checkState(stateDiffStorageActive, "State diff storage is not active");
-    return stateDiffDag.orElseThrow().verify(dao);
+    return hotStateStorage.verify();
   }
 
-  /**
-   * Switches a database with a legacy latest finalized state to state diff storage when requested:
-   * writes the finalized anchor as a snapshot node, sets the mode marker and deletes the legacy
-   * state, all in one transaction. A database without a finalized state is switched when its
-   * initial anchor is stored.
-   */
+  /** Switches the database to state diff storage, if requested and not done yet. */
   private void activateStateDiffStorageIfRequested() {
-    if (stateDiffStorageActive || stateDiffDag.isEmpty()) {
+    final Optional<HotStateStorage.Activation> activation = hotStateStorage.getPendingActivation();
+    if (activation.isEmpty()) {
       return;
     }
-    final Optional<BeaconState> latestFinalizedState = dao.getLatestFinalizedState();
-    if (latestFinalizedState.isEmpty()) {
-      return;
-    }
-    final Checkpoint finalizedCheckpoint = dao.getFinalizedCheckpoint().orElseThrow();
     try (final HotUpdater updater = hotUpdater()) {
-      writeStateDiffAnchorSnapshot(updater, finalizedCheckpoint, latestFinalizedState.get());
-      updater.deleteLatestFinalizedState();
+      final HotStateStorage activated = activation.get().write(updater);
       updater.commit();
+      hotStateStorage = activated;
     }
-    stateDiffStorageActive = true;
-    LOG.info(
-        "Switched the database to state diff storage at finalized checkpoint {}",
-        finalizedCheckpoint);
+    activation.get().logActivated();
   }
 
-  /** Writes the state diff mode marker and {@code anchor} as a snapshot node. */
-  private void writeStateDiffAnchorSnapshot(
-      final HotUpdater updater, final Checkpoint anchor, final BeaconState anchorState) {
-    final StateDiffDagTransaction transaction = stateDiffDag.orElseThrow().begin(dao, updater);
-    transaction.writeNode(
-        anchor.getRoot(), anchorState, anchor.getEpoch(), anchor.getEpoch(), List.of(), true);
-    transaction.commit();
-    updater.setStateDiffMode(STATE_DIFF_MODE_MARKER);
-  }
-
-  /**
-   * The state of the finalized checkpoint block: the legacy latest finalized state, or the
-   * reconstructed anchor node when state diff storage is active.
-   *
-   * @throws DatabaseStorageException an unrecoverable one naming the way out when the anchor node
-   *     cannot be reconstructed
-   */
+  /** The state of the finalized checkpoint block. */
   private Optional<BeaconState> getLatestFinalizedState() {
-    if (!stateDiffStorageActive) {
-      return dao.getLatestFinalizedState();
-    }
-    final Optional<ReconstructedAnchor> anchor = reconstructedAnchor;
-    return dao.getFinalizedCheckpoint()
-        .map(
-            checkpoint ->
-                anchor
-                    .filter(reconstructed -> reconstructed.blockRoot().equals(checkpoint.getRoot()))
-                    .map(ReconstructedAnchor::state)
-                    .orElseGet(() -> reconstructFinalizedState(checkpoint)));
-  }
-
-  private BeaconState reconstructFinalizedState(final Checkpoint checkpoint) {
-    try {
-      return stateDiffDag
-          .orElseThrow()
-          .reconstruct(dao, checkpoint.getRoot())
-          .orElseThrow(
-              () ->
-                  new StateDiffVerificationException(
-                      "No state diff node for the finalized checkpoint root "
-                          + checkpoint.getRoot()));
-    } catch (final StateDiffVerificationException
-        | MissingSupernodeException
-        | IllegalArgumentException e) {
-      throw DatabaseStorageException.unrecoverable(
-          "State diff storage cannot reconstruct the finalized state (epoch "
-              + checkpoint.getEpoch()
-              + ", block root "
-              + checkpoint.getRoot()
-              + "): "
-              + e.getMessage()
-              + ". Run `teku debug-tools db verify-state-diffs --data-path=<data path>` to"
-              + " inspect; recover by re-syncing from a checkpoint into a fresh data directory.",
-          e);
-    }
+    return hotStateStorage.getLatestFinalizedState();
   }
 
   @VisibleForTesting
@@ -1036,11 +964,7 @@ public class KvStoreDatabase implements Database {
     final Checkpoint justifiedCheckpoint = dao.getJustifiedCheckpoint().orElseThrow();
     final Checkpoint finalizedCheckpoint = dao.getFinalizedCheckpoint().orElseThrow();
     final Checkpoint bestJustifiedCheckpoint = dao.getBestJustifiedCheckpoint().orElseThrow();
-    final BeaconState finalizedState = getLatestFinalizedState().orElseThrow();
-    if (stateDiffStorageActive) {
-      reconstructedAnchor =
-          Optional.of(new ReconstructedAnchor(finalizedCheckpoint.getRoot(), finalizedState));
-    }
+    final BeaconState finalizedState = hotStateStorage.loadLatestFinalizedState().orElseThrow();
     final Optional<Bytes32> latestCanonicalBlockRoot = dao.getLatestCanonicalBlockRoot();
     final Optional<UInt64> custodyGroupCount = dao.getCustodyGroupCount();
 
@@ -1093,7 +1017,7 @@ public class KvStoreDatabase implements Database {
             votes,
             latestCanonicalBlockRoot,
             custodyGroupCount,
-            stateDiffStorageActive));
+            hotStateStorage.isStateDiffStorage()));
   }
 
   private void enrichFinalizedGloasBlockMetadata(
@@ -1203,53 +1127,9 @@ public class KvStoreDatabase implements Database {
     return dao.getFinalizedStateRoots();
   }
 
-  /**
-   * {@inheritDoc}
-   *
-   * <p>With state diff storage, a node that cannot be reconstructed is reported as absent, so the
-   * state is regenerated by replaying blocks from an earlier state, unless it is the finalized
-   * anchor's node, which has no fallback.
-   */
   @Override
   public Optional<BeaconState> getHotState(final Bytes32 root) {
-    if (stateDiffStorageActive) {
-      final Optional<BeaconState> nodeState;
-      try {
-        nodeState = stateDiffDag.orElseThrow().reconstruct(dao, root);
-      } catch (final StateDiffVerificationException
-          | MissingSupernodeException
-          | IllegalArgumentException e) {
-        if (dao.getFinalizedCheckpoint()
-            .map(Checkpoint::getRoot)
-            .orElse(Bytes32.ZERO)
-            .equals(root)) {
-          throw e;
-        }
-        logHotNodeFailure(root, e);
-        return Optional.empty();
-      }
-      // States written before the switch to state diffs stay in the legacy column until pruned
-      return nodeState.or(() -> dao.getHotState(root));
-    }
-    return dao.getHotState(root);
-  }
-
-  /** Logs a hot node reconstruction failure at most once per interval, counting the others. */
-  private void logHotNodeFailure(final Bytes32 root, final RuntimeException e) {
-    final long now = System.currentTimeMillis();
-    final long last = lastHotNodeFailureLogMillis.get();
-    final boolean due =
-        last == Long.MIN_VALUE || now - last >= HOT_NODE_FAILURE_LOG_INTERVAL_MILLIS;
-    if (!due || !lastHotNodeFailureLogMillis.compareAndSet(last, now)) {
-      suppressedHotNodeFailureLogs.incrementAndGet();
-      return;
-    }
-    LOG.error(
-        "Cannot reconstruct the state of block {} from state diff storage, regenerating it by"
-            + " replaying blocks instead ({} similar errors not logged since the last one)",
-        root,
-        suppressedHotNodeFailureLogs.getAndSet(0),
-        e);
+    return hotStateStorage.getHotState(root);
   }
 
   @Override
@@ -2055,20 +1935,17 @@ public class KvStoreDatabase implements Database {
     LOG.trace("Applying hot updates");
     final long latestFinalizedStateUpdateStartTime;
     final long latestFinalizedStateUpdateEndTime;
-    final long stateDiffUpdateStartTime;
-    final long stateDiffUpdateEndTime;
-    final boolean stateDiffs = stateDiffStorageActive;
+    final long hotStatesUpdateStartTime;
+    final long hotStatesUpdateEndTime;
+    final HotStateUpdate hotStateUpdate;
     try (final HotUpdater updater = hotUpdater()) {
-      // The anchor being replaced, read before the new finalized checkpoint is written
-      final Optional<Bytes32> previousAnchorRoot =
-          stateDiffs ? dao.getFinalizedCheckpoint().map(Checkpoint::getRoot) : Optional.empty();
+      hotStateUpdate = hotStateStorage.startUpdate(update);
       // Store new hot data
       update.getGenesisTime().ifPresent(updater::setGenesisTime);
       update
           .getFinalizedCheckpoint()
           .ifPresent(
               checkpoint -> {
-                reconstructedAnchor = Optional.empty();
                 updater.setFinalizedCheckpoint(checkpoint);
                 final int slotsPerEpoch = spec.slotsPerEpoch(checkpoint.getEpoch());
                 final UInt64 finalizedSlot = checkpoint.getEpochStartSlot(spec).plus(slotsPerEpoch);
@@ -2081,19 +1958,13 @@ public class KvStoreDatabase implements Database {
       update.getJustifiedCheckpoint().ifPresent(updater::setJustifiedCheckpoint);
       update.getBestJustifiedCheckpoint().ifPresent(updater::setBestJustifiedCheckpoint);
       latestFinalizedStateUpdateStartTime = System.currentTimeMillis();
-      if (!stateDiffs) {
-        update.getLatestFinalizedState().ifPresent(updater::setLatestFinalizedState);
-      }
+      hotStateUpdate.writeLatestFinalizedState(updater);
       latestFinalizedStateUpdateEndTime = System.currentTimeMillis();
 
       updateHotBlocks(updater, update.getHotBlocks(), update.getDeletedHotBlocks().keySet());
-      stateDiffUpdateStartTime = System.currentTimeMillis();
-      if (stateDiffs) {
-        updateStateDiffDag(updater, update, previousAnchorRoot);
-      } else {
-        updater.addHotStates(update.getHotStates());
-      }
-      stateDiffUpdateEndTime = System.currentTimeMillis();
+      hotStatesUpdateStartTime = System.currentTimeMillis();
+      hotStateUpdate.writeHotStates(updater);
+      hotStatesUpdateEndTime = System.currentTimeMillis();
 
       if (update.getStateRoots().size() > 0) {
         updater.addHotStateRoots(update.getStateRoots());
@@ -2114,187 +1985,12 @@ public class KvStoreDatabase implements Database {
                     finalizedDataUpdatedTime - startTime,
                     endTime - finalizedDataUpdatedTime,
                     latestFinalizedStateUpdateEndTime - latestFinalizedStateUpdateStartTime)
-                + (stateDiffs
-                    ? String.format(
-                        ", state diff time: %d ms",
-                        stateDiffUpdateEndTime - stateDiffUpdateStartTime)
-                    : ""),
+                + hotStateUpdate.describeHotStatesWriteTime(
+                    hotStatesUpdateEndTime - hotStatesUpdateStartTime),
         startTime,
         endTime);
     LOG.trace("Update complete");
     return new UpdateResult(finalizedOptimisticExecutionPayload);
-  }
-
-  /**
-   * Applies the state diff DAG changes of {@code update} to the hot transaction: writes the nodes
-   * of the hot states, then on finalization ensures the new anchor has a node and drops the
-   * finalized-chain nodes it no longer needs, then deletes the nodes of pruned fork blocks. The
-   * supernode reference changes are written to {@code updater} before it is committed.
-   */
-  private void updateStateDiffDag(
-      final HotUpdater updater,
-      final StorageUpdate update,
-      final Optional<Bytes32> previousAnchorRoot) {
-    final StateDiffDag dag = stateDiffDag.orElseThrow();
-    final StateDiffDagTransaction transaction = dag.begin(dao, updater);
-    // Oldest first, so a node can be the previous node of a later one in the same update
-    update.getHotStates().entrySet().stream()
-        .sorted(Comparator.comparing(entry -> entry.getValue().getSlot()))
-        .forEach(
-            entry ->
-                writeHotStateNode(
-                    dag,
-                    transaction,
-                    entry.getKey(),
-                    entry.getValue(),
-                    update.getHotStateNodeInfos().get(entry.getKey())));
-    update
-        .getFinalizedCheckpoint()
-        .ifPresent(
-            checkpoint ->
-                updateStateDiffAnchor(dag, transaction, update, checkpoint, previousAnchorRoot));
-    transaction.deleteNodes(getPrunedForkBlockRoots(update));
-    transaction.commit();
-  }
-
-  /**
-   * Ensures the new finalized anchor {@code checkpoint} has a node and drops the finalized-chain
-   * nodes it no longer needs, rewriting the anchor node as a snapshot when that fails.
-   */
-  private void updateStateDiffAnchor(
-      final StateDiffDag dag,
-      final StateDiffDagTransaction transaction,
-      final StorageUpdate update,
-      final Checkpoint checkpoint,
-      final Optional<Bytes32> previousAnchorRoot) {
-    final BeaconState anchorState = update.getLatestFinalizedState().orElseThrow();
-    boolean anchorNodeEnsured = false;
-    try {
-      // The anchor normally has a node already; it has none when the state of the checkpoint block
-      // was not available when the node for its epoch was due. It is then chained through its
-      // finalized ancestors, so that it keeps the nodes written between the two anchors that later
-      // nodes may depend on.
-      final boolean createdLate =
-          transaction.ensureNode(
-              checkpoint.getRoot(),
-              anchorState,
-              checkpoint.getEpoch(),
-              getFinalizedAncestorRoots(
-                  update.getFinalizedChildToParentMap(), checkpoint.getRoot(), previousAnchorRoot));
-      if (createdLate) {
-        dag.recordAnchorCreatedLate();
-      }
-      anchorNodeEnsured = true;
-      transaction.retainFinalizedChain(
-          previousAnchorRoot,
-          checkpoint.getRoot(),
-          update.getFinalizedChildToParentMap().keySet(),
-          stateStorageMode.storesFinalizedStates());
-    } catch (final StateDiffVerificationException | MissingSupernodeException e) {
-      // Each node change is complete before the next one is read, so the transaction is
-      // consistent and the repair overwrites a node ensureNode may have written. Failing here
-      // would fail every retry and every restart: rewrite the anchor from the state the update
-      // carries instead.
-      if (anchorNodeEnsured) {
-        LOG.error(
-            "State diff DAG chain of the finalized anchor {} or of the previous anchor {} cannot be"
-                + " loaded; rewriting the anchor node as a snapshot",
-            checkpoint,
-            previousAnchorRoot.map(Bytes32::toHexString).orElse("none"),
-            e);
-      } else {
-        LOG.error(
-            "Cannot create the missing state diff node of the finalized anchor {}: an ancestor"
-                + " node or its diff base cannot be read; writing the anchor node as a snapshot",
-            checkpoint,
-            e);
-      }
-      dag.recordAnchorRepaired();
-      transaction.repairAnchor(
-          previousAnchorRoot,
-          checkpoint.getRoot(),
-          anchorState,
-          checkpoint.getEpoch(),
-          update.getFinalizedChildToParentMap().keySet(),
-          stateStorageMode.storesFinalizedStates());
-    }
-  }
-
-  private void writeHotStateNode(
-      final StateDiffDag dag,
-      final StateDiffDagTransaction transaction,
-      final Bytes32 blockRoot,
-      final BeaconState state,
-      final HotStateNodeInfo nodeInfo) {
-    if (nodeInfo == null) {
-      LOG.warn(
-          "Not storing the state of block {} at slot {}: its place in the state diff DAG is unknown",
-          blockRoot,
-          state.getSlot());
-      dag.recordSkippedNoInfo();
-      return;
-    }
-    try {
-      transaction.writeNode(
-          blockRoot,
-          state,
-          nodeInfo.firstEpoch(),
-          nodeInfo.lastEpoch(),
-          nodeInfo.ancestorCheckpointRoots(),
-          false);
-    } catch (final StateDiffVerificationException | MissingSupernodeException e) {
-      // The diff base, an earlier node, cannot be reconstructed. Failing would fail block import
-      // on every retry; a snapshot needs no base and later nodes chain to it instead
-      LOG.error(
-          "Cannot reconstruct the diff base of the state diff node of block {} at slot {}; writing"
-              + " it as a snapshot",
-          blockRoot,
-          state.getSlot(),
-          e);
-      transaction.writeNode(
-          blockRoot,
-          state,
-          nodeInfo.firstEpoch(),
-          nodeInfo.lastEpoch(),
-          nodeInfo.ancestorCheckpointRoots(),
-          true);
-    }
-  }
-
-  /**
-   * The roots of the ancestors of the new anchor {@code anchorRoot} finalized by this update,
-   * nearest first, followed by the previous anchor.
-   */
-  private static List<Bytes32> getFinalizedAncestorRoots(
-      final Map<Bytes32, Bytes32> finalizedChildToParent,
-      final Bytes32 anchorRoot,
-      final Optional<Bytes32> previousAnchorRoot) {
-    final List<Bytes32> ancestorRoots = new ArrayList<>();
-    Bytes32 current = anchorRoot;
-    // Bounded by the map size, so a malformed map cannot loop
-    for (int i = 0; i < finalizedChildToParent.size(); i++) {
-      final Bytes32 parent = finalizedChildToParent.get(current);
-      if (parent == null || previousAnchorRoot.map(parent::equals).orElse(false)) {
-        break;
-      }
-      ancestorRoots.add(parent);
-      current = parent;
-    }
-    previousAnchorRoot.ifPresent(ancestorRoots::add);
-    return ancestorRoots;
-  }
-
-  /** The pruned hot blocks that are not on the finalized chain. */
-  private static Set<Bytes32> getPrunedForkBlockRoots(final StorageUpdate update) {
-    if (update.getDeletedHotBlocks().isEmpty()) {
-      return Set.of();
-    }
-    final Map<Bytes32, Bytes32> finalizedChildToParent = update.getFinalizedChildToParentMap();
-    final Set<Bytes32> finalizedRoots = new HashSet<>(finalizedChildToParent.keySet());
-    finalizedRoots.addAll(finalizedChildToParent.values());
-    return update.getDeletedHotBlocks().keySet().stream()
-        .filter(root -> !finalizedRoots.contains(root))
-        .collect(Collectors.toSet());
   }
 
   private void updateBlobSidecarData(
@@ -2705,6 +2401,4 @@ public class KvStoreDatabase implements Database {
       updater.addFinalizedStateRoot(state.hashTreeRoot(), state.getSlot());
     }
   }
-
-  private record ReconstructedAnchor(Bytes32 blockRoot, BeaconState state) {}
 }

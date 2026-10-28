@@ -103,6 +103,7 @@ import tech.pegasys.teku.spec.generator.ChainProperties;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 import tech.pegasys.teku.storage.api.FinalizedChainData;
 import tech.pegasys.teku.storage.api.GloasForkChoiceRebuildData;
+import tech.pegasys.teku.storage.api.HotState;
 import tech.pegasys.teku.storage.api.HotStateNodeInfo;
 import tech.pegasys.teku.storage.api.OnDiskStoreData;
 import tech.pegasys.teku.storage.api.StorageUpdate;
@@ -278,7 +279,6 @@ public class DatabaseTest {
             Map.of(),
             Map.of(),
             Map.of(),
-            Map.of(),
             Optional.of(block1Sidecar0.getSlot()),
             Map.of(),
             Map.of(),
@@ -295,7 +295,6 @@ public class DatabaseTest {
             Optional.empty(),
             Optional.empty(),
             Optional.empty(),
-            Map.of(),
             Map.of(),
             Map.of(),
             Map.of(),
@@ -450,7 +449,6 @@ public class DatabaseTest {
             Map.of(),
             Map.of(),
             Map.of(),
-            Map.of(),
             Optional.empty(),
             Map.of(block1Sidecar0.getBlockRoot(), block1Sidecar0.getSlot()),
             Map.of(),
@@ -467,7 +465,6 @@ public class DatabaseTest {
             Optional.empty(),
             Optional.empty(),
             Optional.empty(),
-            Map.of(),
             Map.of(),
             Map.of(),
             Map.of(),
@@ -648,7 +645,6 @@ public class DatabaseTest {
             Optional.empty(),
             Map.of(),
             Map.of(),
-            Map.of(),
             Map.of(blockAndState.getRoot(), signedBlindedExecutionPayloadEnvelope),
             Map.of(),
             Optional.empty(),
@@ -756,7 +752,6 @@ public class DatabaseTest {
             Optional.empty(),
             Map.of(),
             Map.of(),
-            Map.of(),
             Map.of(blockAndState.getRoot(), signedBlindedExecutionPayloadEnvelope),
             Map.of(),
             Optional.empty(),
@@ -777,7 +772,6 @@ public class DatabaseTest {
             Optional.of(finalizedChainData),
             Optional.empty(),
             Optional.empty(),
-            Map.of(),
             Map.of(),
             Map.of(),
             Map.of(),
@@ -983,7 +977,6 @@ public class DatabaseTest {
         Optional.empty(),
         Map.of(),
         Map.of(),
-        Map.of(),
         blindedExecutionPayloads,
         Map.of(),
         Optional.empty(),
@@ -1040,7 +1033,6 @@ public class DatabaseTest {
             Map.of(),
             Map.of(),
             Map.of(),
-            Map.of(),
             Optional.empty(),
             Map.of(),
             Map.of(),
@@ -1073,7 +1065,6 @@ public class DatabaseTest {
             Optional.empty(),
             Map.of(),
             Map.of(),
-            Map.of(),
             Map.of(blockAndState.getRoot(), signedBlindedExecutionPayloadEnvelope),
             Map.of(),
             Optional.empty(),
@@ -1098,7 +1089,6 @@ public class DatabaseTest {
             Optional.empty(),
             Optional.empty(),
             Optional.empty(),
-            Map.of(),
             Map.of(),
             Map.of(),
             Map.of(),
@@ -1144,7 +1134,6 @@ public class DatabaseTest {
             Optional.empty(),
             Optional.empty(),
             Optional.empty(),
-            Map.of(),
             Map.of(),
             Map.of(),
             Map.of(blockRoot, envelope),
@@ -4759,10 +4748,11 @@ public class DatabaseTest {
             Optional.empty(),
             Optional.empty(),
             Map.of(),
-            Map.of(checkpointBlock.getRoot(), checkpointBlock.getState()),
             Map.of(
                 checkpointBlock.getRoot(),
-                new HotStateNodeInfo(epoch, epoch, ancestorCheckpointRoots)),
+                HotState.withNodeInfo(
+                    checkpointBlock.getState(),
+                    new HotStateNodeInfo(epoch, epoch, ancestorCheckpointRoots))),
             Map.of(),
             Map.of(),
             Optional.empty(),

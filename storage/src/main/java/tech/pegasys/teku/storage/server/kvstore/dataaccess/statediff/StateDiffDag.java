@@ -222,11 +222,6 @@ public class StateDiffDag {
     return new StateDiffDagTransaction(this, dao, updater);
   }
 
-  /** Counts a hot state stored without the information placing it in the DAG, so not written. */
-  public void recordSkippedNoInfo() {
-    metrics.onNodeSkippedNoInfo();
-  }
-
   /**
    * Counts a finalized anchor whose node was rewritten as a snapshot because its chain, or the
    * previous anchor's, could not be loaded.

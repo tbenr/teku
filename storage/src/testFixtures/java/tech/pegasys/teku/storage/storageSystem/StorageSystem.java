@@ -17,6 +17,7 @@ import static tech.pegasys.teku.infrastructure.async.SafeFutureAssert.safeJoin;
 import static tech.pegasys.teku.infrastructure.async.SyncAsyncRunner.SYNC_RUNNER;
 
 import java.util.Optional;
+import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.beacon.pow.api.TrackingEth1EventsChannel;
 import tech.pegasys.teku.dataproviders.lookup.BlindedExecutionPayloadProvider;
 import tech.pegasys.teku.dataproviders.lookup.ExecutionPayloadProvider;
@@ -85,6 +86,23 @@ public class StorageSystem implements AutoCloseable {
     this.chainUpdater =
         new ChainUpdater(
             this.recentChainData, this.chainBuilder, this.blobSidecarManager, spec, chainStorage);
+  }
+
+  /**
+   * {@code storeConfig} requesting state diff storage, as the command line flag does: a chain
+   * started from an anchor then persists its hot states as state diff nodes.
+   */
+  static StoreConfig requestingStateDiffs(final StoreConfig storeConfig) {
+    return StoreConfig.builder()
+        .stateCacheSize(storeConfig.getStateCacheSize())
+        .epochStateCacheSize(storeConfig.getEpochStateCacheSize())
+        .blockCacheSize(storeConfig.getBlockCacheSize())
+        .checkpointStateCacheSize(storeConfig.getCheckpointStateCacheSize())
+        .hotStatePersistenceFrequencyInEpochs(storeConfig.getHotStatePersistenceFrequencyInEpochs())
+        .initialCanonicalBlockRoot(
+            storeConfig.getInitialCanonicalBlockRoot().map(Bytes32::toHexString).orElse(null))
+        .stateDiffsEnabled(true)
+        .build();
   }
 
   static StorageSystem create(

@@ -20,6 +20,8 @@ import com.google.common.annotations.VisibleForTesting;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
 import tech.pegasys.teku.dataproviders.lookup.BlindedExecutionPayloadProvider;
@@ -39,6 +41,8 @@ import tech.pegasys.teku.storage.api.StoredBlockMetadata;
 import tech.pegasys.teku.storage.protoarray.ForkChoiceStrategy;
 
 public class StoreBuilder {
+  private static final Logger LOG = LogManager.getLogger();
+
   private AsyncRunner asyncRunner;
   private MetricsSystem metricsSystem;
   private Spec spec;
@@ -73,6 +77,19 @@ public class StoreBuilder {
 
   public static OnDiskStoreData forkChoiceStoreBuilder(
       final Spec spec, final AnchorPoint anchor, final UInt64 currentTime) {
+    return forkChoiceStoreBuilder(spec, anchor, currentTime, false);
+  }
+
+  /**
+   * The data of a store starting from {@code anchor}.
+   *
+   * @param stateDiffStorageActive whether the store persists its hot states as state diff nodes
+   */
+  public static OnDiskStoreData forkChoiceStoreBuilder(
+      final Spec spec,
+      final AnchorPoint anchor,
+      final UInt64 currentTime,
+      final boolean stateDiffStorageActive) {
     final UInt64 genesisTime = anchor.getState().getGenesisTime();
     final UInt64 blockSlot = anchor.getBlockSlot();
     final UInt64 blockTime = spec.computeTimeAtSlot(blockSlot, genesisTime).max(currentTime);
@@ -102,7 +119,8 @@ public class StoreBuilder {
         blockInfo,
         new HashMap<>(),
         Optional.empty(),
-        Optional.empty());
+        Optional.empty(),
+        stateDiffStorageActive);
   }
 
   public StoreBuilder onDiskStoreData(final OnDiskStoreData data) {
@@ -122,9 +140,7 @@ public class StoreBuilder {
 
   public UpdatableStore build() {
     assertValid();
-    // A database using state diff storage keeps doing so, whether or not the configuration asks
-    final StoreConfig effectiveStoreConfig =
-        stateDiffStorageActive ? this.storeConfig.withStateDiffsEnabled() : this.storeConfig;
+    final HotStatePersistencePolicy persistencePolicy = createPersistencePolicy();
 
     if (forkChoiceStrategy != null) {
       return Store.create(
@@ -144,7 +160,8 @@ public class StoreBuilder {
           justifiedCheckpoint,
           bestJustifiedCheckpoint,
           votes,
-          effectiveStoreConfig,
+          storeConfig,
+          persistencePolicy,
           forkChoiceStrategy,
           custodyGroupCount);
     }
@@ -167,8 +184,28 @@ public class StoreBuilder {
         blockInfoByRoot,
         latestCanonicalBlockRoot,
         votes,
-        effectiveStoreConfig,
+        storeConfig,
+        persistencePolicy,
         custodyGroupCount);
+  }
+
+  /**
+   * The hot state persistence policy of the store: the checkpoint block states when the store
+   * persists state diff nodes, which ignores the configured hot state persistence frequency.
+   */
+  private HotStatePersistencePolicy createPersistencePolicy() {
+    final int hotStatePersistenceFrequencyInEpochs =
+        storeConfig.getHotStatePersistenceFrequencyInEpochs();
+    if (!stateDiffStorageActive) {
+      return HotStatePersistencePolicy.everyNthEpoch(spec, hotStatePersistenceFrequencyInEpochs);
+    }
+    if (hotStatePersistenceFrequencyInEpochs
+        != StoreConfig.DEFAULT_HOT_STATE_PERSISTENCE_FREQUENCY_IN_EPOCHS) {
+      LOG.warn(
+          "--Xhot-state-persistence-frequency ({}) is ignored when state diff storage is enabled",
+          hotStatePersistenceFrequencyInEpochs);
+    }
+    return HotStatePersistencePolicy.checkpointBlocks(spec);
   }
 
   private void assertValid() {
@@ -210,8 +247,8 @@ public class StoreBuilder {
   }
 
   /**
-   * Whether the database stores hot states as state diff DAG nodes, which puts the store in state
-   * diff mode even when its configuration does not enable it.
+   * Whether the store persists its hot states as state diff DAG nodes, as resolved by the database
+   * it is loaded from (see {@link OnDiskStoreData#stateDiffStorageActive()}).
    */
   public StoreBuilder stateDiffStorageActive(final boolean stateDiffStorageActive) {
     this.stateDiffStorageActive = stateDiffStorageActive;

@@ -98,8 +98,7 @@ public class InMemoryStorageSystemBuilder {
         database,
         createRestartSupplier(),
         storageMode,
-        // State diffs put the store in state diff mode too, as the command line flag does
-        stateDiffsEnabled ? storeConfig.withStateDiffsEnabled() : storeConfig,
+        stateDiffsEnabled ? StorageSystem.requestingStateDiffs(storeConfig) : storeConfig,
         spec,
         ChainBuilder.create(spec, validatorKeys),
         stateRebuildTimeoutSeconds);

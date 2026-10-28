@@ -87,7 +87,7 @@ class StateDiffMetrics {
         metricsSystem.createLabelledCounter(
             TekuMetricCategory.STORAGE,
             "state_diff_nodes_total",
-            "State diff DAG nodes written, deleted, skipped, or created or repaired on finalization",
+            "State diff DAG nodes written, deleted, or created or repaired on finalization",
             "state");
     this.snapshots =
         metricsSystem.createLabelledCounter(
@@ -164,11 +164,6 @@ class StateDiffMetrics {
   /** For a node deleted on retention or repair whose record or payload could not be decoded. */
   void onNodeDeletedCorrupt() {
     nodes.labels("deleted_corrupt").inc();
-  }
-
-  /** For a hot state stored without the information placing it in the DAG. */
-  void onNodeSkippedNoInfo() {
-    nodes.labels("skipped_no_info").inc();
   }
 
   /** For a finalized anchor rewritten as a snapshot because its chain could not be loaded. */

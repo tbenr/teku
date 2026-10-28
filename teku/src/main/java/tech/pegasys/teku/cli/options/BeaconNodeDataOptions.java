@@ -304,7 +304,8 @@ public class BeaconNodeDataOptions extends ValidatorClientDataOptions {
                 .rocksdbBlobDbEnabled(rocksdbBlobDbEnabled)
                 .stateDiffsEnabled(stateDiffsEnabled)
                 .pruningWarnTimeout(Duration.ofSeconds(pruningWarnTimeoutSeconds)));
-    // The store persists the checkpoint block state of every epoch as a state diff node
+    // A chain started from an anchor starts its store before the new database stores the anchor,
+    // so the store reads the request itself; a loaded database tells the store what it resolved
     builder.store(b -> b.stateDiffsEnabled(stateDiffsEnabled));
     builder.sync(
         b ->
