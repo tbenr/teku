@@ -4,7 +4,7 @@ Status: phase 1 (non-archive nodes) implemented behind a hidden flag; soak-teste
 on mainnet and on sepolia (Gloas); Fulu to Gloas fork crossing verified on a
 kurtosis devnet (decisions log, 2026-10-28 fork crossing section). Phase 2,
 first slice (archive finalized states in the DAG, retention window) implemented
-and soaked on mainnet with a 128-epoch window (decisions log 51, 61). Living document, last updated 2026-10-28.
+and soaked on mainnet with a 128-epoch window (decisions log 51, 61). Living document, last updated 2026-10-29.
 
 Design: [docs/superpowers/specs/2026-10-22-state-diff-dag-design.md](superpowers/specs/2026-10-22-state-diff-dag-design.md).
 Every non-obvious decision and all measurements:
@@ -61,7 +61,12 @@ teku --network=mainnet --data-storage-mode=archive --Xdata-storage-state-diffs \
   columns any more; the state-root index is still written. History from before
   the switch is not served (a database switched in place keeps its legacy
   finalized states on disk, unused and not pruned), and there is no genesis
-  backfill: `--reconstruct-historic-states` is not integrated yet.
+  backfill: `--reconstruct-historic-states` is not integrated yet, and is
+  rejected at startup with `--Xdata-storage-state-diffs` (not detected when
+  the flag was removed from a database already in state diff mode).
+- A read in the window falls back to the latest earlier checkpoint block's node
+  when an epoch's node was skipped; at the window start, that is the oldest
+  retained node, just below the start.
 - The legacy state pruner is not started; the window is applied at each
   finalization. Lowering the window, or setting one on a database that kept
   everything, deletes the backlog at most 256 epochs per finalization (INFO
@@ -155,7 +160,7 @@ times, and the on-disk footprint of state storage by about 3.5 times, for about
   databases use the prune levels today, so an old epoch costs a snapshot plus
   up to 21 diffs and a 20 MB snapshot every 256 epochs), and the
   `--reconstruct-historic-states` integration (spec 5.11); until then that
-  option writes legacy states that the DAG-backed reads do not serve.
+  option is rejected with the flag.
 - Phase 2, reconstruction anchor: let a fresh node supply an older finalized
   state so backfill and reconstruction start there instead of genesis; the
   state is verified against the block's state root once the block backfill
