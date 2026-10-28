@@ -80,11 +80,74 @@ public class SnappyFrameDecoderTest {
     in.release();
   }
 
-  private static ByteBuf compressedChunkHeader(final int chunkLength) {
+  @Test
+  void rejectsCompressedChunkShorterThanChecksum() {
+    final ByteBuf in = chunkHeader(0x00, 0);
+    in.writeZero(8);
+    final SnappyFrameDecoder decoder = new AircompressorSnappyFrameDecoder();
+
+    assertThatThrownBy(() -> decoder.decodeOneMessage(in)).isInstanceOf(CompressionException.class);
+
+    in.release();
+  }
+
+  @Test
+  void rejectsUncompressedChunkShorterThanChecksum() {
+    final ByteBuf in = chunkHeader(0x01, 3);
+    in.writeZero(8);
+    final SnappyFrameDecoder decoder = new AircompressorSnappyFrameDecoder();
+
+    assertThatThrownBy(() -> decoder.decodeOneMessage(in)).isInstanceOf(CompressionException.class);
+
+    in.release();
+  }
+
+  @Test
+  void consumesSkippableChunkAsItArrives() throws Exception {
+    final ByteBuf in = chunkHeader(0xfe, 0xFFFFFF);
+    in.writeZero(1000);
+    final SnappyFrameDecoder decoder = new AircompressorSnappyFrameDecoder();
+
+    assertThat(decoder.decodeOneImpl(in)).isEmpty(); // stream identifier
+    assertThat(decoder.decodeOneImpl(in)).isEmpty();
+
+    assertThat(in.isReadable()).isFalse();
+    decoder.close();
+    in.release();
+  }
+
+  @Test
+  void decodesDataAfterSkippableChunkSplitAcrossInputs() throws Exception {
+    final Bytes data = Bytes.of(1, 2, 3);
+    final ByteBuf first = chunkHeader(0xfe, 5);
+    first.writeZero(2);
+    final ByteBuf second = Unpooled.buffer();
+    second.writeZero(3);
+    second.writeByte(0x01);
+    second.writeMediumLE(4 + data.size());
+    second.writeIntLE(SnappyUtil.calculateChecksum(Unpooled.wrappedBuffer(data.toArrayUnsafe())));
+    second.writeBytes(data.toArrayUnsafe());
+    final SnappyFrameDecoder decoder = new AircompressorSnappyFrameDecoder();
+
+    assertThat(decoder.decodeOneMessage(first)).isEmpty();
+    final ByteBuf frame = decoder.decodeOneMessage(second).orElseThrow();
+
+    assertThat(Bytes.wrap(ByteBufUtil.getBytes(frame))).isEqualTo(data);
+    frame.release();
+    decoder.close();
+    first.release();
+    second.release();
+  }
+
+  private static ByteBuf chunkHeader(final int chunkType, final int chunkLength) {
     final ByteBuf in = Unpooled.buffer();
     in.writeBytes(STREAM_IDENTIFIER.toArrayUnsafe());
-    in.writeByte(0x00);
+    in.writeByte(chunkType);
     in.writeMediumLE(chunkLength);
     return in;
+  }
+
+  private static ByteBuf compressedChunkHeader(final int chunkLength) {
+    return chunkHeader(0x00, chunkLength);
   }
 }

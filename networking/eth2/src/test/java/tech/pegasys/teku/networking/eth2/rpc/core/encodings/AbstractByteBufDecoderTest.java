@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertTimeout;
 
+import com.google.common.base.VerifyException;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
@@ -71,14 +72,16 @@ class AbstractByteBufDecoderTest {
 
   @Test
   void decodeOneMessage_accumulatesManySmallInputsInLinearTime() {
-    final int messageLength = 3_000_000;
+    // well under a second when pending bytes are appended once; re-copying them every few inputs
+    // takes over a minute
+    final int messageLength = 10_000_000;
     final FixedLengthDecoder decoder = new FixedLengthDecoder(messageLength);
     // one input buffer refilled with a single byte each time
     final ByteBuf input = Unpooled.buffer(1);
     final List<ByteBuf> out = new ArrayList<>();
     try {
       assertTimeout(
-          Duration.ofSeconds(5),
+          Duration.ofSeconds(30),
           () -> {
             for (int i = 0; i < messageLength; i++) {
               input.clear().writeByte(i);
@@ -144,10 +147,27 @@ class AbstractByteBufDecoderTest {
     final ByteBuf second = Unpooled.wrappedBuffer(Bytes.of(4).toArray());
 
     assertThat(decoder.decodeOneMessage(first)).isEmpty();
-    assertThatThrownBy(() -> decoder.decodeOneMessage(second))
-        .isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(() -> decoder.decodeOneMessage(second)).isInstanceOf(VerifyException.class);
 
     assertThat(decoder.lastReturned.refCnt()).isZero();
+    first.release();
+    second.release();
+  }
+
+  @Test
+  void close_releasesPendingBytes() {
+    final FixedLengthDecoder decoder = new FixedLengthDecoder(4);
+    final ByteBuf first = Unpooled.wrappedBuffer(Bytes.of(1).toArray());
+    final ByteBuf second = Unpooled.wrappedBuffer(Bytes.of(2).toArray());
+    assertThat(decoder.decodeOneMessage(first)).isEmpty();
+    assertThat(decoder.decodeOneMessage(second)).isEmpty();
+    // the second input is decoded from the buffer holding the pending bytes
+    final ByteBuf pending = decoder.lastInput;
+    assertThat(pending.refCnt()).isEqualTo(1);
+
+    decoder.close();
+
+    assertThat(pending.refCnt()).isZero();
     first.release();
     second.release();
   }
@@ -161,6 +181,7 @@ class AbstractByteBufDecoderTest {
       extends AbstractByteBufDecoder<ByteBuf, RuntimeException> {
     private final int required;
     private final int consumed;
+    private ByteBuf lastInput;
     private ByteBuf lastReturned;
 
     private FixedLengthDecoder(final int messageLength) {
@@ -174,6 +195,7 @@ class AbstractByteBufDecoderTest {
 
     @Override
     protected Optional<ByteBuf> decodeOneImpl(final ByteBuf in) {
+      lastInput = in;
       if (in.readableBytes() < required) {
         return Optional.empty();
       }

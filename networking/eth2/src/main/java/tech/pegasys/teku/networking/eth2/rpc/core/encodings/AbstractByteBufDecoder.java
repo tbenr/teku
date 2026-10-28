@@ -13,6 +13,7 @@
 
 package tech.pegasys.teku.networking.eth2.rpc.core.encodings;
 
+import com.google.common.base.VerifyException;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.util.ReferenceCountUtil;
@@ -68,7 +69,7 @@ public abstract class AbstractByteBufDecoder<TMessage, TException extends Except
       final int leftover = cumulation.readableBytes();
       if (leftover > inputBytes) {
         ReferenceCountUtil.release(outBuf.get());
-        throw new IllegalStateException(
+        throw new VerifyException(
             "Decoded message left " + leftover + " bytes but only " + inputBytes + " were added");
       }
       in.skipBytes(inputBytes - leftover);
@@ -131,7 +132,7 @@ public abstract class AbstractByteBufDecoder<TMessage, TException extends Except
    * Decodes one message if the full data is available in the buffer
    *
    * <p>If the full data is not available then return {@code empty} and left buffer reader index
-   * intact
+   * intact. Bytes that belong to no message, such as padding, may be consumed as they arrive.
    *
    * <p>If a message is read then the buffer reader position should be positioned after the end of
    * message data
