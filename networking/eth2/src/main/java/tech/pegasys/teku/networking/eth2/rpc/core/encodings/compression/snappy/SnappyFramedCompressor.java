@@ -32,10 +32,6 @@ public class SnappyFramedCompressor implements Compressor {
       new SnappyFramedCompressor(
           AircompressorSnappyFrameEncoder::new, AircompressorSnappyFrameDecoder::new);
 
-  // Covers blocks and sidecars without reallocation while keeping the up-front allocation per
-  // response chunk modest
-  private static final int INITIAL_PAYLOAD_BUFFER_CAPACITY = 1024 * 1024;
-
   private final Supplier<SnappyFrameEncoder> encoderSupplier;
   private final Supplier<SnappyFrameDecoder> decoderSupplier;
 
@@ -58,10 +54,8 @@ public class SnappyFramedCompressor implements Compressor {
     public SnappyFramedDecompressor(final int uncompressedPayloadSize) {
       this.snappyFrameDecoder = decoderSupplier.get();
       this.uncompressedPayloadSize = uncompressedPayloadSize;
-      this.decodedPayload =
-          Unpooled.buffer(
-              Math.min(uncompressedPayloadSize, INITIAL_PAYLOAD_BUFFER_CAPACITY),
-              uncompressedPayloadSize);
+      // grows as frames arrive, so nothing is allocated before data is received
+      this.decodedPayload = Unpooled.buffer(0, uncompressedPayloadSize);
     }
 
     @Override
