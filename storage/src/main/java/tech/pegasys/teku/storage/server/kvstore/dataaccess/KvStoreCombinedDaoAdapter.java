@@ -43,7 +43,6 @@ import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.util.DataColumnSlotAndIdentifier;
 import tech.pegasys.teku.spec.datastructures.util.SlotAndBlockRootAndBlobIndex;
 import tech.pegasys.teku.storage.server.kvstore.ColumnEntry;
-import tech.pegasys.teku.storage.server.kvstore.ColumnSize;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.V4FinalizedKvStoreDao.V4FinalizedUpdater;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.V4HotKvStoreDao.V4HotUpdater;
 import tech.pegasys.teku.storage.server.kvstore.schema.KvStoreColumn;
@@ -112,44 +111,6 @@ public class KvStoreCombinedDaoAdapter implements KvStoreCombinedDao, V4Migratab
   @Override
   public Optional<BeaconState> getHotState(final Bytes32 root) {
     return hotDao.getHotState(root);
-  }
-
-  @Override
-  public Optional<Bytes> getStateDiffNode(final Bytes32 blockRoot) {
-    return hotDao.getStateDiffNode(blockRoot);
-  }
-
-  @Override
-  public Optional<Bytes> getStateSupernode(final Bytes32 hash) {
-    return hotDao.getStateSupernode(hash);
-  }
-
-  @Override
-  public Optional<UInt64> getStateSupernodeRefCount(final Bytes32 hash) {
-    return hotDao.getStateSupernodeRefCount(hash);
-  }
-
-  @Override
-  public Optional<Bytes> getStateDiffMode() {
-    return hotDao.getStateDiffMode();
-  }
-
-  @Override
-  @MustBeClosed
-  public Stream<ColumnEntry<Bytes32, Bytes>> streamStateDiffNodes() {
-    return hotDao.streamStateDiffNodes();
-  }
-
-  @Override
-  @MustBeClosed
-  public Stream<ColumnEntry<Bytes32, UInt64>> streamStateSupernodeRefCounts() {
-    return hotDao.streamStateSupernodeRefCounts();
-  }
-
-  @Override
-  @MustBeClosed
-  public Stream<Bytes32> streamStateSupernodeHashes() {
-    return hotDao.streamStateSupernodeHashes();
   }
 
   @Override
@@ -285,14 +246,6 @@ public class KvStoreCombinedDaoAdapter implements KvStoreCombinedDao, V4Migratab
     final HashMap<String, Long> result =
         new LinkedHashMap<>(hotDao.getColumnCounts(maybeColumnFilter));
     result.putAll(finalizedDao.getColumnCounts(maybeColumnFilter));
-    return result;
-  }
-
-  @Override
-  public Map<String, ColumnSize> getColumnSizes(final Optional<String> maybeColumnFilter) {
-    final Map<String, ColumnSize> result =
-        new LinkedHashMap<>(hotDao.getColumnSizes(maybeColumnFilter));
-    result.putAll(finalizedDao.getColumnSizes(maybeColumnFilter));
     return result;
   }
 
@@ -734,41 +687,6 @@ public class KvStoreCombinedDaoAdapter implements KvStoreCombinedDao, V4Migratab
     @Override
     public void deleteHotState(final Bytes32 blockRoot) {
       hotUpdater.deleteHotState(blockRoot);
-    }
-
-    @Override
-    public void putStateDiffNode(final Bytes32 blockRoot, final Bytes record) {
-      hotUpdater.putStateDiffNode(blockRoot, record);
-    }
-
-    @Override
-    public void deleteStateDiffNode(final Bytes32 blockRoot) {
-      hotUpdater.deleteStateDiffNode(blockRoot);
-    }
-
-    @Override
-    public void putStateSupernode(final Bytes32 hash, final Bytes ssz) {
-      hotUpdater.putStateSupernode(hash, ssz);
-    }
-
-    @Override
-    public void setStateSupernodeRefCount(final Bytes32 hash, final UInt64 refCount) {
-      hotUpdater.setStateSupernodeRefCount(hash, refCount);
-    }
-
-    @Override
-    public void deleteStateSupernode(final Bytes32 hash) {
-      hotUpdater.deleteStateSupernode(hash);
-    }
-
-    @Override
-    public void setStateDiffMode(final Bytes marker) {
-      hotUpdater.setStateDiffMode(marker);
-    }
-
-    @Override
-    public void deleteLatestFinalizedState() {
-      hotUpdater.deleteLatestFinalizedState();
     }
 
     @Override

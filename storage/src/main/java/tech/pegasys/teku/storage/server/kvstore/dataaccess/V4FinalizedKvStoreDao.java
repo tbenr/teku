@@ -20,7 +20,6 @@ import com.google.errorprone.annotations.MustBeClosed;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -41,7 +40,6 @@ import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.util.DataColumnSlotAndIdentifier;
 import tech.pegasys.teku.spec.datastructures.util.SlotAndBlockRootAndBlobIndex;
 import tech.pegasys.teku.storage.server.kvstore.ColumnEntry;
-import tech.pegasys.teku.storage.server.kvstore.ColumnSize;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreAccessor;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreAccessor.KvStoreTransaction;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.FinalizedUpdater;
@@ -335,20 +333,6 @@ public class V4FinalizedKvStoreDao {
               }
             });
     return columnCounts;
-  }
-
-  public Map<String, ColumnSize> getColumnSizes(final Optional<String> maybeColumnFilter) {
-    final Map<String, ColumnSize> columnSizes = new LinkedHashMap<>();
-    schema
-        .getColumnMap()
-        .forEach(
-            (k, v) -> {
-              if (maybeColumnFilter.isEmpty()
-                  || k.contains(maybeColumnFilter.get().toUpperCase(Locale.ROOT))) {
-                db.getColumnSize(v).ifPresent(size -> columnSizes.put(k, size));
-              }
-            });
-    return columnSizes;
   }
 
   public long getBlobSidecarColumnCount() {

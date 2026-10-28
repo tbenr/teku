@@ -33,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.CopiedEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.DeltaEntry;
+import tech.pegasys.teku.infrastructure.statediff.TreeDiff.LeafEntry;
 
 class TreeDiffChainApplicationTest {
 
@@ -68,29 +69,36 @@ class TreeDiffChainApplicationTest {
   }
 
   @Test
-  void diffAddressingDeltaFieldIsAppliedAfterPendingValues() {
+  void rejectsDiffAddressingDeltaField() {
     final TreeNode s0 = SyntheticState.create(random, VALIDATOR_COUNT);
     final TreeNode s1 = SyntheticState.setBalance(s0, 3, 1234);
     final TreeNode s2 = SyntheticState.setBalance(s1, 4, 5678);
-    final List<TreeDiff> diffs = new ArrayList<>(chainDiffs(List.of(s0, s1)));
+    final List<TreeDiff> diffs = chainDiffs(List.of(s0, s1));
     // Copies the balances of s1 into another field: a fold would still see those of s0
-    diffs.add(
+    final TreeDiff copyFromPending =
         new TreeDiff(
             List.of(),
             List.of(),
             List.of(),
             List.of(new CopiedEntry(fieldGIndex(PREV), fieldGIndex(BALANCES))),
-            diff(s1, s2).deltas()));
+            List.of());
+    // Writes a leaf below the balances it also carries deltas for
+    final TreeDiff leafInOwnDeltaField =
+        new TreeDiff(
+            List.of(new LeafEntry(fieldGIndex(BALANCES) * 2, Bytes.wrap(new byte[32]))),
+            List.of(),
+            List.of(),
+            List.of(),
+            diff(s1, s2).deltas());
 
     final TreeDiffApplier.ChainApplication chain = applier.startChain(SCHEMA.getDefaultTree());
     diffs.forEach(chain::apply);
-    final TreeNode folded = chain.finish();
-
-    assertThat(folded.hashTreeRoot()).isEqualTo(applyPerLink(diffs).hashTreeRoot());
-    assertThat(folded.get(fieldGIndex(PREV)).hashTreeRoot())
-        .isEqualTo(s1.get(fieldGIndex(BALANCES)).hashTreeRoot());
-    // The pending balances, then the fallback diff's own delta
-    assertThat(chain.listBuilds()).isEqualTo(2);
+    assertThatThrownBy(() -> chain.apply(copyFromPending))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("delta field");
+    assertThatThrownBy(() -> applier.startChain(SCHEMA.getDefaultTree()).apply(leafInOwnDeltaField))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("delta field");
   }
 
   @Test

@@ -15,6 +15,7 @@ package tech.pegasys.teku.storage.server.rocksdb;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -253,6 +254,10 @@ public class RocksDbHelper {
         final long totalBlobFilesSizeLong =
             !totalBlobFilesSize.isBlank() ? Long.parseLong(totalBlobFilesSize) : 0;
 
+        final String liveDataSize =
+            rocksdb.getProperty(cfHandle, "rocksdb.estimate-live-data-size");
+        final long liveDataSizeLong = !liveDataSize.isBlank() ? Long.parseLong(liveDataSize) : 0;
+
         final long totalFilesSize = totalSstFilesSizeLong + totalBlobFilesSizeLong;
         if (isPopulatedColumnFamily(0, numberOfKeysLong)) {
           printLine(
@@ -261,20 +266,22 @@ public class RocksDbHelper {
               rocksdb.getProperty(cfHandle, "rocksdb.estimate-num-keys"),
               formatOutputSize(totalFilesSize),
               formatOutputSize(totalSstFilesSizeLong),
-              formatOutputSize(totalBlobFilesSizeLong));
+              formatOutputSize(totalBlobFilesSizeLong),
+              formatOutputSize(liveDataSizeLong));
         }
         return new ColumnFamilyUsage(
             nameFromIdFn.apply(cfHandle.getName()),
             numberOfKeysLong,
             totalFilesSize,
             totalSstFilesSizeLong,
-            totalBlobFilesSizeLong);
+            totalBlobFilesSizeLong,
+            liveDataSizeLong);
       } catch (NumberFormatException e) {
         LOG.error("Failed to parse string into long: " + e.getMessage());
       }
     }
     // return empty usage on error
-    return new ColumnFamilyUsage(nameFromIdFn.apply(cfHandle.getName()), 0, 0, 0, 0);
+    return new ColumnFamilyUsage(nameFromIdFn.apply(cfHandle.getName()), 0, 0, 0, 0, 0);
   }
 
   public static void printTotals(
@@ -286,6 +293,8 @@ public class RocksDbHelper {
         columnFamilyUsages.stream().mapToLong(ColumnFamilyUsage::sstFilesSize).sum();
     final long totalBlobs =
         columnFamilyUsages.stream().mapToLong(ColumnFamilyUsage::blobFilesSize).sum();
+    final long totalLiveData =
+        columnFamilyUsages.stream().mapToLong(ColumnFamilyUsage::liveDataSize).sum();
     printSeparator(out);
     printLine(
         out,
@@ -293,8 +302,19 @@ public class RocksDbHelper {
         String.valueOf(totalKeys),
         formatOutputSize(totalSize),
         formatOutputSize(totalSsts),
-        formatOutputSize(totalBlobs));
+        formatOutputSize(totalBlobs),
+        formatOutputSize(totalLiveData));
     printSeparator(out);
+  }
+
+  /**
+   * Whether the column family {@code name} passes the optional filter, a case-insensitive substring
+   * of the name.
+   */
+  public static boolean matchesColumnFilter(final String name, final Optional<String> maybeFilter) {
+    return maybeFilter.isEmpty()
+        || (name != null
+            && name.toUpperCase(Locale.ROOT).contains(maybeFilter.get().toUpperCase(Locale.ROOT)));
   }
 
   private static boolean isPopulatedColumnFamily(final long size, final long numberOfKeys) {
@@ -318,12 +338,26 @@ public class RocksDbHelper {
 
   public static void printTableHeader(final SubCommandLogger out) {
     printSeparator(out);
-    printLine(out, "Column Family", "Keys", "Total Size", "SST Files Size", "Blob Files Size");
+    printLine(
+        out,
+        "Column Family",
+        "Keys",
+        "Total Size",
+        "SST Files Size",
+        "Blob Files Size",
+        "Live Data Size");
     printSeparator(out);
   }
 
   private static void printSeparator(final SubCommandLogger out) {
-    printLine(out, "-".repeat(50), "-".repeat(15), "-".repeat(11), "-".repeat(15), "-".repeat(16));
+    printLine(
+        out,
+        "-".repeat(50),
+        "-".repeat(15),
+        "-".repeat(11),
+        "-".repeat(15),
+        "-".repeat(16),
+        "-".repeat(15));
   }
 
   @SuppressWarnings("InlineFormatString")
@@ -333,12 +367,24 @@ public class RocksDbHelper {
       final String keys,
       final String totalFilesSize,
       final String sstFilesSize,
-      final String blobFilesSize) {
-    final String format = "| %-50s | %-15s | %-11s | %-15s | %-16s |";
+      final String blobFilesSize,
+      final String liveDataSize) {
+    final String format = "| %-50s | %-15s | %-11s | %-15s | %-16s | %-15s |";
 
-    out.display(String.format(format, cfName, keys, totalFilesSize, sstFilesSize, blobFilesSize));
+    out.display(
+        String.format(
+            format, cfName, keys, totalFilesSize, sstFilesSize, blobFilesSize, liveDataSize));
   }
 
+  /**
+   * Disk usage of a column family: {@code totalSize} is the SST plus blob file size on disk, {@code
+   * liveDataSize} RocksDB's estimate of the live data in it.
+   */
   public record ColumnFamilyUsage(
-      String name, long keys, long totalSize, long sstFilesSize, long blobFilesSize) {}
+      String name,
+      long keys,
+      long totalSize,
+      long sstFilesSize,
+      long blobFilesSize,
+      long liveDataSize) {}
 }

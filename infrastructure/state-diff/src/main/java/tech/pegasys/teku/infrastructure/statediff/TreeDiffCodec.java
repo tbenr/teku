@@ -57,6 +57,37 @@ public final class TreeDiffCodec {
   }
 
   public static TreeDiff deserialize(final Bytes bytes) {
+    final ByteBuffer in = openVersioned(bytes);
+    final List<LeafEntry> leaves = readLeaves(in);
+    final List<SupernodeEntry> supernodes = readSupernodes(in);
+    final List<ZeroedEntry> zeroed = readZeroed(in);
+    final List<CopiedEntry> copied = readCopied(in);
+    final List<DeltaEntry> deltas = readDeltas(in);
+    checkNoTrailingBytes(in);
+    return new TreeDiff(leaves, supernodes, zeroed, copied, deltas);
+  }
+
+  /**
+   * The hashes of the supernode entries of a serialized diff, in entry order, as {@code
+   * deserialize(bytes).supernodes()} lists them. The other sections are walked without
+   * materialising leaf data or delta bytes, so exactly the inputs {@link #deserialize} rejects are
+   * rejected.
+   */
+  public static List<Bytes32> supernodeHashes(final Bytes bytes) {
+    final ByteBuffer in = openVersioned(bytes);
+    skipLeaves(in);
+    final List<Bytes32> hashes = new ArrayList<>();
+    for (final SupernodeEntry entry : readSupernodes(in)) {
+      hashes.add(entry.hash());
+    }
+    skipZeroed(in);
+    readCopied(in);
+    skipDeltas(in);
+    checkNoTrailingBytes(in);
+    return hashes;
+  }
+
+  private static ByteBuffer openVersioned(final Bytes bytes) {
     final ByteBuffer in = ByteBuffer.wrap(bytes.toArrayUnsafe());
     if (!in.hasRemaining()) {
       throw new IllegalArgumentException("Empty tree diff");
@@ -65,15 +96,13 @@ public final class TreeDiffCodec {
     if (version != VERSION) {
       throw new IllegalArgumentException("Unknown tree diff version " + version);
     }
-    final List<LeafEntry> leaves = readLeaves(in);
-    final List<SupernodeEntry> supernodes = readSupernodes(in);
-    final List<ZeroedEntry> zeroed = readZeroed(in);
-    final List<CopiedEntry> copied = readCopied(in);
-    final List<DeltaEntry> deltas = readDeltas(in);
+    return in;
+  }
+
+  private static void checkNoTrailingBytes(final ByteBuffer in) {
     if (in.hasRemaining()) {
       throw new IllegalArgumentException(in.remaining() + " trailing bytes after tree diff");
     }
-    return new TreeDiff(leaves, supernodes, zeroed, copied, deltas);
   }
 
   private static void writeLeaves(final ByteArrayOutputStream out, final List<LeafEntry> leaves) {
@@ -95,6 +124,14 @@ public final class TreeDiffCodec {
       leaves.add(new LeafEntry(gIndex, Bytes.wrap(readLengthPrefixed(in))));
     }
     return leaves;
+  }
+
+  private static void skipLeaves(final ByteBuffer in) {
+    final int count = readCount(in);
+    for (int i = 0; i < count; i++) {
+      VarInts.readUnsigned(in);
+      skipBytes(in, readInt(in));
+    }
   }
 
   private static void writeSupernodes(
@@ -156,6 +193,14 @@ public final class TreeDiffCodec {
     return zeroed;
   }
 
+  private static void skipZeroed(final ByteBuffer in) {
+    final int count = readCount(in);
+    for (int i = 0; i < count; i++) {
+      VarInts.readUnsigned(in);
+      skipBytes(in, Bytes32.SIZE);
+    }
+  }
+
   private static void writeCopied(final ByteArrayOutputStream out, final List<CopiedEntry> copied) {
     VarInts.writeUnsigned(out, copied.size());
     for (final CopiedEntry entry : copied) {
@@ -193,6 +238,14 @@ public final class TreeDiffCodec {
     return deltas;
   }
 
+  private static void skipDeltas(final ByteBuffer in) {
+    final int count = readCount(in);
+    for (int i = 0; i < count; i++) {
+      readInt(in);
+      skipBytes(in, readInt(in));
+    }
+  }
+
   private static <T> List<T> sorted(final List<T> entries, final Comparator<T> comparator) {
     final List<T> copy = new ArrayList<>(entries);
     copy.sort(comparator);
@@ -209,13 +262,22 @@ public final class TreeDiffCodec {
   }
 
   private static byte[] readBytes(final ByteBuffer in, final int length) {
+    checkAvailable(in, length);
+    final byte[] data = new byte[length];
+    in.get(data);
+    return data;
+  }
+
+  private static void skipBytes(final ByteBuffer in, final int length) {
+    checkAvailable(in, length);
+    in.position(in.position() + length);
+  }
+
+  private static void checkAvailable(final ByteBuffer in, final int length) {
     if (in.remaining() < length) {
       throw new IllegalArgumentException(
           "Truncated tree diff: need " + length + " bytes, have " + in.remaining());
     }
-    final byte[] data = new byte[length];
-    in.get(data);
-    return data;
   }
 
   /**

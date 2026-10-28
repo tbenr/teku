@@ -14,6 +14,8 @@
 package tech.pegasys.teku.storage.server.kvstore.dataaccess;
 
 import com.google.errorprone.annotations.MustBeClosed;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -41,7 +43,6 @@ import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.util.DataColumnSlotAndIdentifier;
 import tech.pegasys.teku.spec.datastructures.util.SlotAndBlockRootAndBlobIndex;
 import tech.pegasys.teku.storage.server.kvstore.ColumnEntry;
-import tech.pegasys.teku.storage.server.kvstore.ColumnSize;
 
 public interface KvStoreCombinedDao extends AutoCloseable {
 
@@ -114,29 +115,58 @@ public interface KvStoreCombinedDao extends AutoCloseable {
 
   Optional<BeaconState> getHotState(Bytes32 root);
 
+  // State diff storage requires a V6 database: the defaults below serve the V4 adapter, which
+  // never stores state diff data
+
   /** The encoded state diff DAG node record stored for {@code blockRoot}. */
-  Optional<Bytes> getStateDiffNode(Bytes32 blockRoot);
+  default Optional<Bytes> getStateDiffNode(final Bytes32 blockRoot) {
+    return Optional.empty();
+  }
 
   /** The supernode SSZ stored for {@code hash}. */
-  Optional<Bytes> getStateSupernode(Bytes32 hash);
+  default Optional<Bytes> getStateSupernode(final Bytes32 hash) {
+    return Optional.empty();
+  }
 
   /** The number of state diff DAG nodes referencing the supernode {@code hash}. */
-  Optional<UInt64> getStateSupernodeRefCount(Bytes32 hash);
+  default Optional<UInt64> getStateSupernodeRefCount(final Bytes32 hash) {
+    return Optional.empty();
+  }
+
+  /**
+   * The reference counts of the supernodes {@code hashes}, read in one batch where the storage
+   * engine supports it. Hashes without a count are omitted.
+   */
+  default Map<Bytes32, UInt64> getStateSupernodeRefCounts(final Collection<Bytes32> hashes) {
+    final Map<Bytes32, UInt64> counts = new HashMap<>();
+    for (final Bytes32 hash : hashes) {
+      getStateSupernodeRefCount(hash).ifPresent(count -> counts.put(hash, count));
+    }
+    return counts;
+  }
 
   /** The marker recording that hot states are stored in the state diff DAG. */
-  Optional<Bytes> getStateDiffMode();
+  default Optional<Bytes> getStateDiffMode() {
+    return Optional.empty();
+  }
 
   /** All encoded state diff DAG node records, by block root. */
   @MustBeClosed
-  Stream<ColumnEntry<Bytes32, Bytes>> streamStateDiffNodes();
+  default Stream<ColumnEntry<Bytes32, Bytes>> streamStateDiffNodes() {
+    return Stream.empty();
+  }
 
   /** All supernode reference counts, by supernode hash. */
   @MustBeClosed
-  Stream<ColumnEntry<Bytes32, UInt64>> streamStateSupernodeRefCounts();
+  default Stream<ColumnEntry<Bytes32, UInt64>> streamStateSupernodeRefCounts() {
+    return Stream.empty();
+  }
 
   /** The hashes of all stored supernodes. */
   @MustBeClosed
-  Stream<Bytes32> streamStateSupernodeHashes();
+  default Stream<Bytes32> streamStateSupernodeHashes() {
+    return Stream.empty();
+  }
 
   Optional<SignedBlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelope(Bytes32 root);
 
@@ -190,12 +220,6 @@ public interface KvStoreCombinedDao extends AutoCloseable {
   Optional<UInt64> getEarliestBlobSidecarSlot();
 
   Map<String, Long> getColumnCounts(final Optional<String> maybeColumnFilter);
-
-  /**
-   * Returns the on-disk size estimates of all (or filtered) columns, read from storage engine
-   * properties without scanning. Empty when the storage engine has no per-column sizes.
-   */
-  Map<String, ColumnSize> getColumnSizes(final Optional<String> maybeColumnFilter);
 
   Map<String, Optional<String>> getVariables();
 
@@ -312,20 +336,40 @@ public interface KvStoreCombinedDao extends AutoCloseable {
 
     void deleteHotState(Bytes32 blockRoot);
 
-    void putStateDiffNode(Bytes32 blockRoot, Bytes record);
+    // State diff storage requires a V6 database: the defaults below serve the V4 adapter
 
-    void deleteStateDiffNode(Bytes32 blockRoot);
+    default void putStateDiffNode(final Bytes32 blockRoot, final Bytes record) {
+      throw stateDiffStorageUnsupported();
+    }
 
-    void putStateSupernode(Bytes32 hash, Bytes ssz);
+    default void deleteStateDiffNode(final Bytes32 blockRoot) {
+      throw stateDiffStorageUnsupported();
+    }
 
-    void setStateSupernodeRefCount(Bytes32 hash, UInt64 refCount);
+    default void putStateSupernode(final Bytes32 hash, final Bytes ssz) {
+      throw stateDiffStorageUnsupported();
+    }
+
+    default void setStateSupernodeRefCount(final Bytes32 hash, final UInt64 refCount) {
+      throw stateDiffStorageUnsupported();
+    }
 
     /** Deletes both the supernode SSZ and its reference count. */
-    void deleteStateSupernode(Bytes32 hash);
+    default void deleteStateSupernode(final Bytes32 hash) {
+      throw stateDiffStorageUnsupported();
+    }
 
-    void setStateDiffMode(Bytes marker);
+    default void setStateDiffMode(final Bytes marker) {
+      throw stateDiffStorageUnsupported();
+    }
 
-    void deleteLatestFinalizedState();
+    default void deleteLatestFinalizedState() {
+      throw stateDiffStorageUnsupported();
+    }
+
+    private static UnsupportedOperationException stateDiffStorageUnsupported() {
+      return new UnsupportedOperationException("State diff storage requires a V6 database");
+    }
 
     void setFinalizedDepositSnapshot(DepositTreeSnapshot finalizedDepositSnapshot);
 

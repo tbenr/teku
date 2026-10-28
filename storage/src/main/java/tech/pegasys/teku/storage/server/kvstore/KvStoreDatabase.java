@@ -141,6 +141,13 @@ public class KvStoreDatabase implements Database {
   /** Whether the database uses state diff storage, i.e. carries the state diff mode marker. */
   private volatile boolean stateDiffStorageActive;
 
+  /**
+   * The finalized anchor state reconstructed from the state diff DAG when the store was loaded,
+   * reused while the finalized checkpoint keeps its block root and cleared when an update sets a
+   * finalized checkpoint.
+   */
+  private volatile Optional<ReconstructedAnchor> reconstructedAnchor = Optional.empty();
+
   private final AtomicLong lastHotNodeFailureLogMillis = new AtomicLong(Long.MIN_VALUE);
   private final AtomicLong suppressedHotNodeFailureLogs = new AtomicLong();
 
@@ -533,11 +540,6 @@ public class KvStoreDatabase implements Database {
   @Override
   public Map<String, Long> getColumnCounts(final Optional<String> maybeColumnFilter) {
     return dao.getColumnCounts(maybeColumnFilter);
-  }
-
-  @Override
-  public Map<String, ColumnSize> getColumnSizes(final Optional<String> maybeColumnFilter) {
-    return dao.getColumnSizes(maybeColumnFilter);
   }
 
   @Override
@@ -987,7 +989,14 @@ public class KvStoreDatabase implements Database {
     if (!stateDiffStorageActive) {
       return dao.getLatestFinalizedState();
     }
-    return dao.getFinalizedCheckpoint().map(this::reconstructFinalizedState);
+    final Optional<ReconstructedAnchor> anchor = reconstructedAnchor;
+    return dao.getFinalizedCheckpoint()
+        .map(
+            checkpoint ->
+                anchor
+                    .filter(reconstructed -> reconstructed.blockRoot().equals(checkpoint.getRoot()))
+                    .map(ReconstructedAnchor::state)
+                    .orElseGet(() -> reconstructFinalizedState(checkpoint)));
   }
 
   private BeaconState reconstructFinalizedState(final Checkpoint checkpoint) {
@@ -1030,6 +1039,10 @@ public class KvStoreDatabase implements Database {
     final Checkpoint finalizedCheckpoint = dao.getFinalizedCheckpoint().orElseThrow();
     final Checkpoint bestJustifiedCheckpoint = dao.getBestJustifiedCheckpoint().orElseThrow();
     final BeaconState finalizedState = getLatestFinalizedState().orElseThrow();
+    if (stateDiffStorageActive) {
+      reconstructedAnchor =
+          Optional.of(new ReconstructedAnchor(finalizedCheckpoint.getRoot(), finalizedState));
+    }
     final Optional<Bytes32> latestCanonicalBlockRoot = dao.getLatestCanonicalBlockRoot();
     final Optional<UInt64> custodyGroupCount = dao.getCustodyGroupCount();
 
@@ -2123,6 +2136,7 @@ public class KvStoreDatabase implements Database {
           .getFinalizedCheckpoint()
           .ifPresent(
               checkpoint -> {
+                reconstructedAnchor = Optional.empty();
                 updater.setFinalizedCheckpoint(checkpoint);
                 final int slotsPerEpoch = spec.slotsPerEpoch(checkpoint.getEpoch());
                 final UInt64 finalizedSlot = checkpoint.getEpochStartSlot(spec).plus(slotsPerEpoch);
@@ -2759,4 +2773,6 @@ public class KvStoreDatabase implements Database {
       updater.addFinalizedStateRoot(state.hashTreeRoot(), state.getSlot());
     }
   }
+
+  private record ReconstructedAnchor(Bytes32 blockRoot, BeaconState state) {}
 }

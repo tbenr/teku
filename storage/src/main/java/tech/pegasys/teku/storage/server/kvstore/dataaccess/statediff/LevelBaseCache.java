@@ -79,11 +79,5 @@ class LevelBaseCache {
     }
   }
 
-  synchronized void clear() {
-    for (final Deque<Entry> slot : slots) {
-      slot.clear();
-    }
-  }
-
   private record Entry(Bytes32 root, TreeNode tree) {}
 }

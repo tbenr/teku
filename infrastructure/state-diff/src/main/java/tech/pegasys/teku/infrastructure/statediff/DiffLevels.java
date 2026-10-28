@@ -24,8 +24,6 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
  */
 public final class DiffLevels {
 
-  public static final DiffLevels PRUNE_DEFAULT = of(List.of(256L, 64L, 16L, 1L));
-
   private final long[] periods;
 
   private DiffLevels(final long[] periods) {

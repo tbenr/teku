@@ -17,11 +17,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -67,7 +64,6 @@ import tech.pegasys.teku.storage.server.Database;
 import tech.pegasys.teku.storage.server.DatabaseStorageException;
 import tech.pegasys.teku.storage.server.StorageConfiguration;
 import tech.pegasys.teku.storage.server.VersionedDatabaseFactory;
-import tech.pegasys.teku.storage.server.kvstore.ColumnSize;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationReport;
 import tech.pegasys.teku.storage.store.StoreBuilder;
 import tech.pegasys.teku.storage.store.UpdatableStore;
@@ -85,8 +81,6 @@ import tech.pegasys.teku.storage.store.UpdatableStore;
     footerHeading = "%n",
     footer = "Teku is licensed under the Apache License 2.0")
 public class DebugDbCommand implements Runnable {
-  private static final String COLUMN_SIZES_TOTAL_LABEL = "TOTAL";
-
   @Override
   public void run() {
     CommandLine.usage(this, System.out);
@@ -370,90 +364,6 @@ public class DebugDbCommand implements Runnable {
       new TreeMap<>(counts).forEach((label, count) -> System.out.printf(fmt, label, count));
     }
     return 0;
-  }
-
-  @Command(
-      name = "get-column-sizes",
-      description =
-          "Show the on-disk size estimates of columns in storage tables, read from RocksDB"
-              + " properties without scanning the columns",
-      mixinStandardHelpOptions = true,
-      showDefaultValues = true,
-      abbreviateSynopsis = true,
-      versionProvider = PicoCliVersionProvider.class,
-      synopsisHeading = "%n",
-      descriptionHeading = "%nDescription:%n%n",
-      optionListHeading = "%nOptions:%n",
-      footerHeading = "%n",
-      footer = "Teku is licensed under the Apache License 2.0")
-  public int getColumnSizes(
-      @Mixin final BeaconNodeDataOptions beaconNodeDataOptions,
-      @Mixin final Eth2NetworkOptions eth2NetworkOptions,
-      @Option(
-              names = {"--filter"},
-              description = "Only show the columns that contain the specified filter.")
-          final String filter)
-      throws Exception {
-    try (final Database database = createDatabase(beaconNodeDataOptions, eth2NetworkOptions)) {
-      final Map<String, ColumnSize> sizes = database.getColumnSizes(Optional.ofNullable(filter));
-      if (sizes.isEmpty()) {
-        if (filter == null || database.getColumnSizes(Optional.empty()).isEmpty()) {
-          System.err.println("Column sizes are not supported for this database backend");
-          return 1;
-        }
-        System.err.println("No column matches the filter " + filter);
-        return 1;
-      }
-      formatColumnSizes(sizes).forEach(System.out::println);
-    }
-    return 0;
-  }
-
-  /**
-   * Formats one line per column, sorted by name, followed by a total line. The blob file size is
-   * shown only when some column has blob files.
-   */
-  static List<String> formatColumnSizes(final Map<String, ColumnSize> sizes) {
-    final Map<String, ColumnSize> sorted = new TreeMap<>(sizes);
-    final ColumnSize total = sorted.values().stream().reduce(ColumnSize.EMPTY, ColumnSize::plus);
-    final boolean showBlobFiles = total.totalBlobFileSize() > 0;
-    final int width =
-        Math.max(
-            COLUMN_SIZES_TOTAL_LABEL.length(),
-            sorted.keySet().stream().mapToInt(String::length).max().orElse(0));
-    final List<String> lines = new ArrayList<>();
-    sorted.forEach((label, size) -> lines.add(formatColumnSize(width, label, size, showBlobFiles)));
-    lines.add(formatColumnSize(width, COLUMN_SIZES_TOTAL_LABEL, total, showBlobFiles));
-    return lines;
-  }
-
-  private static String formatColumnSize(
-      final int width, final String label, final ColumnSize size, final boolean showBlobFiles) {
-    final String line =
-        String.format(
-            Locale.ROOT,
-            "%" + width + "s: live %-30s sst %-30s",
-            label,
-            formatBytes(size.estimateLiveDataSize()),
-            formatBytes(size.totalSstFilesSize()));
-    return showBlobFiles
-        ? line + " blob " + formatBytes(size.totalBlobFileSize())
-        : line.stripTrailing();
-  }
-
-  /** Formats a byte count as a binary-prefixed size followed by the raw count. */
-  static String formatBytes(final long bytes) {
-    final String[] units = {"KiB", "MiB", "GiB", "TiB", "PiB"};
-    if (bytes < 1024) {
-      return String.format(Locale.ROOT, "%d B (%d bytes)", bytes, bytes);
-    }
-    double value = bytes;
-    int unit = -1;
-    while (value >= 1024 && unit < units.length - 1) {
-      value /= 1024;
-      unit++;
-    }
-    return String.format(Locale.ROOT, "%.2f %s (%d bytes)", value, units[unit], bytes);
   }
 
   @Command(
