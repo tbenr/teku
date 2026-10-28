@@ -19,7 +19,6 @@ import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.storage.api.StorageUpdate;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.HotUpdater;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDag;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationReport;
 
 /**
@@ -67,9 +66,6 @@ interface HotStateStorage {
    * @throws IllegalStateException when state diff storage is not active
    */
   StateDiffVerificationReport verify();
-
-  /** The state diff DAG of an active state diff storage, for tests reading its counters. */
-  Optional<StateDiffDag> getStateDiffDag();
 
   /** The hot state changes of one storage update, written to its hot transaction. */
   interface HotStateUpdate {
