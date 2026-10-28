@@ -1,7 +1,7 @@
 # State diff storage (experimental)
 
 Status: phase 1 (non-archive nodes) implemented behind a hidden flag; soak-tested
-on mainnet and on sepolia (Gloas). Living document, last updated 2026-10-23.
+on mainnet and on sepolia (Gloas). Living document, last updated 2026-10-28.
 
 Design: [docs/superpowers/specs/2026-10-22-state-diff-dag-design.md](superpowers/specs/2026-10-22-state-diff-dag-design.md).
 Every non-obvious decision and all measurements:
@@ -97,10 +97,14 @@ times, and the on-disk footprint of state storage by about 3.5 times, for about
    are stored whole (31 KB); patching only the changed 121-byte validators
    mainly helps coarse nodes and refcount churn.
 3. **Cold base-cache reconstruction on the live node** took 14.5 s for the first
-   node after a restart, against 3.1 s offline; needs profiling before the flag
-   can default on.
-4. The per-level base cache holds up to 3 trees per level; `baseCacheLevels`
-   exists in `StateDiffDagConfig` but is not yet exposed on the CLI.
+   node after a restart, against 3.1 s offline. The anchor reconstructed at
+   startup now seeds the base cache, and every reconstruction stops at the
+   first cached node of its chain (decisions log 49), so a first node whose
+   chain passes through the anchor applies only the links above it; a chain
+   that bypasses the anchor through a coarser node still starts at the
+   snapshot. Not yet measured on the live node.
+4. The per-level base cache holds 3 trees at the finest level and 1 at each
+   coarser level, every level cached (decisions log 49); not configurable.
 5. Retention after a long non-finality period decodes every intermediate node's
    payload in one transaction; store the supernode hash list in the record
    header or batch deletions if this matters.

@@ -239,24 +239,25 @@ in the same transaction as the hot block, using the per-level base cache (5.5).
 
 ### 5.5 Per-level base cache
 
-The writer keeps, for each configured level, the three most recently written
-nodes at that level or above: their roots and state trees (three, so that a
+The DAG keeps, for every level, the most recently used nodes at that level or
+coarser: their roots and state trees, three at the finest level (so that a
 second checkpoint block for the same epoch after a start-slot reorg still finds
-its parent). For a new node at level `L`
-whose resolved parent root equals the cached root for level `L`, the cached
-tree is the diff base and the walk starts immediately. Otherwise (restart,
-fork at a coarse boundary) the parent is reconstructed from the DAG, which is
-the same code path startup uses, and then cached.
+its parent) and one at each coarser level (decision 49). When a new node's
+resolved parent is cached at any level, the cached tree is the diff base and
+the walk starts immediately. Otherwise (fork at a coarse boundary, a parent
+evicted) the parent is reconstructed from the DAG, which is the same code path
+startup uses, and then cached.
 
 Memory: cached trees share all unchanged subtrees with the live state and with
 each other. The cost is the changed data between the cached base and the live
 state, which for a level-256 base can approach a full state in the worst case
 (balances, inactivity scores, participation and the touched validator
-supernodes). The cache size in levels is configurable; dropping coarse levels
-from it costs one reconstruction every `p_L` epochs instead.
+supernodes). Coarse levels therefore keep one entry each.
 
-After a restart the cache is empty. It fills lazily: the first node at each
-level reconstructs its parent once.
+After a restart the cache holds the finalized anchor, reconstructed when the
+store is loaded; the rest fills lazily. A reconstruction, for a diff base or a
+read, stops at the first node below the requested one whose state is cached (or
+was written in the running transaction) and applies only the links above it.
 
 ### 5.6 Finalization
 
@@ -293,7 +294,9 @@ reading `LATEST_FINALIZED_STATE`.
 
 Reconstruction of node `N`: load its chain, materialize the snapshot by
 applying its payload to the default tree, then apply each diff payload in order
-with `TreeUpdates`. Delta sections compose additively, so they are folded along
+with `TreeUpdates`. When a node of the chain below `N` has its state in the
+base cache (5.5), the chain is loaded only down to it and the payloads above it
+are applied to its tree instead; `N`'s own payload is always applied. Delta sections compose additively, so they are folded along
 the chain into one value array per field (the snapshot's starting from the
 empty default list) and each delta field is built once after the last link,
 instead of once per link (decision 40); every link of a chain has its
