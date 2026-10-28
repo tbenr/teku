@@ -680,3 +680,29 @@ checkpoint nodes went through the DAG.
     instances share one metrics system in tests and a plain gauge cannot be
     registered twice.
 
+61. **DERIVED. Mainnet soak of the window slice (2026-10-28, build 84e5d83a1a +
+    the staged window wave).** The running prune soak node was restarted in
+    archive mode with `--Xdata-storage-archive-finalized-states-retained=4096`
+    (128 epochs) while still syncing at ~15 epochs/min: the pruner was skipped
+    (INFO), the window start was recorded at the previous anchor's epoch
+    485220 (decision 52), nothing was deleted until the window filled, then the
+    start followed finalization exactly (485291 at finalized 485419) with
+    deletions in bursts at level-16 boundaries (63 of 199 nodes written), 0
+    errors, 0 verification failures. REST `/eth/v2/debug/beacon/states/{slot}`
+    inside the window: 339 MB state in 1.6 s and 3.0 s at two checkpoint slots,
+    10.5 s for a slot 13 blocks into an epoch (block replay dominates); below
+    the window start: 404 in milliseconds. Offline `verify-state-diffs` on the
+    stopped database: 146 nodes, 11137 supernodes all hash-checked, anchor
+    chain 14 reconstructed in 1.3 s, no problems. `rocksdb usage`: 214 MiB of
+    nodes (179 MiB live, 1.47 MiB per node on disk against 5.35 MB raw, LZ4
+    ~3.6x) and 167 MiB of supernodes for the 128-epoch window plus the oldest
+    node's chain: about 3 MiB per epoch, about 0.65 GB per day of mainnet
+    history at today's format, the low end of the 0.7-1.3 GB estimate. Per-field
+    delta bytes over 199 nodes: balances 784 MB (3.9 MB per node, every node),
+    inactivity scores 127 MB (53 nodes, 2.4 MB each, 0.64 MB per node on
+    average): the inactivity share of the delta section is ~14%, so sparse
+    deltas (B7) are a minor gain and compression of the balance deltas (42) is
+    the lever for the payload version 2 wave. Node write 63 ms average over the
+    run (sync plus steady state). Restart with the window on: start persisted,
+    one 1.3 s startup reconstruction, no deletions on restart.
+

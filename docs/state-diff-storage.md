@@ -3,8 +3,8 @@
 Status: phase 1 (non-archive nodes) implemented behind a hidden flag; soak-tested
 on mainnet and on sepolia (Gloas); Fulu to Gloas fork crossing verified on a
 kurtosis devnet (decisions log, 2026-10-28 fork crossing section). Phase 2,
-first slice (archive finalized states in the DAG, retention window) implemented,
-not soaked yet (decisions log 51). Living document, last updated 2026-10-28.
+first slice (archive finalized states in the DAG, retention window) implemented
+and soaked on mainnet with a 128-epoch window (decisions log 51, 61). Living document, last updated 2026-10-28.
 
 Design: [docs/superpowers/specs/2026-10-22-state-diff-dag-design.md](superpowers/specs/2026-10-22-state-diff-dag-design.md).
 Every non-obvious decision and all measurements:
@@ -145,10 +145,12 @@ times, and the on-disk footprint of state storage by about 3.5 times, for about
 
 ## Next steps
 
-- Soak the phase 2 first slice (archive with and without a window) on mainnet:
-  disk growth per day of history (estimated 0.7 to 1.3 GB at today's node
-  sizes, half that once deltas are compressed), historical read latency, and
-  `delta_field_bytes_total` to size the inactivity-score share of the deltas.
+- Measured on the window soak (decisions log 61): about 3 MiB per epoch on disk
+  (nodes 1.5 MiB after LZ4 plus supernodes 1.3 MiB), about 0.65 GB per day of
+  mainnet history; historical reads 1.6-3 s at a checkpoint slot, plus block
+  replay inside the epoch; inactivity-score deltas are ~14% of the delta
+  section, so the payload version 2 wave should lead with delta compression.
+  Still to soak: an unbounded archive over days, and a longer window.
 - Phase 2, archive node: configurable coarse levels above 256 epochs (archive
   databases use the prune levels today, so an old epoch costs a snapshot plus
   up to 21 diffs and a 20 MB snapshot every 256 epochs), and the
