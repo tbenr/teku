@@ -1,7 +1,8 @@
 # State diff storage (experimental)
 
 Status: phase 1 (non-archive nodes) implemented behind a hidden flag; soak-tested
-on mainnet and on sepolia (Gloas). Living document, last updated 2026-10-28.
+on mainnet and on sepolia (Gloas); Fulu to Gloas fork crossing verified on a
+kurtosis devnet (decisions log, 2026-10-28 fork crossing section). Living document, last updated 2026-10-28.
 
 Design: [docs/superpowers/specs/2026-10-22-state-diff-dag-design.md](superpowers/specs/2026-10-22-state-diff-dag-design.md).
 Every non-obvious decision and all measurements:
