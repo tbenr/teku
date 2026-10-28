@@ -232,6 +232,11 @@ public class NoOpDatabase implements Database {
   }
 
   @Override
+  public Optional<UInt64> getEarliestAvailableFinalizedStateSlot() {
+    return Optional.empty();
+  }
+
+  @Override
   @MustBeClosed
   public Stream<Map.Entry<Bytes32, UInt64>> getFinalizedStateRoots() {
     return Stream.empty();

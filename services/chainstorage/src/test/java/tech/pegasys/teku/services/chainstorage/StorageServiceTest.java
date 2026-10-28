@@ -50,6 +50,7 @@ import tech.pegasys.teku.storage.server.DatabaseVersion;
 import tech.pegasys.teku.storage.server.StateStorageMode;
 import tech.pegasys.teku.storage.server.StorageConfiguration;
 import tech.pegasys.teku.storage.server.pruner.DataColumnSidecarPruner;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.pruner.StatePruner;
 
 class StorageServiceTest {
@@ -80,6 +81,7 @@ class StorageServiceTest {
     when(storageConfiguration.getEth1DepositContract()).thenReturn(eth1DepositContract);
     when(storageConfiguration.isStoreNonCanonicalBlocksEnabled()).thenReturn(false);
     when(storageConfiguration.getSpec()).thenReturn(spec);
+    when(storageConfiguration.getStateDiffDagConfig()).thenReturn(StateDiffDagConfig.disabled());
 
     when(eventChannels.subscribe(any(), any())).thenReturn(eventChannels);
     when(serviceConfig.getEventChannels()).thenReturn(eventChannels);
@@ -116,6 +118,17 @@ class StorageServiceTest {
     assertThat(statePruner.isRunning()).isTrue();
     assertThat(statePruner.getPruneInterval())
         .isEqualTo(StorageConfiguration.DEFAULT_STATE_PRUNING_INTERVAL);
+  }
+
+  @Test
+  void shouldNotSetupStatePrunerWhenStateDiffStorageKeepsTheArchiveRetentionWindow() {
+    when(storageConfiguration.getDataStorageMode()).thenReturn(StateStorageMode.ARCHIVE);
+    when(storageConfiguration.getRetainedSlots()).thenReturn(5L);
+    when(storageConfiguration.getStateDiffDagConfig())
+        .thenReturn(StateDiffDagConfig.prune().withRetainedSlots(5));
+    final SafeFuture<?> future = storageService.doStart();
+    assertThat(future).isCompleted();
+    assertThat(storageService.getStatePruner()).isEmpty();
   }
 
   @ParameterizedTest

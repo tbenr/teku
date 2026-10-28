@@ -21,7 +21,9 @@ import org.hyperledger.besu.plugin.services.metrics.Counter;
 import org.hyperledger.besu.plugin.services.metrics.Histogram;
 import org.hyperledger.besu.plugin.services.metrics.LabelledMetric;
 import org.hyperledger.besu.plugin.services.metrics.LabelledSuppliedMetric;
+import tech.pegasys.teku.infrastructure.metrics.SettableLabelledGauge;
 import tech.pegasys.teku.infrastructure.metrics.TekuMetricCategory;
+import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
 /** Metrics of the state diff DAG, all under {@link TekuMetricCategory#STORAGE}. */
 class StateDiffMetrics {
@@ -48,6 +50,9 @@ class StateDiffMetrics {
   private final Counter verificationFailures;
   private final LabelledMetric<Counter> sectionBytes;
   private final LabelledMetric<Counter> sectionEntries;
+  private final LabelledMetric<Counter> deltaFieldBytes;
+  private final LabelledMetric<Counter> deltaFieldEntries;
+  private final SettableLabelledGauge windowStartEpoch;
   private final Counter reconstructListBuilds;
   private final Map<WritePhase, DoubleAdder> writePhaseSeconds = new EnumMap<>(WritePhase.class);
 
@@ -126,6 +131,26 @@ class StateDiffMetrics {
             "state_diff_section_entries_total",
             "Payload entries of written state diff DAG nodes by section",
             "section");
+    this.deltaFieldBytes =
+        metricsSystem.createLabelledCounter(
+            TekuMetricCategory.STORAGE,
+            "state_diff_delta_field_bytes_total",
+            "Encoded delta bytes of written state diff DAG nodes by state field, the breakdown of"
+                + " the deltas section",
+            "field");
+    this.deltaFieldEntries =
+        metricsSystem.createLabelledCounter(
+            TekuMetricCategory.STORAGE,
+            "state_diff_delta_field_entries_total",
+            "Delta entries of written state diff DAG nodes by state field",
+            "field");
+    // Registered on the first window start, so a database without a window exposes no value
+    this.windowStartEpoch =
+        SettableLabelledGauge.create(
+            metricsSystem,
+            TekuMetricCategory.STORAGE,
+            "state_diff_window_start_epoch",
+            "First epoch whose finalized state an archive database serves from the state diff DAG");
     this.reconstructListBuilds =
         metricsSystem.createCounter(
             TekuMetricCategory.STORAGE,
@@ -177,6 +202,14 @@ class StateDiffMetrics {
       sectionBytes.labels(section.label()).inc(section.bytes());
       sectionEntries.labels(section.label()).inc(section.entries());
     }
+    for (final DiffSectionSizes.Section field : sizes.deltaFields()) {
+      deltaFieldBytes.labels(field.label()).inc(field.bytes());
+      deltaFieldEntries.labels(field.label()).inc(field.entries());
+    }
+  }
+
+  void onWindowStart(final UInt64 epoch) {
+    windowStartEpoch.set(epoch.doubleValue());
   }
 
   /** For a finalized anchor whose node had to be created on finalization. */

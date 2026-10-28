@@ -152,6 +152,10 @@ public class SchemaHotAdapter implements Schema {
     return delegate.getVariableStateDiffMode();
   }
 
+  public KvStoreVariable<UInt64> getVariableStateDiffWindowStart() {
+    return delegate.getVariableStateDiffWindowStart();
+  }
+
   public Map<String, KvStoreColumn<?, ?>> getColumnMap() {
     return ImmutableMap.<String, KvStoreColumn<?, ?>>builder()
         .put("HOT_BLOCKS_BY_ROOT", getColumnHotBlocksByRoot())
@@ -191,6 +195,7 @@ public class SchemaHotAdapter implements Schema {
         .put("CUSTODY_GROUP_COUNT", getVariableCustodyGroupCount())
         .put("FAST_CONFIRMED_ROOT", getVariableFastConfirmedRoot())
         .put("STATE_DIFF_MODE", getVariableStateDiffMode())
+        .put("STATE_DIFF_WINDOW_START", getVariableStateDiffWindowStart())
         .build();
   }
 

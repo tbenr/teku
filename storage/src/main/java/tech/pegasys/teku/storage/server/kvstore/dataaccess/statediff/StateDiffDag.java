@@ -342,6 +342,11 @@ public class StateDiffDag {
     return new StateDiffDagTransaction(this, dao, updater);
   }
 
+  /** Publishes the window start of a database opened with one, which transactions then update. */
+  public void recordWindowStart(final UInt64 epoch) {
+    metrics.onWindowStart(epoch);
+  }
+
   DiffLevels levels() {
     return levels;
   }

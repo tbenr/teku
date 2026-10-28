@@ -190,6 +190,11 @@ public class CombinedKvStoreDao<S extends SchemaCombined>
   }
 
   @Override
+  public Optional<UInt64> getStateDiffWindowStart() {
+    return db.get(schema.getVariableStateDiffWindowStart());
+  }
+
+  @Override
   @MustBeClosed
   public Stream<ColumnEntry<Bytes32, Bytes>> streamStateDiffNodes() {
     return db.stream(schema.getColumnStateDiffNodes());
@@ -1057,6 +1062,16 @@ public class CombinedKvStoreDao<S extends SchemaCombined>
     @Override
     public void setStateDiffMode(final Bytes marker) {
       transaction.put(schema.getVariableStateDiffMode(), marker);
+    }
+
+    @Override
+    public void setStateDiffWindowStart(final UInt64 epoch) {
+      transaction.put(schema.getVariableStateDiffWindowStart(), epoch);
+    }
+
+    @Override
+    public void deleteStateDiffWindowStart() {
+      transaction.delete(schema.getVariableStateDiffWindowStart());
     }
 
     @Override
