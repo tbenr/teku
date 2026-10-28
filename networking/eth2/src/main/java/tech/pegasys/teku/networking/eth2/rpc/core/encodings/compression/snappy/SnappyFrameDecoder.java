@@ -46,10 +46,10 @@ public abstract class SnappyFrameDecoder
   private static final int MAX_UNCOMPRESSED_DATA_SIZE = 65536 + 4;
   // See https://github.com/google/snappy/blob/1.1.9/framing_format.txt#L82
   protected static final int MAX_DECOMPRESSED_DATA_SIZE = 65536;
-  // A compressed chunk holds a checksum and at most MAX_DECOMPRESSED_DATA_SIZE bytes compressed, so
-  // it can't exceed snappy's worst-case encoded length of that size
-  static final int MAX_COMPRESSED_CHUNK_SIZE =
-      4 + SnappyUtil.maxCompressedLength(MAX_DECOMPRESSED_DATA_SIZE);
+  // A compressed chunk holds a checksum and a snappy block of at most MAX_DECOMPRESSED_DATA_SIZE
+  // bytes. The format bounds such a block at 5 + 6n bytes: a length varint of at most 5 bytes, a
+  // literal of L >= 1 bytes takes at most L + 5, and a copy of at least 1 byte at most 5.
+  static final int MAX_COMPRESSED_CHUNK_SIZE = 4 + 5 + 6 * MAX_DECOMPRESSED_DATA_SIZE;
 
   private final boolean validateChecksums;
 

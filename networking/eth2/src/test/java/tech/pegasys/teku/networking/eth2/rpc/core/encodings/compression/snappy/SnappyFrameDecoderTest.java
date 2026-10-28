@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import org.apache.tuweni.bytes.Bytes;
 import org.junit.jupiter.api.Test;
@@ -27,8 +28,35 @@ public class SnappyFrameDecoderTest {
   private static final Bytes STREAM_IDENTIFIER = Bytes.fromHexString("0xff060000734e61507059");
 
   @Test
-  void maxCompressedChunkSizeIsChecksumPlusWorstCaseEncodingOf64KiB() {
-    assertThat(SnappyFrameDecoder.MAX_COMPRESSED_CHUNK_SIZE).isEqualTo(76_494);
+  void maxCompressedChunkSizeIsChecksumPlusLongestValidEncodingOf64KiB() {
+    assertThat(SnappyFrameDecoder.MAX_COMPRESSED_CHUNK_SIZE).isEqualTo(393_225);
+  }
+
+  @Test
+  void decodesChunkEncodedAsOneLiteralPerByte() throws Exception {
+    final Bytes data = Bytes.random(65536);
+    final ByteBuf block = Unpooled.buffer();
+    // uncompressed length 65536 as a varint, then a one-byte literal (tag 0x00) per byte
+    block.writeBytes(Bytes.fromHexString("0x808004").toArrayUnsafe());
+    for (int i = 0; i < data.size(); i++) {
+      block.writeByte(0x00);
+      block.writeByte(data.get(i));
+    }
+    final ByteBuf in = Unpooled.buffer();
+    in.writeBytes(STREAM_IDENTIFIER.toArrayUnsafe());
+    in.writeByte(0x00);
+    in.writeMediumLE(4 + block.readableBytes());
+    in.writeIntLE(SnappyUtil.calculateChecksum(Unpooled.wrappedBuffer(data.toArrayUnsafe())));
+    in.writeBytes(block);
+    block.release();
+    final SnappyFrameDecoder decoder = new AircompressorSnappyFrameDecoder();
+
+    final ByteBuf frame = decoder.decodeOneMessage(in).orElseThrow();
+
+    assertThat(Bytes.wrap(ByteBufUtil.getBytes(frame))).isEqualTo(data);
+    frame.release();
+    decoder.close();
+    in.release();
   }
 
   @Test
