@@ -531,3 +531,21 @@ after 7 h to preserve disk for the mainnet backfill.
     and folds the links above it onto that tree (delta fields start from its
     values). The requested node's own payload is always applied, and retention
     still loads whole chains.
+
+50. **DERIVED. Mainnet soak on the rebased tip ea51ab069c (2026-10-28).** Fresh
+    clone of the user's MINIMAL V6 mainnet database (legacy state storage, Oct 19,
+    finalized epoch 483376), stub execution engine, migrated in place at first
+    start ("Switched the database to state diff storage"), syncing ~9 days of
+    blocks at ~470 slots/min. After 224 node writes: 222 base-cache hits, 0
+    misses, 2 late anchors right after the migration (expected), 0 skipped, 0
+    verification failures; node write ~86-100 ms while syncing on a loaded
+    machine (walk ~90% of it), level-3 node 8.7 MB raw as in the earlier syncing
+    numbers. Restart tests of the base cache wave (49): restart 1 at a level-1
+    anchor: two reconstructions of 2 links each, 0.94 s in total; restart 2 at
+    finalized epoch 483624 (mod 16 = 8): the startup anchor reconstruction
+    walked 12 links in ~1.2 s (whole chain, as it must), and the first write
+    after the restart missed the cache but rebuilt its parent in 1 link, under
+    0.25 s, stopping at the seeded anchor; that case took 14.5 s before (open
+    item 3 of docs/state-diff-storage.md, now closed). Heap vs stock not
+    re-measured. The 2026-10-22 soak copies under the earlier session's /tmp
+    scratchpad had been removed by the macOS temporary-file cleanup.
