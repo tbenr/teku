@@ -69,22 +69,31 @@ public final class TreeDiffCodec {
 
   /**
    * The hashes of the supernode entries of a serialized diff, in entry order, as {@code
+   * deserialize(bytes).supernodes()} lists them. See {@link #supernodeEntries}.
+   */
+  public static List<Bytes32> supernodeHashes(final Bytes bytes) {
+    final List<Bytes32> hashes = new ArrayList<>();
+    for (final SupernodeEntry entry : supernodeEntries(bytes)) {
+      hashes.add(entry.hash());
+    }
+    return hashes;
+  }
+
+  /**
+   * The supernode entries of a serialized diff, in entry order, as {@code
    * deserialize(bytes).supernodes()} lists them. The other sections are walked without
    * materialising leaf data or delta bytes, so exactly the inputs {@link #deserialize} rejects are
    * rejected.
    */
-  public static List<Bytes32> supernodeHashes(final Bytes bytes) {
+  public static List<SupernodeEntry> supernodeEntries(final Bytes bytes) {
     final ByteBuffer in = openVersioned(bytes);
     skipLeaves(in);
-    final List<Bytes32> hashes = new ArrayList<>();
-    for (final SupernodeEntry entry : readSupernodes(in)) {
-      hashes.add(entry.hash());
-    }
+    final List<SupernodeEntry> supernodes = readSupernodes(in);
     skipZeroed(in);
     readCopied(in);
     skipDeltas(in);
     checkNoTrailingBytes(in);
-    return hashes;
+    return supernodes;
   }
 
   private static ByteBuffer openVersioned(final Bytes bytes) {

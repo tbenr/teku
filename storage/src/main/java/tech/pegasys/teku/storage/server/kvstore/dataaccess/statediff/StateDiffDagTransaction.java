@@ -16,6 +16,7 @@ package tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 
+import com.google.common.annotations.VisibleForTesting;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -130,6 +131,24 @@ public class StateDiffDagTransaction {
           public Optional<Bytes> load(final Bytes32 hash) {
             final Bytes pending = pendingSupernodes.get(hash);
             return pending != null ? Optional.of(pending) : dao.getStateSupernode(hash);
+          }
+
+          @Override
+          public Map<Bytes32, Bytes> loadAll(final Collection<Bytes32> hashes) {
+            final Map<Bytes32, Bytes> loaded = new HashMap<>();
+            final List<Bytes32> committed = new ArrayList<>();
+            for (final Bytes32 hash : hashes) {
+              final Bytes pending = pendingSupernodes.get(hash);
+              if (pending != null) {
+                loaded.put(hash, pending);
+              } else {
+                committed.add(hash);
+              }
+            }
+            if (!committed.isEmpty()) {
+              loaded.putAll(dao.getStateSupernodes(committed));
+            }
+            return loaded;
           }
         };
   }
@@ -645,6 +664,12 @@ public class StateDiffDagTransaction {
       throw new StateDiffVerificationException(
           "Corrupt payload of state diff node " + blockRoot + ": " + e.getMessage(), e);
     }
+  }
+
+  /** Reads nodes and supernodes as this transaction sees them, its own writes included. */
+  @VisibleForTesting
+  NodeReader reader() {
+    return reader;
   }
 
   private record WrittenNode(

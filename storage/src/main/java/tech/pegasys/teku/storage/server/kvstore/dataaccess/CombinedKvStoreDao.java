@@ -169,6 +169,11 @@ public class CombinedKvStoreDao<S extends SchemaCombined>
   }
 
   @Override
+  public Map<Bytes32, Bytes> getStateSupernodes(final Collection<Bytes32> hashes) {
+    return db.getAll(schema.getColumnStateSupernodes(), hashes);
+  }
+
+  @Override
   public Optional<UInt64> getStateSupernodeRefCount(final Bytes32 hash) {
     return db.get(schema.getColumnStateSupernodeRefCounts(), hash);
   }
