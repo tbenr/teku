@@ -86,8 +86,8 @@ class BeaconStateDiffFuzzTest {
       }
       final TreeNode reconstructed =
           support
-              .applierFor(base.getSlot(), supernodeSource)
-              .apply(base.getBackingNode(), roundTripCodec(diff));
+              .applierFor(base.getSlot())
+              .apply(base.getBackingNode(), roundTripCodec(diff), supernodeSource);
 
       assertThat(reconstructed.hashTreeRoot())
           .as("Trial %d: hash tree root", trial)
@@ -116,8 +116,8 @@ class BeaconStateDiffFuzzTest {
         .containsAll(snapshot.supernodes().stream().map(SupernodeEntry::hash).toList());
     final TreeNode reconstructed =
         support
-            .applierFor(state.getSlot(), supernodeSource)
-            .apply(schema.getDefaultTree(), roundTripCodec(snapshot));
+            .applierFor(state.getSlot())
+            .apply(schema.getDefaultTree(), roundTripCodec(snapshot), supernodeSource);
 
     assertThat(reconstructed.hashTreeRoot()).isEqualTo(state.hashTreeRoot());
     assertSameState(reconstructed, state, "Snapshot");
@@ -151,8 +151,8 @@ class BeaconStateDiffFuzzTest {
       final BeaconState expected = states.get(i);
       current =
           support
-              .applierFor(expected.getSlot(), supernodeSource)
-              .apply(current, TreeDiffCodec.deserialize(encodedDiffs.get(i)));
+              .applierFor(expected.getSlot())
+              .apply(current, TreeDiffCodec.deserialize(encodedDiffs.get(i)), supernodeSource);
       assertThat(current.hashTreeRoot())
           .as("Chain state %d: hash tree root", i)
           .isEqualTo(expected.hashTreeRoot());
@@ -188,8 +188,8 @@ class BeaconStateDiffFuzzTest {
 
     final TreeNode reconstructed =
         support
-            .applierFor(base.getSlot(), supernodeSource)
-            .apply(base.getBackingNode(), roundTripCodec(diff));
+            .applierFor(base.getSlot())
+            .apply(base.getBackingNode(), roundTripCodec(diff), supernodeSource);
     assertThat(reconstructed.hashTreeRoot()).isEqualTo(target.hashTreeRoot());
     assertSameState(reconstructed, target, "Epoch transition");
   }

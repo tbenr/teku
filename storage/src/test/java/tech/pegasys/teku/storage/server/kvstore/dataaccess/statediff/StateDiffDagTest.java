@@ -20,6 +20,7 @@ import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.spy;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -65,6 +66,7 @@ import tech.pegasys.teku.storage.server.kvstore.schema.V6SchemaCombinedSnapshot;
 class StateDiffDagTest {
 
   private static final int VALIDATOR_COUNT = 32;
+  private static final Comparator<Bytes32> BY_HEX = Comparator.comparing(Bytes32::toHexString);
 
   private Spec spec = TestSpecFactory.createMinimalElectra();
   private DataStructureUtil dataStructureUtil = new DataStructureUtil(spec);
@@ -725,7 +727,7 @@ class StateDiffDagTest {
 
     // The per-link reference: every diff applied in full, building its delta fields each time
     final BeaconStateSchema<?, ?> schema = dag.support().schemaFor(states.get(9).getSlot());
-    final TreeDiffApplier applier = new TreeDiffApplier(schema, dao::getStateSupernode);
+    final TreeDiffApplier applier = new TreeDiffApplier(schema);
     TreeNode perLink = schema.getDefaultTree();
     int perLinkListBuilds = 0;
     final Set<Integer> deltaFields = new HashSet<>();
@@ -733,7 +735,7 @@ class StateDiffDagTest {
       final TreeDiff diff = TreeDiffCodec.deserialize(record(root).payload());
       perLinkListBuilds += diff.deltas().size();
       diff.deltas().forEach(delta -> deltaFields.add(delta.fieldIndex()));
-      perLink = applier.apply(perLink, diff);
+      perLink = applier.apply(perLink, diff, dao::getStateSupernode);
     }
     final long listBuildsBefore = listBuilds();
 
@@ -1031,6 +1033,8 @@ class StateDiffDagTest {
     assertThat(report.refCountMismatches()).isEmpty();
     assertThat(report.missingSupernodes()).isEmpty();
     assertThat(report.unreferencedSupernodes()).isEmpty();
+    assertThat(report.supernodesHashChecked()).isEqualTo(report.supernodeCount());
+    assertThat(report.supernodeHashMismatches()).isEmpty();
     assertThat(report.nodesWithMissingParent()).isEmpty();
     assertThat(report.anchorRoot()).contains(roots.get(2));
     assertThat(report.anchorChainLength()).isEqualTo(3);
@@ -1083,10 +1087,137 @@ class StateDiffDagTest {
             new StateDiffVerificationReport.RefCountMismatch(hash, 1, Optional.empty()));
     assertThat(report.missingSupernodes()).containsExactly(hash);
     assertThat(report.unreferencedSupernodes()).containsExactly(orphanHash);
+    // Neither the missing nor the unreferenced supernode can be hashed
+    assertThat(report.supernodesHashChecked()).isEqualTo(report.supernodeCount() - 1);
+    assertThat(report.supernodeHashMismatches()).isEmpty();
     assertThat(report.anchorReconstructionOk()).isFalse();
     assertThat(report.anchorReconstructionError())
         .hasValueSatisfying(error -> assertThat(error).contains(hash.toHexString()));
     assertThat(report.hasProblems()).isTrue();
+  }
+
+  @Test
+  void verifyReportsSupernodesWhoseContentDoesNotHashToTheirKey() {
+    buildChain(1);
+    writeEpochs(0, 0);
+    setFinalizedCheckpoint(0);
+    final Bytes32 changedRoot = dataStructureUtil.randomBytes32();
+    update(
+        tx ->
+            tx.writeNode(
+                changedRoot,
+                withChangedValidator(states.get(0)),
+                epoch(0),
+                epoch(0),
+                List.of(),
+                false));
+    final Set<Bytes32> allHashes = new HashSet<>(supernodeHashes(roots.get(0)));
+    allHashes.addAll(supernodeHashes(changedRoot));
+    final List<Bytes32> hashes = allHashes.stream().sorted(BY_HEX).toList();
+    assertThat(hashes).hasSizeGreaterThan(1);
+    final Bytes32 flippedHash = hashes.get(0);
+    final Bytes32 truncatedHash = hashes.get(1);
+    final Bytes flipped = dao.getStateSupernode(flippedHash).orElseThrow();
+    final Bytes truncated = dao.getStateSupernode(truncatedHash).orElseThrow();
+
+    updateDao(
+        updater -> {
+          updater.putStateSupernode(
+              flippedHash, Bytes.concatenate(Bytes.of((byte) ~flipped.get(0)), flipped.slice(1)));
+          updater.putStateSupernode(truncatedHash, truncated.slice(0, truncated.size() - 1));
+        });
+
+    final StateDiffVerificationReport report = dag.verify(dao);
+    assertThat(report.supernodesHashChecked()).isEqualTo(hashes.size());
+    assertThat(report.supernodeHashMismatches()).containsExactly(flippedHash, truncatedHash);
+    assertThat(report.refCountMismatches()).isEmpty();
+    assertThat(report.hasProblems()).isTrue();
+  }
+
+  @Test
+  void reconstructionTrustsSupernodeContentToMatchItsKey() {
+    buildChain(1);
+    writeEpochs(0, 0);
+    final Bytes32 hash = supernodeHashes(roots.get(0)).iterator().next();
+    final Bytes ssz = dao.getStateSupernode(hash).orElseThrow();
+
+    updateDao(
+        updater ->
+            updater.putStateSupernode(
+                hash, Bytes.concatenate(Bytes.of((byte) ~ssz.get(0)), ssz.slice(1))));
+
+    // The state root check does not see the tampered content; verify does
+    final BeaconState reconstructed = dag.reconstruct(dao, roots.get(0)).orElseThrow();
+    assertThat(reconstructed.hashTreeRoot()).isEqualTo(states.get(0).hashTreeRoot());
+    assertThat(reconstructed.sszSerialize()).isNotEqualTo(states.get(0).sszSerialize());
+  }
+
+  @Test
+  void reconstructionLoadsTheSupernodesOfEachLinkInOneBatch() {
+    dao = spy(createDao(spec));
+    buildChain(3);
+    writeEpochs(0, 2);
+    final List<Bytes32> chain = dag.reconstructionChain(dao, roots.get(2));
+    final long linksWithSupernodes =
+        chain.stream().filter(root -> !supernodeHashes(root).isEmpty()).count();
+    assertThat(linksWithSupernodes).isPositive();
+    clearInvocations(dao);
+
+    assertReconstructs(2);
+
+    final List<String> supernodeReads =
+        mockingDetails(dao).getInvocations().stream()
+            .map(invocation -> invocation.getMethod().getName())
+            .filter(name -> name.startsWith("getStateSupernode"))
+            .toList();
+    assertThat(supernodeReads)
+        .containsOnly("getStateSupernodes")
+        .hasSize((int) linksWithSupernodes);
+  }
+
+  @Test
+  void transactionReaderServesPendingSupernodesBeforeCommittedOnes() {
+    buildChain(1);
+    writeEpochs(0, 0);
+    final Set<Bytes32> committedHashes = supernodeHashes(roots.get(0));
+    final Bytes32 committedHash = committedHashes.iterator().next();
+    final Bytes32 missingHash = dataStructureUtil.randomBytes32();
+    // A changed validator puts its supernode in the new node only
+    final BeaconState changed = withChangedValidator(states.get(0));
+    final Bytes32 changedRoot = dataStructureUtil.randomBytes32();
+
+    try (final HotUpdater updater = dao.hotUpdater()) {
+      final StateDiffDagTransaction transaction = dag.begin(dao, updater);
+      transaction.writeNode(changedRoot, changed, epoch(0), epoch(0), List.of(), false);
+      final Set<Bytes32> pendingHashes = supernodeHashes(transaction, changedRoot);
+      pendingHashes.removeAll(committedHashes);
+      assertThat(pendingHashes).isNotEmpty();
+      pendingHashes.forEach(hash -> assertThat(dao.getStateSupernode(hash)).isEmpty());
+      final List<Bytes32> found = new ArrayList<>(pendingHashes);
+      found.add(committedHash);
+      final List<Bytes32> requested = new ArrayList<>(found);
+      requested.add(missingHash);
+
+      final Map<Bytes32, Bytes> loaded = transaction.reader().loadAll(requested);
+
+      assertThat(loaded.keySet()).containsExactlyInAnyOrderElementsOf(found);
+      assertThat(loaded.get(committedHash))
+          .isEqualTo(dao.getStateSupernode(committedHash).orElseThrow());
+      assertThat(dag.reconstruct(transaction.reader(), changedRoot).orElseThrow())
+          .isEqualTo(changed);
+    }
+  }
+
+  @Test
+  void appliersAreMemoizedPerMilestoneAcrossReaders() {
+    buildChain(1);
+    writeEpochs(0, 0);
+    final TreeDiffApplier applier = dag.support().applierFor(states.get(0).getSlot());
+
+    assertReconstructs(0);
+    update(tx -> assertThat(dag.reconstruct(tx.reader(), roots.get(0))).isPresent());
+
+    assertThat(dag.support().applierFor(states.get(0).getSlot())).isSameAs(applier);
   }
 
   @Test
@@ -1287,6 +1418,27 @@ class StateDiffDagTest {
     return TreeDiffCodec.deserialize(record(root).payload()).supernodes().stream()
         .map(SupernodeEntry::hash)
         .collect(Collectors.toSet());
+  }
+
+  private static BeaconState withChangedValidator(final BeaconState state) {
+    return state.updated(
+        mutable ->
+            mutable
+                .getValidators()
+                .update(
+                    0,
+                    validator ->
+                        validator.withEffectiveBalance(
+                            validator.getEffectiveBalance().minusMinZero(1))));
+  }
+
+  private static Set<Bytes32> supernodeHashes(
+      final StateDiffDagTransaction transaction, final Bytes32 root) {
+    return TreeDiffCodec.deserialize(transaction.reader().getNode(root).orElseThrow().payload())
+        .supernodes()
+        .stream()
+        .map(SupernodeEntry::hash)
+        .collect(Collectors.toCollection(HashSet::new));
   }
 
   private void assertReconstructs(final int epoch) {

@@ -20,7 +20,8 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
 /**
  * The result of checking the stored state diff DAG: supernode reference counts recounted from the
- * stored nodes, parent pointers, and a reconstruction of the finalized anchor state.
+ * stored nodes, supernode content against its hash, parent pointers, and a reconstruction of the
+ * finalized anchor state.
  *
  * @param nodeCount the number of stored nodes
  * @param supernodeCount the number of stored supernodes (their SSZ)
@@ -29,6 +30,12 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
  *     count
  * @param missingSupernodes supernodes referenced by a stored node whose SSZ is not stored
  * @param unreferencedSupernodes supernodes whose SSZ is stored but that no stored node references
+ * @param supernodesHashChecked the number of stored supernodes whose content was hashed and
+ *     compared with the hash it is stored under; unreferenced supernodes are not checked, since the
+ *     field and depth needed to hash them come from a referencing node
+ * @param supernodeHashMismatches checked supernodes whose content does not hash to the hash it is
+ *     stored under. Reconstruction trusts a supernode's content to match its hash, so the anchor
+ *     reconstruction does not detect these
  * @param nodesWithMissingParent nodes, other than snapshots, whose parent node is not stored
  * @param corruptNodes nodes whose record or payload cannot be decoded; their references and parents
  *     are not counted
@@ -46,6 +53,8 @@ public record StateDiffVerificationReport(
     List<RefCountMismatch> refCountMismatches,
     List<Bytes32> missingSupernodes,
     List<Bytes32> unreferencedSupernodes,
+    long supernodesHashChecked,
+    List<Bytes32> supernodeHashMismatches,
     List<Bytes32> nodesWithMissingParent,
     List<Bytes32> corruptNodes,
     Optional<Bytes32> anchorRoot,
@@ -60,6 +69,8 @@ public record StateDiffVerificationReport(
       final List<RefCountMismatch> refCountMismatches,
       final List<Bytes32> missingSupernodes,
       final List<Bytes32> unreferencedSupernodes,
+      final long supernodesHashChecked,
+      final List<Bytes32> supernodeHashMismatches,
       final List<Bytes32> nodesWithMissingParent,
       final List<Bytes32> corruptNodes,
       final Optional<Bytes32> anchorRoot,
@@ -72,6 +83,8 @@ public record StateDiffVerificationReport(
     this.refCountMismatches = List.copyOf(refCountMismatches);
     this.missingSupernodes = List.copyOf(missingSupernodes);
     this.unreferencedSupernodes = List.copyOf(unreferencedSupernodes);
+    this.supernodesHashChecked = supernodesHashChecked;
+    this.supernodeHashMismatches = List.copyOf(supernodeHashMismatches);
     this.nodesWithMissingParent = List.copyOf(nodesWithMissingParent);
     this.corruptNodes = List.copyOf(corruptNodes);
     this.anchorRoot = anchorRoot;
@@ -86,6 +99,7 @@ public record StateDiffVerificationReport(
     return !refCountMismatches.isEmpty()
         || !missingSupernodes.isEmpty()
         || !unreferencedSupernodes.isEmpty()
+        || !supernodeHashMismatches.isEmpty()
         || !nodesWithMissingParent.isEmpty()
         || !corruptNodes.isEmpty()
         || !anchorReconstructionOk;
