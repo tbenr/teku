@@ -22,7 +22,7 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
 class DiffLevelsTest {
 
-  private final DiffLevels levels = DiffLevels.PRUNE_DEFAULT;
+  private final DiffLevels levels = DiffLevels.of(List.of(256L, 64L, 16L, 1L));
 
   @Test
   void rejectsNonDividingPeriods() {

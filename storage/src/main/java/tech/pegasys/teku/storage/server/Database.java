@@ -47,7 +47,6 @@ import tech.pegasys.teku.storage.api.UpdateResult;
 import tech.pegasys.teku.storage.api.WeakSubjectivityState;
 import tech.pegasys.teku.storage.api.WeakSubjectivityUpdate;
 import tech.pegasys.teku.storage.archive.BlobSidecarsArchiver;
-import tech.pegasys.teku.storage.server.kvstore.ColumnSize;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationReport;
 
 public interface Database extends AutoCloseable {
@@ -251,12 +250,6 @@ public interface Database extends AutoCloseable {
    * each included column — O(N) per column, potentially very slow on large databases.
    */
   Map<String, Long> getColumnCounts(final Optional<String> maybeColumnFilter);
-
-  /**
-   * Returns the on-disk size estimates of all (or filtered) columns, read from storage engine
-   * properties without scanning. Empty when the storage engine has no per-column sizes (LevelDB).
-   */
-  Map<String, ColumnSize> getColumnSizes(final Optional<String> maybeColumnFilter);
 
   Map<String, Optional<String>> getVariables();
 

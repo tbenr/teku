@@ -70,17 +70,4 @@ public record StateDiffNodeRecord(
     this.parentNodeRoot = checkNotNull(parentNodeRoot, "parentNodeRoot");
     this.payload = checkNotNull(payload, "payload");
   }
-
-  public StateDiffNodeRecord withLastEpoch(final UInt64 lastEpoch) {
-    return new StateDiffNodeRecord(
-        blockSlot,
-        stateRoot,
-        firstEpoch,
-        lastEpoch,
-        level,
-        snapshot,
-        prevNodeRoot,
-        parentNodeRoot,
-        payload);
-  }
 }

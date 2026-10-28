@@ -18,7 +18,9 @@ import it.unimi.dsi.fastutil.ints.IntSet;
 import it.unimi.dsi.fastutil.ints.IntSets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BiConsumer;
 import java.util.stream.IntStream;
+import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszContainerSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszSchema;
@@ -42,8 +44,8 @@ import tech.pegasys.teku.infrastructure.statediff.TreeDiff.ZeroedEntry;
  * <p>Per container field: a delta field (a packed uint64 list) is emitted as element deltas; a
  * field whose new subtree equals the base subtree of another field of the same schema is emitted as
  * a copy (list rotation); anything else is walked. The walk emits a zeroed entry for a subtree that
- * is the zero tree, a supernode reference (handing the bytes to the {@link SupernodeSink}) for an
- * {@link SszSuperNode}, the data of any other leaf, and recurses into branches.
+ * is the zero tree, a supernode reference (handing the bytes to the supernode sink) for an {@link
+ * SszSuperNode}, the data of any other leaf, and recurses into branches.
  *
  * <p>Equal roots do not imply equal trees. A leaf's root is its data zero-padded to 32 bytes and a
  * supernode's root ignores trailing zero elements, so appending a zero element to a packed list or
@@ -84,17 +86,23 @@ public final class TreeDiffer {
 
   /**
    * Fields that may serve as copy sources for field {@code fieldIndex}. Only fields of an equal
-   * schema qualify, so a copied subtree always has the leaf layout the target field expects.
+   * schema qualify, so a copied subtree always has the leaf layout the target field expects. Delta
+   * fields never do: a chain application folds their values and cannot serve them as a copy source.
    */
   private int[] sameSchemaFields(final int fieldIndex) {
     final SszSchema<?> fieldSchema = schema.getChildSchema(fieldIndex);
     return IntStream.range(0, schema.getFieldsCount())
-        .filter(j -> j != fieldIndex && schema.getChildSchema(j).equals(fieldSchema))
+        .filter(
+            j ->
+                j != fieldIndex
+                    && !deltaFieldIndices.contains(j)
+                    && schema.getChildSchema(j).equals(fieldSchema))
         .toArray();
   }
 
   @SuppressWarnings({"ReferenceEquality", "ReferenceComparison"})
-  public TreeDiff diff(final TreeNode base, final TreeNode target, final SupernodeSink sink) {
+  public TreeDiff diff(
+      final TreeNode base, final TreeNode target, final BiConsumer<Bytes32, Bytes> sink) {
     final Collector collector = new Collector(sink);
     for (int fieldIndex = 0; fieldIndex < fieldGIndices.length; fieldIndex++) {
       final long fieldGIndex = fieldGIndices[fieldIndex];
@@ -210,14 +218,14 @@ public final class TreeDiffer {
   }
 
   private static final class Collector {
-    private final SupernodeSink sink;
+    private final BiConsumer<Bytes32, Bytes> sink;
     private final List<LeafEntry> leaves = new ArrayList<>();
     private final List<SupernodeEntry> supernodes = new ArrayList<>();
     private final List<ZeroedEntry> zeroed = new ArrayList<>();
     private final List<CopiedEntry> copied = new ArrayList<>();
     private final List<DeltaEntry> deltas = new ArrayList<>();
 
-    private Collector(final SupernodeSink sink) {
+    private Collector(final BiConsumer<Bytes32, Bytes> sink) {
       this.sink = sink;
     }
 

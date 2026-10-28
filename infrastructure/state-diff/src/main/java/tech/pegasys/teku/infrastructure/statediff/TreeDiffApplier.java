@@ -181,8 +181,8 @@ public final class TreeDiffApplier {
    *
    * <p>A diff's delta entries are folded into the pending values of their fields and its other
    * sections are applied at once. A diff with another entry addressing a delta field (pending or
-   * its own), which {@link TreeDiffer} never produces, would observe or overwrite values not yet
-   * written, so the pending values are written first and that diff is applied as by {@link #apply}.
+   * its own) would observe or overwrite values not yet written, so it is rejected; {@link
+   * TreeDiffer} never produces one.
    */
   public final class ChainApplication {
     private final Int2ObjectMap<long[]> pending = new Int2ObjectLinkedOpenHashMap<>();
@@ -197,19 +197,16 @@ public final class TreeDiffApplier {
     /** Applies the next diff of the chain. */
     public void apply(final TreeDiff diff) {
       checkNotFinished();
-      if (touchesDeltaFields(diff)) {
-        writePending();
-        tree = TreeDiffApplier.this.apply(tree, diff);
-        listBuilds += diff.deltas().size();
-        return;
-      }
       final IntSet fields = new IntOpenHashSet();
       for (final DeltaEntry entry : diff.deltas()) {
-        final int fieldIndex = entry.fieldIndex();
-        if (!fields.add(fieldIndex)) {
+        if (!fields.add(entry.fieldIndex())) {
           throw new IllegalArgumentException(
-              "Duplicate update at gIndex " + schema.getChildGeneralizedIndex(fieldIndex));
+              "Duplicate update at gIndex " + schema.getChildGeneralizedIndex(entry.fieldIndex()));
         }
+      }
+      checkNoEntryAddressesDeltaFields(diff);
+      for (final DeltaEntry entry : diff.deltas()) {
+        final int fieldIndex = entry.fieldIndex();
         final long[] current = pending.get(fieldIndex);
         pending.put(
             fieldIndex,
@@ -228,7 +225,7 @@ public final class TreeDiffApplier {
       return tree;
     }
 
-    /** The uint64 lists built so far: one per folded field, more only after a fallback. */
+    /** The uint64 lists built so far: one per folded field. */
     public int listBuilds() {
       return listBuilds;
     }
@@ -241,12 +238,12 @@ public final class TreeDiffApplier {
       pending.clear();
     }
 
-    private boolean touchesDeltaFields(final TreeDiff diff) {
+    private void checkNoEntryAddressesDeltaFields(final TreeDiff diff) {
       final LongList deltaFieldGIndices = new LongArrayList();
       pending.keySet().forEach((final int field) -> deltaFieldGIndices.add(fieldGIndex(field)));
       diff.deltas().forEach(entry -> deltaFieldGIndices.add(fieldGIndex(entry.fieldIndex())));
       if (deltaFieldGIndices.isEmpty()) {
-        return false;
+        return;
       }
       final LongList gIndices = new LongArrayList();
       diff.copied()
@@ -263,11 +260,15 @@ public final class TreeDiffApplier {
           final NodeRelation relation =
               GIndexUtil.gIdxCompare(gIndices.getLong(i), deltaFieldGIndices.getLong(j));
           if (relation != NodeRelation.LEFT && relation != NodeRelation.RIGHT) {
-            return true;
+            throw new IllegalArgumentException(
+                "Diff entry at gIndex "
+                    + gIndices.getLong(i)
+                    + " addresses delta field gIndex "
+                    + deltaFieldGIndices.getLong(j)
+                    + ", which a chain application cannot fold");
           }
         }
       }
-      return false;
     }
 
     private long fieldGIndex(final int fieldIndex) {
