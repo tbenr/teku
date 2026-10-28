@@ -222,6 +222,13 @@ public interface Database extends AutoCloseable {
 
   Optional<BeaconState> getLatestAvailableFinalizedState(UInt64 maxSlot);
 
+  /**
+   * The slot from which {@link #getLatestAvailableFinalizedState} serves finalized states: the
+   * earliest stored finalized state's, or with state diff storage the start of its retention window
+   * or finalized history. Empty when no finalized state is stored.
+   */
+  Optional<UInt64> getEarliestAvailableFinalizedStateSlot();
+
   @MustBeClosed
   Stream<Map.Entry<Bytes32, UInt64>> getFinalizedStateRoots();
 

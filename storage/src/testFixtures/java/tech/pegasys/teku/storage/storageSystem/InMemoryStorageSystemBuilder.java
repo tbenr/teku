@@ -43,6 +43,7 @@ public class InMemoryStorageSystemBuilder {
   private long stateStorageFrequency = 1L;
   private boolean storeNonCanonicalBlocks = false;
   private boolean stateDiffsEnabled = false;
+  private long stateDiffRetainedSlots = 0;
 
   private int stateRebuildTimeoutSeconds = 120;
 
@@ -118,7 +119,8 @@ public class InMemoryStorageSystemBuilder {
             .stateStorageFrequency(stateStorageFrequency)
             .storeConfig(storeConfig)
             .numberOfValidators(numberOfValidators)
-            .stateDiffsEnabled(stateDiffsEnabled);
+            .stateDiffsEnabled(stateDiffsEnabled)
+            .stateDiffRetainedSlots(stateDiffRetainedSlots);
 
     copy.unifiedDb = unifiedDb;
     copy.hotDb = hotDb;
@@ -142,6 +144,12 @@ public class InMemoryStorageSystemBuilder {
 
   public InMemoryStorageSystemBuilder stateDiffsEnabled(final boolean stateDiffsEnabled) {
     this.stateDiffsEnabled = stateDiffsEnabled;
+    return this;
+  }
+
+  /** The retention window of an archive database with state diff storage, in slots. */
+  public InMemoryStorageSystemBuilder stateDiffRetainedSlots(final long stateDiffRetainedSlots) {
+    this.stateDiffRetainedSlots = stateDiffRetainedSlots;
     return this;
   }
 
@@ -207,7 +215,8 @@ public class InMemoryStorageSystemBuilder {
   }
 
   private StateDiffDagConfig stateDiffDagConfig() {
-    return stateDiffsEnabled ? StateDiffDagConfig.prune() : StateDiffDagConfig.disabled();
+    return (stateDiffsEnabled ? StateDiffDagConfig.prune() : StateDiffDagConfig.disabled())
+        .withRetainedSlots(stateDiffRetainedSlots);
   }
 
   // V5 only differs by the RocksDB configuration which doesn't apply to the in-memory version

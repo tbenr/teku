@@ -336,8 +336,9 @@ snapshot, at most 3 L64, 3 L16, 15 L1 nodes and the hot nodes above the anchor.
 When a new snapshot enters the chain the entire older chain becomes garbage in
 one step.
 
-Archive mode: nothing on the finalized chain is deleted. Orphan pruning is the
-same as prune mode.
+Archive mode: nothing on the finalized chain is deleted, unless a retention
+window is configured (5.11, "Retention window"). Orphan pruning is the same as
+prune mode.
 
 `HOT_STATES_BY_ROOT` entries written before migration are deleted by the
 existing hot-state pruning and are not recreated.
@@ -384,8 +385,24 @@ Historical reads: `getLatestAvailableFinalizedState(maxSlot)` finds the
 checkpoint block root for `epoch(maxSlot)` via the finalized block-by-slot
 index (floor lookup at the epoch start slot), reconstructs that node and
 returns it. `StateCacheLoader` then replays finalized blocks to the requested
-slot as today. `getEarliestAvailableFinalizedStateSlot` is the slot of the
-earliest snapshot node on the finalized chain.
+slot as today. If that checkpoint block has no node (a skipped node, 5.4), the
+previous checkpoint block's node is used, down to the window start. A
+reconstruction failure is an error for the caller, not an empty result.
+Epochs before the window start are not served.
+
+Implemented (phase 2, first slice, decision 51): the first served epoch is a
+hot variable, `STATE_DIFF_WINDOW_START` (14), written with the anchor snapshot
+when an archive database switches to state diff storage or is created with it
+(the anchor's epoch), and moved by the retention window.
+`Database.getEarliestAvailableFinalizedStateSlot` reports the start slot of
+that epoch (the spec draft said "the slot of the earliest snapshot node"; the
+window start is what reads honour). An archive database without the variable
+(switched from prune mode, or to state diff storage before this slice) records
+the previous anchor's epoch at its next finalization: before it only the
+anchor chain was kept. Finalized states are no longer written to the legacy
+finalized state columns in this mode; the state-root-to-slot index
+(`addFinalizedStateRoot`) is still written for every finalized state the update
+has at hand, as before, and the legacy `StatePruner` is not started.
 
 `--reconstruct-historic-states`: the service calls
 `onReconstructedFinalizedState(state, blockRoot)` for every block in order from
@@ -419,10 +436,26 @@ chain of nodes. Garbage at each finalization is the existing prune rule with
 the anchor replaced by the oldest retained node: the node that just left the
 window unless it is on the new backbone, plus the old backbone minus the new
 one. `--Xdata-storage-archive-finalized-states-retained` (slots) already
-expresses this retention and is reused: 0 is prune behaviour, archive mode
-without it is unbounded. `getEarliestAvailableFinalizedStateSlot` reports the
+expresses this retention and is reused: `W = retained / slots_per_epoch`
+epochs, the window start being `anchor_epoch - W`; 0 (the default) keeps the
+archive unbounded. `getEarliestAvailableFinalizedStateSlot` reports the
 window start and the snapshot-mode state pruner is not used. History begins
 at the switch or at the checkpoint-sync anchor; no genesis backfill is needed.
+
+As implemented (decision 51): the oldest retained node `O` is the node of the
+checkpoint block of the window start epoch `S`, or the latest earlier
+checkpoint block's node when that one was skipped. At a finalization that
+moves `S` from `S'` to `S`, the candidates are `chain(O')` and the checkpoint
+block roots of the epochs `S'..S` (floor lookups on the finalized blocks, which
+the update writes first); everything in `chain(O)` is removed from them and the
+rest deleted. The window start moves by at most 256 epochs per finalization,
+so a backlog (a lowered `W`, or an unbounded database given a window) is
+drained in bounded steps, logged at INFO. A raised `W` does not move the start
+back: deleted history does not return. When no checkpoint root from `S'` to
+`S` has a node, or `chain(O)` cannot be loaded (ERROR), nothing is deleted and
+the start stays, to be retried at the next finalization; the anchor is not
+repaired for it. The start is persisted in `STATE_DIFF_WINDOW_START` and
+published as `storage_state_diff_window_start_epoch`.
 
 **Reconstruction anchor (phase 2).** A fresh node that wants states older
 than its checkpoint anchor must produce them by replaying blocks forward, and
@@ -531,6 +564,7 @@ change behind the format version.
 | `STATE_SUPERNODES` | hot column 11 | supernode hash | supernode SSZ bytes | yes |
 | `STATE_SUPERNODE_REFCOUNTS` | hot column 13 | supernode hash | u64 reference count | no |
 | `STATE_DIFF_MODE` | hot variable 13 | - | marker + format version | - |
+| `STATE_DIFF_WINDOW_START` | hot variable 14 | - | u64 epoch: first finalized epoch an archive database serves (5.11) | - |
 
 Both backends get the columns through `V6SchemaCombined`, so every V6 variant
 (snapshot, tree, and both RocksDB and LevelDB) carries them; they stay empty
@@ -684,6 +718,12 @@ phase 2.
   bytes, 32 per supernode reference and zeroed subtree, 16 per copied subtree,
   encoded delta bytes); a DEBUG line per node gives epochs, level, reason,
   total bytes and the five section byte counts
+- `storage_state_diff_delta_field_bytes_total{field}` and
+  `storage_state_diff_delta_field_entries_total{field}`: the deltas section
+  broken down by state field (`balances`, `inactivity_scores`), so the share of
+  inactivity-score deltas can be read off
+- `storage_state_diff_window_start_epoch`: gauge, the first finalized epoch an
+  archive database serves (5.11); absent on prune databases
 - `storage_state_supernodes_total{op=inserted|incremented|deleted}` and bytes
 - `storage_state_diff_verification_failures_total` (any failed
   reconstruction: state root mismatch, broken chain, corrupt record or payload,

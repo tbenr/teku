@@ -19,6 +19,7 @@ import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes32;
+import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.storage.api.StorageUpdate;
@@ -48,6 +49,21 @@ class LegacyHotStateStorage implements HotStateStorage {
   @Override
   public boolean isStateDiffStorage() {
     return false;
+  }
+
+  @Override
+  public boolean holdsFinalizedStates() {
+    return false;
+  }
+
+  @Override
+  public Optional<BeaconState> getLatestAvailableFinalizedState(final UInt64 maxSlot) {
+    return dao.getLatestAvailableFinalizedState(maxSlot);
+  }
+
+  @Override
+  public Optional<UInt64> getEarliestAvailableFinalizedStateSlot() {
+    return dao.getEarliestFinalizedStateSlot();
   }
 
   @Override
