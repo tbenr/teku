@@ -1095,12 +1095,13 @@ class StateDiffDagTest {
     // Balances and inactivity scores are delta sections
     assertThat(sectionEntries("deltas")).isPositive();
     assertThat(sectionBytes("deltas")).isPositive();
-    // Each delta entry is counted under its field too, by schema field name
-    assertThat(deltaFieldEntries("balances")).isPositive();
-    assertThat(deltaFieldEntries("balances") + deltaFieldEntries("inactivity_scores"))
-        .isEqualTo(sectionEntries("deltas"));
-    assertThat(deltaFieldBytes("balances") + deltaFieldBytes("inactivity_scores"))
-        .isEqualTo(sectionBytes("deltas"));
+    // The delta bytes are counted raw, and compressed as stored
+    final long compressedDeltaBytes =
+        TreeDiffCodec.encode(TreeDiffCodec.deserialize(snapshot.payload())).compressedDeltaBytes()
+            + TreeDiffCodec.encode(TreeDiffCodec.deserialize(diff.payload()))
+                .compressedDeltaBytes();
+    assertThat(sectionBytes("deltas_compressed")).isEqualTo(compressedDeltaBytes).isPositive();
+    assertThat(sectionBytes("deltas_compressed")).isLessThan(sectionBytes("deltas"));
   }
 
   @Test
@@ -1554,7 +1555,13 @@ class StateDiffDagTest {
     updateDao(updater -> updater.putStateDiffNode(roots.get(1), Bytes.of(1, 2, 3)));
 
     final StateDiffVerificationReport report = dag.verify(dao);
-    assertThat(report.corruptNodes()).containsExactly(roots.get(1));
+    assertThat(report.corruptNodes())
+        .singleElement()
+        .satisfies(
+            node -> {
+              assertThat(node.root()).isEqualTo(roots.get(1));
+              assertThat(node.reason()).contains("shorter than its");
+            });
     assertThat(report.nodesWithMissingParent()).isEmpty();
     assertThat(report.anchorReconstructionOk()).isFalse();
     assertThat(report.anchorReconstructionError())
@@ -1874,16 +1881,6 @@ class StateDiffDagTest {
   private long sectionBytes(final String section) {
     return metricsSystem.getLabelledCounterValue(
         TekuMetricCategory.STORAGE, "state_diff_section_bytes_total", section);
-  }
-
-  private long deltaFieldEntries(final String field) {
-    return metricsSystem.getLabelledCounterValue(
-        TekuMetricCategory.STORAGE, "state_diff_delta_field_entries_total", field);
-  }
-
-  private long deltaFieldBytes(final String field) {
-    return metricsSystem.getLabelledCounterValue(
-        TekuMetricCategory.STORAGE, "state_diff_delta_field_bytes_total", field);
   }
 
   private long listBuilds() {

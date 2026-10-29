@@ -30,6 +30,9 @@ class StateDiffMetrics {
 
   static final String SNAPSHOT_LEVEL_LABEL = "snapshot";
 
+  /** The section label of the compressed delta bytes, which has no entry count of its own. */
+  private static final String DELTAS_COMPRESSED_SECTION = "deltas_compressed";
+
   private static final double[] SECONDS_BUCKETS = {
     0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0
   };
@@ -50,8 +53,6 @@ class StateDiffMetrics {
   private final Counter verificationFailures;
   private final LabelledMetric<Counter> sectionBytes;
   private final LabelledMetric<Counter> sectionEntries;
-  private final LabelledMetric<Counter> deltaFieldBytes;
-  private final LabelledMetric<Counter> deltaFieldEntries;
   private final SettableLabelledGauge windowStartEpoch;
   private final Counter reconstructListBuilds;
   private final Map<WritePhase, DoubleAdder> writePhaseSeconds = new EnumMap<>(WritePhase.class);
@@ -123,7 +124,8 @@ class StateDiffMetrics {
             TekuMetricCategory.STORAGE,
             "state_diff_section_bytes_total",
             "Payload bytes of written state diff DAG nodes by section: leaf data, 32 per supernode"
-                + " reference and zeroed subtree, 16 per copied subtree, encoded delta bytes",
+                + " reference and zeroed subtree, 16 per copied subtree, encoded delta bytes before"
+                + " (deltas) and after (deltas_compressed) compression",
             "section");
     this.sectionEntries =
         metricsSystem.createLabelledCounter(
@@ -131,19 +133,6 @@ class StateDiffMetrics {
             "state_diff_section_entries_total",
             "Payload entries of written state diff DAG nodes by section",
             "section");
-    this.deltaFieldBytes =
-        metricsSystem.createLabelledCounter(
-            TekuMetricCategory.STORAGE,
-            "state_diff_delta_field_bytes_total",
-            "Encoded delta bytes of written state diff DAG nodes by state field, the breakdown of"
-                + " the deltas section",
-            "field");
-    this.deltaFieldEntries =
-        metricsSystem.createLabelledCounter(
-            TekuMetricCategory.STORAGE,
-            "state_diff_delta_field_entries_total",
-            "Delta entries of written state diff DAG nodes by state field",
-            "field");
     // Registered on the first window start, so a database without a window exposes no value
     this.windowStartEpoch =
         SettableLabelledGauge.create(
@@ -162,8 +151,8 @@ class StateDiffMetrics {
             TekuMetricCategory.STORAGE,
             "state_diff_write_phase_seconds_total",
             "Time spent writing state diff DAG nodes by phase: base (parent and diff base"
-                + " resolution), walk (tree diff), encode (payload serialization), store (record"
-                + " encoding and puts)",
+                + " resolution), walk (tree diff), encode (payload serialization and delta"
+                + " compression), store (record encoding and puts)",
             "phase");
     for (final WritePhase phase : WritePhase.values()) {
       final DoubleAdder seconds = new DoubleAdder();
@@ -202,10 +191,7 @@ class StateDiffMetrics {
       sectionBytes.labels(section.label()).inc(section.bytes());
       sectionEntries.labels(section.label()).inc(section.entries());
     }
-    for (final DiffSectionSizes.Section field : sizes.deltaFields()) {
-      deltaFieldBytes.labels(field.label()).inc(field.bytes());
-      deltaFieldEntries.labels(field.label()).inc(field.entries());
-    }
+    sectionBytes.labels(DELTAS_COMPRESSED_SECTION).inc(sizes.compressedDeltaBytes());
   }
 
   void onWindowStart(final UInt64 epoch) {
@@ -272,7 +258,7 @@ class StateDiffMetrics {
     BASE("base"),
     /** Diffing the state tree against its base. */
     WALK("walk"),
-    /** Serializing the diff payload. */
+    /** Serializing the diff payload, compressing its delta entries. */
     ENCODE("encode"),
     /** Encoding the node record and putting it and its supernode references. */
     STORE("store");

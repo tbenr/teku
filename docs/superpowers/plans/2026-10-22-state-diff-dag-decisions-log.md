@@ -52,7 +52,7 @@ are judgment calls where a different choice is defensible; entries marked
    Fork choice has the ancestry in memory; the writer would need hot-block
    reads. Left to the builder in the design but this is the intended choice.
 
-9. **GREY. No application-level compression (user decision), but the delta section is versioned so a codec can be added for that section alone.**
+9. **GREY. No application-level compression (user decision), but the delta section is versioned so a codec can be added for that section alone.** Superseded by 63.
 
 10. **DERIVED. Column IDs 10 and 11, variable 13.** Verified free on master
     `77aa8f474b`; 8 and 9 are light-client columns, 12 is a variable in use.
@@ -678,7 +678,7 @@ checkpoint nodes went through the DAG.
     dashboards' series keep their label set. The window gauge is a
     lazily-registered label-less `SettableLabelledGauge`, because several DAG
     instances share one metrics system in tests and a plain gauge cannot be
-    registered twice.
+    registered twice. The per-field counters were removed in 66.
 
 61. **DERIVED. Mainnet soak of the window slice (2026-10-28, build 84e5d83a1a +
     the staged window wave).** The running prune soak node was restarted in
@@ -741,3 +741,135 @@ checkpoint nodes went through the DAG.
     `applyRetention` method serves `repairAnchor` and `retainFinalizedChain`;
     (5) the state diff `DatabaseTest`s moved to `StateDiffDatabaseTest`, sharing
     the fixture through `AbstractDatabaseTest`.
+
+## Payload version 2, first wave: v2a (2026-10-29)
+
+63. **GREY. Delta entries are compressed with zstd, one frame per field
+    (payload version 2; supersedes the "no application-level compression" of
+    9, as entry 42 proposed).** Each `DELTA` entry stores its field index, the
+    raw `UInt64DeltaCodec` length, the compressed length and one zstd frame,
+    written by aircompressor's pure Java `ZstdJavaCompressor` (fixed level 3,
+    stateless, no native library, so payloads are the same on every platform)
+    and read by a new `ZstdJavaDecompressor` per block (it holds per-call
+    state). Measured on this Mac (best of 15 runs, synthetic blocks: a
+    100k-element list of 1-9 gwei rewards with 20 large changes; a mainnet-like
+    2M-element list where half the registry is exited, active validators earn
+    one of a handful of attestation outcomes scaled by effective balance, 2%
+    pay a penalty, 512 sync committee rewards, 512 withdrawal sweeps, 32
+    proposers; 2M inactivity deltas with 300 non-zero; 2M all zero):
+
+    | block (raw bytes) | zstd (Java, 3) | Deflater 1 | Deflater 6 |
+    |---|---|---|---|
+    | balances 100k, few gwei (100,066) | 2.2x, 1.6 / 1.9 ms | 2.1x, 0.5 / 0.2 ms | 2.2x, 4.3 / 0.2 ms |
+    | balances 2M, mainnet-like (3,999,591) | 4.0x (996,183), 16.3 / 5.7 ms | 3.4x, 27.6 / 8.6 ms | 4.3x (919,850), 175.6 / 6.2 ms |
+    | inactivity 2M, 300 non-zero (2,000,114) | 897x (2,229), 0.4 / 0.3 ms | 193x, 1.6 / 0.3 ms | 605x, 6.5 / 0.3 ms |
+    | inactivity 2M, all zero (2,000,006) | 9434x (212), 0.3 / 0.2 ms | 229x, 1.6 / 0.3 ms | 1021x, 3.4 / 0.3 ms |
+
+    (ratio, compress / decompress). Deflater 6 has the best balance ratio but
+    takes 176 ms per 2M block, over the ~50 ms node encode budget; among the
+    candidates within it zstd has the best ratio on every block and is the
+    fastest on the large ones, so zstd. A synthetic mainnet-like node (12k
+    leaves, 8 supernodes, both blocks) encodes in 17-19 ms (was 1.3 ms
+    without compression) and decodes in 7 ms (was 1.0 ms); payload 6.4 MB ->
+    1.4 MB. The 100k few-gwei block compresses only 2.2x because uniformly
+    random 1-9 gwei deltas carry ~3 bits per element; real rewards are more
+    regular. The real ratio is to be read off
+    `section_bytes_total{section=deltas|deltas_compressed}` on the next soak;
+    entry 61's LZ4 figure (nodes 1.47 MiB on disk for 5.35 MB raw) is the
+    comparison, and compression before RocksDB also covers the bottom-most
+    level, which Teku leaves uncompressed. Not chosen: the native zstd (a
+    platform-dependent path for the same format), a higher zstd level (not
+    offered by the Java compressor), one frame for the whole section (fields
+    differ in statistics and a per-field frame keeps each block independent).
+    Before allocating a block a reader checks that the raw length equals the
+    frame header's content size and is at most 32768 times the frame size
+    (zstd stores at least 4 bytes per block of at most 128 KiB), so a corrupt
+    length cannot trigger a huge allocation.
+
+64. **DERIVED (brief decision), GREY in the details. Version 1 payloads are
+    not read.** There is no downgrade path and the only version 1 databases
+    are soak copies, so `TreeDiffCodec` rejects version 1 with an
+    `IllegalArgumentException` reading "State diff node payload version 1,
+    written by an earlier experimental build, is no longer readable: the
+    database must be re-synced into a fresh data directory". The anchor
+    reconstruction wraps it as a corrupt payload (decision 38), so startup
+    fails with the unrecoverable `DatabaseStorageException` carrying that
+    text. GREY: `StateDiffVerificationReport.corruptNodes` became a list of
+    `CorruptNode(root, reason)` so `verify-state-diffs` prints the same text
+    per node (it printed roots only). GREY: `supernodeEntries` /
+    `supernodeHashes` skip delta blocks by their lengths and check only the
+    frame header (raw length against the declared content size), so they still
+    reject every truncation, trailing byte, bad count or length and version
+    that `deserialize` rejects, but a corrupt compressed body inside a
+    well-framed block is detected by `deserialize` only. As before (v1 never
+    validated delta content outside `apply`), delta content corruption is
+    found when a chain is applied; retention can still release the supernode
+    references of such a node. The `STATE_DIFF_MODE` marker value stays 1: the
+    payload version byte is the format check, read on the startup anchor
+    reconstruction. Tests: `TreeDiffCodecTest.rejectsVersionOnePayloadWithResyncMessage`,
+    `KvStoreDatabaseTest.stateDiffs_versionOnePayloadFailsStartupAndVerifyWithResyncMessage`.
+
+65. **GREY. Sparse deltas (simplify B7) are not implemented: compression
+    subsumes them.** A 2M-element inactivity-score block of zero deltas
+    (2,000,006 raw bytes) compresses to 212 bytes, and one with 300 non-zero
+    scores to 2,229 bytes (63), so a lockstep walk emitting sparse chunk runs
+    would save at most a few KB per node while adding a second delta encoding
+    to the format. The varint encoding of the zeros (~2 ms per 2M elements in
+    the walk) is the remaining cost.
+
+66. **GREY. Per-field delta counters removed; compressed delta bytes added.**
+    `delta_field_bytes_total{field}` and `delta_field_entries_total{field}`
+    (60) served their purpose, sizing B7 (61: inactivity ~14% of the delta
+    section). `section_bytes_total{section="deltas"}` keeps the raw delta
+    bytes and `section_bytes_total{section="deltas_compressed"}` adds the
+    compressed bytes as stored (from `TreeDiffCodec.encode`), bytes only: it
+    has no `section_entries_total` series, which would repeat the `deltas`
+    count. `DiffSectionSizes` lost its per-field list and the field names it
+    needed, and carries the compressed byte count; the DEBUG line per node
+    prints it. `write_phase_seconds_total{phase="encode"}` now includes the
+    compression.
+
+67. **DERIVED. Anchor recovery and finalized retention moved out of
+    `StateDiffDagTransaction` into `FinalizedChainMaintenance`
+    (behaviour-neutral).** It holds `onAnchorFinalized`, `repairAnchor`,
+    `ensureNode`, `retainFinalizedChain`, `applyRetention`, `retainWindow`,
+    `deleteFinalizedNodesOutsideChain` and the anchor step enum, and works on
+    the transaction through a narrow `TransactionNodes` interface (reader,
+    write a node at a level, delete nodes, discard a node about to be
+    rewritten, set the window start). The transaction keeps writes, reads,
+    refcounts, commit and thin delegations for its entry points
+    (`onAnchorFinalized`, package-private `ensureNode` and
+    `retainFinalizedChain` used by tests), 886 -> 755 lines. GREY in one
+    detail: `deleteNodesTolerantly` and `releaseReferencesTolerantly` stay in
+    the transaction (the brief listed them for the move) because the public
+    `deleteNodes` of pruned fork nodes uses them too and they are supernode
+    reference bookkeeping; maintenance reaches them through `deleteNodes` and
+    `discardNode`. The repair now passes the level computed from the existing
+    record's epochs (`maxLevelInRange`, what the public `writeNode` did) to
+    the level-taking write.
+
+68. **GREY. Encoder without intermediate copies (simplify B3).**
+    `UInt64DeltaCodec.encode` sums the varint lengths in a first pass and
+    writes into an array of exactly that size (`VarInts` now writes into
+    arrays at a position and reports `unsignedLength`). The brief suggested
+    sizing from the element count at 10 bytes per varint and trimming:
+    measured 10.0 ms against 11.5 ms two-pass on 2M balances, but it allocates
+    a 20 MB array per field per write and copies 4 MB to trim, so two-pass.
+    Either replaces the stream's 17.3 ms (per-byte synchronized writes and
+    growth copies). `TreeDiffCodec.encode` sizes one buffer for the worst
+    case (maximum varint lengths, zstd's maximum compressed length per
+    block), compresses each block straight into it past room for its length
+    prefix and moves the frame down next to the prefix, and copies the buffer
+    once to its exact length; leaf data and hashes are copied straight from
+    their `Bytes` into the buffer. `deserialize` reads the payload in place
+    when it wraps a whole array (`toArrayUnsafe`; a record's payload is a
+    slice of the record, which tuweni copies once since it exposes no backing
+    array), returns leaf data as views (tree leaf nodes copy their data),
+    copies supernode and zero roots (32 bytes each; `verify` keeps hashes in
+    maps for the whole run, which views would make pin every payload), and
+    decompresses each delta block from the payload into its exact-size array.
+    The public API is unchanged apart from the added `encode(TreeDiff)`
+    returning the payload and its compressed delta byte count. V1 and V2 were
+    implemented as one codec rewrite; the before/after figures in 63 therefore
+    compare the v1 stream codec with the v2 one, compression included, and the
+    compression time is given separately.

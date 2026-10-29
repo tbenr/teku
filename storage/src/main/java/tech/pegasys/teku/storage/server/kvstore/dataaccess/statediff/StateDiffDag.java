@@ -46,6 +46,7 @@ import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.storage.server.kvstore.ColumnEntry;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationReport.CorruptNode;
 
 /**
  * The state diff DAG: beacon states of checkpoint blocks stored as diffs against coarser ancestor
@@ -184,7 +185,7 @@ public class StateDiffDag {
     final Map<Bytes32, SupernodeReference> supernodeReferences = new HashMap<>();
     final Map<Bytes32, Bytes32> parentRoots = new HashMap<>();
     final Set<Bytes32> nodeRoots = new HashSet<>();
-    final List<Bytes32> corruptNodes = new ArrayList<>();
+    final List<CorruptNode> corruptNodes = new ArrayList<>();
     try (final Stream<ColumnEntry<Bytes32, Bytes>> nodes = dao.streamStateDiffNodes()) {
       nodes.forEach(
           entry -> {
@@ -195,7 +196,7 @@ public class StateDiffDag {
               record = StateDiffNodeRecordCodec.decode(entry.getValue());
               supernodes = TreeDiffCodec.supernodeEntries(record.payload());
             } catch (final IllegalArgumentException e) {
-              corruptNodes.add(entry.getKey());
+              corruptNodes.add(new CorruptNode(entry.getKey(), e.getMessage()));
               return;
             }
             if (!record.snapshot()) {
@@ -211,7 +212,7 @@ public class StateDiffDag {
             }
           });
     }
-    corruptNodes.sort(BY_HEX);
+    corruptNodes.sort(Comparator.comparing(CorruptNode::root, BY_HEX));
     final Map<Bytes32, UInt64> storedCounts = new HashMap<>();
     try (final Stream<ColumnEntry<Bytes32, UInt64>> counts = dao.streamStateSupernodeRefCounts()) {
       counts.forEach(entry -> storedCounts.put(entry.getKey(), entry.getValue()));

@@ -37,8 +37,8 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
  *     stored under. Reconstruction trusts a supernode's content to match its hash, so the anchor
  *     reconstruction does not detect these
  * @param nodesWithMissingParent nodes, other than snapshots, whose parent node is not stored
- * @param corruptNodes nodes whose record or payload cannot be decoded; their references and parents
- *     are not counted
+ * @param corruptNodes nodes whose record or payload cannot be decoded, with the reason, such as a
+ *     payload version this build no longer reads; their references and parents are not counted
  * @param anchorRoot the root of the finalized checkpoint, empty when the database has none
  * @param anchorChainLength the number of nodes in the anchor's reconstruction chain, 0 when the
  *     chain cannot be loaded
@@ -55,7 +55,7 @@ public record StateDiffVerificationReport(
     long supernodesHashChecked,
     List<Bytes32> supernodeHashMismatches,
     List<Bytes32> nodesWithMissingParent,
-    List<Bytes32> corruptNodes,
+    List<CorruptNode> corruptNodes,
     Optional<Bytes32> anchorRoot,
     int anchorChainLength,
     long anchorReconstructionMillis,
@@ -70,7 +70,7 @@ public record StateDiffVerificationReport(
       final long supernodesHashChecked,
       final List<Bytes32> supernodeHashMismatches,
       final List<Bytes32> nodesWithMissingParent,
-      final List<Bytes32> corruptNodes,
+      final List<CorruptNode> corruptNodes,
       final Optional<Bytes32> anchorRoot,
       final int anchorChainLength,
       final long anchorReconstructionMillis,
@@ -105,6 +105,14 @@ public record StateDiffVerificationReport(
         || !corruptNodes.isEmpty()
         || !anchorReconstructionOk();
   }
+
+  /**
+   * A stored node whose record or payload cannot be decoded.
+   *
+   * @param root the node's block root
+   * @param reason why it cannot be decoded
+   */
+  public record CorruptNode(Bytes32 root, String reason) {}
 
   /**
    * A supernode whose stored reference count is not the number of stored nodes referencing it.

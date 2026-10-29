@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
+import java.util.Random;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.apache.tuweni.bytes.MutableBytes;
@@ -125,17 +126,140 @@ class TreeDiffCodecTest {
   @Test
   void rejectsUnknownVersion() {
     final MutableBytes serialized = TreeDiffCodec.serialize(TreeDiff.empty()).mutableCopy();
-    serialized.set(0, (byte) 2);
+    serialized.set(0, (byte) 3);
 
     assertThatThrownBy(() -> TreeDiffCodec.deserialize(serialized))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Unknown tree diff version 3");
   }
 
   @Test
-  void rejectsTruncatedInput() {
-    final Bytes serialized = TreeDiffCodec.serialize(sampleDiff());
+  void writesVersionTwo() {
+    assertThat(TreeDiffCodec.serialize(sampleDiff()).get(0)).isEqualTo((byte) 2);
+  }
 
-    assertThatThrownBy(() -> TreeDiffCodec.deserialize(serialized.slice(0, serialized.size() - 1)))
+  @Test
+  void rejectsVersionOnePayloadWithResyncMessage() {
+    // The version 1 encoding of an empty diff: the version byte and five zero section counts
+    final Bytes versionOne = Bytes.of(1, 0, 0, 0, 0, 0);
+
+    assertThatThrownBy(() -> TreeDiffCodec.deserialize(versionOne))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage(TreeDiffCodec.VERSION_ONE_MESSAGE)
+        .hasMessageContaining("version 1")
+        .hasMessageContaining("re-synced into a fresh data directory");
+    assertThatThrownBy(() -> TreeDiffCodec.supernodeEntries(versionOne))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage(TreeDiffCodec.VERSION_ONE_MESSAGE);
+  }
+
+  @Test
+  void rejectsTruncatedInputAtEveryOffset() {
+    final Bytes serialized =
+        TreeDiffCodec.serialize(
+            new TreeDiff(
+                List.of(new LeafEntry(5, Bytes.of(1, 2, 3))),
+                List.of(new SupernodeEntry(3, 7, 2, HASH_A)),
+                List.of(new ZeroedEntry(13, HASH_B)),
+                List.of(new CopiedEntry(13, 5)),
+                List.of(
+                    new DeltaEntry(12, sequentialBytes(300)),
+                    new DeltaEntry(14, new byte[0]),
+                    new DeltaEntry(21, new byte[] {1, 2, 3}))));
+
+    for (int length = 0; length < serialized.size(); length++) {
+      final Bytes truncated = serialized.slice(0, length);
+      assertThatThrownBy(() -> TreeDiffCodec.deserialize(truncated))
+          .describedAs("truncated to %s of %s bytes", length, serialized.size())
+          .isInstanceOf(IllegalArgumentException.class);
+    }
+  }
+
+  @Test
+  void roundTripsDeltaBlocks() {
+    final Random random = new Random(7);
+    final long[] randomBase = new long[10_000];
+    final long[] randomTarget = new long[10_003];
+    for (int i = 0; i < randomBase.length; i++) {
+      randomBase[i] = random.nextLong();
+    }
+    for (int i = 0; i < randomTarget.length; i++) {
+      randomTarget[i] = random.nextLong();
+    }
+    final List<byte[]> blocks =
+        List.of(
+            new byte[0],
+            UInt64DeltaCodec.encode(new long[0], new long[] {42L}),
+            UInt64DeltaCodec.encode(new long[2_000_000], new long[2_000_000]),
+            UInt64DeltaCodec.encode(randomBase, randomTarget));
+    for (final byte[] block : blocks) {
+      final TreeDiff diff =
+          new TreeDiff(
+              List.of(), List.of(), List.of(), List.of(), List.of(new DeltaEntry(4, block)));
+
+      final TreeDiff deserialized = TreeDiffCodec.deserialize(TreeDiffCodec.serialize(diff));
+
+      assertThat(deserialized).describedAs("block of %s bytes", block.length).isEqualTo(diff);
+    }
+  }
+
+  @Test
+  void compressesZeroDeltaBlock() {
+    final byte[] zeros = UInt64DeltaCodec.encode(new long[2_000_000], new long[2_000_000]);
+    final TreeDiff diff =
+        new TreeDiff(
+            List.of(), List.of(), List.of(), List.of(), List.of(new DeltaEntry(21, zeros)));
+
+    final TreeDiffCodec.Encoded encoded = TreeDiffCodec.encode(diff);
+
+    assertThat(zeros.length).isGreaterThan(2_000_000);
+    assertThat(encoded.compressedDeltaBytes()).isLessThan(1_024);
+    assertThat(encoded.payload()).isEqualTo(TreeDiffCodec.serialize(diff));
+    assertThat(encoded.payload().size()).isLessThan(1_100);
+  }
+
+  @Test
+  void rejectsDeltaBlockWhoseRawLengthDoesNotMatch() {
+    final TreeDiff diff =
+        new TreeDiff(
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(new DeltaEntry(4, sequentialBytes(100))));
+    final Bytes serialized = TreeDiffCodec.serialize(diff);
+    // version, leaf count, supernode groups, zeroed count, copied count, delta count, field index,
+    // then the raw length 100, a one-byte varint
+    final int rawLengthOffset = 7;
+    assertThat(serialized.get(rawLengthOffset)).isEqualTo((byte) 100);
+    final MutableBytes corrupted = serialized.mutableCopy();
+    corrupted.set(rawLengthOffset, (byte) 101);
+
+    assertThatThrownBy(() -> TreeDiffCodec.deserialize(corrupted))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("101");
+    assertThatThrownBy(() -> TreeDiffCodec.supernodeEntries(corrupted))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("101");
+  }
+
+  @Test
+  void rejectsCorruptCompressedDeltaBlock() {
+    final TreeDiff diff =
+        new TreeDiff(
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(new DeltaEntry(4, sequentialBytes(1_000))));
+    final Bytes serialized = TreeDiffCodec.serialize(diff);
+    final MutableBytes corrupted = serialized.mutableCopy();
+    // The last bytes of the compressed block, past its frame header
+    for (int i = serialized.size() - 8; i < serialized.size(); i++) {
+      corrupted.set(i, (byte) 0xff);
+    }
+
+    assertThatThrownBy(() -> TreeDiffCodec.deserialize(corrupted))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

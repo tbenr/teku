@@ -5,5 +5,7 @@ dependencies {
 	api 'io.consensys.tuweni:tuweni-bytes'
 	api 'it.unimi.dsi:fastutil'
 
+	implementation 'io.airlift:aircompressor-v3'
+
 	testImplementation testFixtures(project(':infrastructure:ssz'))
 }
