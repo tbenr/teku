@@ -453,7 +453,9 @@ public class DebugDbCommand implements Runnable {
     System.out.printf("Nodes with missing parent:   %d%n", report.nodesWithMissingParent().size());
     report.nodesWithMissingParent().forEach(root -> System.out.printf("  %s%n", root));
     System.out.printf("Corrupt nodes:               %d%n", report.corruptNodes().size());
-    report.corruptNodes().forEach(root -> System.out.printf("  %s%n", root));
+    report
+        .corruptNodes()
+        .forEach(node -> System.out.printf("  %s: %s%n", node.root(), node.reason()));
     System.out.printf(
         "Finalized anchor:            %s%n",
         report.anchorRoot().map(Bytes32::toHexString).orElse("none"));

@@ -14,8 +14,6 @@
 package tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff;
 
 import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.DeltaEntry;
@@ -25,8 +23,10 @@ import tech.pegasys.teku.infrastructure.statediff.TreeDiff.LeafEntry;
  * Entry counts and approximate payload bytes of the sections of a {@link TreeDiff}, for metrics and
  * logs. Bytes count the data each entry carries, not the varint gIndexes and length prefixes around
  * it: the leaf data, 32 per supernode reference and per zeroed subtree root, 16 per copied subtree
- * (its two gIndexes) and the encoded deltas. The delta section is also broken down by field, named
- * by its schema field name ({@code balances}, {@code inactivity_scores}).
+ * (its two gIndexes) and the raw encoded deltas. The compressed size of the deltas, as stored, is
+ * given separately.
+ *
+ * @param compressedDeltaBytes the bytes of the delta entries after compression, as stored
  */
 record DiffSectionSizes(
     Section leaves,
@@ -34,27 +34,21 @@ record DiffSectionSizes(
     Section zeroed,
     Section copied,
     Section deltas,
-    List<Section> deltaFields) {
+    long compressedDeltaBytes) {
 
   private static final int COPIED_ENTRY_BYTES = 2 * Long.BYTES;
 
   /**
-   * @param fieldNames the field names of the diffed container's schema, by field index
+   * @param compressedDeltaBytes the bytes of {@code diff}'s delta entries once compressed
    */
-  static DiffSectionSizes of(final TreeDiff diff, final List<String> fieldNames) {
+  static DiffSectionSizes of(final TreeDiff diff, final long compressedDeltaBytes) {
     long leafBytes = 0;
     for (final LeafEntry leaf : diff.leaves()) {
       leafBytes += leaf.data().size();
     }
     long deltaBytes = 0;
-    final Map<String, Section> deltaFields = new TreeMap<>();
     for (final DeltaEntry delta : diff.deltas()) {
       deltaBytes += delta.encodedDeltas().length;
-      final String field = fieldNames.get(delta.fieldIndex());
-      deltaFields.merge(
-          field,
-          new Section(field, 1, delta.encodedDeltas().length),
-          (a, b) -> new Section(field, a.entries() + b.entries(), a.bytes() + b.bytes()));
     }
     return new DiffSectionSizes(
         new Section("leaves", diff.leaves().size(), leafBytes),
@@ -64,7 +58,7 @@ record DiffSectionSizes(
         new Section(
             "copied", diff.copied().size(), (long) COPIED_ENTRY_BYTES * diff.copied().size()),
         new Section("deltas", diff.deltas().size(), deltaBytes),
-        List.copyOf(deltaFields.values()));
+        compressedDeltaBytes);
   }
 
   List<Section> sections() {
