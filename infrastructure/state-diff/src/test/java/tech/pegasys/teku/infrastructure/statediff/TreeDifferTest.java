@@ -35,6 +35,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
 import java.util.function.UnaryOperator;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
@@ -58,6 +59,7 @@ import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.CopiedEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.DeltaEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.LeafEntry;
+import tech.pegasys.teku.infrastructure.statediff.TreeDiff.PatchEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.SupernodeEntry;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
@@ -108,27 +110,193 @@ class TreeDifferTest {
   }
 
   @Test
-  void changedValidatorProducesOneSupernodeAndSinksBytes() {
-    final TreeNode target =
-        SyntheticState.setValidatorField(
-            BASE, CHANGED_VALIDATOR, VALIDATOR_EFFECTIVE_BALANCE, SszUInt64.of(UInt64.valueOf(31)));
+  void changedValidatorProducesOnePatchAndSinksNothing() {
+    final TreeNode target = changeValidator(BASE, CHANGED_VALIDATOR);
 
     final TreeDiff diff = diff(BASE, target);
 
     assertThat(diff.entryCount()).isEqualTo(1);
+    assertThat(diff.patches()).hasSize(1);
+    assertThat(supernodeStore).isEmpty();
+    final PatchEntry patch = diff.patches().getFirst();
+    final int elementSize = VALIDATOR_SCHEMA.getSszFixedPartSize();
+    assertThat(patch.fieldIndex()).isEqualTo(VALIDATORS);
+    assertThat(patch.depth()).isEqualTo(SUPERNODE_DEPTH);
+    assertThat(patch.elementSize()).isEqualTo(elementSize);
+    assertThat(patch.elementCount()).isEqualTo(1 << SUPERNODE_DEPTH);
+    assertThat(BASE.get(patch.gIndex())).isInstanceOf(SszSuperNode.class);
+    assertThat(target.get(patch.gIndex())).isInstanceOf(SszSuperNode.class);
+    assertThat(patch.elementIndices().toIntArray())
+        .containsExactly(CHANGED_VALIDATOR % (1 << SUPERNODE_DEPTH));
+    assertThat(patch.elements())
+        .isEqualTo(SyntheticState.validators(target).get(CHANGED_VALIDATOR).sszSerialize());
+  }
+
+  @Test
+  void patchAppliesToTheTreeOfAWholeSupernodeReference() {
+    final TreeNode target =
+        changeValidator(changeValidator(BASE, CHANGED_VALIDATOR), CHANGED_VALIDATOR + 7);
+    final TreeDiff patchDiff = diff(BASE, target);
+    final PatchEntry patch = patchDiff.patches().getFirst();
+    final SszSuperNode targetSupernode = (SszSuperNode) target.get(patch.gIndex());
+    supernodeStore.put(targetSupernode.hashTreeRoot(), targetSupernode.getData());
+    final TreeDiff wholeDiff =
+        new TreeDiff(
+            List.of(),
+            List.of(
+                new SupernodeEntry(
+                    VALIDATORS, patch.gIndex(), SUPERNODE_DEPTH, targetSupernode.hashTreeRoot())),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of());
+
+    final TreeNode patched = applier.apply(BASE, roundTrip(patchDiff), source);
+    final TreeNode whole = applier.apply(BASE, wholeDiff, source);
+
+    assertThat(patch.elementIndices().toIntArray()).hasSize(2);
+    assertThat(patched.get(patch.gIndex())).isInstanceOf(SszSuperNode.class);
+    assertThat(((SszSuperNode) patched.get(patch.gIndex())).getData())
+        .isEqualTo(targetSupernode.getData());
+    assertThat(patched.hashTreeRoot())
+        .isEqualTo(whole.hashTreeRoot())
+        .isEqualTo(target.hashTreeRoot());
+    assertThat(SyntheticState.serialize(patched)).isEqualTo(SyntheticState.serialize(target));
+  }
+
+  @Test
+  void mostlyChangedSupernodeProducesWholeReference() {
+    TreeNode target = BASE;
+    for (int i = 0; i < 1 << SUPERNODE_DEPTH; i++) {
+      target = changeValidator(target, i);
+    }
+
+    final TreeDiff diff = diff(BASE, target);
+
+    assertThat(diff.patches()).isEmpty();
     assertThat(diff.supernodes()).hasSize(1);
     final SupernodeEntry entry = diff.supernodes().getFirst();
     assertThat(entry.fieldIndex()).isEqualTo(VALIDATORS);
     assertThat(entry.depth()).isEqualTo(SUPERNODE_DEPTH);
     assertThat(target.get(entry.gIndex()).hashTreeRoot()).isEqualTo(entry.hash());
     assertThat(supernodeStore).containsOnlyKeys(entry.hash());
-
     final Bytes supernodeSsz = supernodeStore.get(entry.hash());
     final int elementSize = VALIDATOR_SCHEMA.getSszFixedPartSize();
     assertThat(supernodeSsz.size()).isEqualTo((1 << SUPERNODE_DEPTH) * elementSize);
-    final int offset = (CHANGED_VALIDATOR % (1 << SUPERNODE_DEPTH)) * elementSize;
-    assertThat(supernodeSsz.slice(offset, elementSize))
-        .isEqualTo(SyntheticState.validators(target).get(CHANGED_VALIDATOR).sszSerialize());
+    assertThat(supernodeSsz.slice(0, elementSize))
+        .isEqualTo(SyntheticState.validators(target).get(0).sszSerialize());
+    assertThat(applier.apply(BASE, roundTrip(diff), source).hashTreeRoot())
+        .isEqualTo(target.hashTreeRoot());
+  }
+
+  @Test
+  void appendedValidatorsPatchTheLastSupernodeAndReferenceNewOnes() {
+    final int perSupernode = 1 << SUPERNODE_DEPTH;
+    final int tailCount = VALIDATOR_COUNT % perSupernode;
+    final TreeNode grown = SyntheticState.appendValidators(BASE, new Random(2), 10);
+    final TreeNode spilled = SyntheticState.appendValidators(BASE, new Random(2), perSupernode);
+
+    final TreeDiff grownDiff = diff(BASE, grown);
+    final TreeDiff spilledDiff = diff(BASE, spilled);
+
+    // Ten validators appended to the partially filled last supernode
+    assertThat(grownDiff.supernodes()).isEmpty();
+    final PatchEntry patch = grownDiff.patches().getFirst();
+    assertThat(patch.elementCount()).isEqualTo(tailCount + 10);
+    assertThat(patch.elementIndices().toIntArray())
+        .containsExactly(IntStream.range(tailCount, tailCount + 10).toArray());
+    // A full supernode's worth fills the last supernode and starts one the base has no node for
+    assertThat(spilledDiff.patches())
+        .singleElement()
+        .satisfies(entry -> assertThat(entry.elementCount()).isEqualTo(perSupernode));
+    assertThat(spilledDiff.supernodes()).hasSize(1);
+    assertThat(applier.apply(BASE, roundTrip(grownDiff), source).hashTreeRoot())
+        .isEqualTo(grown.hashTreeRoot());
+    assertThat(applier.apply(BASE, roundTrip(spilledDiff), source).hashTreeRoot())
+        .isEqualTo(spilled.hashTreeRoot());
+  }
+
+  @Test
+  void shrunkSupernodeProducesWholeReference() {
+    final TreeNode grown = SyntheticState.appendValidators(BASE, new Random(2), 10);
+
+    final TreeDiff diff = diff(grown, BASE);
+
+    assertThat(diff.patches()).isEmpty();
+    assertThat(diff.supernodes()).hasSize(1);
+    final TreeNode applied = applier.apply(grown, roundTrip(diff), source);
+    assertThat(applied.hashTreeRoot()).isEqualTo(BASE.hashTreeRoot());
+    assertThat(SyntheticState.serialize(applied)).isEqualTo(SyntheticState.serialize(BASE));
+  }
+
+  @Test
+  void applyRejectsPatchWithoutABaseSupernodeOfItsDepth() {
+    final TreeDiff diff = diff(BASE, changeValidator(BASE, CHANGED_VALIDATOR));
+    final PatchEntry patch = diff.patches().getFirst();
+    final TreeDiff otherDepth =
+        new TreeDiff(
+            List.of(),
+            List.of(),
+            List.of(
+                new PatchEntry(
+                    patch.fieldIndex(),
+                    patch.gIndex(),
+                    patch.depth() - 1,
+                    patch.elementCount() / 2,
+                    patch.elementSize(),
+                    patch.elementIndices(),
+                    patch.elements())),
+            List.of(),
+            List.of(),
+            List.of());
+
+    final TreeNode leafBase = BASE.updated(patch.gIndex(), LeafNode.EMPTY_LEAF);
+
+    assertThatThrownBy(() -> applier.apply(leafBase, diff, source))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(Long.toString(patch.gIndex()));
+    assertThatThrownBy(() -> applier.apply(BASE, otherDepth, source))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(Long.toString(patch.gIndex()));
+  }
+
+  @Test
+  void applyRejectsPatchShrinkingItsBaseSupernode() {
+    final TreeNode grown = SyntheticState.appendValidators(BASE, new Random(2), 10);
+    final TreeDiff diff = roundTrip(diff(BASE, grown));
+    final long gIndex = diff.patches().getFirst().gIndex();
+    // The base of the patch holds one more element than the patched supernode
+    final TreeNode longerBase = SyntheticState.appendValidators(grown, new Random(3), 1);
+
+    assertThatThrownBy(() -> applier.apply(longerBase, diff, source))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(Long.toString(gIndex));
+  }
+
+  @Test
+  void applyRejectsPatchOfAnotherElementSize() {
+    final PatchEntry patch =
+        diff(BASE, changeValidator(BASE, CHANGED_VALIDATOR)).patches().getFirst();
+    final TreeDiff wrongSize =
+        new TreeDiff(
+            List.of(),
+            List.of(),
+            List.of(
+                new PatchEntry(
+                    patch.fieldIndex(),
+                    patch.gIndex(),
+                    patch.depth(),
+                    patch.elementCount(),
+                    patch.elementSize() - 1,
+                    patch.elementIndices(),
+                    patch.elements().slice(1))),
+            List.of(),
+            List.of(),
+            List.of());
+
+    assertThatThrownBy(() -> applier.apply(BASE, wrongSize, source))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(Long.toString(patch.gIndex()));
   }
 
   @Test
@@ -231,12 +399,9 @@ class TreeDifferTest {
 
   @Test
   void applyThrowsMissingSupernode() {
-    final TreeNode target =
-        SyntheticState.setValidatorField(
-            BASE, CHANGED_VALIDATOR, VALIDATOR_EFFECTIVE_BALANCE, SszUInt64.of(UInt64.valueOf(31)));
-    final TreeDiff diff = diff(BASE, target);
+    final TreeDiff diff = diff(SCHEMA.getDefaultTree(), BASE);
 
-    assertThatThrownBy(() -> applier.apply(BASE, diff, hash -> Optional.empty()))
+    assertThatThrownBy(() -> applier.apply(SCHEMA.getDefaultTree(), diff, hash -> Optional.empty()))
         .isInstanceOfSatisfying(
             MissingSupernodeException.class,
             e -> assertThat(e.getHash()).isEqualTo(diff.supernodes().getFirst().hash()));
@@ -272,8 +437,7 @@ class TreeDifferTest {
   @Test
   void appliedSupernodeTakesItsRootFromTheEntryInsteadOfHashingItsContent() {
     final TreeNode target =
-        SyntheticState.setValidatorField(
-            BASE, CHANGED_VALIDATOR, VALIDATOR_EFFECTIVE_BALANCE, SszUInt64.of(UInt64.valueOf(31)));
+        SyntheticState.appendValidators(BASE, new Random(2), 1 << SUPERNODE_DEPTH);
     final TreeDiff diff = diff(BASE, target);
     final SupernodeEntry entry = diff.supernodes().getFirst();
     final Bytes stored = supernodeStore.get(entry.hash());
@@ -297,6 +461,8 @@ class TreeDifferTest {
         TreeDiffCodec.deserialize(TreeDiffCodec.serialize(diff(defaultTree, BASE)));
 
     assertThat(diff.supernodes()).isNotEmpty();
+    // A snapshot has no base supernodes to patch
+    assertThat(diff.patches()).isEmpty();
     final TreeNode applied = applier.apply(defaultTree, diff, source);
 
     assertThat(applied.hashTreeRoot()).isEqualTo(BASE.hashTreeRoot());
@@ -358,6 +524,15 @@ class TreeDifferTest {
     final TreeDiff diff = new TreeDiffer(schema, IntSet.of()).diff(base, target, (h, s) -> {});
 
     assertThat(diff.isEmpty()).isTrue();
+  }
+
+  private static TreeNode changeValidator(final TreeNode tree, final int index) {
+    return SyntheticState.setValidatorField(
+        tree, index, VALIDATOR_EFFECTIVE_BALANCE, SszUInt64.of(UInt64.valueOf(31 + index)));
+  }
+
+  private static TreeDiff roundTrip(final TreeDiff diff) {
+    return TreeDiffCodec.deserialize(TreeDiffCodec.serialize(diff));
   }
 
   private TreeDiff diff(final TreeNode base, final TreeNode target) {

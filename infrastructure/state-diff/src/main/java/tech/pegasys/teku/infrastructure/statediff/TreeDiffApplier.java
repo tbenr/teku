@@ -28,6 +28,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
+import org.apache.tuweni.bytes.MutableBytes;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszCollectionSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszContainerSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszUInt64ListSchema;
@@ -43,6 +44,7 @@ import tech.pegasys.teku.infrastructure.ssz.tree.TreeUtil;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.CopiedEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.DeltaEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.LeafEntry;
+import tech.pegasys.teku.infrastructure.statediff.TreeDiff.PatchEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.SupernodeEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.ZeroedEntry;
 
@@ -50,9 +52,10 @@ import tech.pegasys.teku.infrastructure.statediff.TreeDiff.ZeroedEntry;
  * Applies a {@link TreeDiff} produced by {@link TreeDiffer} to a base tree of the same container
  * schema. Applying a diff taken against {@code schema.getDefaultTree()} rebuilds a snapshot.
  *
- * <p>Entries are applied in the order copied, deltas, zeroed, supernodes, leaves. Copy sources are
- * read from the unmodified base tree. Within each section the updates are grouped by tree depth,
- * since {@link TreeUpdates} rejects mixed depths, and applied deepest first.
+ * <p>Entries are applied in the order copied, deltas, zeroed, supernodes and patches, leaves. Copy
+ * sources and patched supernodes are read from the unmodified base tree. Within each section the
+ * updates are grouped by tree depth, since {@link TreeUpdates} rejects mixed depths, and applied
+ * deepest first.
  *
  * <p>The supernodes a diff references are loaded from the {@link SupernodeSource} passed with each
  * application, all those of one diff in one {@link SupernodeSource#loadAll} call. A supernode is
@@ -150,6 +153,9 @@ public final class TreeDiffApplier {
           SszSuperNode.createWithKnownRoot(
               entry.depth(), supernodeTemplate(entry.fieldIndex()), ssz, entry.hash()));
     }
+    for (final PatchEntry entry : diff.patches()) {
+      superNodes.put(entry.gIndex(), patchedSupernode(base, entry));
+    }
     tree = superNodes.applyTo(tree);
 
     final UpdatesByDepth leaves = new UpdatesByDepth();
@@ -157,6 +163,59 @@ public final class TreeDiffApplier {
       leaves.put(entry.gIndex(), LeafNode.create(entry.data()));
     }
     return leaves.applyTo(tree);
+  }
+
+  /**
+   * The supernode {@code entry} makes of the supernode at its gIndex in {@code base}. Its root is
+   * computed from its content when first needed, so the state root check covers it.
+   *
+   * @throws IllegalArgumentException when {@code base} holds no supernode of the entry's depth
+   *     there, the entry would shrink it or its elements do not have the field's element size
+   */
+  private SszSuperNode patchedSupernode(final TreeNode base, final PatchEntry entry) {
+    final SszNodeTemplate template = supernodeTemplate(entry.fieldIndex());
+    final int elementSize = template.getSszLength();
+    if (entry.elementSize() != elementSize) {
+      throw new IllegalArgumentException(
+          "Patch at gIndex "
+              + entry.gIndex()
+              + " has elements of "
+              + entry.elementSize()
+              + " bytes but field "
+              + entry.fieldIndex()
+              + " has elements of "
+              + elementSize);
+    }
+    if (!(base.get(entry.gIndex()) instanceof SszSuperNode baseSuperNode)
+        || baseSuperNode.getDepth() != entry.depth()) {
+      throw new IllegalArgumentException(
+          "Patch at gIndex "
+              + entry.gIndex()
+              + " has no base supernode of depth "
+              + entry.depth()
+              + " to patch");
+    }
+    final Bytes baseData = baseSuperNode.getData();
+    final int size = entry.elementCount() * elementSize;
+    if (size < baseData.size()) {
+      throw new IllegalArgumentException(
+          "Patch at gIndex "
+              + entry.gIndex()
+              + " shrinks its base supernode of "
+              + baseData.size()
+              + " bytes to "
+              + entry.elementCount()
+              + " elements");
+    }
+    final MutableBytes data = MutableBytes.create(size);
+    baseData.copyTo(data, 0);
+    for (int i = 0; i < entry.elementIndices().size(); i++) {
+      entry
+          .elements()
+          .slice(i * elementSize, elementSize)
+          .copyTo(data, entry.elementIndices().getInt(i) * elementSize);
+    }
+    return new SszSuperNode(entry.depth(), template, data);
   }
 
   private SszUInt64ListSchema<?> uint64ListSchema(final int fieldIndex) {
@@ -285,6 +344,7 @@ public final class TreeDiffApplier {
               });
       diff.zeroed().forEach(entry -> gIndices.add(entry.gIndex()));
       diff.supernodes().forEach(entry -> gIndices.add(entry.gIndex()));
+      diff.patches().forEach(entry -> gIndices.add(entry.gIndex()));
       diff.leaves().forEach(entry -> gIndices.add(entry.gIndex()));
       for (int i = 0; i < gIndices.size(); i++) {
         for (int j = 0; j < deltaFieldGIndices.size(); j++) {
