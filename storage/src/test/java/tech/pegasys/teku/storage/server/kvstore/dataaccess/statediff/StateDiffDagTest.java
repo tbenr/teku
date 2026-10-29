@@ -1068,25 +1068,40 @@ class StateDiffDagTest {
 
     writeEpochs(0, 1);
 
-    final StateDiffNodeRecord snapshot = record(roots.get(0));
-    final StateDiffNodeRecord diff = record(roots.get(1));
-    final long supernodes =
-        (long) TreeDiffCodec.deserialize(snapshot.payload()).supernodes().size()
-            + TreeDiffCodec.deserialize(diff.payload()).supernodes().size();
-    assertThat(sectionEntries("supernodes")).isEqualTo(supernodes).isPositive();
-    assertThat(sectionBytes("supernodes")).isEqualTo(32 * supernodes);
+    final List<StateDiffNodeRecord> nodes = List.of(record(roots.get(0)), record(roots.get(1)));
+    final List<TreeDiff> diffs =
+        nodes.stream().map(node -> TreeDiffCodec.deserialize(node.payload())).toList();
+    final List<TreeDiffCodec.SectionBytes> spans = nodes.stream().map(this::sectionBytes).toList();
+    assertThat(sectionEntries("supernodes"))
+        .isEqualTo(diffs.stream().mapToLong(diff -> diff.supernodes().size()).sum())
+        .isPositive();
+    assertThat(sectionBytes("supernodes"))
+        .isEqualTo(spans.stream().mapToLong(TreeDiffCodec.SectionBytes::supernodes).sum());
     assertThat(sectionEntries("leaves")).isPositive();
-    assertThat(sectionBytes("leaves")).isGreaterThanOrEqualTo(sectionEntries("leaves"));
-    // Balances and inactivity scores are delta sections
+    assertThat(sectionBytes("leaves"))
+        .isEqualTo(spans.stream().mapToLong(TreeDiffCodec.SectionBytes::leaves).sum());
+    // Balances and inactivity scores are delta sections, counted raw and compressed as stored
     assertThat(sectionEntries("deltas")).isPositive();
-    assertThat(sectionBytes("deltas")).isPositive();
-    // The delta bytes are counted raw, and compressed as stored
-    final long compressedDeltaBytes =
-        TreeDiffCodec.encode(TreeDiffCodec.deserialize(snapshot.payload())).compressedDeltaBytes()
-            + TreeDiffCodec.encode(TreeDiffCodec.deserialize(diff.payload()))
-                .compressedDeltaBytes();
-    assertThat(sectionBytes("deltas_compressed")).isEqualTo(compressedDeltaBytes).isPositive();
-    assertThat(sectionBytes("deltas_compressed")).isLessThan(sectionBytes("deltas"));
+    assertThat(sectionEntries("deltas_compressed")).isEqualTo(sectionEntries("deltas"));
+    assertThat(sectionBytes("deltas"))
+        .isEqualTo(
+            diffs.stream()
+                .flatMap(diff -> diff.deltas().stream())
+                .mapToLong(delta -> delta.encodedDeltas().length)
+                .sum());
+    assertThat(sectionBytes("deltas_compressed"))
+        .isEqualTo(spans.stream().mapToLong(TreeDiffCodec.SectionBytes::deltas).sum())
+        .isPositive()
+        .isLessThan(sectionBytes("deltas"));
+    // The sections as stored fill the payloads but for their version bytes
+    assertThat(
+            sectionBytes("leaves")
+                + sectionBytes("supernodes")
+                + sectionBytes("patches")
+                + sectionBytes("zeroed")
+                + sectionBytes("copied")
+                + sectionBytes("deltas_compressed"))
+        .isEqualTo(nodes.stream().mapToLong(node -> node.payload().size() - 1).sum());
   }
 
   @Test
@@ -1114,9 +1129,10 @@ class StateDiffDagTest {
     storedHashes.forEach(
         hash -> assertThat(dao.getStateSupernodeRefCount(hash)).isEqualTo(countsBefore.get(hash)));
     assertThat(sectionEntries("patches")).isEqualTo(1);
+    // The patch section of the changed node, and the empty one of the snapshot below it
     assertThat(sectionBytes("patches"))
-        .isEqualTo(diff.patches().getFirst().elements().size())
-        .isPositive();
+        .isEqualTo(sectionBytes(record).patches() + sectionBytes(record(roots.get(0))).patches())
+        .isGreaterThan(diff.patches().getFirst().elements().size());
     assertReconstructs(changedRoot, changed);
     setFinalizedCheckpoint(0);
     assertDagConsistent();
@@ -1901,6 +1917,14 @@ class StateDiffDagTest {
   private long sectionEntries(final String section) {
     return metricsSystem.getLabelledCounterValue(
         TekuMetricCategory.STORAGE, "state_diff_section_entries_total", section);
+  }
+
+  /** The section spans of a stored payload, which re-encodes to the same bytes. */
+  private TreeDiffCodec.SectionBytes sectionBytes(final StateDiffNodeRecord record) {
+    final TreeDiffCodec.Encoded encoded =
+        TreeDiffCodec.encode(TreeDiffCodec.deserialize(record.payload()), 0);
+    assertThat(encoded.payload()).isEqualTo(record.payload());
+    return encoded.sectionBytes();
   }
 
   private long sectionBytes(final String section) {

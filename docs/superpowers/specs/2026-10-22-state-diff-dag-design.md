@@ -549,9 +549,9 @@ section are sorted and delta-coded.
 2. `SUPERNODES`: for each list field with supernodes: field index, count, then
    (gIndex delta, depth, hash32). The applier obtains the `SszNodeTemplate` from the
    field's list schema.
-3. `PATCHES` (decision 69): for each list field with patched supernodes: field
-   index, element size, count, then per patch (gIndex delta, depth, element
-   count, written count, the written element indices as gaps from the
+3. `PATCHES` (decisions 69, 73): for each list field with patched supernodes:
+   field index, count, then per patch (gIndex delta, depth, element size,
+   element count, written count, the written element indices as gaps from the
    previous index plus one, then the written elements back to back). The
    applier reads the supernode at the gIndex of the base tree, which must be
    a supernode of that depth with at most the element count, copies its
@@ -560,8 +560,9 @@ section are sorted and delta-coded.
    state root check covers it. The element size must be the field template's.
    Patches are applied link by link in a chain application, like the other
    non-delta sections. The differ patches when the written elements, their
-   index gaps and the two counts take fewer bytes than a whole reference's
-   32-byte hash plus the supernode's content (decision 70).
+   index gaps, the element size and the two counts take fewer bytes than a
+   whole reference's 32-byte hash plus the supernode's content (decision 70);
+   the codec owns that cost (`patchEntryBytes`, `patchElementBytes`).
 4. `ZEROED`: count, then gIndex deltas of subtrees to replace with the zero tree
    of the matching depth.
 5. `COPIED`: count, then (target gIndex, source gIndex) of subtrees equal to
@@ -588,19 +589,27 @@ tree root and SSZ of `createTreeFromElements`.
 
 The format is versioned per node (a leading version byte, now 2); adding
 sections or changing an encoding is a new version. (The `PATCHES` section was
-added to version 2 in place, before any version 2 database existed.) Version 1 (the same layout
-with uncompressed delta blocks) is not read: the flag is experimental and the
-only version 1 databases are soak copies, so a version 1 payload is rejected
-with a message to re-sync into a fresh data directory, which the anchor
-reconstruction at startup turns into the unrecoverable error and
-`verify-state-diffs` lists as a corrupt node (decision 64). Later versions
-should keep reading older ones once the format is no longer experimental.
+added to version 2 in place, and changed in place to a per-entry element size,
+before any version 2 database outside soak copies existed.) Version 1 (the
+same layout with uncompressed delta blocks) is not read. The database-level
+format gate is the `STATE_DIFF_MODE` marker (section 7, decision 73): a
+database marked 1 holds version 1 records and payloads and is rejected when it
+is opened, with a message to re-sync into a fresh data directory, so the
+codecs know only their current version and report any other one as unknown.
+Later versions should keep reading older ones once the format is no longer
+experimental.
 
-The encoder writes into one buffer sized for the worst case, compresses each
-delta block straight into it and trims it once; the delta codec sizes its
-output exactly in a first pass. The decoder reads the payload in place: leaf
-data are views (tree leaves copy them), supernode and zero roots are copied,
-delta blocks are decompressed straight from the payload (decision 68).
+The encoder writes into one buffer sized for the worst case, after room for
+the node record header, compresses each delta block straight into it and trims
+it once; the record codec then writes its header into the reserved room, so the
+trim is the only copy (decision 73). It reports the bytes each section takes,
+which the section metrics publish. The delta codec sizes its output exactly in
+a first pass. The decoder reads the payload in place, also inside a node
+record (`TreeDiffCodec.payloadView`): leaf data and patch elements are views
+(tree leaves and patched supernodes copy them), supernode and zero roots are
+copied, delta blocks are decompressed straight from the payload by one
+decompressor per read (decision 68, 73). A chain application folds each delta
+block over its pending values in place (decision 73).
 
 ### 6.3 Expected sizes (to be measured, see 10)
 
@@ -639,15 +648,21 @@ tree of a reconstruction.
 | `STATE_DIFF_NODES` | hot column 10 | block root | node record (5.1), header version 2 | yes |
 | `STATE_SUPERNODES` | hot column 11 | supernode hash | supernode SSZ bytes | yes |
 | `STATE_SUPERNODE_REFCOUNTS` | hot column 13 | supernode hash | u64 reference count | no |
-| `STATE_DIFF_MODE` | hot variable 13 | - | marker + format version | - |
+| `STATE_DIFF_MODE` | hot variable 13 | - | marker = format version, now `02` | - |
 | `STATE_DIFF_WINDOW_START` | hot variable 14 | - | u64 epoch: first finalized epoch an archive database serves (5.11) | - |
 
 Node record layout, version 2: `u8 version`, `u64 block slot`, `bytes32 state
 root`, `u64 first epoch`, `u64 last epoch`, `u8 level`, `u8 snapshot`,
 `bytes32 parent node root`, then the payload (6.2); integers big-endian, a
 fixed 91-byte header so `last epoch` is rewritten in place. Version 1 had a
-32-byte `prev node root` before the parent root; its records hold version 1
-payloads and are rejected with the same re-sync message (decisions 64, 72).
+32-byte `prev node root` before the parent root (decision 72).
+
+The `STATE_DIFF_MODE` marker is the format gate (decision 73): this build
+writes `02` and opens only a database marked `02`. A database marked `01`,
+written by an earlier experimental build with version 1 records and payloads,
+fails to open with an unrecoverable error asking to re-sync into a fresh data
+directory, and so does `verify-state-diffs`; any other marker fails as an
+unknown format. The codecs carry no version 1 branches.
 
 Both backends get the columns through `V6SchemaCombined`, so every V6 variant
 (snapshot, tree, and both RocksDB and LevelDB) carries them; they stay empty
@@ -801,14 +816,16 @@ phase 2.
   (`periodic`: a node at the coarsest level; a `no_parent` snapshot outside
   bootstrap is a regression signal and also logs a WARN)
 - `storage_state_diff_section_bytes_total{section=leaves|supernodes|patches|zeroed|copied|deltas|deltas_compressed}`
-  and `storage_state_diff_section_entries_total{section=leaves|supernodes|patches|zeroed|copied|deltas}`:
-  payload of the written nodes by section, counted from the diff before
-  encoding (leaf data bytes, 32 per supernode reference and zeroed subtree,
-  the written element bytes of supernode patches, 16 per copied subtree, raw
-  encoded delta bytes), plus the delta bytes after
-  compression as stored (`deltas_compressed`, bytes only), so the compression
-  ratio can be read off; a DEBUG line per node gives epochs, level, reason,
-  total bytes, the six section byte counts and the compressed delta bytes.
+  and `storage_state_diff_section_entries_total{section=...}` (same labels):
+  payload of the written nodes by section, the exact bytes each section takes
+  as reported by the encoder (counts, group headers, gIndexes and lengths
+  included; an empty section counts its count byte), so all sections but
+  `deltas` sum to the payloads less one version byte each; `deltas` counts the
+  raw delta bytes before compression and `deltas_compressed` the delta section
+  as stored, so the compression ratio can be read off (decision 73, which
+  replaced the approximate data-only counts); a DEBUG line per node gives
+  epochs, level, reason, total bytes, the section byte counts and the
+  compressed delta bytes.
   (The per-field `delta_field_bytes_total{field}` and
   `delta_field_entries_total{field}` counters of the window wave were removed
   once they had sized the inactivity share, decision 66.)

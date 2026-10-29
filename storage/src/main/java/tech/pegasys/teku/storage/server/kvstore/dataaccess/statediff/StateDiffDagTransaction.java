@@ -161,7 +161,7 @@ public class StateDiffDagTransaction {
             return loaded;
           }
         };
-    this.maintenance = new FinalizedChainMaintenance(dag, new MaintenanceNodes());
+    this.maintenance = new FinalizedChainMaintenance(dag, this);
   }
 
   /**
@@ -230,7 +230,11 @@ public class StateDiffDagTransaction {
     }
   }
 
-  private void writeNode(
+  /**
+   * Writes the node of {@code blockRoot} at {@code level}, or raises its last epoch when it already
+   * exists, as {@link #writeNode(Bytes32, BeaconState, UInt64, UInt64, List, boolean)} does.
+   */
+  void writeNode(
       final Bytes32 blockRoot,
       final BeaconState state,
       final UInt64 firstEpoch,
@@ -238,11 +242,13 @@ public class StateDiffDagTransaction {
       final int level,
       final List<Bytes32> ancestorCheckpointRoots,
       final boolean forceSnapshot) {
-    final Optional<Bytes> existing = reader.getEncodedNode(blockRoot);
+    final Optional<StateDiffNodeRecord> existing = reader.getNode(blockRoot);
     if (existing.isPresent()) {
-      final StateDiffNodeRecord record = NodeReader.decode(blockRoot, existing.get());
-      if (lastEpoch.isGreaterThan(record.lastEpoch())) {
-        putNode(blockRoot, StateDiffNodeRecordCodec.patchLastEpoch(existing.get(), lastEpoch));
+      if (lastEpoch.isGreaterThan(existing.get().lastEpoch())) {
+        putNode(
+            blockRoot,
+            StateDiffNodeRecordCodec.patchLastEpoch(
+                reader.getEncodedNode(blockRoot).orElseThrow(), lastEpoch));
       }
       return;
     }
@@ -290,8 +296,7 @@ public class StateDiffDagTransaction {
             .differFor(state.getSlot())
             .diff(base, state.getBackingNode(), referencedSupernodes::putIfAbsent);
     final long encodeStart = System.nanoTime();
-    final TreeDiffCodec.Encoded encodedDiff = TreeDiffCodec.encode(diff);
-    final Bytes payload = encodedDiff.payload();
+    final TreeDiffCodec.Encoded encodedDiff = StateDiffNodeRecordCodec.encodePayload(diff);
 
     final long storeStart = System.nanoTime();
     final StateDiffNodeRecord record =
@@ -303,8 +308,8 @@ public class StateDiffDagTransaction {
             level,
             snapshot,
             snapshot ? Bytes32.ZERO : parent.get().root(),
-            payload);
-    final Bytes encoded = StateDiffNodeRecordCodec.encode(record);
+            encodedDiff.payload());
+    final Bytes encoded = StateDiffNodeRecordCodec.encode(record, encodedDiff);
     putNode(blockRoot, encoded);
     referencedSupernodes.forEach(
         (hash, ssz) -> {
@@ -325,7 +330,7 @@ public class StateDiffDagTransaction {
             record,
             snapshotReason,
             encoded.size(),
-            DiffSectionSizes.of(diff, encodedDiff.compressedDeltaBytes()),
+            DiffSectionSizes.of(diff, encodedDiff.sectionBytes()),
             new WritePhaseNanos(
                 walkStart - start,
                 encodeStart - walkStart,
@@ -335,8 +340,9 @@ public class StateDiffDagTransaction {
 
   /**
    * Moves the finalized anchor from {@code previousAnchorRoot} to {@code anchorRoot}: ensures the
-   * anchor has a node (see {@link #ensureNode}), then deletes the finalized-chain nodes it no
-   * longer needs (see {@link #retainFinalizedChain}).
+   * anchor has a node (see {@link FinalizedChainMaintenance#ensureNode}), then deletes the
+   * finalized-chain nodes it no longer needs (see {@link
+   * FinalizedChainMaintenance#retainFinalizedChain}).
    *
    * <p>When either step cannot load a chain, the anchor is repaired instead of failing the
    * transaction, which would fail every retry and every restart: the failed step is logged at
@@ -381,23 +387,13 @@ public class StateDiffDagTransaction {
         retention);
   }
 
-  /**
-   * Writes the node of {@code blockRoot} serving only {@code epoch}, unless it already exists.
-   *
-   * <p>A node written here is written late, after nodes of later epochs may already diff against
-   * its ancestors. It is therefore written at the finest level whatever its epoch: its parent is
-   * its previous node, so its reconstruction chain contains the previous node's and retention keeps
-   * every node a later node may depend on. Coarse nodes written later walk past it through parent
-   * pointers.
-   *
-   * @return whether the node was written
-   */
+  /** See {@link FinalizedChainMaintenance#ensureNode}. */
+  @VisibleForTesting
   boolean ensureNode(
       final Bytes32 blockRoot,
       final BeaconState state,
       final UInt64 epoch,
       final List<Bytes32> ancestorCheckpointRoots) {
-    checkNotCommitted();
     return maintenance.ensureNode(blockRoot, state, epoch, ancestorCheckpointRoots);
   }
 
@@ -408,20 +404,11 @@ public class StateDiffDagTransaction {
    * <p>A node whose record or payload cannot be decoded is deleted without releasing its supernode
    * references (counted as {@code deleted_corrupt} and logged at ERROR) rather than failing the
    * transaction: a pruned node is garbage either way, and throwing would fail every retry of the
-   * storage update that prunes it.
+   * storage update that prunes it. Its supernodes keep a reference too many: a leak, never a
+   * missing supernode.
    */
   public void deleteNodes(final Collection<Bytes32> blockRoots) {
     checkNotCommitted();
-    deleteNodesTolerantly(blockRoots);
-  }
-
-  /**
-   * Deletes the nodes stored for {@code blockRoots}, releasing their supernode references, but
-   * deletes a node whose record or payload cannot be decoded without releasing them, counting it as
-   * {@code deleted_corrupt}. Its supernodes keep a reference too many: a leak, never a missing
-   * supernode.
-   */
-  private void deleteNodesTolerantly(final Collection<Bytes32> blockRoots) {
     for (final Bytes32 blockRoot : blockRoots) {
       if (reader.getEncodedNode(blockRoot).isEmpty()) {
         continue;
@@ -456,37 +443,41 @@ public class StateDiffDagTransaction {
     }
   }
 
-  /**
-   * Deletes the finalized-chain nodes no longer needed once the finalized anchor moves from {@code
-   * previousAnchorRoot} to {@code newAnchorRoot}, as {@code retention} selects. For {@link
-   * FinalizedRetention#anchorChain()}: the nodes of the previous anchor's reconstruction chain, of
-   * the newly finalized blocks and of the new anchor, except those in the new anchor's
-   * reconstruction chain. For a {@link FinalizedRetention.Window}, see {@link
-   * FinalizedChainMaintenance}.
-   *
-   * <p>The newly finalized blocks are given rather than found by following previous-node pointers
-   * from the new anchor: a node created late for the anchor points straight at the previous anchor
-   * and would hide the nodes written in between.
-   *
-   * <p>A candidate whose record or payload cannot be decoded is deleted without releasing its
-   * supernode references (counted as {@code deleted_corrupt} and logged at ERROR): it is garbage
-   * either way and a repair would not recover it. Only the chains of the two anchors must load.
-   *
-   * @param previousAnchorRoot the previous anchor; when empty there is no previous chain
-   * @param newlyFinalizedRoots the roots of the blocks finalized by this anchor move; roots without
-   *     a node are ignored
-   * @param retention which finalized nodes to keep
-   * @throws StateDiffVerificationException when, retaining the anchor chain, the chain of the
-   *     previous or the new anchor cannot be loaded; nothing is deleted in that case
-   */
+  /** See {@link FinalizedChainMaintenance#retainFinalizedChain}. */
+  @VisibleForTesting
   void retainFinalizedChain(
       final Optional<Bytes32> previousAnchorRoot,
       final Bytes32 newAnchorRoot,
       final Collection<Bytes32> newlyFinalizedRoots,
       final FinalizedRetention retention) {
-    checkNotCommitted();
     maintenance.retainFinalizedChain(
-        previousAnchorRoot, newAnchorRoot, newlyFinalizedRoots, retention);
+        previousAnchorRoot, newAnchorRoot, newlyFinalizedRoots, retention, false);
+  }
+
+  /**
+   * Rewrites the node of {@code blockRoot} as a snapshot of {@code state} serving {@code
+   * firstEpoch..lastEpoch}, at the coarsest level of those epochs. The supernode references of the
+   * node it replaces are released, unless that node cannot be decoded (logged at ERROR).
+   */
+  void replaceNodeWithSnapshot(
+      final Bytes32 blockRoot,
+      final BeaconState state,
+      final UInt64 firstEpoch,
+      final UInt64 lastEpoch) {
+    if (reader.getEncodedNode(blockRoot).isPresent()) {
+      releaseReferencesTolerantly(blockRoot);
+      // Forgotten rather than deleted, since it is put again below: a delete and a put of one key
+      // in one batch is not ordered by every store
+      setPendingNode(blockRoot, Optional.empty());
+    }
+    writeNode(
+        blockRoot,
+        state,
+        firstEpoch,
+        lastEpoch,
+        dag.levels().maxLevelInRange(firstEpoch, lastEpoch),
+        List.of(),
+        true);
   }
 
   /**
@@ -602,7 +593,7 @@ public class StateDiffDagTransaction {
           sections.zeroed().bytes(),
           sections.copied().bytes(),
           sections.deltas().bytes(),
-          sections.compressedDeltaBytes());
+          sections.deltasCompressed().bytes());
     }
   }
 
@@ -706,49 +697,8 @@ public class StateDiffDagTransaction {
   }
 
   /** Reads nodes and supernodes as this transaction sees them, its own writes included. */
-  @VisibleForTesting
   NodeReader reader() {
     return reader;
-  }
-
-  /** The node operations {@link FinalizedChainMaintenance} works through. */
-  private class MaintenanceNodes implements FinalizedChainMaintenance.TransactionNodes {
-
-    @Override
-    public NodeReader reader() {
-      return reader;
-    }
-
-    @Override
-    public void writeNode(
-        final Bytes32 blockRoot,
-        final BeaconState state,
-        final UInt64 firstEpoch,
-        final UInt64 lastEpoch,
-        final int level,
-        final List<Bytes32> ancestorCheckpointRoots,
-        final boolean forceSnapshot) {
-      StateDiffDagTransaction.this.writeNode(
-          blockRoot, state, firstEpoch, lastEpoch, level, ancestorCheckpointRoots, forceSnapshot);
-    }
-
-    @Override
-    public void deleteNodes(final Collection<Bytes32> blockRoots) {
-      deleteNodesTolerantly(blockRoots);
-    }
-
-    @Override
-    public void discardNode(final Bytes32 blockRoot) {
-      if (reader.getEncodedNode(blockRoot).isPresent()) {
-        releaseReferencesTolerantly(blockRoot);
-        setPendingNode(blockRoot, Optional.empty());
-      }
-    }
-
-    @Override
-    public void setWindowStart(final UInt64 epoch) {
-      StateDiffDagTransaction.this.setWindowStart(epoch);
-    }
   }
 
   private record WrittenNode(

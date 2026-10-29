@@ -18,6 +18,7 @@ import it.unimi.dsi.fastutil.ints.IntList;
 import it.unimi.dsi.fastutil.ints.IntLists;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.LongConsumer;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 
@@ -74,6 +75,23 @@ public record TreeDiff(
         + zeroed.size()
         + copied.size()
         + deltas.size();
+  }
+
+  /**
+   * Passes the gIndex of every entry addressing a tree position to {@code action}: leaves,
+   * supernodes, patches, zeroed entries, and both gIndexes of copied entries. Delta entries address
+   * whole fields by field index and are not passed.
+   */
+  public void forEachGIndex(final LongConsumer action) {
+    copied.forEach(
+        entry -> {
+          action.accept(entry.sourceGIndex());
+          action.accept(entry.targetGIndex());
+        });
+    zeroed.forEach(entry -> action.accept(entry.gIndex()));
+    supernodes.forEach(entry -> action.accept(entry.gIndex()));
+    patches.forEach(entry -> action.accept(entry.gIndex()));
+    leaves.forEach(entry -> action.accept(entry.gIndex()));
   }
 
   public record LeafEntry(long gIndex, Bytes data) {}
