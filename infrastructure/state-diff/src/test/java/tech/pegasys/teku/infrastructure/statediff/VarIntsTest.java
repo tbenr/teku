@@ -16,7 +16,6 @@ package tech.pegasys.teku.infrastructure.statediff;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
@@ -27,9 +26,10 @@ class VarIntsTest {
   void roundTripsUnsignedBoundaries() {
     final long[] values = {0L, 127L, 128L, 16383L, 16384L, Long.MAX_VALUE, -1L};
     for (final long value : values) {
-      final ByteArrayOutputStream out = new ByteArrayOutputStream();
-      VarInts.writeUnsigned(out, value);
-      final ByteBuffer in = ByteBuffer.wrap(out.toByteArray());
+      final byte[] out = new byte[VarInts.MAX_VARINT_BYTES];
+      final int length = VarInts.writeUnsigned(out, 0, value);
+      assertThat(length).isEqualTo(VarInts.unsignedLength(value));
+      final ByteBuffer in = ByteBuffer.wrap(out, 0, length);
       assertThat(VarInts.readUnsigned(in)).isEqualTo(value);
       assertThat(in.hasRemaining()).isFalse();
     }
@@ -39,9 +39,10 @@ class VarIntsTest {
   void roundTripsSignedBoundaries() {
     final long[] values = {0L, 1L, -1L, 63L, -64L, 64L, Long.MIN_VALUE, Long.MAX_VALUE};
     for (final long value : values) {
-      final ByteArrayOutputStream out = new ByteArrayOutputStream();
-      VarInts.writeSigned(out, value);
-      final ByteBuffer in = ByteBuffer.wrap(out.toByteArray());
+      final byte[] out = new byte[VarInts.MAX_VARINT_BYTES];
+      final int length = VarInts.writeSigned(out, 0, value);
+      assertThat(length).isEqualTo(VarInts.unsignedLength(VarInts.zigzagEncode(value)));
+      final ByteBuffer in = ByteBuffer.wrap(out, 0, length);
       assertThat(VarInts.readSigned(in)).isEqualTo(value);
       assertThat(in.hasRemaining()).isFalse();
     }
@@ -69,6 +70,15 @@ class VarIntsTest {
     assertThat(unsignedEncodedSize(0L)).isEqualTo(1);
     assertThat(unsignedEncodedSize(127L)).isEqualTo(1);
     assertThat(unsignedEncodedSize(128L)).isEqualTo(2);
+    assertThat(unsignedEncodedSize(16383L)).isEqualTo(2);
+    assertThat(unsignedEncodedSize(16384L)).isEqualTo(3);
+    assertThat(unsignedEncodedSize(Long.MAX_VALUE)).isEqualTo(9);
+    assertThat(unsignedEncodedSize(-1L)).isEqualTo(10);
+    for (int bits = 0; bits < Long.SIZE; bits++) {
+      final long value = 1L << bits;
+      assertThat(VarInts.unsignedLength(value)).isEqualTo(unsignedEncodedSize(value));
+      assertThat(VarInts.unsignedLength(value - 1)).isEqualTo(unsignedEncodedSize(value - 1));
+    }
   }
 
   @Test
@@ -87,8 +97,6 @@ class VarIntsTest {
   }
 
   private static int unsignedEncodedSize(final long value) {
-    final ByteArrayOutputStream out = new ByteArrayOutputStream();
-    VarInts.writeUnsigned(out, value);
-    return out.size();
+    return VarInts.writeUnsigned(new byte[VarInts.MAX_VARINT_BYTES], 0, value);
   }
 }
