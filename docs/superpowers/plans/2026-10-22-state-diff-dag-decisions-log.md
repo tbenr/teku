@@ -1013,3 +1013,25 @@ checkpoint nodes went through the DAG.
     re-clone. A: no `TransactionNodes` seam; maintenance works on the
     transaction, whose `replaceNodeWithSnapshot` owns the discard-then-put
     ordering. C-F, H, J, K are behaviour-neutral.
+
+74. **DERIVED. Allocation profile of the state diff code (2026-10-29, async-profiler
+    4.3 attached to the mainnet soak node at 2661ed1c17, -Xmx8g, while syncing at
+    ~15 finalizations per minute, i.e. ~150 node writes per 10-minute window).**
+    `alloc` for 600 s: 820,801 samples, of which 6,891 (0.8%) have a frame in
+    the state diff packages; the largest state diff sites are the transaction's
+    committed-record memo reading node records (0.23%), `TreeDiffer.diffSubtree`
+    (0.13%) and the codec's views and compression (<0.1% each); the profile is
+    dominated by epoch processing (`UInt64` 18%, `byte[]` 14%, tuweni wrappers
+    14%, `TreeUpdates`, `SimpleLeafNode`, `ValidatorStatus`). `alloc --live` for
+    600 s (objects still alive at the end): 1,024 samples, 30 (2.9%) with state
+    diff frames, from `diffSubtree`, the window's checkpoint lookups
+    (`findCheckpointNode`/`checkpointBlock`, which read whole records for a
+    presence check, efficiency finding 6) and the record memo; the retained
+    heap is Teku's state views and trees (`SszUInt64`, `SszSuperNode`,
+    `Validator`, branch nodes). No allocation or retention regression is
+    attributable to the state diff storage; the 6 GB OOM at the chain head (run
+    1 of this soak) is the known baseline plus the base cache's diverged trees
+    (decision 42's A/B: +0.7 GB), not payload version 2. Flame graphs:
+    tmp/statediff-alloc.html and tmp/statediff-alloc-live.html in the main
+    checkout. Steady-state repeat still to do once the node is in sync.
+
