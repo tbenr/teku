@@ -55,7 +55,20 @@ import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVe
  */
 class StateDiffHotStateStorage implements HotStateStorage {
   private static final Logger LOG = LogManager.getLogger();
-  private static final Bytes STATE_DIFF_MODE_MARKER = Bytes.of(1);
+
+  /**
+   * The state diff mode marker this build writes and reads: the format of the nodes. Marker 1 was
+   * written by earlier experimental builds, whose node records and payloads (version 1) this build
+   * no longer reads.
+   */
+  private static final Bytes STATE_DIFF_MODE_MARKER = Bytes.of(2);
+
+  private static final Bytes VERSION_ONE_MARKER = Bytes.of(1);
+
+  private static final String VERSION_ONE_MESSAGE =
+      "The state diff storage of this database was written by an earlier experimental build in a"
+          + " format that is no longer readable: the database must be re-synced into a fresh data"
+          + " directory";
 
   /**
    * How far the window start moves at one finalization, so that a backlog (a lowered window, or a
@@ -221,6 +234,24 @@ class StateDiffHotStateStorage implements HotStateStorage {
       final HotUpdater updater, final Checkpoint anchorCheckpoint, final BeaconState anchorState) {
     writeAnchorSnapshot(updater, anchorCheckpoint, anchorState);
     return this;
+  }
+
+  /**
+   * Rejects the database carrying the state diff mode {@code marker} unless this build reads its
+   * nodes.
+   *
+   * @throws DatabaseStorageException unrecoverable, for a marker written by another build
+   */
+  static void checkStateDiffMode(final Bytes marker) {
+    if (marker.equals(VERSION_ONE_MARKER)) {
+      throw DatabaseStorageException.unrecoverable(VERSION_ONE_MESSAGE);
+    }
+    if (!marker.equals(STATE_DIFF_MODE_MARKER)) {
+      throw DatabaseStorageException.unrecoverable(
+          "Unknown state diff storage format "
+              + marker
+              + ": the database was written by another build of Teku");
+    }
   }
 
   /**

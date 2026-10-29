@@ -82,10 +82,8 @@ import tech.pegasys.teku.storage.server.kvstore.dataaccess.V4FinalizedStateSnaps
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDag;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagTransaction;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffNodeRecord;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffNodeRecordCodec;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationException;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationReport;
 import tech.pegasys.teku.storage.server.kvstore.schema.KvStoreColumn;
 import tech.pegasys.teku.storage.server.kvstore.schema.V6SchemaCombinedSnapshot;
 
@@ -633,85 +631,35 @@ class KvStoreDatabaseTest {
   }
 
   @Test
-  void stateDiffs_versionOnePayloadFailsStartupAndVerifyWithResyncMessage() {
+  void stateDiffs_databaseOfAnEarlierFormatFailsAtOpenWithResyncMessage() {
     final StateDiffFixture fixture = new StateDiffFixture();
     fixture.open(StateDiffDagConfig.prune()).storeInitialAnchor(fixture.genesis);
-    final Bytes32 anchorRoot = fixture.genesis.getRoot();
-    final StateDiffNodeRecord stored =
-        StateDiffNodeRecordCodec.decode(fixture.dao.getStateDiffNode(anchorRoot).orElseThrow());
-    // A record as an earlier build wrote it: the payload is the version 1 encoding of an empty
-    // diff, the version byte and five zero section counts
-    final StateDiffNodeRecord versionOne =
-        new StateDiffNodeRecord(
-            stored.blockSlot(),
-            stored.stateRoot(),
-            stored.firstEpoch(),
-            stored.lastEpoch(),
-            stored.level(),
-            stored.snapshot(),
-            stored.parentNodeRoot(),
-            Bytes.of(1, 0, 0, 0, 0, 0));
+    assertThat(fixture.dao.getStateDiffMode()).contains(Bytes.of(2));
+    // The marker as an earlier experimental build wrote it, with its nodes in a format no longer
+    // read
     try (final HotUpdater updater = fixture.dao.hotUpdater()) {
-      updater.putStateDiffNode(anchorRoot, StateDiffNodeRecordCodec.encode(versionOne));
+      updater.setStateDiffMode(Bytes.of(1));
       updater.commit();
     }
 
-    final Database database = fixture.open(StateDiffDagConfig.prune());
-
-    assertThatThrownBy(database::createMemoryStore)
-        .isInstanceOfSatisfying(
-            DatabaseStorageException.class, e -> assertThat(e.isUnrecoverable()).isTrue())
-        .hasMessageContaining("State diff storage cannot reconstruct the finalized state")
-        .hasMessageContaining("payload version 1")
-        .hasMessageContaining("must be re-synced into a fresh data directory")
-        .hasCauseInstanceOf(StateDiffVerificationException.class);
-    final StateDiffVerificationReport report = database.verifyStateDiffs();
-    assertThat(report.corruptNodes())
-        .singleElement()
-        .satisfies(
-            node -> {
-              assertThat(node.root()).isEqualTo(anchorRoot);
-              assertThat(node.reason())
-                  .contains("payload version 1")
-                  .contains("must be re-synced into a fresh data directory");
-            });
-    assertThat(report.anchorReconstructionError())
-        .hasValueSatisfying(error -> assertThat(error).contains("payload version 1"));
-    assertThat(report.hasProblems()).isTrue();
-  }
-
-  @Test
-  void stateDiffs_versionOneRecordFailsStartupAndVerifyWithResyncMessage() {
-    final StateDiffFixture fixture = new StateDiffFixture();
-    fixture.open(StateDiffDagConfig.prune()).storeInitialAnchor(fixture.genesis);
-    final Bytes32 anchorRoot = fixture.genesis.getRoot();
-    final Bytes stored = fixture.dao.getStateDiffNode(anchorRoot).orElseThrow();
-    // The record as an earlier build wrote it: version 1, with a previous node root before the
-    // parent node root (at offset 59 of the version 2 header)
-    final Bytes versionOne =
-        Bytes.concatenate(Bytes.of(1), stored.slice(1, 58), Bytes32.ZERO, stored.slice(59));
-    try (final HotUpdater updater = fixture.dao.hotUpdater()) {
-      updater.putStateDiffNode(anchorRoot, versionOne);
-      updater.commit();
+    // Opened by the node, and by verify-state-diffs, whatever the configuration
+    for (final StateDiffDagConfig config :
+        List.of(StateDiffDagConfig.prune(), StateDiffDagConfig.disabled())) {
+      assertThatThrownBy(() -> fixture.open(config))
+          .isInstanceOfSatisfying(
+              DatabaseStorageException.class, e -> assertThat(e.isUnrecoverable()).isTrue())
+          .hasMessageContaining("earlier experimental build")
+          .hasMessageContaining("must be re-synced into a fresh data directory");
     }
 
-    final Database database = fixture.open(StateDiffDagConfig.prune());
-
-    assertThatThrownBy(database::createMemoryStore)
+    try (final HotUpdater updater = fixture.dao.hotUpdater()) {
+      updater.setStateDiffMode(Bytes.of(3));
+      updater.commit();
+    }
+    assertThatThrownBy(() -> fixture.open(StateDiffDagConfig.prune()))
         .isInstanceOfSatisfying(
             DatabaseStorageException.class, e -> assertThat(e.isUnrecoverable()).isTrue())
-        .hasMessageContaining("State diff storage cannot reconstruct the finalized state")
-        .hasMessageContaining(TreeDiffCodec.VERSION_ONE_MESSAGE)
-        .hasCauseInstanceOf(StateDiffVerificationException.class);
-    final StateDiffVerificationReport report = database.verifyStateDiffs();
-    assertThat(report.corruptNodes())
-        .singleElement()
-        .satisfies(
-            node -> {
-              assertThat(node.root()).isEqualTo(anchorRoot);
-              assertThat(node.reason()).contains(TreeDiffCodec.VERSION_ONE_MESSAGE);
-            });
-    assertThat(report.hasProblems()).isTrue();
+        .hasMessageContaining("Unknown state diff storage format 0x03");
   }
 
   @Test

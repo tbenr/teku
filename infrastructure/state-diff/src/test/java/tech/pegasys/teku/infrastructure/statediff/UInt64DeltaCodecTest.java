@@ -91,6 +91,36 @@ class UInt64DeltaCodecTest {
     }
   }
 
+  @Test
+  void appliesInPlaceAsTheAllocatingApply() {
+    final Random rng = new Random(43);
+    for (int iteration = 0; iteration < 200; iteration++) {
+      final long[] base = randomArray(rng, rng.nextInt(101));
+      // Same length half of the time, else growing or shrinking
+      final long[] target = randomArray(rng, rng.nextBoolean() ? base.length : rng.nextInt(101));
+      final byte[] encoded = UInt64DeltaCodec.encode(base, target);
+      final long[] expected = UInt64DeltaCodec.apply(base.clone(), encoded);
+
+      final long[] values = base.clone();
+      final long[] result = UInt64DeltaCodec.applyInPlace(values, encoded);
+
+      assertThat(result).containsExactly(expected).containsExactly(target);
+      if (target.length == base.length) {
+        assertThat(result).isSameAs(values);
+      }
+    }
+  }
+
+  @Test
+  void applyLeavesItsBaseUnchanged() {
+    final long[] base = {10L, 20L, 30L};
+    final byte[] encoded = UInt64DeltaCodec.encode(base, new long[] {11L, 19L, 31L});
+
+    UInt64DeltaCodec.apply(base, encoded);
+
+    assertThat(base).containsExactly(10L, 20L, 30L);
+  }
+
   private static long[] randomArray(final Random rng, final int length) {
     final long[] values = new long[length];
     for (int i = 0; i < length; i++) {

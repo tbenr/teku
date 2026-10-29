@@ -37,8 +37,8 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
  *     stored under. Reconstruction trusts a supernode's content to match its hash, so the anchor
  *     reconstruction does not detect these
  * @param nodesWithMissingParent nodes, other than snapshots, whose parent node is not stored
- * @param corruptNodes nodes whose record or payload cannot be decoded, with the reason, such as a
- *     payload version this build no longer reads; their references and parents are not counted
+ * @param corruptNodes nodes whose record or payload cannot be decoded, with the reason; their
+ *     references and parents are not counted
  * @param anchorRoot the root of the finalized checkpoint, empty when the database has none
  * @param anchorChainLength the number of nodes in the anchor's reconstruction chain, 0 when the
  *     chain cannot be loaded

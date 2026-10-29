@@ -89,6 +89,7 @@ import tech.pegasys.teku.storage.api.WeakSubjectivityState;
 import tech.pegasys.teku.storage.api.WeakSubjectivityUpdate;
 import tech.pegasys.teku.storage.archive.BlobSidecarsArchiver;
 import tech.pegasys.teku.storage.server.Database;
+import tech.pegasys.teku.storage.server.DatabaseStorageException;
 import tech.pegasys.teku.storage.server.StateStorageMode;
 import tech.pegasys.teku.storage.server.kvstore.HotStateStorage.HotStateUpdate;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.CombinedKvStoreDao;
@@ -164,6 +165,9 @@ public class KvStoreDatabase implements Database {
    * database carries the state diff mode marker, whatever the configuration (the mode is sticky);
    * otherwise the legacy storage, which switches to state diff storage when the configuration
    * requests it.
+   *
+   * @throws DatabaseStorageException unrecoverable, when the marker is one of another build, whose
+   *     state diff nodes this build cannot read
    */
   private static HotStateStorage resolveHotStateStorage(
       final KvStoreCombinedDao dao,
@@ -171,7 +175,9 @@ public class KvStoreDatabase implements Database {
       final Spec spec,
       final StateDiffDagConfig stateDiffDagConfig,
       final MetricsSystem metricsSystem) {
-    final boolean marked = dao.getStateDiffMode().isPresent();
+    final Optional<Bytes> marker = dao.getStateDiffMode();
+    marker.ifPresent(StateDiffHotStateStorage::checkStateDiffMode);
+    final boolean marked = marker.isPresent();
     if (!stateDiffDagConfig.enabled() && !marked) {
       return new LegacyHotStateStorage(dao, Optional.empty());
     }

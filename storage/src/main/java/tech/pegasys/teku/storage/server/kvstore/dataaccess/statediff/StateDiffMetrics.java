@@ -30,9 +30,6 @@ class StateDiffMetrics {
 
   static final String SNAPSHOT_LEVEL_LABEL = "snapshot";
 
-  /** The section label of the compressed delta bytes, which has no entry count of its own. */
-  private static final String DELTAS_COMPRESSED_SECTION = "deltas_compressed";
-
   private static final double[] SECONDS_BUCKETS = {
     0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0
   };
@@ -123,9 +120,8 @@ class StateDiffMetrics {
         metricsSystem.createLabelledCounter(
             TekuMetricCategory.STORAGE,
             "state_diff_section_bytes_total",
-            "Payload bytes of written state diff DAG nodes by section: leaf data, 32 per supernode"
-                + " reference and zeroed subtree, written elements of supernode patches, 16 per"
-                + " copied subtree, encoded delta bytes before (deltas) and after"
+            "Payload bytes of written state diff DAG nodes by section as encoded, counts,"
+                + " gIndexes and lengths included; the delta entries before (deltas) and after"
                 + " (deltas_compressed) compression",
             "section");
     this.sectionEntries =
@@ -192,7 +188,6 @@ class StateDiffMetrics {
       sectionBytes.labels(section.label()).inc(section.bytes());
       sectionEntries.labels(section.label()).inc(section.entries());
     }
-    sectionBytes.labels(DELTAS_COMPRESSED_SECTION).inc(sizes.compressedDeltaBytes());
   }
 
   void onWindowStart(final UInt64 epoch) {

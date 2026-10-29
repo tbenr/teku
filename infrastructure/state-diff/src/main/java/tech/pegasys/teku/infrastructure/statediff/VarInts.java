@@ -24,6 +24,9 @@ public final class VarInts {
 
   static final int MAX_VARINT_BYTES = 10;
 
+  /** The longest array the JVM reliably allocates. */
+  static final int MAX_ARRAY_LENGTH = Integer.MAX_VALUE - 8;
+
   private VarInts() {}
 
   /** The number of bytes {@link #writeUnsigned} writes for {@code value}: 1 to 10. */

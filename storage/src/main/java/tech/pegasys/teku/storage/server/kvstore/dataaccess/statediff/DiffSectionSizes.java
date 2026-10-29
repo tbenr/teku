@@ -14,20 +14,17 @@
 package tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff;
 
 import java.util.List;
-import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.DeltaEntry;
-import tech.pegasys.teku.infrastructure.statediff.TreeDiff.LeafEntry;
-import tech.pegasys.teku.infrastructure.statediff.TreeDiff.PatchEntry;
+import tech.pegasys.teku.infrastructure.statediff.TreeDiffCodec;
+import tech.pegasys.teku.infrastructure.statediff.UInt64DeltaCodec;
 
 /**
- * Entry counts and approximate payload bytes of the sections of a {@link TreeDiff}, for metrics and
- * logs. Bytes count the data each entry carries, not the varint gIndexes and length prefixes around
- * it: the leaf data, 32 per supernode reference and per zeroed subtree root, the written elements
- * of the supernode patches, 16 per copied subtree (its two gIndexes) and the raw encoded deltas.
- * The compressed size of the deltas, as stored, is given separately.
- *
- * @param compressedDeltaBytes the bytes of the delta entries after compression, as stored
+ * Entry counts and payload bytes of the sections of a {@link TreeDiff}, for metrics and logs. The
+ * bytes of a section are those it takes in the payload, its count, group headers, gIndexes and
+ * lengths included, so that the sections other than {@code deltas} sum to the payload size less its
+ * version byte. The delta entries are given twice: {@code deltas} counts their raw {@link
+ * UInt64DeltaCodec} bytes, before compression, and {@code deltasCompressed} the section as stored.
  */
 record DiffSectionSizes(
     Section leaves,
@@ -36,40 +33,25 @@ record DiffSectionSizes(
     Section zeroed,
     Section copied,
     Section deltas,
-    long compressedDeltaBytes) {
+    Section deltasCompressed) {
 
-  private static final int COPIED_ENTRY_BYTES = 2 * Long.BYTES;
-
-  /**
-   * @param compressedDeltaBytes the bytes of {@code diff}'s delta entries once compressed
-   */
-  static DiffSectionSizes of(final TreeDiff diff, final long compressedDeltaBytes) {
-    long leafBytes = 0;
-    for (final LeafEntry leaf : diff.leaves()) {
-      leafBytes += leaf.data().size();
-    }
-    long patchBytes = 0;
-    for (final PatchEntry patch : diff.patches()) {
-      patchBytes += patch.elements().size();
-    }
-    long deltaBytes = 0;
+  static DiffSectionSizes of(final TreeDiff diff, final TreeDiffCodec.SectionBytes bytes) {
+    long rawDeltaBytes = 0;
     for (final DeltaEntry delta : diff.deltas()) {
-      deltaBytes += delta.encodedDeltas().length;
+      rawDeltaBytes += delta.encodedDeltas().length;
     }
     return new DiffSectionSizes(
-        new Section("leaves", diff.leaves().size(), leafBytes),
-        new Section(
-            "supernodes", diff.supernodes().size(), (long) Bytes32.SIZE * diff.supernodes().size()),
-        new Section("patches", diff.patches().size(), patchBytes),
-        new Section("zeroed", diff.zeroed().size(), (long) Bytes32.SIZE * diff.zeroed().size()),
-        new Section(
-            "copied", diff.copied().size(), (long) COPIED_ENTRY_BYTES * diff.copied().size()),
-        new Section("deltas", diff.deltas().size(), deltaBytes),
-        compressedDeltaBytes);
+        new Section("leaves", diff.leaves().size(), bytes.leaves()),
+        new Section("supernodes", diff.supernodes().size(), bytes.supernodes()),
+        new Section("patches", diff.patches().size(), bytes.patches()),
+        new Section("zeroed", diff.zeroed().size(), bytes.zeroed()),
+        new Section("copied", diff.copied().size(), bytes.copied()),
+        new Section("deltas", diff.deltas().size(), rawDeltaBytes),
+        new Section("deltas_compressed", diff.deltas().size(), bytes.deltas()));
   }
 
   List<Section> sections() {
-    return List.of(leaves, supernodes, patches, zeroed, copied, deltas);
+    return List.of(leaves, supernodes, patches, zeroed, copied, deltas, deltasCompressed);
   }
 
   record Section(String label, int entries, long bytes) {}

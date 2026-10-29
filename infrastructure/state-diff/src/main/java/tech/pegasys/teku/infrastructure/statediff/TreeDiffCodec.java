@@ -25,6 +25,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.function.ToIntFunction;
+import java.util.stream.Collectors;
+import org.apache.tuweni.bytes.AbstractBytes;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.apache.tuweni.bytes.MutableBytes;
@@ -43,28 +45,16 @@ import tech.pegasys.teku.infrastructure.statediff.TreeDiff.ZeroedEntry;
  * store each gIndex as an unsigned delta from the previous one (the first from 0). Supernodes are
  * grouped by field index (the section count is the group count); each group stores its field index,
  * its entry count and, per entry, the gIndex delta, the depth and the 32-byte hash. Patches are
- * grouped the same way; each group stores its field index, the element size and its entry count,
- * and each entry the gIndex delta, the depth, the element count, the number of written elements,
- * each written element's index as the gap from the previous one plus one (the first from -1), then
- * the written elements' bytes back to back. Copied entries store both gIndexes and leaf data is
- * length-prefixed. Each delta entry stores its field index, the length of its {@link
- * UInt64DeltaCodec} bytes, then those bytes compressed as one zstd frame, prefixed by the
- * compressed length.
- *
- * <p>Version 1, the same layout with the delta bytes stored uncompressed, is not read: the only
- * databases holding it were written by earlier experimental builds and must be re-synced.
+ * grouped the same way; each entry stores the gIndex delta, the depth, the element size, the
+ * element count, the number of written elements, each written element's index as the gap from the
+ * previous one plus one (the first from -1), then the written elements' bytes back to back. Copied
+ * entries store both gIndexes and leaf data is length-prefixed. Each delta entry stores its field
+ * index, the length of its {@link UInt64DeltaCodec} bytes, then those bytes compressed as one zstd
+ * frame, prefixed by the compressed length.
  */
 public final class TreeDiffCodec {
 
   static final int VERSION = 2;
-
-  /**
-   * Why a version 1 payload is rejected; also used for version 1 node records, which hold version 1
-   * payloads.
-   */
-  public static final String VERSION_ONE_MESSAGE =
-      "State diff node payload version 1, written by an earlier experimental build, is no longer"
-          + " readable: the database must be re-synced into a fresh data directory";
 
   /**
    * zstd stores at least 4 bytes for a block of at most 128 KiB, so a frame decompresses to at most
@@ -72,35 +62,74 @@ public final class TreeDiffCodec {
    */
   private static final long MAX_DECOMPRESSION_RATIO = 32 * 1024;
 
-  private static final int MAX_ARRAY_LENGTH = Integer.MAX_VALUE - 8;
-
   /** The most bytes a varint of an int value takes. */
-  private static final int MAX_INT_VARINT_BYTES = 5;
+  private static final int MAX_INT_VARINT_BYTES = VarInts.unsignedLength(Integer.MAX_VALUE);
 
   /** Stateless and level 3; the Java implementation, so payloads do not depend on a native one. */
   private static final ZstdJavaCompressor COMPRESSOR = new ZstdJavaCompressor();
+
+  /**
+   * Reads zstd frame headers only: {@link ZstdJavaDecompressor#getDecompressedSize} delegates to a
+   * static method and leaves the instance's scratch space alone, so one instance can be shared.
+   * Decompressing takes a decompressor of its own.
+   */
+  private static final ZstdJavaDecompressor FRAME_HEADER_READER = new ZstdJavaDecompressor();
 
   private TreeDiffCodec() {}
 
   /**
    * An encoded diff.
    *
-   * @param payload the encoded diff
-   * @param compressedDeltaBytes the compressed bytes of its delta entries, without their prefixes
+   * @param bytes the reserved prefix, zeroed for the caller to fill, then the payload
+   * @param prefixLength the length of the reserved prefix
+   * @param sectionBytes the bytes each section of the payload takes
    */
-  public record Encoded(Bytes payload, long compressedDeltaBytes) {}
+  public record Encoded(MutableBytes bytes, int prefixLength, SectionBytes sectionBytes) {
 
-  public static Bytes serialize(final TreeDiff diff) {
-    return encode(diff).payload();
+    /** The payload, a {@link #payloadView} of {@link #bytes}. */
+    public Bytes payload() {
+      return payloadView(bytes.toArrayUnsafe(), prefixLength, bytes.size() - prefixLength);
+    }
   }
 
   /**
-   * Encodes {@code diff} into one buffer sized for the worst case, compressing each delta entry
-   * straight into it, and copies the result once to its exact size.
+   * The bytes each section takes in a payload, its count, group headers, gIndexes and lengths
+   * included, so that they sum to the payload size less its version byte. The delta section holds
+   * the compressed deltas.
    */
-  public static Encoded encode(final TreeDiff diff) {
+  public record SectionBytes(
+      int leaves, int supernodes, int patches, int zeroed, int copied, int deltas) {}
+
+  /**
+   * The encoded bytes of a patch entry of {@code elementCount} elements of {@code elementSize}
+   * bytes besides its gIndex delta, its depth and its written elements, its written count bounded
+   * by the element count.
+   */
+  static int patchEntryBytes(final int elementSize, final int elementCount) {
+    return VarInts.unsignedLength(elementSize) + 2 * VarInts.unsignedLength(elementCount);
+  }
+
+  /**
+   * The encoded bytes of a written element of {@code elementSize} bytes following the previous one
+   * by {@code gap} unwritten elements in a patch entry.
+   */
+  static int patchElementBytes(final int gap, final int elementSize) {
+    return VarInts.unsignedLength(gap) + elementSize;
+  }
+
+  public static Bytes serialize(final TreeDiff diff) {
+    return encode(diff, 0).payload();
+  }
+
+  /**
+   * Encodes {@code diff} into one buffer sized for the worst case, after {@code prefixLength}
+   * reserved bytes, compressing each delta entry straight into it, and copies the result once to
+   * its exact size. A caller storing the payload behind a header of its own writes the header into
+   * the reserved bytes rather than copying the payload again.
+   */
+  public static Encoded encode(final TreeDiff diff, final int prefixLength) {
     final List<LeafEntry> leaves =
-        sorted(diff.leaves(), Comparator.comparingLong(LeafEntry::gIndex));
+        diff.leaves().stream().sorted(Comparator.comparingLong(LeafEntry::gIndex)).toList();
     final Map<Integer, List<SupernodeEntry>> supernodeGroups =
         groupByField(
             diff.supernodes(),
@@ -110,11 +139,16 @@ public final class TreeDiffCodec {
         groupByField(
             diff.patches(), PatchEntry::fieldIndex, Comparator.comparingLong(PatchEntry::gIndex));
     final List<ZeroedEntry> zeroed =
-        sorted(diff.zeroed(), Comparator.comparingLong(ZeroedEntry::gIndex));
+        diff.zeroed().stream().sorted(Comparator.comparingLong(ZeroedEntry::gIndex)).toList();
 
-    final Writer out =
-        new Writer(maxEncodedSize(diff, supernodeGroups.size() + patchGroups.size()));
+    final long capacity = prefixLength + maxEncodedSize(diff);
+    if (capacity > VarInts.MAX_ARRAY_LENGTH) {
+      throw new IllegalArgumentException(
+          "Tree diff too large to encode: up to " + capacity + " bytes");
+    }
+    final Writer out = new Writer((int) capacity, prefixLength);
     out.writeByte(VERSION);
+    final int leavesStart = out.position;
     out.writeUnsigned(leaves.size());
     long previousGIndex = 0;
     for (final LeafEntry leaf : leaves) {
@@ -123,6 +157,7 @@ public final class TreeDiffCodec {
       out.writeUnsigned(leaf.data().size());
       out.writeBytes(leaf.data());
     }
+    final int supernodesStart = out.position;
     out.writeUnsigned(supernodeGroups.size());
     for (final Map.Entry<Integer, List<SupernodeEntry>> group : supernodeGroups.entrySet()) {
       out.writeUnsigned(group.getKey());
@@ -135,26 +170,17 @@ public final class TreeDiffCodec {
         out.writeBytes(supernode.hash());
       }
     }
+    final int patchesStart = out.position;
     out.writeUnsigned(patchGroups.size());
     for (final Map.Entry<Integer, List<PatchEntry>> group : patchGroups.entrySet()) {
-      final int elementSize = group.getValue().getFirst().elementSize();
       out.writeUnsigned(group.getKey());
-      out.writeUnsigned(elementSize);
       out.writeUnsigned(group.getValue().size());
       previousGIndex = 0;
       for (final PatchEntry patch : group.getValue()) {
-        if (patch.elementSize() != elementSize) {
-          throw new IllegalArgumentException(
-              "Patches of field "
-                  + group.getKey()
-                  + " have different element sizes "
-                  + elementSize
-                  + " and "
-                  + patch.elementSize());
-        }
         out.writeUnsigned(patch.gIndex() - previousGIndex);
         previousGIndex = patch.gIndex();
         out.writeUnsigned(patch.depth());
+        out.writeUnsigned(patch.elementSize());
         out.writeUnsigned(patch.elementCount());
         out.writeUnsigned(patch.elementIndices().size());
         int previousIndex = -1;
@@ -166,6 +192,7 @@ public final class TreeDiffCodec {
         out.writeBytes(patch.elements());
       }
     }
+    final int zeroedStart = out.position;
     out.writeUnsigned(zeroed.size());
     previousGIndex = 0;
     for (final ZeroedEntry entry : zeroed) {
@@ -173,31 +200,33 @@ public final class TreeDiffCodec {
       previousGIndex = entry.gIndex();
       out.writeBytes(entry.zeroRoot());
     }
+    final int copiedStart = out.position;
     out.writeUnsigned(diff.copied().size());
     for (final CopiedEntry entry : diff.copied()) {
       out.writeUnsigned(entry.targetGIndex());
       out.writeUnsigned(entry.sourceGIndex());
     }
+    final int deltasStart = out.position;
     out.writeUnsigned(diff.deltas().size());
-    long compressedDeltaBytes = 0;
     for (final DeltaEntry entry : diff.deltas()) {
       out.writeUnsigned(entry.fieldIndex());
       out.writeUnsigned(entry.encodedDeltas().length);
-      compressedDeltaBytes += out.writeCompressed(entry.encodedDeltas());
+      out.writeCompressed(entry.encodedDeltas());
     }
-    return new Encoded(out.toBytes(), compressedDeltaBytes);
+    return new Encoded(
+        out.toBytes(),
+        prefixLength,
+        new SectionBytes(
+            supernodesStart - leavesStart,
+            patchesStart - supernodesStart,
+            zeroedStart - patchesStart,
+            copiedStart - zeroedStart,
+            deltasStart - copiedStart,
+            out.position - deltasStart));
   }
 
   public static TreeDiff deserialize(final Bytes bytes) {
-    final ByteBuffer in = openVersioned(bytes);
-    final List<LeafEntry> leaves = readLeaves(in);
-    final List<SupernodeEntry> supernodes = readSupernodes(in);
-    final List<PatchEntry> patches = readPatches(in);
-    final List<ZeroedEntry> zeroed = readZeroed(in);
-    final List<CopiedEntry> copied = readCopied(in);
-    final List<DeltaEntry> deltas = readDeltas(in);
-    checkNoTrailingBytes(in);
-    return new TreeDiff(leaves, supernodes, patches, zeroed, copied, deltas);
+    return parse(bytes, true);
   }
 
   /**
@@ -205,98 +234,103 @@ public final class TreeDiffCodec {
    * deserialize(bytes).supernodes()} lists them. See {@link #supernodeEntries}.
    */
   public static List<Bytes32> supernodeHashes(final Bytes bytes) {
-    final List<Bytes32> hashes = new ArrayList<>();
-    for (final SupernodeEntry entry : supernodeEntries(bytes)) {
-      hashes.add(entry.hash());
-    }
-    return hashes;
+    return supernodeEntries(bytes).stream().map(SupernodeEntry::hash).toList();
   }
 
   /**
    * The supernode entries of a serialized diff, in entry order, as {@code
-   * deserialize(bytes).supernodes()} lists them. The other sections are walked without
-   * materialising leaf data or decompressing delta entries (patches are read, their elements as
-   * views, since they are few and small), so every input {@link #deserialize} rejects for its
+   * deserialize(bytes).supernodes()} lists them. The diff is read as {@link #deserialize} reads it
+   * but without decompressing delta entries, so every input {@link #deserialize} rejects for its
    * structure (version, counts, lengths, truncation, trailing bytes, a delta entry's raw length
    * disagreeing with its zstd frame header) is rejected too; a corrupt compressed body inside a
    * well-framed delta entry is detected by {@link #deserialize} only.
    */
   public static List<SupernodeEntry> supernodeEntries(final Bytes bytes) {
-    final ByteBuffer in = openVersioned(bytes);
-    skipLeaves(in);
-    final List<SupernodeEntry> supernodes = readSupernodes(in);
-    readPatches(in);
-    skipZeroed(in);
-    readCopied(in);
-    skipDeltas(in);
-    checkNoTrailingBytes(in);
-    return supernodes;
+    return parse(bytes, false).supernodes();
   }
 
   /**
-   * An upper bound of the encoded size of {@code diff}: every varint at its maximum length and
-   * every delta entry at zstd's worst-case compressed length.
+   * Reads a payload. Without {@code decompressDeltas} the delta entries are checked against their
+   * frame headers and skipped, and the result has none.
    */
-  private static int maxEncodedSize(final TreeDiff diff, final int groupCount) {
-    final int gIndexBytes = VarInts.MAX_VARINT_BYTES;
-    final int intBytes = MAX_INT_VARINT_BYTES;
-    long size = 1 + 6L * intBytes;
+  private static TreeDiff parse(final Bytes bytes, final boolean decompressDeltas) {
+    final ByteBuffer in = openVersioned(bytes);
+    final TreeDiff diff =
+        new TreeDiff(
+            readLeaves(in),
+            readSupernodes(in),
+            readPatches(in),
+            readZeroed(in),
+            readCopied(in),
+            readDeltas(in, decompressDeltas));
+    if (in.hasRemaining()) {
+      throw new IllegalArgumentException(in.remaining() + " trailing bytes after tree diff");
+    }
+    return diff;
+  }
+
+  /**
+   * An upper bound of the encoded size of {@code diff}: every varint at the maximum length of a
+   * 64-bit value and every delta entry at zstd's worst-case compressed length.
+   */
+  private static long maxEncodedSize(final TreeDiff diff) {
+    // The six section counts; per leaf its gIndex and length; per supernode its group's field
+    // index and count (at most one group per entry), its gIndex and depth; per patch the same
+    // plus its element size, count and written count and one per written index; per zeroed entry
+    // its gIndex; per copied entry two gIndexes; per delta entry its field index and two lengths
+    long varints =
+        6
+            + 2L * diff.leaves().size()
+            + 4L * diff.supernodes().size()
+            + diff.zeroed().size()
+            + 2L * diff.copied().size()
+            + 3L * diff.deltas().size();
+    long data = 1 + (long) Bytes32.SIZE * (diff.supernodes().size() + diff.zeroed().size());
     for (final LeafEntry leaf : diff.leaves()) {
-      size += gIndexBytes + intBytes + leaf.data().size();
+      data += leaf.data().size();
     }
-    size += (long) groupCount * 3 * intBytes;
-    size += (long) diff.supernodes().size() * (gIndexBytes + intBytes + Bytes32.SIZE);
     for (final PatchEntry patch : diff.patches()) {
-      size +=
-          gIndexBytes
-              + 3L * intBytes
-              + (long) patch.elementIndices().size() * intBytes
-              + patch.elements().size();
+      varints += 7 + patch.elementIndices().size();
+      data += patch.elements().size();
     }
-    size += (long) diff.zeroed().size() * (gIndexBytes + Bytes32.SIZE);
-    size += (long) diff.copied().size() * 2 * gIndexBytes;
     for (final DeltaEntry entry : diff.deltas()) {
-      size += 3L * intBytes + COMPRESSOR.maxCompressedLength(entry.encodedDeltas().length);
+      data += COMPRESSOR.maxCompressedLength(entry.encodedDeltas().length);
     }
-    if (size > MAX_ARRAY_LENGTH) {
-      throw new IllegalArgumentException("Tree diff too large to encode: up to " + size + " bytes");
-    }
-    return (int) size;
+    return data + varints * VarInts.MAX_VARINT_BYTES;
   }
 
   private static <T> Map<Integer, List<T>> groupByField(
       final List<T> entries, final ToIntFunction<T> fieldIndex, final Comparator<T> byGIndex) {
-    final Map<Integer, List<T>> groups = new TreeMap<>();
-    for (final T entry : entries) {
-      groups.computeIfAbsent(fieldIndex.applyAsInt(entry), __ -> new ArrayList<>()).add(entry);
-    }
-    groups.values().forEach(group -> group.sort(byGIndex));
-    return groups;
+    return entries.stream()
+        .sorted(byGIndex)
+        .collect(Collectors.groupingBy(fieldIndex::applyAsInt, TreeMap::new, Collectors.toList()));
   }
 
   /**
-   * Opens a payload for reading. The bytes are read in place when {@code bytes} wraps a whole
-   * array; leaf data is returned as views of them.
+   * The payload stored in {@code array} from {@code offset} on for {@code length} bytes, as a view
+   * that {@link #deserialize} and {@link #supernodeEntries} read in place: a payload read from a
+   * larger record is then not copied out of it. The array must not change while the view is in use.
+   */
+  public static Bytes payloadView(final byte[] array, final int offset, final int length) {
+    return new PayloadView(array, offset, length);
+  }
+
+  /**
+   * Opens a payload for reading. The bytes are read in place when {@code bytes} is a {@link
+   * #payloadView} or wraps a whole array; leaf data and patch elements are returned as views of
+   * them.
    */
   private static ByteBuffer openVersioned(final Bytes bytes) {
-    final ByteBuffer in = ByteBuffer.wrap(bytes.toArrayUnsafe());
+    final ByteBuffer in =
+        bytes instanceof PayloadView view ? view.buffer() : ByteBuffer.wrap(bytes.toArrayUnsafe());
     if (!in.hasRemaining()) {
       throw new IllegalArgumentException("Empty tree diff");
     }
     final int version = Byte.toUnsignedInt(in.get());
-    if (version == 1) {
-      throw new IllegalArgumentException(VERSION_ONE_MESSAGE);
-    }
     if (version != VERSION) {
       throw new IllegalArgumentException("Unknown tree diff version " + version);
     }
     return in;
-  }
-
-  private static void checkNoTrailingBytes(final ByteBuffer in) {
-    if (in.hasRemaining()) {
-      throw new IllegalArgumentException(in.remaining() + " trailing bytes after tree diff");
-    }
   }
 
   private static List<LeafEntry> readLeaves(final ByteBuffer in) {
@@ -305,22 +339,10 @@ public final class TreeDiffCodec {
     long gIndex = 0;
     for (int i = 0; i < count; i++) {
       gIndex += VarInts.readUnsigned(in);
-      final int length = readInt(in);
-      checkAvailable(in, length);
       // A view: tree leaf nodes copy their data
-      leaves.add(
-          new LeafEntry(gIndex, Bytes.wrap(in.array(), in.arrayOffset() + in.position(), length)));
-      in.position(in.position() + length);
+      leaves.add(new LeafEntry(gIndex, view(in, readInt(in))));
     }
     return leaves;
-  }
-
-  private static void skipLeaves(final ByteBuffer in) {
-    final int count = readCount(in);
-    for (int i = 0; i < count; i++) {
-      VarInts.readUnsigned(in);
-      skipBytes(in, readInt(in));
-    }
   }
 
   /**
@@ -353,12 +375,12 @@ public final class TreeDiffCodec {
     final List<PatchEntry> patches = new ArrayList<>();
     for (int group = 0; group < groupCount; group++) {
       final int fieldIndex = readInt(in);
-      final int elementSize = readInt(in);
       final int count = readCount(in);
       long gIndex = 0;
       for (int i = 0; i < count; i++) {
         gIndex += VarInts.readUnsigned(in);
         final int depth = readInt(in);
+        final int elementSize = readInt(in);
         final int elementCount = readInt(in);
         final int writtenCount = readCount(in);
         final IntList elementIndices = new IntArrayList(writtenCount);
@@ -371,17 +393,7 @@ public final class TreeDiffCodec {
           }
           elementIndices.add((int) index);
         }
-        final long elementBytes = (long) writtenCount * elementSize;
-        if (elementBytes > in.remaining()) {
-          throw new IllegalArgumentException(
-              "Truncated tree diff: need " + elementBytes + " bytes, have " + in.remaining());
-        }
-        // A view; tuweni rejects an empty view at the end of the array
-        final Bytes elements =
-            elementBytes == 0
-                ? Bytes.EMPTY
-                : Bytes.wrap(in.array(), in.arrayOffset() + in.position(), (int) elementBytes);
-        in.position(in.position() + (int) elementBytes);
+        final Bytes elements = view(in, (long) writtenCount * elementSize);
         patches.add(
             new PatchEntry(
                 fieldIndex, gIndex, depth, elementCount, elementSize, elementIndices, elements));
@@ -401,14 +413,6 @@ public final class TreeDiffCodec {
     return zeroed;
   }
 
-  private static void skipZeroed(final ByteBuffer in) {
-    final int count = readCount(in);
-    for (int i = 0; i < count; i++) {
-      VarInts.readUnsigned(in);
-      skipBytes(in, Bytes32.SIZE);
-    }
-  }
-
   private static List<CopiedEntry> readCopied(final ByteBuffer in) {
     final int count = readCount(in);
     final List<CopiedEntry> copied = new ArrayList<>(count);
@@ -420,27 +424,31 @@ public final class TreeDiffCodec {
     return copied;
   }
 
-  /** Reads the delta section, decompressing each entry straight from the payload. */
-  private static List<DeltaEntry> readDeltas(final ByteBuffer in) {
+  /**
+   * Reads the delta section, decompressing each entry straight from the payload, or with {@code
+   * decompress} false checking each entry's frame header only and returning none.
+   */
+  private static List<DeltaEntry> readDeltas(final ByteBuffer in, final boolean decompress) {
     final int count = readCount(in);
-    final List<DeltaEntry> deltas = new ArrayList<>(count);
+    final List<DeltaEntry> deltas = new ArrayList<>(decompress ? count : 0);
+    // Its scratch space takes ~150 KB, so one serves every entry
+    final ZstdJavaDecompressor decompressor =
+        decompress && count > 0 ? new ZstdJavaDecompressor() : null;
     for (int i = 0; i < count; i++) {
       final int fieldIndex = readInt(in);
       final int rawLength = readInt(in);
       final int compressedLength = readInt(in);
       checkCompressedFrame(in, fieldIndex, rawLength, compressedLength);
+      if (decompressor == null) {
+        in.position(in.position() + compressedLength);
+        continue;
+      }
       final byte[] raw = new byte[rawLength];
       final int decompressedLength;
       try {
         decompressedLength =
-            new ZstdJavaDecompressor()
-                .decompress(
-                    in.array(),
-                    in.arrayOffset() + in.position(),
-                    compressedLength,
-                    raw,
-                    0,
-                    rawLength);
+            decompressor.decompress(
+                in.array(), in.arrayOffset() + in.position(), compressedLength, raw, 0, rawLength);
       } catch (final RuntimeException e) {
         // Malformed input surfaces as MalformedInputException or as a bounds failure
         throw new IllegalArgumentException(
@@ -460,17 +468,6 @@ public final class TreeDiffCodec {
       deltas.add(new DeltaEntry(fieldIndex, raw));
     }
     return deltas;
-  }
-
-  private static void skipDeltas(final ByteBuffer in) {
-    final int count = readCount(in);
-    for (int i = 0; i < count; i++) {
-      final int fieldIndex = readInt(in);
-      final int rawLength = readInt(in);
-      final int compressedLength = readInt(in);
-      checkCompressedFrame(in, fieldIndex, rawLength, compressedLength);
-      in.position(in.position() + compressedLength);
-    }
   }
 
   /**
@@ -494,8 +491,8 @@ public final class TreeDiffCodec {
     final long declaredLength;
     try {
       declaredLength =
-          new ZstdJavaDecompressor()
-              .getDecompressedSize(in.array(), in.arrayOffset() + in.position(), compressedLength);
+          FRAME_HEADER_READER.getDecompressedSize(
+              in.array(), in.arrayOffset() + in.position(), compressedLength);
     } catch (final RuntimeException e) {
       throw new IllegalArgumentException(
           "Corrupt compressed deltas of field " + fieldIndex + ": " + e.getMessage(), e);
@@ -511,12 +508,6 @@ public final class TreeDiffCodec {
     }
   }
 
-  private static <T> List<T> sorted(final List<T> entries, final Comparator<T> comparator) {
-    final List<T> copy = new ArrayList<>(entries);
-    copy.sort(comparator);
-    return copy;
-  }
-
   private static byte[] readBytes(final ByteBuffer in, final int length) {
     checkAvailable(in, length);
     final byte[] data = new byte[length];
@@ -524,12 +515,19 @@ public final class TreeDiffCodec {
     return data;
   }
 
-  private static void skipBytes(final ByteBuffer in, final int length) {
+  /** A view of the next {@code length} bytes, which are skipped. */
+  private static Bytes view(final ByteBuffer in, final long length) {
     checkAvailable(in, length);
-    in.position(in.position() + length);
+    // tuweni rejects an empty view at the end of the array
+    final Bytes view =
+        length == 0
+            ? Bytes.EMPTY
+            : Bytes.wrap(in.array(), in.arrayOffset() + in.position(), (int) length);
+    in.position(in.position() + (int) length);
+    return view;
   }
 
-  private static void checkAvailable(final ByteBuffer in, final int length) {
+  private static void checkAvailable(final ByteBuffer in, final long length) {
     if (in.remaining() < length) {
       throw new IllegalArgumentException(
           "Truncated tree diff: need " + length + " bytes, have " + in.remaining());
@@ -557,6 +555,60 @@ public final class TreeDiffCodec {
     return (int) value;
   }
 
+  /** A view of part of an array that keeps the array and offset for {@link #openVersioned}. */
+  private static final class PayloadView extends AbstractBytes {
+    private final byte[] array;
+    private final int offset;
+    private final Bytes delegate;
+
+    private PayloadView(final byte[] array, final int offset, final int length) {
+      this.array = array;
+      this.offset = offset;
+      // tuweni rejects an empty view at the end of the array
+      this.delegate = length == 0 ? Bytes.EMPTY : Bytes.wrap(array, offset, length);
+    }
+
+    /** The viewed bytes as a buffer whose position is 0 and whose array is the viewed one. */
+    private ByteBuffer buffer() {
+      return ByteBuffer.wrap(array, offset, delegate.size()).slice();
+    }
+
+    @Override
+    public int size() {
+      return delegate.size();
+    }
+
+    @Override
+    public byte get(final int i) {
+      return delegate.get(i);
+    }
+
+    @Override
+    public Bytes slice(final int i, final int length) {
+      return delegate.slice(i, length);
+    }
+
+    @Override
+    public Bytes copy() {
+      return delegate.copy();
+    }
+
+    @Override
+    public MutableBytes mutableCopy() {
+      return delegate.mutableCopy();
+    }
+
+    @Override
+    public void copyTo(final MutableBytes destination, final int destinationOffset) {
+      delegate.copyTo(destination, destinationOffset);
+    }
+
+    @Override
+    public byte[] toArrayUnsafe() {
+      return delegate.toArrayUnsafe();
+    }
+  }
+
   /** Writes into an array sized by {@link #maxEncodedSize}, so it never grows. */
   private static final class Writer {
 
@@ -564,9 +616,10 @@ public final class TreeDiffCodec {
     private final MutableBytes view;
     private int position;
 
-    private Writer(final int capacity) {
+    private Writer(final int capacity, final int start) {
       this.buffer = new byte[capacity];
       this.view = MutableBytes.wrap(buffer);
+      this.position = start;
     }
 
     void writeByte(final int value) {
@@ -585,21 +638,19 @@ public final class TreeDiffCodec {
     /**
      * Writes {@code raw} as a zstd frame prefixed by its length. The frame is compressed into the
      * buffer past room for the longest prefix, then moved down next to the prefix written.
-     *
-     * @return the compressed length
      */
-    int writeCompressed(final byte[] raw) {
+    void writeCompressed(final byte[] raw) {
       final int frameStart = position + MAX_INT_VARINT_BYTES;
       final int length =
           COMPRESSOR.compress(raw, 0, raw.length, buffer, frameStart, buffer.length - frameStart);
       writeUnsigned(length);
       System.arraycopy(buffer, frameStart, buffer, position, length);
       position += length;
-      return length;
     }
 
-    Bytes toBytes() {
-      return Bytes.wrap(position == buffer.length ? buffer : Arrays.copyOf(buffer, position));
+    MutableBytes toBytes() {
+      return MutableBytes.wrap(
+          position == buffer.length ? buffer : Arrays.copyOf(buffer, position));
     }
   }
 }
