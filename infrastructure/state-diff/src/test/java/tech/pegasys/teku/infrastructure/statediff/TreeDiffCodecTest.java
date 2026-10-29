@@ -16,6 +16,7 @@ package tech.pegasys.teku.infrastructure.statediff;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import it.unimi.dsi.fastutil.ints.IntList;
 import java.util.List;
 import java.util.Random;
 import org.apache.tuweni.bytes.Bytes;
@@ -25,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.CopiedEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.DeltaEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.LeafEntry;
+import tech.pegasys.teku.infrastructure.statediff.TreeDiff.PatchEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.SupernodeEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.ZeroedEntry;
 
@@ -37,7 +39,7 @@ class TreeDiffCodecTest {
   void roundTripsEmptyDiff() {
     final Bytes serialized = TreeDiffCodec.serialize(TreeDiff.empty());
 
-    assertThat(serialized.size()).isEqualTo(6);
+    assertThat(serialized.size()).isEqualTo(7);
     final TreeDiff deserialized = TreeDiffCodec.deserialize(serialized);
     assertThat(deserialized).isEqualTo(TreeDiff.empty());
     assertThat(deserialized.isEmpty()).isTrue();
@@ -51,6 +53,7 @@ class TreeDiffCodecTest {
         new TreeDiff(
             List.of(new LeafEntry(5, leafData)),
             List.of(new SupernodeEntry(3, 7, 2, HASH_A)),
+            List.of(patch(3, 6, 2, 4, 3, IntList.of(1, 3))),
             List.of(new ZeroedEntry(13, HASH_B)),
             List.of(new CopiedEntry(13, 5)),
             List.of(new DeltaEntry(12, new byte[] {1, 2, 3})));
@@ -59,7 +62,7 @@ class TreeDiffCodecTest {
 
     assertThat(deserialized).isEqualTo(diff);
     assertThat(deserialized.isEmpty()).isFalse();
-    assertThat(deserialized.entryCount()).isEqualTo(5);
+    assertThat(deserialized.entryCount()).isEqualTo(6);
     assertThat(deserialized.leaves().getFirst().data()).isEqualTo(leafData);
     assertThat(deserialized.deltas().getFirst().encodedDeltas()).containsExactly(1, 2, 3);
   }
@@ -76,6 +79,8 @@ class TreeDiffCodecTest {
                 new SupernodeEntry(3, 9, 2, HASH_A),
                 new SupernodeEntry(3, 7, 2, hashC),
                 new SupernodeEntry(4, 41, 2, HASH_B)),
+            List.of(
+                patch(4, 42, 2, 4, 5, IntList.of(0, 1, 2, 3)), patch(3, 8, 2, 3, 5, IntList.of(2))),
             List.of(new ZeroedEntry(13, HASH_B), new ZeroedEntry(15, HASH_A)),
             List.of(new CopiedEntry(13, 5)),
             List.of(new DeltaEntry(12, sequentialBytes(70)), new DeltaEntry(14, new byte[0])));
@@ -102,6 +107,92 @@ class TreeDiffCodecTest {
   }
 
   @Test
+  void roundTripsPatches() {
+    final TreeDiff diff =
+        new TreeDiff(
+            List.of(),
+            List.of(),
+            List.of(
+                // One rewritten element
+                patch(2, 1L << 20, 8, 256, 121, IntList.of(17)),
+                // Rewritten and appended elements, written in index order
+                patch(2, (1L << 20) + 3, 8, 200, 121, IntList.of(0, 130, 150, 199)),
+                // Appended elements left unwritten, zero
+                patch(2, (1L << 20) + 1, 8, 12, 121, IntList.of()),
+                // Another field with another element size
+                patch(7, 50, 3, 8, 32, IntList.of(7))),
+            List.of(),
+            List.of(),
+            List.of());
+
+    final TreeDiff deserialized = TreeDiffCodec.deserialize(TreeDiffCodec.serialize(diff));
+
+    // Sorted by field index, then gIndex
+    assertThat(deserialized.patches())
+        .containsExactly(
+            diff.patches().get(0),
+            diff.patches().get(2),
+            diff.patches().get(1),
+            diff.patches().get(3));
+    assertThat(deserialized.entryCount()).isEqualTo(4);
+    assertThat(TreeDiffCodec.supernodeEntries(TreeDiffCodec.serialize(diff))).isEmpty();
+  }
+
+  @Test
+  void rejectsPatchesOfOneFieldWithDifferentElementSizes() {
+    final TreeDiff diff =
+        new TreeDiff(
+            List.of(),
+            List.of(),
+            List.of(patch(2, 8, 2, 1, 121, IntList.of(0)), patch(2, 9, 2, 1, 120, IntList.of(0))),
+            List.of(),
+            List.of(),
+            List.of());
+
+    assertThatThrownBy(() -> TreeDiffCodec.serialize(diff))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("element size");
+  }
+
+  @Test
+  void rejectsPatchWritingAnElementBeyondItsCount() {
+    final Bytes serialized =
+        TreeDiffCodec.serialize(
+            new TreeDiff(
+                List.of(),
+                List.of(),
+                List.of(patch(2, 8, 2, 3, 4, IntList.of(2))),
+                List.of(),
+                List.of(),
+                List.of()));
+    // version, leaf count, supernode groups, patch groups, field index, element size, entry count,
+    // gIndex delta, depth, element count 3
+    final int elementCountOffset = 9;
+    assertThat(serialized.get(elementCountOffset)).isEqualTo((byte) 3);
+    final MutableBytes corrupted = serialized.mutableCopy();
+    corrupted.set(elementCountOffset, (byte) 2);
+
+    assertThatThrownBy(() -> TreeDiffCodec.deserialize(corrupted))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("element 2");
+  }
+
+  @Test
+  void patchEntryRejectsInconsistentContent() {
+    assertThatThrownBy(() -> patch(2, 8, 2, 5, 4, IntList.of()))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> patch(2, 8, 2, 4, 4, IntList.of(2, 2)))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> patch(2, 8, 2, 4, 0, IntList.of(1)))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> patch(2, 8, 31, 4, 4, IntList.of(1)))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () -> new PatchEntry(2, 8, 2, 4, 4, IntList.of(1), Bytes.wrap(sequentialBytes(5))))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
   void sortsLeavesByGIndex() {
     final TreeDiff diff =
         new TreeDiff(
@@ -109,6 +200,7 @@ class TreeDiffCodecTest {
                 new LeafEntry(13, Bytes.of(13)),
                 new LeafEntry(5, Bytes.of(5)),
                 new LeafEntry(7, Bytes.of(7))),
+            List.of(),
             List.of(),
             List.of(),
             List.of(),
@@ -160,6 +252,10 @@ class TreeDiffCodecTest {
             new TreeDiff(
                 List.of(new LeafEntry(5, Bytes.of(1, 2, 3))),
                 List.of(new SupernodeEntry(3, 7, 2, HASH_A)),
+                List.of(
+                    patch(3, 6, 2, 4, 3, IntList.of(0, 3)),
+                    patch(3, 9, 2, 1, 3, IntList.of()),
+                    patch(5, 4, 1, 2, 7, IntList.of(1))),
                 List.of(new ZeroedEntry(13, HASH_B)),
                 List.of(new CopiedEntry(13, 5)),
                 List.of(
@@ -195,7 +291,12 @@ class TreeDiffCodecTest {
     for (final byte[] block : blocks) {
       final TreeDiff diff =
           new TreeDiff(
-              List.of(), List.of(), List.of(), List.of(), List.of(new DeltaEntry(4, block)));
+              List.of(),
+              List.of(),
+              List.of(),
+              List.of(),
+              List.of(),
+              List.of(new DeltaEntry(4, block)));
 
       final TreeDiff deserialized = TreeDiffCodec.deserialize(TreeDiffCodec.serialize(diff));
 
@@ -208,7 +309,12 @@ class TreeDiffCodecTest {
     final byte[] zeros = UInt64DeltaCodec.encode(new long[2_000_000], new long[2_000_000]);
     final TreeDiff diff =
         new TreeDiff(
-            List.of(), List.of(), List.of(), List.of(), List.of(new DeltaEntry(21, zeros)));
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(new DeltaEntry(21, zeros)));
 
     final TreeDiffCodec.Encoded encoded = TreeDiffCodec.encode(diff);
 
@@ -226,11 +332,12 @@ class TreeDiffCodecTest {
             List.of(),
             List.of(),
             List.of(),
+            List.of(),
             List.of(new DeltaEntry(4, sequentialBytes(100))));
     final Bytes serialized = TreeDiffCodec.serialize(diff);
-    // version, leaf count, supernode groups, zeroed count, copied count, delta count, field index,
-    // then the raw length 100, a one-byte varint
-    final int rawLengthOffset = 7;
+    // version, leaf count, supernode groups, patch groups, zeroed count, copied count, delta count,
+    // field index, then the raw length 100, a one-byte varint
+    final int rawLengthOffset = 8;
     assertThat(serialized.get(rawLengthOffset)).isEqualTo((byte) 100);
     final MutableBytes corrupted = serialized.mutableCopy();
     corrupted.set(rawLengthOffset, (byte) 101);
@@ -247,6 +354,7 @@ class TreeDiffCodecTest {
   void rejectsCorruptCompressedDeltaBlock() {
     final TreeDiff diff =
         new TreeDiff(
+            List.of(),
             List.of(),
             List.of(),
             List.of(),
@@ -280,6 +388,9 @@ class TreeDiffCodecTest {
             List.of(new LeafEntry(large, Bytes.of(1)), new LeafEntry(largest, Bytes.of(2))),
             List.of(
                 new SupernodeEntry(4, large, 3, HASH_A), new SupernodeEntry(4, largest, 3, HASH_B)),
+            List.of(
+                patch(4, large + 1, 30, 1 << 30, 2, IntList.of(0, (1 << 30) - 1)),
+                patch(4, largest - 1, 3, 8, 2, IntList.of(5))),
             List.of(new ZeroedEntry(large, HASH_A), new ZeroedEntry(largest, HASH_B)),
             List.of(new CopiedEntry(largest, large)),
             List.of());
@@ -291,9 +402,26 @@ class TreeDiffCodecTest {
     return new TreeDiff(
         List.of(new LeafEntry(5, Bytes.of(1, 2, 3))),
         List.of(new SupernodeEntry(3, 7, 2, HASH_A)),
+        List.of(patch(3, 6, 2, 4, 3, IntList.of(2))),
         List.of(new ZeroedEntry(13, HASH_B)),
         List.of(new CopiedEntry(13, 5)),
         List.of(new DeltaEntry(12, new byte[] {1, 2, 3})));
+  }
+
+  /** A patch whose written elements hold distinct bytes. */
+  private static PatchEntry patch(
+      final int fieldIndex,
+      final long gIndex,
+      final int depth,
+      final int elementCount,
+      final int elementSize,
+      final IntList elementIndices) {
+    final byte[] elements = new byte[elementIndices.size() * elementSize];
+    for (int i = 0; i < elements.length; i++) {
+      elements[i] = (byte) (gIndex + i);
+    }
+    return new PatchEntry(
+        fieldIndex, gIndex, depth, elementCount, elementSize, elementIndices, Bytes.wrap(elements));
   }
 
   private static byte[] sequentialBytes(final int length) {

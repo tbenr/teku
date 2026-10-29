@@ -91,7 +91,6 @@ class StateDiffDagTest {
     final StateDiffNodeRecord record = record(roots.get(0));
     assertThat(record.snapshot()).isTrue();
     assertThat(record.parentNodeRoot()).isEqualTo(Bytes32.ZERO);
-    assertThat(record.prevNodeRoot()).isEqualTo(Bytes32.ZERO);
     assertThat(record.blockSlot()).isEqualTo(states.get(0).getSlot());
     assertThat(record.stateRoot()).isEqualTo(states.get(0).hashTreeRoot());
     assertThat(record.firstEpoch()).isEqualTo(UInt64.ZERO);
@@ -110,7 +109,6 @@ class StateDiffDagTest {
     final StateDiffNodeRecord record = record(roots.get(1));
     assertThat(record.snapshot()).isFalse();
     assertThat(record.parentNodeRoot()).isEqualTo(roots.get(0));
-    assertThat(record.prevNodeRoot()).isEqualTo(roots.get(0));
     assertThat(record.level()).isEqualTo(3);
     assertThat(record.payload().size()).isLessThan(record(roots.get(0)).payload().size());
     assertReconstructs(1);
@@ -206,9 +204,6 @@ class StateDiffDagTest {
         tx ->
             tx.writeNode(
                 rootB17, stateB17, epoch(17), epoch(17), prepend(rootB16, ancestorsB), false));
-
-    assertThat(record(rootA16).prevNodeRoot()).isEqualTo(roots.get(15));
-    assertThat(record(rootB16).prevNodeRoot()).isEqualTo(roots.get(14));
     assertThat(record(rootA16).parentNodeRoot()).isEqualTo(roots.get(0));
     assertThat(record(rootB16).parentNodeRoot()).isEqualTo(roots.get(0));
     assertThat(record(rootA17).parentNodeRoot()).isEqualTo(rootA16);
@@ -251,7 +246,6 @@ class StateDiffDagTest {
     update(tx -> tx.writeNode(root18, state18, epoch(18), epoch(18), ancestorsBefore(16), false));
 
     final StateDiffNodeRecord record18 = record(root18);
-    assertThat(record18.prevNodeRoot()).isEqualTo(root15);
     assertThat(record18.parentNodeRoot()).isEqualTo(root15);
     assertThat(record18.level()).isEqualTo(3);
     assertReconstructs(root18, state18);
@@ -275,7 +269,6 @@ class StateDiffDagTest {
     final StateDiffNodeRecord forkNode = record(roots.get(4));
     assertThat(forkNode.snapshot()).isTrue();
     assertThat(forkNode.parentNodeRoot()).isEqualTo(Bytes32.ZERO);
-    assertThat(forkNode.prevNodeRoot()).isEqualTo(roots.get(3));
     assertThat(record(roots.get(5)).parentNodeRoot()).isEqualTo(roots.get(4));
     for (int epoch = 0; epoch < 6; epoch++) {
       assertReconstructs(epoch);
@@ -297,7 +290,6 @@ class StateDiffDagTest {
             record.lastEpoch(),
             record.level(),
             record.snapshot(),
-            record.prevNodeRoot(),
             record.parentNodeRoot(),
             record.payload());
     updateDao(
@@ -398,7 +390,6 @@ class StateDiffDagTest {
                         record.lastEpoch(),
                         record.level(),
                         record.snapshot(),
-                        record.prevNodeRoot(),
                         record.parentNodeRoot(),
                         Bytes.of(9, 9, 9)))));
     final Map<Bytes32, Optional<UInt64>> countsBefore = new HashMap<>();
@@ -537,7 +528,7 @@ class StateDiffDagTest {
     assertStoredEpochs(range(0, 9));
 
     // The node of epoch 10 was skipped; finalization creates it against the previous anchor, so
-    // its previous-node pointer skips the nodes of epochs 6..9
+    // its parent, its previous node, skips the nodes of epochs 6..9
     update(
         tx -> {
           tx.ensureNode(roots.get(10), states.get(10), epoch(10), List.of(roots.get(5)));
@@ -547,8 +538,6 @@ class StateDiffDagTest {
               roots.subList(6, 11),
               FinalizedRetention.anchorChain());
         });
-
-    assertThat(record(roots.get(10)).prevNodeRoot()).isEqualTo(roots.get(5));
     assertStoredEpochs(union(range(0, 5), Set.of(10)));
     assertThat(dag.reconstructionChain(dao, roots.get(10)))
         .containsExactly(
@@ -629,7 +618,6 @@ class StateDiffDagTest {
     assertThat(late.snapshot()).isFalse();
     assertThat(late.level()).isEqualTo(3);
     assertThat(late.parentNodeRoot()).isEqualTo(roots.get(15));
-    assertThat(late.prevNodeRoot()).isEqualTo(roots.get(15));
     assertReconstructs(16);
     assertReconstructs(17);
     assertDagConsistent();
@@ -696,7 +684,7 @@ class StateDiffDagTest {
   void corruptRecordFailsWithVerificationException() {
     buildChain(2);
     writeEpochs(0, 1);
-    updateDao(updater -> updater.putStateDiffNode(roots.get(1), Bytes.of(1, 2, 3)));
+    updateDao(updater -> updater.putStateDiffNode(roots.get(1), Bytes.of(2, 2, 3)));
 
     assertThatThrownBy(() -> dag.reconstruct(dao, roots.get(1)))
         .isInstanceOf(StateDiffVerificationException.class)
@@ -721,7 +709,6 @@ class StateDiffDagTest {
             record.lastEpoch(),
             record.level(),
             record.snapshot(),
-            record.prevNodeRoot(),
             record.parentNodeRoot(),
             Bytes.of(9, 9, 9));
     updateDao(
@@ -887,7 +874,6 @@ class StateDiffDagTest {
                         record.lastEpoch(),
                         record.level(),
                         record.snapshot(),
-                        record.prevNodeRoot(),
                         record.parentNodeRoot(),
                         Bytes.of(9, 9, 9)))));
     final long deletedBefore = nodeCount("deleted");
@@ -921,7 +907,6 @@ class StateDiffDagTest {
       assertThat(record.snapshot()).describedAs("snapshot at epoch %s", epoch).isTrue();
       assertThat(record.level()).isZero();
       assertThat(record.parentNodeRoot()).isEqualTo(Bytes32.ZERO);
-      assertThat(record.prevNodeRoot()).isEqualTo(roots.get(epoch - 1));
     }
     // The first node, at epoch 0, is a periodic snapshot too
     assertThat(snapshots("periodic")).isEqualTo(6);
@@ -1102,6 +1087,45 @@ class StateDiffDagTest {
                 .compressedDeltaBytes();
     assertThat(sectionBytes("deltas_compressed")).isEqualTo(compressedDeltaBytes).isPositive();
     assertThat(sectionBytes("deltas_compressed")).isLessThan(sectionBytes("deltas"));
+  }
+
+  @Test
+  void changedValidatorIsPatchedInlineWithoutStoringOrCountingASupernode() {
+    buildChain(2);
+    writeEpochs(0, 0);
+    final Set<Bytes32> storedHashes = supernodeHashes(roots.get(0));
+    final Map<Bytes32, Optional<UInt64>> countsBefore = new HashMap<>();
+    storedHashes.forEach(hash -> countsBefore.put(hash, dao.getStateSupernodeRefCount(hash)));
+    final long insertedBefore = supernodeOps("inserted");
+    final BeaconState changed = withChangedValidator(states.get(1));
+    final Bytes32 changedRoot = roots.get(1);
+
+    update(tx -> tx.writeNode(changedRoot, changed, epoch(1), epoch(1), ancestorsBefore(1), false));
+
+    final StateDiffNodeRecord record = record(changedRoot);
+    assertThat(record.snapshot()).isFalse();
+    final TreeDiff diff = TreeDiffCodec.deserialize(record.payload());
+    assertThat(diff.supernodes()).isEmpty();
+    assertThat(diff.patches())
+        .singleElement()
+        .satisfies(patch -> assertThat(patch.elementIndices().toIntArray()).containsExactly(0));
+    // Nothing stored or counted for the patched supernode
+    assertThat(supernodeOps("inserted")).isEqualTo(insertedBefore);
+    storedHashes.forEach(
+        hash -> assertThat(dao.getStateSupernodeRefCount(hash)).isEqualTo(countsBefore.get(hash)));
+    assertThat(sectionEntries("patches")).isEqualTo(1);
+    assertThat(sectionBytes("patches"))
+        .isEqualTo(diff.patches().getFirst().elements().size())
+        .isPositive();
+    assertReconstructs(changedRoot, changed);
+    setFinalizedCheckpoint(0);
+    assertDagConsistent();
+
+    // Deleting the node releases no reference
+    update(tx -> tx.deleteNodes(List.of(changedRoot)));
+    storedHashes.forEach(
+        hash -> assertThat(dao.getStateSupernodeRefCount(hash)).isEqualTo(countsBefore.get(hash)));
+    assertDagConsistent();
   }
 
   @Test
@@ -1552,7 +1576,8 @@ class StateDiffDagTest {
     writeEpochs(0, 2);
     setFinalizedCheckpoint(2);
 
-    updateDao(updater -> updater.putStateDiffNode(roots.get(1), Bytes.of(1, 2, 3)));
+    // A record of the current version cut short in its header
+    updateDao(updater -> updater.putStateDiffNode(roots.get(1), Bytes.of(2, 2, 3)));
 
     final StateDiffVerificationReport report = dag.verify(dao);
     assertThat(report.corruptNodes())

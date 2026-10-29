@@ -371,7 +371,7 @@ full hot states before; and bytes written per epoch are ~3 MB of node plus
 Two findings for Enrico to decide on (both are payload-version-2 changes,
 neither blocks the working version):
 
-41. **GREY. Changed supernodes are stored whole (31 KB) even when one validator changed.**
+41. **GREY. Changed supernodes are stored whole (31 KB) even when one validator changed.** Implemented by 69-71 (wave v2b).
     Mainnet touches ~190 supernodes per epoch, so ~40% of the per-epoch bytes
     are supernode copies. The design table mentioned splitting a changed
     supernode per validator; no task specified it. A `SupernodePatch` section
@@ -873,3 +873,125 @@ checkpoint nodes went through the DAG.
     implemented as one codec rewrite; the before/after figures in 63 therefore
     compare the v1 stream codec with the v2 one, compression included, and the
     compression time is given separately.
+
+## Payload version 2, second wave: v2b (2026-10-29)
+
+69. **GREY. Supernode patches: a `PATCHES` section in payload version 2
+    (implements 41).** No version 2 database exists yet, so the section is
+    added to version 2 in place, between `SUPERNODES` and `ZEROED`. Format:
+    patches grouped by field index like supernode references; each group
+    stores the field index, the element size (one per group: the encoder
+    rejects two sizes in one field) and the entry count; each entry its gIndex
+    delta, depth, element count, written count, the written indices as gaps
+    (`index - previous - 1`, the first from -1, so strictly increasing by
+    construction) and the written elements back to back, decoded as one view
+    of the payload (the applier copies them). The element size is stored
+    rather than taken from the schema so the codec stays schema-free; the
+    applier checks it against the field's `SszNodeTemplate`. `PatchEntry`
+    validates itself (depth at most 30, element count within `2^depth`,
+    indices strictly increasing and below the count, element bytes =
+    written x size), so a corrupt entry fails decoding with an
+    `IllegalArgumentException`, which the DAG reports as a corrupt payload
+    (38). Applier: a patch reads the node at its gIndex in the unmodified
+    base tree (like copy sources), which must be an `SszSuperNode` of the
+    entry's depth whose element count is at most the entry's; it copies the
+    bytes, zero-extends them to the element count, writes the elements and
+    builds a plain `SszSuperNode` (root computed lazily, the state root check
+    covers it). Violations throw `IllegalArgumentException` naming the gIndex.
+    Patches go into the same per-depth update set as supernode references
+    (so a duplicate gIndex is rejected), are applied link by link in a chain
+    application and are included in the chain's check that no entry
+    addresses a delta field. `supernodeEntries` reads the patch section with
+    the same checks as `deserialize` (patches are few and small) so it keeps
+    rejecting everything `deserialize` rejects. Refcounts: patched supernodes
+    are inline, nothing is stored or counted; whole references keep the
+    content-addressed store. `verify-state-diffs` is unchanged (it hashes the
+    stored supernodes; a patch has nothing stored, and a wrong patch fails
+    the anchor reconstruction's root check like any other payload error).
+    `section_bytes_total` / `section_entries_total` gain `section="patches"`
+    (bytes = written element bytes) and the DEBUG line prints them.
+
+70. **GREY. Patch threshold: a patch when it is smaller than a whole
+    reference including the content the reference stores.** The differ
+    compares the base and target supernode element by element
+    (`Arrays.equals` over the packed slices) and accumulates the patch cost:
+    two varint counts, plus per written element its gap varint and its bytes.
+    The whole-reference cost is 32 (hash) + the target supernode's content
+    bytes (the gIndex and depth are paid by both and left out). It patches
+    while the patch cost stays below the reference cost and gives up at the
+    first element that reaches it, so for full 256 x 121-byte validator
+    supernodes it patches up to 254 changed validators, i.e. all but a
+    rewrite of nearly the whole supernode. Not counted: deduplication (when
+    the target content is already in the store from another node, a
+    reference costs only its 32 bytes; the differ cannot see the store, and
+    identical content written by two nodes only happens across sibling
+    forks), RocksDB compression of either side, and read cost (a reference
+    is one more batched point read; a patch is inline). A patch is only
+    considered when the base node at the position is an `SszSuperNode` of the
+    same depth with at least one element and the target has at least as many
+    elements. So a snapshot never patches (its base, the default tree, holds
+    only empty supernodes, also for bounded lists), a supernode the list grows
+    into is a whole reference (also on progressive lists, whose base holds an
+    empty supernode there), and a shrunk supernode falls back to a whole
+    reference. The brief asked to assert the no-shrink case; it falls back
+    silently instead, since tests diff unrelated random states, where an
+    `assert` would fire under `-ea` (TreeDifferTest
+    `shrunkSupernodeProducesWholeReference` pins the fallback). The applier
+    accepts a patch over an empty base supernode, which the differ never
+    emits.
+
+71. **DERIVED. Patch measurements (temporary harnesses, removed; copies in
+    the session scratchpad).** Synthetic node (SyntheticState schema, 102,500
+    validators, 25 changed supernodes: 20 with one changed validator, 4 with
+    three, 1 with ten, plus 4 deposits into the partially filled last
+    supernode): 26 patches with 46 written elements. Before (whole
+    references): 888 payload bytes of references + 786,984 bytes of
+    supernode content = 787,872 bytes; after: 5,757 payload bytes, nothing in
+    the supernode column (137x less). Real Electra state
+    (`DataStructureUtil.randomBeaconState(8192)`, mainnet Electra spec, 5
+    effective-balance changes and one exit epoch change, one appended
+    validator): 5 patches with 6 elements, 1 whole reference (the appended
+    validator starts a new supernode); before 177 + 154,880 = 155,057 bytes,
+    after 767 bytes; the whole node payload is 861 bytes. Cost (best of 15):
+    applying the 26 patches and hashing the resulting tree takes 5.15 ms
+    against 0.08 ms for the equivalent whole references, whose roots are
+    known (47): a patched supernode is rehashed when the state root is
+    checked, ~0.2 ms each, once per distinct supernode left patched in the
+    final tree (intermediate links are never hashed). A mainnet epoch node
+    (~20-25 patched supernodes) adds ~5 ms to its reconstruction; a 22-link
+    chain at most a few hundred distinct supernodes, ~0.1 s, against
+    reconstructions measured at 1.2-3 s. The differ's element comparison is
+    0.17 ms for the synthetic diff. Expected effect on the window soak
+    (decision 61, 167 MiB of supernodes for 128 epochs): the per-epoch
+    changed supernodes (~0.7 MB raw) and the coarse nodes' references leave
+    the column, which keeps the snapshots' validator sets. StateDiffDagTest
+    needed no refcount adaptation: its nodes with a changed validator are
+    snapshots (written without ancestors) and its chains change no
+    validators, so every counted supernode was a whole reference already; a
+    new test (`changedValidatorIsPatchedInlineWithoutStoringOrCountingASupernode`)
+    covers a patched diff node: no insert, unchanged counts on write and
+    delete, `patches` section metrics, reconstruction, clean verify.
+
+72. **GREY. Node record header version 2 without `prevNodeRoot` (C6).**
+    `StateDiffNodeRecordCodec.VERSION = 2`; the header is version, block
+    slot, state root, first and last epoch, level, snapshot flag, parent node
+    root (91 bytes, was 123 with the 32-byte prev root); `patchLastEpoch`
+    keeps its offset (the dropped field came after it). `StateDiffNodeRecord`
+    has no prev field. No production reader remained since 27/40; the writer
+    still resolves the previous node (first ancestor checkpoint root with a
+    node) to start the parent walk and to name it in the no-parent WARN. A
+    version 1 record is rejected with `TreeDiffCodec.VERSION_ONE_MESSAGE`
+    verbatim (now public): every version 1 record holds a version 1 payload,
+    so "payload version 1 ... must be re-synced" is accurate, and startup and
+    `verify-state-diffs` show the same text whichever of the two is read
+    first. The version is checked before the header length, so even a
+    truncated version 1 record gets the message. Tests that read
+    `prevNodeRoot`: assertions next to a parent assertion were dropped
+    (StateDiffDagTest, 9); the late anchor of
+    `StateDiffDatabaseTest` now asserts its parent, which for a node written
+    late at the finest level is its previous node; the forced snapshot of
+    the recovery integration test lost its prev assertion (not observable
+    any more). Corrupt-record tests that wrote `01 02 03` (now read as a
+    version 1 record) write `02 02 03` so they still test a truncated
+    current record. New: `StateDiffNodeRecordCodecTest.rejectsVersionOneRecordWithResyncMessage`,
+    `KvStoreDatabaseTest.stateDiffs_versionOneRecordFailsStartupAndVerifyWithResyncMessage`.

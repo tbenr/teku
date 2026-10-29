@@ -75,14 +75,14 @@ class BeaconStateDiffFuzzTest {
   @TestTemplate
   void randomMutationsRoundTrip() {
     final Random rng = new Random(12345);
-    int trialsWithSupernodes = 0;
+    int trialsWithPatches = 0;
     for (int trial = 0; trial < NUM_TRIALS; trial++) {
       final BeaconState base = dataStructureUtil.randomBeaconState(VALIDATOR_COUNT);
       final BeaconState target = applyRandomMutations(base, rng);
 
       final TreeDiff diff = diff(base, target);
-      if (!diff.supernodes().isEmpty()) {
-        trialsWithSupernodes++;
+      if (!diff.patches().isEmpty()) {
+        trialsWithPatches++;
       }
       final TreeNode reconstructed =
           support
@@ -94,9 +94,9 @@ class BeaconStateDiffFuzzTest {
           .isEqualTo(target.hashTreeRoot());
       assertSameState(reconstructed, target, "Trial " + trial);
     }
-    // Validator mutations must reach the applier as supernode entries, not as leaves
-    assertThat(trialsWithSupernodes).isPositive();
-    assertThat(supernodes).isNotEmpty();
+    // Validator mutations must reach the applier as supernode patches, not as leaves; the few
+    // changed validators of a trial never outweigh a whole supernode reference
+    assertThat(trialsWithPatches).isPositive();
   }
 
   @TestTemplate
@@ -112,6 +112,8 @@ class BeaconStateDiffFuzzTest {
             .diff(schema.getDefaultTree(), state.getBackingNode(), supernodes::put);
     // 64 validators fill supernode-packed chunks, so the snapshot must carry supernode entries
     assertThat(snapshot.supernodes()).isNotEmpty();
+    // A snapshot's base holds no supernode content to patch
+    assertThat(snapshot.patches()).isEmpty();
     assertThat(supernodes.keySet())
         .containsAll(snapshot.supernodes().stream().map(SupernodeEntry::hash).toList());
     final TreeNode reconstructed =
@@ -183,6 +185,7 @@ class BeaconStateDiffFuzzTest {
     assertThat(diff.supernodes())
         .noneMatch(entry -> entry.fieldIndex() == balancesField)
         .noneMatch(entry -> isWithin(entry.gIndex(), balancesGIndex));
+    assertThat(diff.patches()).noneMatch(entry -> isWithin(entry.gIndex(), balancesGIndex));
     assertThat(diff.zeroed()).noneMatch(entry -> isWithin(entry.gIndex(), balancesGIndex));
     assertThat(diff.copied()).noneMatch(entry -> isWithin(entry.targetGIndex(), balancesGIndex));
 
