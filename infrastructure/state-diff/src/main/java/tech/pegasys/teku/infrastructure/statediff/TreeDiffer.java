@@ -21,17 +21,18 @@ import it.unimi.dsi.fastutil.ints.IntSets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.stream.IntStream;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
-import tech.pegasys.teku.infrastructure.ssz.schema.SszCollectionSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszContainerSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszUInt64ListSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.BranchNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.GIndexUtil;
 import tech.pegasys.teku.infrastructure.ssz.tree.LeafDataNode;
+import tech.pegasys.teku.infrastructure.ssz.tree.SszNodeTemplate;
 import tech.pegasys.teku.infrastructure.ssz.tree.SszSuperNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeUtil;
@@ -230,31 +231,36 @@ public final class TreeDiffer {
   }
 
   /**
-   * The patch turning {@code base} into {@code target}, the supernodes at {@code gIndex} of field
+   * The patch turning {@code baseNode} into {@code target}, the nodes at {@code gIndex} of field
    * {@code fieldIndex}, or {@code null} when a whole reference to {@code target} is the cheaper
-   * entry or a patch cannot express the change (another depth, an empty or a longer base).
+   * entry or a patch cannot express the change (no base supernode, another depth, an empty or a
+   * longer base).
    */
   private PatchEntry patch(
-      final int fieldIndex, final long gIndex, final SszSuperNode base, final SszSuperNode target) {
+      final int fieldIndex, final long gIndex, final TreeNode baseNode, final SszSuperNode target) {
+    if (!(baseNode instanceof SszSuperNode base)) {
+      return null;
+    }
     final Bytes baseData = base.getData();
     final Bytes targetData = target.getData();
+    final Optional<SszNodeTemplate> template =
+        TreeDiffApplier.supernodeTemplate(schema, fieldIndex);
     if (base.getDepth() != target.getDepth()
         || target.getDepth() > PatchEntry.MAX_DEPTH
         || baseData.isEmpty()
         || targetData.size() < baseData.size()
-        || !(schema.getChildSchema(fieldIndex) instanceof SszCollectionSchema<?, ?> listSchema)) {
+        || template.isEmpty()) {
       return null;
     }
-    final int elementSize = listSchema.getSupernodeElementTemplate().getSszLength();
+    final int elementSize = template.get().getSszLength();
     if (baseData.size() % elementSize != 0 || targetData.size() % elementSize != 0) {
       return null;
     }
     final int baseCount = baseData.size() / elementSize;
     final int targetCount = targetData.size() / elementSize;
-    // Both entries carry a gIndex and a depth; a patch adds two counts, a reference its hash and
-    // the content it stores
+    // Both entries carry a gIndex and a depth; a reference adds its hash and the content it stores
     final long referenceBytes = (long) Bytes32.SIZE + targetData.size();
-    long patchBytes = 2L * VarInts.unsignedLength(targetCount);
+    long patchBytes = TreeDiffCodec.patchEntryBytes(elementSize, targetCount);
     final byte[] baseBytes = baseData.toArrayUnsafe();
     final byte[] targetBytes = targetData.toArrayUnsafe();
     final IntList written = new IntArrayList();
@@ -265,7 +271,7 @@ public final class TreeDiffer {
       if (i < baseCount && Arrays.equals(baseBytes, from, to, targetBytes, from, to)) {
         continue;
       }
-      patchBytes += VarInts.unsignedLength(i - previous - 1) + elementSize;
+      patchBytes += TreeDiffCodec.patchElementBytes(i - previous - 1, elementSize);
       if (patchBytes >= referenceBytes) {
         return null;
       }
@@ -319,10 +325,7 @@ public final class TreeDiffer {
         }
       } else if (targetNode instanceof SszSuperNode superNode) {
         if (!sameRoot || !sameLeafData(baseNode, targetNode)) {
-          final PatchEntry patch =
-              baseNode instanceof SszSuperNode baseSuperNode
-                  ? patch(fieldIndex, gIndex, baseSuperNode, superNode)
-                  : null;
+          final PatchEntry patch = patch(fieldIndex, gIndex, baseNode, superNode);
           if (patch != null) {
             patches.add(patch);
           } else {

@@ -135,8 +135,7 @@ class TreeDiffChainApplicationTest {
   void rejectsDuplicateDeltaField() {
     final TreeNode s0 = SyntheticState.create(random, VALIDATOR_COUNT);
     final DeltaEntry delta = diff(SCHEMA.getDefaultTree(), s0).deltas().getFirst();
-    final TreeDiff duplicate =
-        new TreeDiff(List.of(), List.of(), List.of(), List.of(), List.of(), List.of(delta, delta));
+    final TreeDiff duplicate = TestTreeDiffs.onlyDeltas(delta, delta);
 
     assertThatThrownBy(() -> applier.apply(SCHEMA.getDefaultTree(), duplicate, source))
         .isInstanceOf(IllegalArgumentException.class);

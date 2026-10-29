@@ -995,3 +995,21 @@ checkpoint nodes went through the DAG.
     version 1 record) write `02 02 03` so they still test a truncated
     current record. New: `StateDiffNodeRecordCodecTest.rejectsVersionOneRecordWithResyncMessage`,
     `KvStoreDatabaseTest.stateDiffs_versionOneRecordFailsStartupAndVerifyWithResyncMessage`.
+
+## v2 simplify wave (2026-10-29)
+
+73. **GREY. The `STATE_DIFF_MODE` marker is the format gate; codec and seam
+    tidy (simplify-v2 A-K).** B: this build writes and opens only marker `02`;
+    a database marked `01` (version 1 nodes, or 534b4f39e0 soak clones with
+    the old patch layout) fails at open with an unrecoverable
+    `DatabaseStorageException` asking to re-sync (`verify-state-diffs` prints it
+    and exits 1), any other marker as unknown: 64/72's outcome, earlier and
+    once; the codecs lost their version 1 branches. G: `section_bytes_total`
+    is now each section's exact encoded span, framing included (an empty
+    section counts its count byte), summing to the payload less its version
+    byte; `deltas` stays raw, `deltas_compressed` is a regular section with
+    entries. I: `PATCHES` stores the element size per entry, not per group (the
+    encoder check is gone), changing version 2 bytes in place under B's
+    re-clone. A: no `TransactionNodes` seam; maintenance works on the
+    transaction, whose `replaceNodeWithSnapshot` owns the discard-then-put
+    ordering. C-F, H, J, K are behaviour-neutral.

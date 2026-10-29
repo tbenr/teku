@@ -18,6 +18,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.apache.tuweni.bytes.MutableBytes;
+import tech.pegasys.teku.infrastructure.statediff.TreeDiff;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiffCodec;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
@@ -29,10 +30,6 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
  * parentNodeRoot, then the payload as the remaining bytes. Integers are big-endian. The header has
  * a fixed size, so {@link #patchLastEpoch} rewrites the last epoch in place without touching the
  * payload.
- *
- * <p>Version 1 also stored the previous node's root, which nothing read. It is not read: its
- * records hold version 1 payloads, which are not readable either, so it is rejected with the same
- * message to re-sync.
  */
 public final class StateDiffNodeRecordCodec {
 
@@ -51,16 +48,40 @@ public final class StateDiffNodeRecordCodec {
   private StateDiffNodeRecordCodec() {}
 
   public static Bytes encode(final StateDiffNodeRecord record) {
-    final MutableBytes header = MutableBytes.create(HEADER_SIZE);
-    header.set(VERSION_OFFSET, (byte) VERSION);
-    header.set(BLOCK_SLOT_OFFSET, uint64(record.blockSlot()));
-    header.set(STATE_ROOT_OFFSET, record.stateRoot());
-    header.set(FIRST_EPOCH_OFFSET, uint64(record.firstEpoch()));
-    header.set(LAST_EPOCH_OFFSET, uint64(record.lastEpoch()));
-    header.set(LEVEL_OFFSET, (byte) record.level());
-    header.set(SNAPSHOT_OFFSET, (byte) (record.snapshot() ? 1 : 0));
-    header.set(PARENT_NODE_ROOT_OFFSET, record.parentNodeRoot());
-    return Bytes.wrap(header, record.payload());
+    final MutableBytes encoded = MutableBytes.create(HEADER_SIZE + record.payload().size());
+    writeHeader(record, encoded);
+    record.payload().copyTo(encoded, HEADER_SIZE);
+    return encoded;
+  }
+
+  /** Encodes {@code diff} with room for a record header before it, for the encode taking it. */
+  static TreeDiffCodec.Encoded encodePayload(final TreeDiff diff) {
+    return TreeDiffCodec.encode(diff, HEADER_SIZE);
+  }
+
+  /**
+   * Encodes {@code record}, whose payload is that of {@code payload} from {@link #encodePayload},
+   * by writing its header into the room reserved for it: the payload is not copied.
+   */
+  static Bytes encode(final StateDiffNodeRecord record, final TreeDiffCodec.Encoded payload) {
+    checkArgument(
+        payload.prefixLength() == HEADER_SIZE,
+        "Payload reserves %s bytes, not the %s byte header",
+        payload.prefixLength(),
+        HEADER_SIZE);
+    writeHeader(record, payload.bytes());
+    return payload.bytes();
+  }
+
+  private static void writeHeader(final StateDiffNodeRecord record, final MutableBytes encoded) {
+    encoded.set(VERSION_OFFSET, (byte) VERSION);
+    encoded.setLong(BLOCK_SLOT_OFFSET, record.blockSlot().longValue());
+    encoded.set(STATE_ROOT_OFFSET, record.stateRoot());
+    encoded.setLong(FIRST_EPOCH_OFFSET, record.firstEpoch().longValue());
+    encoded.setLong(LAST_EPOCH_OFFSET, record.lastEpoch().longValue());
+    encoded.set(LEVEL_OFFSET, (byte) record.level());
+    encoded.set(SNAPSHOT_OFFSET, (byte) (record.snapshot() ? 1 : 0));
+    encoded.set(PARENT_NODE_ROOT_OFFSET, record.parentNodeRoot());
   }
 
   public static StateDiffNodeRecord decode(final Bytes encoded) {
@@ -75,33 +96,28 @@ public final class StateDiffNodeRecordCodec {
         Byte.toUnsignedInt(encoded.get(LEVEL_OFFSET)),
         snapshot == 1,
         Bytes32.wrap(encoded.slice(PARENT_NODE_ROOT_OFFSET, Bytes32.SIZE)),
-        encoded.slice(HEADER_SIZE));
+        // Read in place by the tree diff codec, without copying it out of the record
+        TreeDiffCodec.payloadView(
+            encoded.toArrayUnsafe(), HEADER_SIZE, encoded.size() - HEADER_SIZE));
   }
 
   /** Returns a copy of {@code encoded} with only its last epoch replaced by {@code lastEpoch}. */
   public static Bytes patchLastEpoch(final Bytes encoded, final UInt64 lastEpoch) {
     checkHeader(encoded);
     final MutableBytes patched = encoded.mutableCopy();
-    patched.set(LAST_EPOCH_OFFSET, uint64(lastEpoch));
+    patched.setLong(LAST_EPOCH_OFFSET, lastEpoch.longValue());
     return patched;
   }
 
   private static void checkHeader(final Bytes encoded) {
     checkArgument(!encoded.isEmpty(), "Empty state diff node record");
     final int version = Byte.toUnsignedInt(encoded.get(VERSION_OFFSET));
-    if (version == 1) {
-      throw new IllegalArgumentException(TreeDiffCodec.VERSION_ONE_MESSAGE);
-    }
     checkArgument(version == VERSION, "Unknown state diff node record version %s", version);
     checkArgument(
         encoded.size() >= HEADER_SIZE,
         "State diff node record of %s bytes is shorter than its %s byte header",
         encoded.size(),
         HEADER_SIZE);
-  }
-
-  private static Bytes uint64(final UInt64 value) {
-    return Bytes.ofUnsignedLong(value.longValue());
   }
 
   private static UInt64 readUInt64(final Bytes encoded, final int offset) {

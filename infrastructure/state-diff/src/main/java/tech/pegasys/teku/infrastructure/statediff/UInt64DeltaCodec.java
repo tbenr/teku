@@ -41,7 +41,7 @@ public final class UInt64DeltaCodec {
     for (int i = base.length; i < target.length; i++) {
       size += VarInts.unsignedLength(target[i]);
     }
-    if (size > Integer.MAX_VALUE - 8) {
+    if (size > VarInts.MAX_ARRAY_LENGTH) {
       throw new IllegalArgumentException("Deltas of " + target.length + " elements too large");
     }
     final byte[] out = new byte[(int) size];
@@ -56,7 +56,21 @@ public final class UInt64DeltaCodec {
     return out;
   }
 
+  /** The target {@code encoded} was encoded for against {@code base}, in a new array. */
   public static long[] apply(final long[] base, final byte[] encoded) {
+    return apply(base, encoded, false);
+  }
+
+  /**
+   * The target {@code encoded} was encoded for against {@code values}, written over {@code values}
+   * when it has as many elements, else in a new array. {@code values} holds no meaningful content
+   * afterwards unless it is the result, also when the encoding is rejected.
+   */
+  public static long[] applyInPlace(final long[] values, final byte[] encoded) {
+    return apply(values, encoded, true);
+  }
+
+  private static long[] apply(final long[] base, final byte[] encoded, final boolean inPlace) {
     final ByteBuffer in = ByteBuffer.wrap(encoded);
     final long baseCount = VarInts.readUnsigned(in);
     if (baseCount != base.length) {
@@ -74,7 +88,9 @@ public final class UInt64DeltaCodec {
               + in.remaining()
               + " remaining bytes");
     }
-    final long[] result = new long[(int) targetCount];
+    // Each element is read before it is written, so the base can be the result
+    final long[] result =
+        inPlace && targetCount == base.length ? base : new long[(int) targetCount];
     final int commonCount = Math.min(base.length, result.length);
     for (int i = 0; i < commonCount; i++) {
       result[i] = base[i] + VarInts.readSigned(in);

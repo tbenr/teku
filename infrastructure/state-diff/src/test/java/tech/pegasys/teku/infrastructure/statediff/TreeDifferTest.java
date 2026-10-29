@@ -234,21 +234,15 @@ class TreeDifferTest {
     final TreeDiff diff = diff(BASE, changeValidator(BASE, CHANGED_VALIDATOR));
     final PatchEntry patch = diff.patches().getFirst();
     final TreeDiff otherDepth =
-        new TreeDiff(
-            List.of(),
-            List.of(),
-            List.of(
-                new PatchEntry(
-                    patch.fieldIndex(),
-                    patch.gIndex(),
-                    patch.depth() - 1,
-                    patch.elementCount() / 2,
-                    patch.elementSize(),
-                    patch.elementIndices(),
-                    patch.elements())),
-            List.of(),
-            List.of(),
-            List.of());
+        TestTreeDiffs.onlyPatches(
+            new PatchEntry(
+                patch.fieldIndex(),
+                patch.gIndex(),
+                patch.depth() - 1,
+                patch.elementCount() / 2,
+                patch.elementSize(),
+                patch.elementIndices(),
+                patch.elements()));
 
     final TreeNode leafBase = BASE.updated(patch.gIndex(), LeafNode.EMPTY_LEAF);
 
@@ -278,21 +272,15 @@ class TreeDifferTest {
     final PatchEntry patch =
         diff(BASE, changeValidator(BASE, CHANGED_VALIDATOR)).patches().getFirst();
     final TreeDiff wrongSize =
-        new TreeDiff(
-            List.of(),
-            List.of(),
-            List.of(
-                new PatchEntry(
-                    patch.fieldIndex(),
-                    patch.gIndex(),
-                    patch.depth(),
-                    patch.elementCount(),
-                    patch.elementSize() - 1,
-                    patch.elementIndices(),
-                    patch.elements().slice(1))),
-            List.of(),
-            List.of(),
-            List.of());
+        TestTreeDiffs.onlyPatches(
+            new PatchEntry(
+                patch.fieldIndex(),
+                patch.gIndex(),
+                patch.depth(),
+                patch.elementCount(),
+                patch.elementSize() - 1,
+                patch.elementIndices(),
+                patch.elements().slice(1)));
 
     assertThatThrownBy(() -> applier.apply(BASE, wrongSize, source))
         .isInstanceOf(IllegalArgumentException.class)
