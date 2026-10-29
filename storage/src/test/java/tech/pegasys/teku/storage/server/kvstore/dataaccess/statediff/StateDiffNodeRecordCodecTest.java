@@ -20,6 +20,8 @@ import java.util.List;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.Test;
+import tech.pegasys.teku.infrastructure.statediff.TreeDiff;
+import tech.pegasys.teku.infrastructure.statediff.TreeDiff.LeafEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiffCodec;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
@@ -30,8 +32,6 @@ class StateDiffNodeRecordCodecTest {
   private static final int HEADER_SIZE = 1 + 8 + 32 + 8 + 8 + 1 + 1 + 32;
   private static final int LAST_EPOCH_OFFSET = 1 + 8 + 32 + 8;
   private static final int PARENT_NODE_ROOT_OFFSET = HEADER_SIZE - 32;
-  // Version 1 also had a 32-byte prevNodeRoot before the parentNodeRoot
-  private static final int VERSION_ONE_HEADER_SIZE = HEADER_SIZE + 32;
 
   private final StateDiffNodeRecord diffRecord =
       new StateDiffNodeRecord(
@@ -70,6 +70,38 @@ class StateDiffNodeRecordCodecTest {
   }
 
   @Test
+  void encodesIntoTheRoomReservedBeforeAnEncodedPayload() {
+    final TreeDiff diff =
+        new TreeDiff(
+            List.of(new LeafEntry(5, Bytes.of(1, 2, 3))),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of());
+    final TreeDiffCodec.Encoded payload = StateDiffNodeRecordCodec.encodePayload(diff);
+    final StateDiffNodeRecord record =
+        new StateDiffNodeRecord(
+            diffRecord.blockSlot(),
+            diffRecord.stateRoot(),
+            diffRecord.firstEpoch(),
+            diffRecord.lastEpoch(),
+            diffRecord.level(),
+            diffRecord.snapshot(),
+            diffRecord.parentNodeRoot(),
+            payload.payload());
+
+    final Bytes encoded = StateDiffNodeRecordCodec.encode(record, payload);
+
+    assertThat(encoded).isEqualTo(StateDiffNodeRecordCodec.encode(record));
+    assertThat(encoded.toArrayUnsafe()).isSameAs(payload.bytes().toArrayUnsafe());
+    assertThat(TreeDiffCodec.deserialize(StateDiffNodeRecordCodec.decode(encoded).payload()))
+        .isEqualTo(diff);
+    assertThatThrownBy(() -> StateDiffNodeRecordCodec.encode(record, TreeDiffCodec.encode(diff, 0)))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
   void patchLastEpochOnlyChangesThatField() {
     final Bytes encoded = StateDiffNodeRecordCodec.encode(diffRecord);
     final UInt64 newLastEpoch = UInt64.valueOf(40_000);
@@ -99,39 +131,22 @@ class StateDiffNodeRecordCodecTest {
   @Test
   void rejectsUnknownVersionAndTruncatedRecord() {
     final Bytes encoded = StateDiffNodeRecordCodec.encode(diffRecord);
-    final Bytes unknownVersion = Bytes.concatenate(Bytes.of(3), encoded.slice(1));
     final Bytes truncated = encoded.slice(0, HEADER_SIZE - 1);
 
-    assertThatThrownBy(() -> StateDiffNodeRecordCodec.decode(unknownVersion))
-        .isInstanceOf(IllegalArgumentException.class);
+    // Version 1 too: a database holding it is rejected when it is opened
+    for (final int version : List.of(1, 3)) {
+      final Bytes unknownVersion = Bytes.concatenate(Bytes.of(version), encoded.slice(1));
+      assertThatThrownBy(() -> StateDiffNodeRecordCodec.decode(unknownVersion))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage("Unknown state diff node record version " + version);
+      assertThatThrownBy(() -> StateDiffNodeRecordCodec.patchLastEpoch(unknownVersion, UInt64.ONE))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage("Unknown state diff node record version " + version);
+    }
     assertThatThrownBy(() -> StateDiffNodeRecordCodec.decode(truncated))
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> StateDiffNodeRecordCodec.patchLastEpoch(unknownVersion, UInt64.ONE))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> StateDiffNodeRecordCodec.patchLastEpoch(truncated, UInt64.ONE))
         .isInstanceOf(IllegalArgumentException.class);
-  }
-
-  @Test
-  void rejectsVersionOneRecordWithResyncMessage() {
-    // A version 1 record: the version 2 header with a prevNodeRoot before the parentNodeRoot
-    final Bytes encoded = StateDiffNodeRecordCodec.encode(diffRecord);
-    final Bytes versionOne =
-        Bytes.concatenate(
-            Bytes.of(1),
-            encoded.slice(1, PARENT_NODE_ROOT_OFFSET - 1),
-            Bytes32.fromHexString("0x02"),
-            encoded.slice(PARENT_NODE_ROOT_OFFSET));
-    assertThat(versionOne.size()).isEqualTo(VERSION_ONE_HEADER_SIZE + diffRecord.payload().size());
-
-    for (final Bytes record : List.of(versionOne, Bytes.of(1))) {
-      assertThatThrownBy(() -> StateDiffNodeRecordCodec.decode(record))
-          .isInstanceOf(IllegalArgumentException.class)
-          .hasMessage(TreeDiffCodec.VERSION_ONE_MESSAGE);
-      assertThatThrownBy(() -> StateDiffNodeRecordCodec.patchLastEpoch(record, UInt64.ONE))
-          .isInstanceOf(IllegalArgumentException.class)
-          .hasMessage(TreeDiffCodec.VERSION_ONE_MESSAGE);
-    }
     assertThatThrownBy(() -> StateDiffNodeRecordCodec.decode(Bytes.EMPTY))
         .isInstanceOf(IllegalArgumentException.class);
   }

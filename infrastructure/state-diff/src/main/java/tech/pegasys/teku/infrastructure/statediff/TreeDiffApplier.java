@@ -24,6 +24,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import org.apache.tuweni.bytes.Bytes;
@@ -196,7 +197,18 @@ public final class TreeDiffApplier {
               + " to patch");
     }
     final Bytes baseData = baseSuperNode.getData();
-    final int size = entry.elementCount() * elementSize;
+    // The element count fits in an int, the bytes of that many elements need not
+    final long size = (long) entry.elementCount() * elementSize;
+    if (size > VarInts.MAX_ARRAY_LENGTH) {
+      throw new IllegalArgumentException(
+          "Patch at gIndex "
+              + entry.gIndex()
+              + " has "
+              + entry.elementCount()
+              + " elements of "
+              + elementSize
+              + " bytes, too many to build");
+    }
     if (size < baseData.size()) {
       throw new IllegalArgumentException(
           "Patch at gIndex "
@@ -207,7 +219,7 @@ public final class TreeDiffApplier {
               + entry.elementCount()
               + " elements");
     }
-    final MutableBytes data = MutableBytes.create(size);
+    final MutableBytes data = MutableBytes.create((int) size);
     baseData.copyTo(data, 0);
     for (int i = 0; i < entry.elementIndices().size(); i++) {
       entry
@@ -249,11 +261,20 @@ public final class TreeDiffApplier {
   }
 
   private SszNodeTemplate supernodeTemplate(final int fieldIndex) {
-    if (schema.getChildSchema(checkFieldIndex(fieldIndex))
-        instanceof SszCollectionSchema<?, ?> collectionSchema) {
-      return collectionSchema.getSupernodeElementTemplate();
-    }
-    throw new IllegalArgumentException("Field " + fieldIndex + " is not a collection");
+    return supernodeTemplate(schema, checkFieldIndex(fieldIndex))
+        .orElseThrow(
+            () -> new IllegalArgumentException("Field " + fieldIndex + " is not a collection"));
+  }
+
+  /**
+   * The template of the supernode elements of the field {@code fieldIndex} of {@code schema}, empty
+   * when that field is not a collection.
+   */
+  static Optional<SszNodeTemplate> supernodeTemplate(
+      final SszContainerSchema<?> schema, final int fieldIndex) {
+    return schema.getChildSchema(fieldIndex) instanceof SszCollectionSchema<?, ?> collectionSchema
+        ? Optional.of(collectionSchema.getSupernodeElementTemplate())
+        : Optional.empty();
   }
 
   private int checkFieldIndex(final int fieldIndex) {
@@ -267,10 +288,11 @@ public final class TreeDiffApplier {
    * A chain of diffs being applied with folded delta sections; see {@link #startChain}. Not
    * thread-safe.
    *
-   * <p>A diff's delta entries are folded into the pending values of their fields and its other
-   * sections are applied at once. A diff with another entry addressing a delta field (pending or
-   * its own) would observe or overwrite values not yet written, so it is rejected; {@link
-   * TreeDiffer} never produces one.
+   * <p>A diff's delta entries are folded into the pending values of their fields, in place, and its
+   * other sections are applied at once. A diff with another entry addressing a delta field (pending
+   * or its own) would observe or overwrite values not yet written, so it is rejected; {@link
+   * TreeDiffer} never produces one. After a diff fails to apply, the application is not to be used
+   * further.
    */
   public final class ChainApplication {
     private final Int2ObjectMap<long[]> pending = new Int2ObjectLinkedOpenHashMap<>();
@@ -298,9 +320,10 @@ public final class TreeDiffApplier {
       for (final DeltaEntry entry : diff.deltas()) {
         final int fieldIndex = entry.fieldIndex();
         final long[] current = pending.get(fieldIndex);
+        // The pending values, or those just read, belong to this chain: folded over in place
         pending.put(
             fieldIndex,
-            UInt64DeltaCodec.apply(
+            UInt64DeltaCodec.applyInPlace(
                 current != null ? current : readDeltaValues(tree, fieldIndex),
                 entry.encodedDeltas()));
       }
@@ -335,31 +358,21 @@ public final class TreeDiffApplier {
       if (deltaFieldGIndices.isEmpty()) {
         return;
       }
-      final LongList gIndices = new LongArrayList();
-      diff.copied()
-          .forEach(
-              entry -> {
-                gIndices.add(entry.sourceGIndex());
-                gIndices.add(entry.targetGIndex());
-              });
-      diff.zeroed().forEach(entry -> gIndices.add(entry.gIndex()));
-      diff.supernodes().forEach(entry -> gIndices.add(entry.gIndex()));
-      diff.patches().forEach(entry -> gIndices.add(entry.gIndex()));
-      diff.leaves().forEach(entry -> gIndices.add(entry.gIndex()));
-      for (int i = 0; i < gIndices.size(); i++) {
-        for (int j = 0; j < deltaFieldGIndices.size(); j++) {
-          final NodeRelation relation =
-              GIndexUtil.gIdxCompare(gIndices.getLong(i), deltaFieldGIndices.getLong(j));
-          if (relation != NodeRelation.LEFT && relation != NodeRelation.RIGHT) {
-            throw new IllegalArgumentException(
-                "Diff entry at gIndex "
-                    + gIndices.getLong(i)
-                    + " addresses delta field gIndex "
-                    + deltaFieldGIndices.getLong(j)
-                    + ", which a chain application cannot fold");
-          }
-        }
-      }
+      diff.forEachGIndex(
+          gIndex -> {
+            for (int i = 0; i < deltaFieldGIndices.size(); i++) {
+              final NodeRelation relation =
+                  GIndexUtil.gIdxCompare(gIndex, deltaFieldGIndices.getLong(i));
+              if (relation != NodeRelation.LEFT && relation != NodeRelation.RIGHT) {
+                throw new IllegalArgumentException(
+                    "Diff entry at gIndex "
+                        + gIndex
+                        + " addresses delta field gIndex "
+                        + deltaFieldGIndices.getLong(i)
+                        + ", which a chain application cannot fold");
+              }
+            }
+          });
     }
 
     private long fieldGIndex(final int fieldIndex) {

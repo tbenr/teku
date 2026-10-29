@@ -419,7 +419,15 @@ public class DebugDbCommand implements Runnable {
       @Mixin final BeaconNodeDataOptions beaconNodeDataOptions,
       @Mixin final Eth2NetworkOptions eth2NetworkOptions)
       throws Exception {
-    try (final Database database = createDatabase(beaconNodeDataOptions, eth2NetworkOptions)) {
+    final Database database;
+    try {
+      database = createDatabase(beaconNodeDataOptions, eth2NetworkOptions);
+    } catch (final DatabaseStorageException e) {
+      // Such as a database whose state diff storage was written by another build
+      System.err.println("Cannot open the database: " + e.getMessage());
+      return 1;
+    }
+    try (database) {
       if (!database.isStateDiffStorageActive()) {
         System.err.println("The database does not use state diff storage.");
         return 2;
