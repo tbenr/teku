@@ -4,7 +4,9 @@ Status: phase 1 (non-archive nodes) implemented behind a hidden flag; soak-teste
 on mainnet and on sepolia (Gloas); Fulu to Gloas fork crossing verified on a
 kurtosis devnet (decisions log, 2026-10-28 fork crossing section). Phase 2,
 first slice (archive finalized states in the DAG, retention window) implemented
-and soaked on mainnet with a 128-epoch window (decisions log 51, 61). Living document, last updated 2026-10-29.
+and soaked on mainnet with a 128-epoch window (decisions log 51, 61). Node
+payload version 2 (zstd-compressed delta section, decisions log 63-68)
+implemented, not yet soaked. Living document, last updated 2026-10-29.
 
 Design: [docs/superpowers/specs/2026-10-22-state-diff-dag-design.md](superpowers/specs/2026-10-22-state-diff-dag-design.md).
 Every non-obvious decision and all measurements:
@@ -36,6 +38,12 @@ teku --network=mainnet --data-storage-mode=minimal --Xdata-storage-state-diffs
 - The mode is sticky: a marker in the database keeps it on even if the flag is
   removed later. There is no downgrade path; try it on a copy of your data
   directory first.
+- Databases written in state diff mode by a build before node payload version
+  2 (before 2026-10-29) are not readable: startup fails with an unrecoverable
+  error saying the payload is version 1 and the database must be re-synced
+  into a fresh data directory, and `verify-state-diffs` lists the nodes as
+  corrupt with the same text. Re-sync from a checkpoint into a new data
+  directory.
 - `--Xhot-state-persistence-frequency` and `--data-storage-archive-frequency`
   are ignored while it is on (a WARN says so).
 - Only the storage changes; block import, fork choice and the APIs are untouched.
@@ -94,10 +102,10 @@ prints RocksDB keys, total, SST, blob and estimated live bytes per column family
 `--filter` keeps the columns whose name contains it, ignoring case.
 
 Metrics (Prometheus, `storage_state_diff_*`): `nodes_total{state}`,
-`snapshots_total{reason}`, `node_bytes{level}`, `section_bytes_total{section}`,
-`delta_field_bytes_total{field}` and `delta_field_entries_total{field}` (the
-deltas section by state field: `balances`, `inactivity_scores`),
-`write_seconds`, `write_phase_seconds_total{phase}`, `reconstruct_seconds`,
+`snapshots_total{reason}`, `node_bytes{level}`, `section_bytes_total{section}`
+and `section_entries_total{section}` (`deltas` counts the raw delta bytes,
+`deltas_compressed` the same bytes compressed as stored, so their ratio is the
+delta compression ratio), `write_seconds`, `write_phase_seconds_total{phase}`, `reconstruct_seconds`,
 `reconstruct_chain_length`, `base_cache_total{result}`,
 `verification_failures_total`, `window_start_epoch` (archive only); plus
 `storage_store_state_diff_nodes_skipped_total`.
@@ -126,12 +134,16 @@ times, and the on-disk footprint of state storage by about 3.5 times, for about
 
 ## Known limits and open decisions
 
-1. **Delta section compression** (decisions log 42). The per-epoch payload is
-   dominated by balance and inactivity-score deltas (~4 MB raw). RocksDB LZ4
-   gives only ~2.8x on them and Teku disables compression on the bottom-most
-   level, so long-lived nodes end up uncompressed. Application-level zstd or
-   gzip on that section, under payload version 2, should bring a mainnet epoch
-   node well under 1 MB on disk.
+1. **Delta section compression**: closed (decisions log 42, 63). Node payload
+   version 2 compresses each delta field with zstd (pure Java, level 3). On a
+   synthetic mainnet-like node the balance deltas go from 4.0 MB to 1.0 MB
+   (4.0x), a 2M-element inactivity-score block of zeros from 2.0 MB to 212
+   bytes, and the whole payload from 6.4 MB to 1.4 MB, for ~17 ms of
+   compression per node write and ~6 ms of decompression per chain link. The
+   compression happens before RocksDB, so it also holds at the bottom-most
+   level, which Teku leaves uncompressed. The ratio on real data is to be
+   read off `section_bytes_total{section=deltas|deltas_compressed}` on the
+   next soak. Version 1 databases must be re-synced (see How to run it).
 2. **Per-validator supernode patches** (decisions log 41). Changed supernodes
    are stored whole (31 KB); patching only the changed 121-byte validators
    mainly helps coarse nodes and refcount churn.
@@ -154,7 +166,8 @@ times, and the on-disk footprint of state storage by about 3.5 times, for about
   (nodes 1.5 MiB after LZ4 plus supernodes 1.3 MiB), about 0.65 GB per day of
   mainnet history; historical reads 1.6-3 s at a checkpoint slot, plus block
   replay inside the epoch; inactivity-score deltas are ~14% of the delta
-  section, so the payload version 2 wave should lead with delta compression.
+  section. Payload version 2 (delta compression) is in; soak it on a fresh
+  data directory and read the real compression ratio off the metrics.
   Still to soak: an unbounded archive over days, and a longer window.
 - Phase 2, archive node: configurable coarse levels above 256 epochs (archive
   databases use the prune levels today, so an old epoch costs a snapshot plus
@@ -172,5 +185,5 @@ times, and the on-disk footprint of state storage by about 3.5 times, for about
 - Optional tier 2, per-block diffs for hot states: needs a sparse byte-patch
   section for participation flags first; worth it only for read-heavy hot-state
   workloads (see the decisions log).
-- Flip the default once items 1 and 3 above are done and a multi-week soak
+- Flip the default once items 1 and 3 above are done (both closed now) and a multi-week soak
   including reorgs at epoch boundaries is clean.
