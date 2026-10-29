@@ -302,7 +302,6 @@ public class StateDiffDagTransaction {
             lastEpoch,
             level,
             snapshot,
-            prev.map(ChainLink::root).orElse(Bytes32.ZERO),
             snapshot ? Bytes32.ZERO : parent.get().root(),
             payload);
     final Bytes encoded = StateDiffNodeRecordCodec.encode(record);
@@ -589,7 +588,8 @@ public class StateDiffDagTransaction {
       final DiffSectionSizes sections = node.sections();
       LOG.debug(
           "Wrote state diff node {} for epochs {}..{} at level {} as {}: {} bytes, section bytes"
-              + " leaves {}, supernodes {}, zeroed {}, copied {}, deltas {} ({} compressed)",
+              + " leaves {}, supernodes {}, patches {}, zeroed {}, copied {}, deltas {} ({}"
+              + " compressed)",
           node.blockRoot(),
           record.firstEpoch(),
           record.lastEpoch(),
@@ -598,6 +598,7 @@ public class StateDiffDagTransaction {
           node.encodedBytes(),
           sections.leaves().bytes(),
           sections.supernodes().bytes(),
+          sections.patches().bytes(),
           sections.zeroed().bytes(),
           sections.copied().bytes(),
           sections.deltas().bytes(),
