@@ -41,12 +41,13 @@ teku --network=mainnet --data-storage-mode=minimal --Xdata-storage-state-diffs
   removed later. There is no downgrade path; try it on a copy of your data
   directory first.
 - Databases written in state diff mode by a build before node payload version
-  2 (before 2026-10-29) are not readable: their node records (record version
-  1) and payloads (payload version 1) are both rejected, startup fails with an
-  unrecoverable error saying the payload is version 1 and the database must be
-  re-synced into a fresh data directory, and `verify-state-diffs` lists the
-  nodes as corrupt with the same text. Re-sync from a checkpoint into a new
-  data directory.
+  2 (before 2026-10-29), or by a build of 2026-10-29 before the format marker
+  moved to 2 (their payloads have the older patch layout), are not readable.
+  Their `STATE_DIFF_MODE` marker is 1, so the database fails to open, at
+  startup and in `verify-state-diffs` alike, with an unrecoverable error
+  saying it was written by an earlier experimental build and must be re-synced
+  into a fresh data directory. Re-sync from a checkpoint into a new data
+  directory.
 - `--Xhot-state-persistence-frequency` and `--data-storage-archive-frequency`
   are ignored while it is on (a WARN says so).
 - Only the storage changes; block import, fork choice and the APIs are untouched.
@@ -106,9 +107,12 @@ prints RocksDB keys, total, SST, blob and estimated live bytes per column family
 
 Metrics (Prometheus, `storage_state_diff_*`): `nodes_total{state}`,
 `snapshots_total{reason}`, `node_bytes{level}`, `section_bytes_total{section}`
-and `section_entries_total{section}` (`deltas` counts the raw delta bytes,
-`deltas_compressed` the same bytes compressed as stored, so their ratio is the
-delta compression ratio; `patches` the patched validator bytes), `write_seconds`, `write_phase_seconds_total{phase}`, `reconstruct_seconds`,
+and `section_entries_total{section}` (the bytes each section takes in the
+payload, counts, gIndexes and lengths included, so the sections other than
+`deltas` sum to the payloads less one version byte each; `deltas` counts the
+raw delta bytes and `deltas_compressed` the delta section as stored, so their
+ratio is the delta compression ratio), `write_seconds`,
+`write_phase_seconds_total{phase}`, `reconstruct_seconds`,
 `reconstruct_chain_length`, `base_cache_total{result}`,
 `verification_failures_total`, `window_start_epoch` (archive only); plus
 `storage_store_state_diff_nodes_skipped_total`.
@@ -146,7 +150,7 @@ times, and the on-disk footprint of state storage by about 3.5 times, for about
    compression happens before RocksDB, so it also holds at the bottom-most
    level, which Teku leaves uncompressed. The ratio on real data is to be
    read off `section_bytes_total{section=deltas|deltas_compressed}` on the
-   next soak. Version 1 databases must be re-synced (see How to run it).
+   next soak. Databases marked 1 must be re-synced (see How to run it).
 2. **Per-validator supernode patches**: closed (decisions log 41, 69-71). A
    changed supernode is stored as a patch of its changed and appended
    121-byte validators whenever that is smaller than a whole 31 KB copy plus
