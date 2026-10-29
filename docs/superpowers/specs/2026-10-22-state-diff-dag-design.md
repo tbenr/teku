@@ -645,8 +645,8 @@ tree of a reconstruction.
 
 | Column / variable | ID | Key | Value | Static data |
 |---|---|---|---|---|
-| `STATE_DIFF_NODES` | hot column 10 | block root | node record (5.1), header version 2 | yes |
-| `STATE_SUPERNODES` | hot column 11 | supernode hash | supernode SSZ bytes | yes |
+| `STATE_DIFF_NODES` | hot column 14 | block root | node record (5.1), header version 2 | yes |
+| `STATE_SUPERNODES` | hot column 15 | supernode hash | supernode SSZ bytes | yes |
 | `STATE_SUPERNODE_REFCOUNTS` | hot column 13 | supernode hash | u64 reference count | no |
 | `STATE_DIFF_MODE` | hot variable 13 | - | marker = format version, now `02` | - |
 | `STATE_DIFF_WINDOW_START` | hot variable 14 | - | u64 epoch: first finalized epoch an archive database serves (5.11) | - |
