@@ -24,7 +24,8 @@ snapshot plus a bounded chain of diffs, and old nodes are pruned as finality
 advances. Snapshots store the validator supernodes once, content-addressed and
 reference-counted; a diff patches the few changed validators of a supernode
 inline instead of storing a new 31 KB copy. The same store is the foundation for an archive node
-(phase 2) and for offloading exited validators from memory (phase 3).
+(phase 2); offloading exited validators from memory (phase 3) was attempted and
+measured on 2026-10-29 and is not pursued in that form (design section 9).
 
 ## How to run it
 
