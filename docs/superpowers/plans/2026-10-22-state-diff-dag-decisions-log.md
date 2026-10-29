@@ -1067,3 +1067,38 @@ checkpoint nodes went through the DAG.
     epoch, decision log fork-crossing notes) on top.
     Process: RSS 9.2 GB at -Xmx8g; GC 6,332 young (250 s total), 19 full
     (9.1 s) over 3 h of sync.
+
+
+## Rebase onto master 715545a182 (2026-10-29)
+
+76. **DERIVED. State diff columns renumbered: nodes 14, supernodes 15, refcounts 13.**
+    Master commit 715545a182 (#11572, "Store light client bootstraps and fix
+    gaps after checkpoint sync") added two hot columns in `V6SchemaCombined`:
+    `LIGHT_CLIENT_BOOTSTRAPS_BY_SLOT` = 10 and
+    `LIGHT_CLIENT_SYNC_COMMITTEES_BY_PERIOD` = 11, the IDs entry 10 had taken
+    for `STATE_DIFF_NODES` and `STATE_SUPERNODES`. Master is authoritative,
+    so the branch moves: `STATE_DIFF_NODES` to hot column 14 and
+    `STATE_SUPERNODES` to 15; `STATE_SUPERNODE_REFCOUNTS` stays at 13 (entry
+    24). 12 is still out (the hot blob sidecar column is `finalizedOffset +
+    12`, i.e. 12 in a V4-layout hot store, entry 24); 13-15 are not hot
+    columns on master and, in the V4 split layout, the hot store holds only
+    hot columns 1-11 plus that blob sidecar column, so no `finalizedOffset +
+    N` column lands there (finalized columns 13-15 and 17-18 of a V4 finalized
+    store live in the separate finalized database; V6 and tree layouts use
+    offset 128). The renumbering is applied in the phase 1 commit, so no
+    commit of the rebased branch ever defines 10 or 11 for state diffs;
+    `StateDiffDaoTest.columnIdsAreFourteenFifteenThirteen` pins the IDs.
+    Variables are untouched (`STATE_DIFF_MODE` 13, `STATE_DIFF_WINDOW_START`
+    14; master's variables stop at 12).
+    Consequence: every database written by a branch build before this rebase
+    (up to 31634aa01c, including the two AWS soak boxes, archive
+    i-045302325bafe77fd and minimal i-06bfe88f23cd166e3) is incompatible with
+    a rebased build. Its node records sit in column 10 and its supernodes in
+    column 11, which a rebased build opens as light client bootstraps and
+    sync committees, while columns 14 and 15 are empty: the `STATE_DIFF_MODE`
+    marker says the DAG exists but no node is found (and the light client
+    endpoints would decode garbage). No migration is written: those databases
+    need a fresh data directory (re-sync from a checkpoint) before the rebased
+    build runs on them, or a one-off migration that moves the column 10 and
+    11 families to 14 and 15 and drops the light client entries. The format
+    marker is not bumped: the payload bytes are unchanged, only their column.

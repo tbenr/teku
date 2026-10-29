@@ -48,6 +48,19 @@ teku --network=mainnet --data-storage-mode=minimal --Xdata-storage-state-diffs
   saying it was written by an earlier experimental build and must be re-synced
   into a fresh data directory. Re-sync from a checkpoint into a new data
   directory.
+- Column IDs (rebase of 2026-10-29 onto master `715545a182`): `STATE_DIFF_NODES`
+  is hot column 14 and `STATE_SUPERNODES` hot column 15; `STATE_SUPERNODE_REFCOUNTS`
+  stays 13. Master's light client bootstrap change (#11572) took hot columns 10
+  and 11 for `LIGHT_CLIENT_BOOTSTRAPS_BY_SLOT` and
+  `LIGHT_CLIENT_SYNC_COMMITTEES_BY_PERIOD`, which the branch had used for nodes
+  and supernodes until then (12 is the hot blob sidecar column of V4 databases).
+  Databases written by earlier branch builds (up to 31634aa01c, including the
+  two AWS soak boxes) are incompatible with a rebased build: their column 10
+  and 11 data would be read as light client bootstraps and sync committees, and
+  columns 14 and 15 would be empty, so no node is found and the mode marker
+  points at a DAG that is not there. Re-sync them into a fresh data directory,
+  or move the two column families to 14 and 15 with a migration, before running
+  a rebased build.
 - `--Xhot-state-persistence-frequency` and `--data-storage-archive-frequency`
   are ignored while it is on (a WARN says so).
 - Only the storage changes; block import, fork choice and the APIs are untouched.
