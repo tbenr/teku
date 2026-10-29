@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.BiConsumer;
+import java.util.function.Supplier;
 import java.util.stream.IntStream;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
@@ -30,6 +31,7 @@ import tech.pegasys.teku.infrastructure.ssz.schema.SszContainerSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszUInt64ListSchema;
 import tech.pegasys.teku.infrastructure.ssz.tree.BranchNode;
+import tech.pegasys.teku.infrastructure.ssz.tree.FrozenSuperNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.GIndexUtil;
 import tech.pegasys.teku.infrastructure.ssz.tree.LeafDataNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.SszNodeTemplate;
@@ -68,6 +70,10 @@ import tech.pegasys.teku.infrastructure.statediff.TreeDiff.ZeroedEntry;
  * derived from one another. A pair with equal roots but distinct instances is walked without
  * hashing and only leaves whose data length differs are emitted, so the applier reproduces the
  * target's exact leaf data rather than just its root.
+ *
+ * <p>A {@link FrozenSuperNode} is compared like an {@link SszSuperNode} by root, depth and size,
+ * all known without loading it; its content is loaded only when it changed, to build a patch over
+ * it, and when a whole reference to it is emitted only if the sink asks for the content.
  */
 public final class TreeDiffer {
 
@@ -113,9 +119,26 @@ public final class TreeDiffer {
         .toArray();
   }
 
-  @SuppressWarnings({"ReferenceEquality", "ReferenceComparison"})
+  /**
+   * Receives the supernodes a diff references whole: the hash and a supplier of the content, which
+   * a frozen supernode loads only when called.
+   */
+  @FunctionalInterface
+  public interface SupernodeSink {
+    void accept(Bytes32 hash, Supplier<Bytes> content);
+  }
+
   public TreeDiff diff(
       final TreeNode base, final TreeNode target, final BiConsumer<Bytes32, Bytes> sink) {
+    return diffLazy(base, target, (hash, content) -> sink.accept(hash, content.get()));
+  }
+
+  /**
+   * As {@link #diff}, handing the content of each whole reference to {@code sink} as a supplier, so
+   * that a frozen supernode whose content the sink does not need is never loaded.
+   */
+  @SuppressWarnings({"ReferenceEquality", "ReferenceComparison"})
+  public TreeDiff diffLazy(final TreeNode base, final TreeNode target, final SupernodeSink sink) {
     final Collector collector = new Collector(sink);
     for (int fieldIndex = 0; fieldIndex < fieldGIndices.length; fieldIndex++) {
       final long fieldGIndex = fieldGIndices[fieldIndex];
@@ -180,14 +203,14 @@ public final class TreeDiffer {
     if (a == b) {
       return true;
     }
-    if (a instanceof SszSuperNode superA) {
-      return b instanceof SszSuperNode superB
-          && superA.getDepth() == superB.getDepth()
-          && superA.getData().size() == superB.getData().size();
+    if (isSupernode(a)) {
+      return isSupernode(b)
+          && supernodeDepth(a) == supernodeDepth(b)
+          && supernodeSize(a) == supernodeSize(b);
     }
     if (a instanceof LeafDataNode leafA) {
       return b instanceof LeafDataNode leafB
-          && !(b instanceof SszSuperNode)
+          && !isSupernode(b)
           && leafA.getData().size() == leafB.getData().size();
     }
     return a instanceof BranchNode branchA
@@ -208,8 +231,8 @@ public final class TreeDiffer {
     if (node == zeroTree) {
       return true;
     }
-    if (node instanceof SszSuperNode superNode) {
-      return superNode.getData().isEmpty();
+    if (isSupernode(node)) {
+      return supernodeSize(node) == 0;
     }
     if (zeroTree instanceof BranchNode zeroBranch) {
       return node instanceof BranchNode branch
@@ -218,6 +241,32 @@ public final class TreeDiffer {
               || isZeroTree(branch.right(), zeroBranch.right()));
     }
     return node instanceof LeafDataNode leaf && leaf.getData().isEmpty();
+  }
+
+  /** Whether {@code node} is an {@link SszSuperNode} or a {@link FrozenSuperNode}. */
+  static boolean isSupernode(final TreeNode node) {
+    return node instanceof SszSuperNode || node instanceof FrozenSuperNode;
+  }
+
+  private static int supernodeDepth(final TreeNode node) {
+    return node instanceof FrozenSuperNode frozen
+        ? frozen.getDepth()
+        : ((SszSuperNode) node).getDepth();
+  }
+
+  /** The content size of a supernode, without loading a frozen one. */
+  private static int supernodeSize(final TreeNode node) {
+    return node instanceof FrozenSuperNode frozen
+        ? frozen.getSszSize()
+        : ((SszSuperNode) node).getData().size();
+  }
+
+  /** The supernode {@code node} is, loading a frozen one; {@code null} for any other node. */
+  static SszSuperNode asSupernode(final TreeNode node) {
+    if (node instanceof SszSuperNode superNode) {
+      return superNode;
+    }
+    return node instanceof FrozenSuperNode frozen ? frozen.load() : null;
   }
 
   /**
@@ -237,21 +286,23 @@ public final class TreeDiffer {
    * longer base).
    */
   private PatchEntry patch(
-      final int fieldIndex, final long gIndex, final TreeNode baseNode, final SszSuperNode target) {
-    if (!(baseNode instanceof SszSuperNode base)) {
+      final int fieldIndex, final long gIndex, final TreeNode baseNode, final TreeNode targetNode) {
+    if (baseNode == null || !isSupernode(baseNode)) {
       return null;
     }
-    final Bytes baseData = base.getData();
-    final Bytes targetData = target.getData();
     final Optional<SszNodeTemplate> template =
         TreeDiffApplier.supernodeTemplate(schema, fieldIndex);
-    if (base.getDepth() != target.getDepth()
-        || target.getDepth() > PatchEntry.MAX_DEPTH
-        || baseData.isEmpty()
-        || targetData.size() < baseData.size()
+    // Checked on depths and sizes first, so a frozen node is not loaded for nothing
+    if (supernodeDepth(baseNode) != supernodeDepth(targetNode)
+        || supernodeDepth(targetNode) > PatchEntry.MAX_DEPTH
+        || supernodeSize(baseNode) == 0
+        || supernodeSize(targetNode) < supernodeSize(baseNode)
         || template.isEmpty()) {
       return null;
     }
+    final SszSuperNode target = asSupernode(targetNode);
+    final Bytes baseData = asSupernode(baseNode).getData();
+    final Bytes targetData = target.getData();
     final int elementSize = template.get().getSszLength();
     if (baseData.size() % elementSize != 0 || targetData.size() % elementSize != 0) {
       return null;
@@ -294,7 +345,7 @@ public final class TreeDiffer {
   }
 
   private final class Collector {
-    private final BiConsumer<Bytes32, Bytes> sink;
+    private final SupernodeSink sink;
     private final List<LeafEntry> leaves = new ArrayList<>();
     private final List<SupernodeEntry> supernodes = new ArrayList<>();
     private final List<PatchEntry> patches = new ArrayList<>();
@@ -302,7 +353,7 @@ public final class TreeDiffer {
     private final List<CopiedEntry> copied = new ArrayList<>();
     private final List<DeltaEntry> deltas = new ArrayList<>();
 
-    private Collector(final BiConsumer<Bytes32, Bytes> sink) {
+    private Collector(final SupernodeSink sink) {
       this.sink = sink;
     }
 
@@ -323,15 +374,15 @@ public final class TreeDiffer {
         if (!sameRoot || !isZeroTree(baseNode, zeroTree)) {
           zeroed.add(new ZeroedEntry(gIndex, targetRoot));
         }
-      } else if (targetNode instanceof SszSuperNode superNode) {
+      } else if (isSupernode(targetNode)) {
         if (!sameRoot || !sameLeafData(baseNode, targetNode)) {
-          final PatchEntry patch = patch(fieldIndex, gIndex, baseNode, superNode);
+          final PatchEntry patch = patch(fieldIndex, gIndex, baseNode, targetNode);
           if (patch != null) {
             patches.add(patch);
           } else {
             supernodes.add(
-                new SupernodeEntry(fieldIndex, gIndex, superNode.getDepth(), targetRoot));
-            sink.accept(targetRoot, superNode.getData());
+                new SupernodeEntry(fieldIndex, gIndex, supernodeDepth(targetNode), targetRoot));
+            sink.accept(targetRoot, () -> asSupernode(targetNode).getData());
           }
         }
       } else if (targetNode instanceof LeafDataNode leaf) {

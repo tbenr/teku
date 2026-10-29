@@ -102,6 +102,11 @@ public class EpochProcessorElectra extends EpochProcessorCapella {
 
       for (int index = 0; index < validators.size(); index++) {
         final ValidatorStatus status = statuses.get(index);
+        // A frozen validator is inactive with a zero effective balance and an activation epoch
+        // set: neither queued, ejected nor activated, so it is not read
+        if (status.isFrozen()) {
+          continue;
+        }
 
         final Validator validator = validators.get(index);
         if (isEligibleForActivationQueue(validator, status)) {
@@ -160,6 +165,13 @@ public class EpochProcessorElectra extends EpochProcessorCapella {
       final UInt64 balance = balances.getElement(index);
 
       final UInt64 hysteresisIncrement = effectiveBalanceIncrement.dividedBy(hysteresisQuotient);
+      // A frozen validator has a zero effective balance, which cannot decrease and increases only
+      // when the balance exceeds the upward threshold, whatever its maximum effective balance
+      // (never zero): only then is it read
+      if (status.isFrozen()
+          && balance.isLessThanOrEqualTo(hysteresisIncrement.times(hysteresisUpwardMultiplier))) {
+        continue;
+      }
       final UInt64 currentEffectiveBalance = status.getCurrentEpochEffectiveBalance();
       final Validator validator = validators.get(index);
       final UInt64 maxEffectiveBalance = getEffectiveBalanceLimitForValidator(validator);

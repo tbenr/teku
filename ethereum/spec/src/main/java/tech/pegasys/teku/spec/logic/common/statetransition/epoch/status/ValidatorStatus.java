@@ -24,6 +24,7 @@ public class ValidatorStatus {
   private final boolean activeInCurrentEpoch;
   private final boolean activeInPreviousEpoch;
   private final boolean activeInNextEpoch;
+  private final boolean frozen;
 
   private boolean currentEpochSourceAttester = false;
   private boolean currentEpochTargetAttester = false;
@@ -42,6 +43,27 @@ public class ValidatorStatus {
       final boolean activeInCurrentEpoch,
       final boolean activeInPreviousEpoch,
       final boolean activeInNextEpoch) {
+    this(
+        slashed,
+        withdrawableInCurrentEpoch,
+        currentEpochEffectiveBalance,
+        withdrawableEpoch,
+        activeInCurrentEpoch,
+        activeInPreviousEpoch,
+        activeInNextEpoch,
+        false);
+  }
+
+  private ValidatorStatus(
+      final boolean slashed,
+      final boolean withdrawableInCurrentEpoch,
+      final UInt64 currentEpochEffectiveBalance,
+      final UInt64 withdrawableEpoch,
+      final boolean activeInCurrentEpoch,
+      final boolean activeInPreviousEpoch,
+      final boolean activeInNextEpoch,
+      final boolean frozen) {
+    this.frozen = frozen;
     this.slashed = slashed;
     this.withdrawableInCurrentEpoch = withdrawableInCurrentEpoch;
     this.currentEpochEffectiveBalance = currentEpochEffectiveBalance;
@@ -49,6 +71,25 @@ public class ValidatorStatus {
     this.activeInCurrentEpoch = activeInCurrentEpoch;
     this.activeInPreviousEpoch = activeInPreviousEpoch;
     this.activeInNextEpoch = activeInNextEpoch;
+  }
+
+  /**
+   * The status of a validator held by a frozen supernode (state diff tier 3 attempt), created
+   * without reading it. Every validator of a frozen supernode has a zero effective balance, an
+   * activation epoch set, an exit epoch before and a withdrawable epoch at or before the epoch it
+   * was frozen at, which is at or before the current epoch of any state holding the supernode: so
+   * it is inactive in the previous, current and next epoch, withdrawable, and not eligible. Its
+   * slashed flag and withdrawable epoch are not known; both are only read together with {@code
+   * slashed} for a validator whose withdrawable epoch is in the future (rewards eligibility and the
+   * slashings penalty), which cannot hold here, so they are set to {@code false} and {@code 0}.
+   */
+  public static ValidatorStatus frozen() {
+    return new ValidatorStatus(false, true, UInt64.ZERO, UInt64.ZERO, false, false, false, true);
+  }
+
+  /** Whether this status was created by {@link #frozen()}, without reading the validator. */
+  public boolean isFrozen() {
+    return frozen;
   }
 
   public boolean isEligibleValidator() {

@@ -112,7 +112,7 @@ Verified on master `77aa8f474b`:
 | D12 | Backends | RocksDB and LevelDB | Both V6 backends are in use |
 | D13 | Rollout | Hidden flag `--Xdata-storage-state-diffs`, default off | Soak on hoodi/mainnet before flipping the default |
 | D14 | Existing archive modes | Untouched | Diff archive is a third option |
-| D15 | Exited-validator offloading | Phase 3 of this design | Depends on D4 and D5 |
+| D15 | Exited-validator offloading | Phase 3 of this design; attempted 2026-10-29 and not pursued in that form (section 9) | Depends on D4 and D5; at depth 8 it covers 11% of the registry and the cold pubkey scan and view cache undo the saving |
 | D16 | Node identity | Post-state of each epoch's checkpoint block, keyed by that block's root | Anchor semantics unchanged; works in MINIMAL mode where older blocks are gone |
 | D17 | Gloas | The node is the post-block state (pre-envelope), as the anchor is today; envelopes keep their own storage | On master the Store holds envelopes but no post-envelope states; a post-envelope node kind can be added later under a new format version with key = root + payload status |
 | D18 | RocksDB blob files | Not required; `containsStaticData` is set so blob files are used when `--Xdata-storage-rocksdb-blob-db-enabled` is on (default off) | Snapshots are rare on a prune node; the soak compares both settings |
@@ -705,29 +705,42 @@ needed; the existing `stateProvider` channel reaches the DAG through
 
 ## 9. Phase 3: frozen exited-validator supernodes
 
-Not part of the first two phases, but the store is designed so this needs no
-format change.
+Not part of the first two phases; the store is designed so this needs no
+format change. It was built and measured as an exploratory attempt on
+2026-10-29 (branch `worktree-state-diff-tier3`, decisions log entry 77, report
+`.superpowers/sdd/2026-10-29-state-diff-tier3/tier3-attempt-report.md`). The
+design below is what was built; 9.2 to 9.6 record what the attempt taught and
+why it is not pursued in this form.
+
+### 9.1 Design as built
 
 **Unit.** A `FrozenSuperNode` implements `TreeNode` and `LeafDataNode`, holding
-the supernode hash, element count, the `SszNodeTemplate` and a loader against
-`STATE_SUPERNODES`. `hashTreeRoot` returns the stored hash. `get(i)` loads the
-bytes on demand (optionally memoized briefly). `updated()` loads and delegates
-to a real `SszSuperNode`, exactly as `LazyBranchNode` does, so any write thaws
-it. `getData()` loads. `iterate` passes itself as a single node, like
-`SszSuperNode` does today, so tree iteration does not descend.
+the supernode hash, depth, element count, the `SszNodeTemplate` and a loader
+against `STATE_SUPERNODES`. `hashTreeRoot` returns the stored hash. `get(i)`
+loads the bytes on demand, memoized through a `SoftReference`. `updated()`
+loads and delegates to a real `SszSuperNode`, exactly as `LazyBranchNode`
+does, so any write thaws it. `getData()` loads. `iterate` passes itself as a
+single node, like `SszSuperNode` does, so tree iteration does not descend.
+`FrozenRanges` maps the frozen supernodes of a list to element index ranges by
+a binary search over the schema's element gIndices, which works for bounded
+and progressive (Gloas) lists alike.
 
-**Freeze policy.** A supernode is eligible when all its validators have
-`withdrawable_epoch ≤ current epoch` and `effective_balance == 0`. Tracked
-incrementally per supernode hash: first scan records the maximum withdrawable
-epoch; the supernode is frozen at the epoch boundary after that epoch passes
-and the effective balances are confirmed zero. Only states that were loaded
-from, or diffed into, a database-backed tree can freeze, so reference tests
-and in-memory tests are unaffected. The diff walker compares hashes, so a
-frozen supernode is never loaded at write time. Since supernode patches
-(decision 69) the store holds only the supernodes of snapshots and of whole
-references, so a supernode freezes only when its hash is in
-`STATE_SUPERNODES`; the supernodes of exited validators rarely change after
-the snapshot that stored them, so this covers nearly all of them.
+**Freeze policy.** A `SupernodeFreezer` hook in `TreeDiffApplier` decides, for
+every whole supernode reference a reconstruction places, whether to keep the
+content or a frozen node; the applier stays ignorant of validators. The
+storage-side `ExitedValidatorFreezer` freezes a validators supernode when
+every element has `effective_balance == 0`, `activation_epoch` set,
+`exit_epoch < E` and `withdrawable_epoch <= E`, with `E` the epoch of the node
+reconstructed (the two epoch conditions make every canned status fact below
+checkable on the bytes rather than assumed from spec invariants; they exclude
+no validator on mainnet). Eligibility is memoized by hash. Freezing happens
+only in `reconstruct` and `reconstructAndCache`, behind the hidden flag
+`--Xdata-storage-state-diffs-freeze-exited`; states derived from a
+reconstructed tree by `updated()` keep the frozen nodes. Patches are inline
+and never freeze (their content is not in `STATE_SUPERNODES`). The differ
+compares frozen nodes by root, depth and size without loading, and the
+transaction's supernode sink is lazy, so the write path, snapshots included,
+loads nothing. A patch over a frozen base loads it.
 
 **Why materialize-on-write is required.** Two fields of a withdrawn validator
 can still change: `withdrawal_credentials` via a BLS-to-execution change (no
@@ -737,33 +750,163 @@ activity check in `BlockProcessorCapella.processBlsToExecutionChanges`), and
 increase, and the next `processEffectiveBalanceUpdates` raises the effective
 balance). Both go through `validators.set(i, ...)`, which thaws the supernode.
 
-**Iteration fast paths** (in `ethereum/spec`, each guarded by a query on the
-validators list for frozen ranges):
+**Iteration fast paths** (in `ethereum/spec`, seven methods, each a no-op when
+no frozen node exists in the process):
 
-- `ValidatorStatusFactory.createInitialValidatorStatuses`: a frozen range yields
-  canned statuses (inactive in current and previous epoch, not eligible,
-  effective balance 0, slashed irrelevant because `withdrawable_epoch` is in
-  the past so the slashing-epoch equality can never hold).
-- `getActiveValidatorIndices` on cache miss, `processRegistryUpdates` and the
-  activation-queue filter skip frozen ranges.
-- Withdrawals sweep: check `balances[i]` first; a frozen range with zero
-  balances advances by 256 without loading, still counting toward
+- `AbstractValidatorStatusFactory.createInitialValidatorStatuses`: a frozen
+  range yields canned statuses (inactive in previous, current and next epoch,
+  withdrawable, not eligible, effective balance 0; `slashed` and the
+  withdrawable epoch are only read together for a validator whose withdrawable
+  epoch is in the future, which cannot hold).
+- `BeaconStateAccessors.getActiveValidatorIndices` on cache miss (for epochs
+  from the state's previous epoch on), `processRegistryUpdates` (abstract and
+  Electra) and the activation-queue filter skip frozen ranges.
+- Withdrawals sweep: check `balances[i]` first; a frozen index with zero
+  balance advances without loading, still counting toward
   `MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP` so `next_withdrawal_validator_index`
   stays spec-equal.
-- `processEffectiveBalanceUpdates` already reads a validator only when
-  hysteresis fires, which for a frozen range only happens when a balance became
-  nonzero, i.e. the thaw case.
-- REST validator queries and full-state SSZ downloads load stubs; slower but
+- `EpochProcessorElectra.processEffectiveBalanceUpdates` reads every validator
+  every epoch since Electra (the pre-Electra version only on hysteresis); a
+  frozen validator is read only when its balance exceeds the upward threshold,
+  the thaw case.
+- REST validator queries and full-state SSZ serialization load; slower but
   correct.
 
-**Equivalence tests.** Each fast path gets a test that runs the same epoch
-transition on a state with and without freezing and compares state roots, on
-Electra, Fulu and Gloas (progressive list) specs.
+**Equivalence tests.** Each fast path has a test running the same epoch
+transition with and without freezing, comparing state roots and asserting
+zero loads, on Electra, Fulu and Gloas.
 
-**Expected gain.** Memory for the exited share of the registry (once per
-distinct supernode, since states share them) and per-epoch CPU for status
-creation and registry sweeps. The exited fraction is not derivable from the
-repository; measure before claiming numbers.
+### 9.2 Attempt measurements (mainnet finalized state, epoch 483376, Fulu)
+
+2,389,284 validators; harness `FrozenSupernodeHarness` rebuilds the state the
+way the DAG does (snapshot diff, supernodes in a file store), 12 GB heap.
+
+| | plain | frozen |
+|---|---|---|
+| validators meeting the freeze rule | | 1,555,506 (65.1%) |
+| wholly withdrawn depth-8 supernodes | | 1,005 of 9,334 (257,280 validators, 10.8%) |
+| reconstructed state heap after full GC | 607.8 MB | 579.0 MB (saved 28.9; content 29.7) |
+| epoch transition, cold caches, median | 6.02 s | 5.62 s |
+| epoch transition, warm pubkey index | 5.29 s | 5.05 s (second run 5.35 → 4.82) |
+| `createValidatorStatuses`, cold | 3.19 s | 2.68 s |
+| `getActiveValidatorIndices`, cold | 0.68 s | 0.56 s |
+| loads per cold transition | | 257,280 (1,005 store reads), 0 thaws |
+| loads per warm transition | | 0 |
+| heap added by one full registry scan | +1.20 GB | +1.20 GB |
+
+State roots equal in every pairing; run-to-run noise about 5%.
+
+### 9.3 Why the gain is capped
+
+- **Granularity, not the exit rate.** Exits are spread over the whole index
+  space (62-86% of each decile up to the eighth), so a depth-8 supernode is
+  wholly withdrawn only 11% of the time although 65% of validators are. The
+  share of the registry in wholly withdrawn blocks by supernode depth: 10.8%
+  at 8, 19.8% at 7, 30.4% at 6, 40.1% at 5, 47.7% at 4, 53.7% at 3.
+- **The saving is per distinct registry copy, not per state.** Hot states, the
+  anchor and the base-cache trees derived from one reconstruction share the
+  frozen nodes by identity, so the 29 MB applies once or a few times, not
+  once per state.
+- **The cold pubkey index reloads everything.** A freshly reconstructed state
+  has an empty `ValidatorIndexCache`; the first pending deposit whose pubkey
+  is unknown scans the whole registry (`findIndexFromState` from
+  `processPendingDeposits`), loading every frozen supernode. A frozen range
+  cannot be skipped there: a top-up deposit to a withdrawn validator needs
+  its index. That cache holds every validator scanned, exited included, as
+  `BLSPublicKey` keys wrapping leaf slices of the supernode bytes, one
+  instance per `TransitionCaches` lineage.
+- **The list view cache pins the content back.** `AbstractSszComposite` keeps
+  one `Validator` view per index read; each view slices the loaded supernode
+  content, so after any full scan (cold pubkey lookup, cold status creation,
+  REST listing) the frozen bytes are in the heap again for as long as that
+  view chain lives: +1.2 GB, plain and frozen alike, forty times the saving.
+- **When freezing happens.** Only on reconstruction: a checkpoint-synced node
+  freezes nothing until a restart or a DAG read; supernodes patched since the
+  last snapshot stay plain until a later snapshot is reconstructed.
+- **Pruning hole (theoretical, not fixed).** If a retained chain reaches a
+  supernode's content through a patch while the live frozen instance came
+  from another chain's whole reference that is pruned before a snapshot
+  re-references the hash, the bytes are deleted under a live frozen node.
+  Periodic snapshots re-reference every unchanged supernode whole, so the
+  normal case holds; the failure is loud (`IllegalStateException` on load).
+  A real fix pins frozen hashes or forces whole references at frozen
+  positions.
+- **Consensus footprint.** Seven methods carry fast paths whose correctness
+  rests on a byte rule enforced in storage: clean and tested, but a permanent
+  coupling between `ethereum/spec` and the store, for 5-10% of an epoch
+  transition that is better obtained generically (9.6).
+
+### 9.4 A finer validators supernode
+
+The supernode depth is a schema hint (`sszSuperNode(8)` in
+`BeaconStateFields`), so coverage can be raised by halving it. Estimated
+per-copy object overhead: about 144 bytes per supernode (node, `Bytes`
+wrapper, array header, cached root) plus about 96 bytes per added branch
+node with its cached hash.
+
+| depth | validators per supernode | supernodes | extra objects per copy | frozen content | net saving per copy |
+|---|---|---|---|---|---|
+| 8 | 256 | 9.3k | 0 | 30 MB | 30 MB |
+| 7 | 128 | 18.7k | 2 MB | 55 MB | 53 MB |
+| 6 | 64 | 37k | 7 MB | 84 MB | 77 MB |
+| 5 | 32 | 75k | 16 MB | 110 MB | 95 MB |
+| 4 | 16 | 149k | 34 MB | 132 MB | 98 MB |
+| 3 | 8 | 299k | 69 MB | 148 MB | 79 MB |
+
+Depth 4 or 5 nets about 95 MB per distinct copy. Costs outside the heap are
+small: a snapshot carries 8x more 32-byte references at depth 5 (about 2.4 MB
+instead of 0.3 MB), the supernode and refcount columns get 8x more rows, the
+diff walk visits 8x more nodes at that level; patches are per validator and
+unchanged. The supernode roots differ, so it is a format marker bump and a
+re-sync of DAG databases (the state root is unchanged). A likely CPU upside
+independent of freezing: every validator change copies and rehashes its
+supernode, 31 KB and about 2,300 hashes at depth 8 against 3.9 KB and about
+290 at depth 5, and the effective-balance changes of an epoch transition are
+scattered across supernodes. Both effects are a one-line experiment with the
+harness in plain mode; not run yet.
+
+### 9.5 What other clients do (surveyed 2026-10-29)
+
+No client freezes, offloads or skips exited validators in memory or in epoch
+processing; all iterate the whole registry and skip only rewards and
+inactivity by eligibility, as Teku does. Their levers: a compact per-validator
+representation (Prysm's flat 128-byte `CompactValidator` since v7.1.4 saved
+300-450 MB on mainnet; Lodestar keeps one node per validator), pubkeys stored
+once and shared (Nimbus persists states without pubkeys since 2021; Grandine's
+2026 structure-of-arrays `ValidatorList` has an append-only shared pubkey
+list; Lighthouse tried an `Arc` pubkey split in 2022-23 and dropped it),
+field-wise on-disk diffs where an unchanged validator costs nothing
+(Lighthouse and Prysm hdiff; the DAG's content-addressed supernodes and
+patches are the equivalent), and a process-wide pubkey-to-index cache
+(Lodestar, Lighthouse, Grandine). Teku's 121 bytes per validator is already
+the densest in-memory form. At the protocol level EIP-6914 (reuse of
+withdrawn indices) is stagnant and its spec text was removed in August 2026;
+nothing is scheduled; MaxEB consolidations shrink the active set, not the
+registry.
+
+### 9.6 Alternatives and recommendation
+
+Tier 3 is not pursued in this form. In order of expected value:
+
+1. **Share pubkeys across states.** A supernode variant holding the 73
+   mutable bytes per validator and reading the 48-byte pubkey from one
+   process-wide, index-ordered table for reads and hashing: 40% of the
+   registry for every validator, no consensus changes, no dependence on exit
+   clustering. The per-lineage `ValidatorIndexCache` already is a full,
+   duplicated pubkey table and would become that shared table.
+2. **Fix the cold paths first**, whatever else is chosen: a process-wide
+   pubkey index so a fresh state never scans the registry, and status
+   creation that reads supernode bytes instead of building 2.4M views. Both
+   remove the 1.2 GB view-cache pinning and most of the cold status cost for
+   every node, and are prerequisites for any freezing to keep its memory.
+3. **Finer supernode depth** (4 or 5), measured first without freezing for
+   its hashing and update gains, then with freezing for the ~95 MB net.
+4. **Sparse supernode** (live validators' bytes plus a bitmap of frozen
+   slots) to reach the 65% ceiling without changing the tree shape; the most
+   code in the SSZ layer. Only if memory remains the bottleneck after 1-3.
+
+The attempt's code stays on `worktree-state-diff-tier3` as the reference for
+`FrozenSuperNode`, `FrozenRanges`, the freezer hook and the harness.
 
 ## 10. Phases and deliverables
 
@@ -783,7 +926,9 @@ integration, `--reconstruct-historic-states` integration, retention. Done when
 an archive node serves `/eth/v1/beacon/states/{id}` for arbitrary historical
 epochs with measured latency and disk growth recorded.
 
-**Phase 3: frozen supernodes.** Section 9.
+**Phase 3: frozen supernodes.** Section 9. Attempted and measured on
+2026-10-29 (`worktree-state-diff-tier3`, not merged); the recommendation in
+9.6 replaces it with shared pubkeys and the cold-path fixes.
 
 Each phase is its own PR series. The hidden flag stays default-off through
 phase 2.

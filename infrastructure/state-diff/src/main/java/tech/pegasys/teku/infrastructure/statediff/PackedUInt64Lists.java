@@ -28,7 +28,6 @@ import tech.pegasys.teku.infrastructure.ssz.tree.GIndexUtil;
 import tech.pegasys.teku.infrastructure.ssz.tree.LeafDataNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.LeafNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.ProgressiveTreeUtil;
-import tech.pegasys.teku.infrastructure.ssz.tree.SszSuperNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeUtil;
 
@@ -162,7 +161,7 @@ public final class PackedUInt64Lists {
   }
 
   private static void decodeChunk(final TreeNode node, final int chunk, final long[] values) {
-    if (!(node instanceof LeafDataNode leaf) || node instanceof SszSuperNode) {
+    if (!(node instanceof LeafDataNode leaf) || TreeDiffer.isSupernode(node)) {
       throw new IllegalArgumentException(
           "Expected a uint64 chunk leaf for chunk " + chunk + " but found " + node);
     }

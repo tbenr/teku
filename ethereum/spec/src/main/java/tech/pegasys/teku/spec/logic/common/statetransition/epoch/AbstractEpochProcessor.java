@@ -373,6 +373,11 @@ public abstract class AbstractEpochProcessor implements EpochProcessor {
 
       for (int index = 0; index < validators.size(); index++) {
         final ValidatorStatus status = statuses.get(index);
+        // A frozen validator is inactive with a zero effective balance and an activation epoch
+        // set: neither queued, ejected nor activated, so it is not read
+        if (status.isFrozen()) {
+          continue;
+        }
 
         final Validator validator = validators.get(index);
         if (isEligibleForActivationQueue(validator, status)) {
@@ -387,7 +392,10 @@ public abstract class AbstractEpochProcessor implements EpochProcessor {
       List<Integer> activationQueue =
           IntStream.range(0, state.getValidators().size())
               // Cheap filter first before accessing state
-              .filter(index -> !statuses.get(index).isActiveInCurrentEpoch())
+              .filter(
+                  index ->
+                      !statuses.get(index).isActiveInCurrentEpoch()
+                          && !statuses.get(index).isFrozen())
               .filter(
                   index -> {
                     Validator validator = state.getValidators().get(index);

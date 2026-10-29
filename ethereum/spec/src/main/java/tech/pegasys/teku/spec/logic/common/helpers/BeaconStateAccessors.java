@@ -19,6 +19,7 @@ import static tech.pegasys.teku.spec.logic.common.helpers.MathHelpers.uint64ToBy
 
 import it.unimi.dsi.fastutil.ints.Int2IntMap;
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntList;
 import java.util.Collection;
 import java.util.Optional;
@@ -30,6 +31,7 @@ import tech.pegasys.teku.infrastructure.bytes.Bytes4;
 import tech.pegasys.teku.infrastructure.collections.TekuPair;
 import tech.pegasys.teku.infrastructure.crypto.Hash;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
+import tech.pegasys.teku.infrastructure.ssz.tree.FrozenRanges;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.config.SpecConfig;
 import tech.pegasys.teku.spec.constants.Domain;
@@ -38,6 +40,7 @@ import tech.pegasys.teku.spec.datastructures.state.ForkInfo;
 import tech.pegasys.teku.spec.datastructures.state.Validator;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconStateCache;
+import tech.pegasys.teku.spec.logic.common.util.FrozenValidators;
 
 public abstract class BeaconStateAccessors {
   protected final SpecConfig config;
@@ -114,7 +117,8 @@ public abstract class BeaconStateAccessors {
     final UInt64 maxLookaheadEpoch = getMaxLookaheadEpoch(stateEpoch);
     checkArgument(
         epoch.isLessThanOrEqualTo(maxLookaheadEpoch),
-        "Cannot get active validator indices from an epoch beyond the seed lookahead period. Requested epoch %s from state in epoch %s",
+        "Cannot get active validator indices from an epoch beyond the seed lookahead period."
+            + " Requested epoch %s from state in epoch %s",
         epoch,
         stateEpoch);
     return BeaconStateCache.getTransitionCaches(state)
@@ -123,10 +127,33 @@ public abstract class BeaconStateAccessors {
             epoch,
             e -> {
               SszList<Validator> validators = state.getValidators();
-              return IntList.of(
-                  IntStream.range(0, validators.size())
-                      .filter(index -> predicates.isActiveValidator(validators.get(index), epoch))
-                      .toArray());
+              // Validators of frozen supernodes are inactive from the previous epoch of any state
+              // holding them on (see FrozenValidators), so they are skipped without being read
+              final FrozenRanges frozen =
+                  epoch.plus(1).isGreaterThanOrEqualTo(stateEpoch)
+                      ? FrozenValidators.ranges(validators)
+                      : FrozenRanges.NONE;
+              if (frozen.isEmpty()) {
+                return IntList.of(
+                    IntStream.range(0, validators.size())
+                        .filter(index -> predicates.isActiveValidator(validators.get(index), epoch))
+                        .toArray());
+              }
+              final IntArrayList active = new IntArrayList();
+              final FrozenRanges.Cursor cursor = frozen.cursor();
+              int index = 0;
+              while (index < validators.size()) {
+                final int frozenUntil = cursor.frozenUntil(index);
+                if (frozenUntil > index) {
+                  index = frozenUntil;
+                  continue;
+                }
+                if (predicates.isActiveValidator(validators.get(index), epoch)) {
+                  active.add(index);
+                }
+                index++;
+              }
+              return IntList.of(active.toIntArray());
             });
   }
 
@@ -253,7 +280,8 @@ public abstract class BeaconStateAccessors {
       final BeaconState state, final UInt64 requestedSlot) {
     checkArgument(
         canCalculateProposerIndexAtSlot(state, requestedSlot),
-        "get_beacon_proposer_index is only used for requesting a slot in the current epoch (or next epoch in FULU). Requested slot %s, state slot %s",
+        "get_beacon_proposer_index is only used for requesting a slot in the current epoch (or next"
+            + " epoch in FULU). Requested slot %s, state slot %s",
         requestedSlot,
         state.getSlot());
   }

@@ -75,7 +75,19 @@ public final class TreeDiffApplier {
    * Applies {@code diff} to {@code base}, loading the supernodes it references from {@code source}.
    */
   public TreeNode apply(final TreeNode base, final TreeDiff diff, final SupernodeSource source) {
-    return applySections(base, diff, true, source);
+    return applySections(base, diff, true, source, SupernodeFreezer.NONE);
+  }
+
+  /**
+   * Applies {@code diff} to {@code base} as {@link #apply(TreeNode, TreeDiff, SupernodeSource)}
+   * does, placing the node {@code freezer} chooses for each whole supernode reference.
+   */
+  public TreeNode apply(
+      final TreeNode base,
+      final TreeDiff diff,
+      final SupernodeSource source,
+      final SupernodeFreezer freezer) {
+    return applySections(base, diff, true, source, freezer);
   }
 
   /** Replaces the uint64 list field {@code fieldIndex} of {@code tree} by {@code values}. */
@@ -99,7 +111,16 @@ public final class TreeDiffApplier {
    * The supernodes of every diff of the chain are loaded from {@code source}.
    */
   public ChainApplication startChain(final TreeNode base, final SupernodeSource source) {
-    return new ChainApplication(base, source);
+    return new ChainApplication(base, source, SupernodeFreezer.NONE);
+  }
+
+  /**
+   * Starts a chain application as {@link #startChain(TreeNode, SupernodeSource)} does, placing the
+   * node {@code freezer} chooses for each whole supernode reference of every diff of the chain.
+   */
+  public ChainApplication startChain(
+      final TreeNode base, final SupernodeSource source, final SupernodeFreezer freezer) {
+    return new ChainApplication(base, source, freezer);
   }
 
   /**
@@ -110,7 +131,8 @@ public final class TreeDiffApplier {
       final TreeNode base,
       final TreeDiff diff,
       final boolean includeDeltas,
-      final SupernodeSource source) {
+      final SupernodeSource source,
+      final SupernodeFreezer freezer) {
     TreeNode tree = base;
 
     final UpdatesByDepth copied = new UpdatesByDepth();
@@ -150,9 +172,7 @@ public final class TreeDiffApplier {
         throw new MissingSupernodeException(entry.hash());
       }
       superNodes.put(
-          entry.gIndex(),
-          SszSuperNode.createWithKnownRoot(
-              entry.depth(), supernodeTemplate(entry.fieldIndex()), ssz, entry.hash()));
+          entry.gIndex(), freezer.supernode(entry, supernodeTemplate(entry.fieldIndex()), ssz));
     }
     for (final PatchEntry entry : diff.patches()) {
       superNodes.put(entry.gIndex(), patchedSupernode(base, entry));
@@ -187,8 +207,9 @@ public final class TreeDiffApplier {
               + " has elements of "
               + elementSize);
     }
-    if (!(base.get(entry.gIndex()) instanceof SszSuperNode baseSuperNode)
-        || baseSuperNode.getDepth() != entry.depth()) {
+    // A frozen base supernode is loaded: a patch thaws it
+    final SszSuperNode baseSuperNode = TreeDiffer.asSupernode(base.get(entry.gIndex()));
+    if (baseSuperNode == null || baseSuperNode.getDepth() != entry.depth()) {
       throw new IllegalArgumentException(
           "Patch at gIndex "
               + entry.gIndex()
@@ -297,13 +318,16 @@ public final class TreeDiffApplier {
   public final class ChainApplication {
     private final Int2ObjectMap<long[]> pending = new Int2ObjectLinkedOpenHashMap<>();
     private final SupernodeSource source;
+    private final SupernodeFreezer freezer;
     private TreeNode tree;
     private int listBuilds;
     private boolean finished;
 
-    private ChainApplication(final TreeNode base, final SupernodeSource source) {
+    private ChainApplication(
+        final TreeNode base, final SupernodeSource source, final SupernodeFreezer freezer) {
       this.tree = base;
       this.source = source;
+      this.freezer = freezer;
     }
 
     /** Applies the next diff of the chain. */
@@ -327,7 +351,7 @@ public final class TreeDiffApplier {
                 current != null ? current : readDeltaValues(tree, fieldIndex),
                 entry.encodedDeltas()));
       }
-      tree = applySections(tree, diff, false, source);
+      tree = applySections(tree, diff, false, source, freezer);
     }
 
     /** Writes the folded delta fields and returns the tree of the last diff applied. */

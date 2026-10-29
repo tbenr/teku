@@ -1102,3 +1102,36 @@ checkpoint nodes went through the DAG.
     build runs on them, or a one-off migration that moves the column 10 and
     11 families to 14 and 15 and drops the light client entries. The format
     marker is not bumped: the payload bytes are unchanged, only their column.
+
+
+## Tier 3 attempt (2026-10-29, exploration on worktree-state-diff-tier3, not committed)
+
+77. **DERIVED. Tier 3 attempt: frozen exited-validator supernodes.** Built per
+    spec section 9 behind `--Xdata-storage-state-diffs-freeze-exited`:
+    `FrozenSuperNode` (hash, depth, count, loader; `SoftReference` memo; any
+    write thaws), `FrozenRanges` (works on bounded and progressive lists),
+    a `SupernodeFreezer` hook in `TreeDiffApplier` for whole references, the
+    storage `ExitedValidatorFreezer` (every validator: effective balance 0,
+    activation set, exit < E, withdrawable <= E, E = node epoch), applied in
+    `reconstruct`/`reconstructAndCache`; the differ compares frozen nodes
+    without loading and the transaction's supernode sink is lazy, so writes
+    (snapshots included) load nothing. Consensus fast paths in 7 methods
+    (status creation, active indices, registry updates x2, Electra effective
+    balance updates, withdrawal sweep), equivalence-tested on Electra, Fulu
+    and Gloas. Harness on the mainnet finalized state (epoch 483,376,
+    2,389,284 validators): 65.1% of validators meet the rule but only 1,005
+    of 9,334 depth-8 supernodes (10.8%; 19.8 / 30.4 / 40.1 / 47.7 / 53.7% at
+    depth 7 / 6 / 5 / 4 / 3) are wholly withdrawn; reconstructed state 607.8
+    MB plain vs 579.0 MB frozen (28.9 MB saved per distinct registry copy,
+    not multiplied by the states sharing it); epoch transition 6.0 -> 5.6 s
+    cold, 5.3 -> 4.8-5.0 s with a warm pubkey index; status creation -16%,
+    active indices -18%. Only load site: the cold `ValidatorIndexCache` scan in
+    `processPendingDeposits` (all 257,280 frozen validators, every freshly
+    reconstructed state); and a full scan pins the loaded content again
+    through the list view cache (+1.2 GB for plain and frozen alike), which
+    erases the memory gain. Theoretical pruning hole documented (a frozen
+    hash counted only by a pruned chain while a retained chain reached the
+    same content by a patch). Verdict: not worth it at depth 8; a finer
+    validator supernode depth (or a sparse-supernode unit) and a process-wide
+    pubkey index are the prerequisites for any gain. Full report:
+    `.superpowers/sdd/2026-10-29-state-diff-tier3/tier3-attempt-report.md`.

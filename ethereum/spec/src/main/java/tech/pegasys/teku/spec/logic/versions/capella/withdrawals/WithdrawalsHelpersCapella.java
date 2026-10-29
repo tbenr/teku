@@ -19,6 +19,7 @@ import java.util.List;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
+import tech.pegasys.teku.infrastructure.ssz.tree.FrozenRanges;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.config.SpecConfigCapella;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadSummary;
@@ -31,6 +32,7 @@ import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.capella.
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.capella.MutableBeaconStateCapella;
 import tech.pegasys.teku.spec.logic.common.helpers.Predicates;
 import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.BlockProcessingException;
+import tech.pegasys.teku.spec.logic.common.util.FrozenValidators;
 import tech.pegasys.teku.spec.logic.common.withdrawals.WithdrawalsHelpers;
 import tech.pegasys.teku.spec.logic.versions.bellatrix.helpers.BeaconStateMutatorsBellatrix;
 import tech.pegasys.teku.spec.logic.versions.capella.helpers.MiscHelpersCapella;
@@ -114,10 +116,20 @@ public class WithdrawalsHelpersCapella implements WithdrawalsHelpers {
 
     final int validatorsLimit =
         Math.min(validatorCount, specConfig.getMaxValidatorsPerWithdrawalSweep());
+    final FrozenRanges frozen = FrozenValidators.ranges(validators);
 
     for (int i = 0; i < validatorsLimit; i++) {
       if (withdrawals.size() >= withdrawalsLimit) {
         break;
+      }
+      // Both withdrawal kinds need a positive balance: a frozen validator with none is skipped
+      // without being read, still counting towards the sweep
+      if (!frozen.isEmpty()
+          && frozen.contains(validatorIndex.intValue())
+          && getBalanceAfterWithdrawals(state, validatorIndex, withdrawals).isZero()) {
+        validatorIndex = validatorIndex.plus(1).mod(validatorCount);
+        processedValidatorsSweepCount++;
+        continue;
       }
       final Validator validator = validators.get(validatorIndex.intValue());
       if (predicates.hasExecutionWithdrawalCredential(validator)) {

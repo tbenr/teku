@@ -15,10 +15,16 @@ package tech.pegasys.teku.spec.logic.common.statetransition.epoch.status;
 
 import static tech.pegasys.teku.infrastructure.unsigned.UInt64.MAX_VALUE;
 
+import java.util.Iterator;
 import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.Spliterator;
+import java.util.Spliterators;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
+import tech.pegasys.teku.infrastructure.ssz.tree.FrozenRanges;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.config.SpecConfig;
 import tech.pegasys.teku.spec.datastructures.state.Validator;
@@ -29,6 +35,7 @@ import tech.pegasys.teku.spec.logic.common.helpers.BeaconStateAccessors;
 import tech.pegasys.teku.spec.logic.common.helpers.Predicates;
 import tech.pegasys.teku.spec.logic.common.util.AttestationUtil;
 import tech.pegasys.teku.spec.logic.common.util.BeaconStateUtil;
+import tech.pegasys.teku.spec.logic.common.util.FrozenValidators;
 
 public abstract class AbstractValidatorStatusFactory implements ValidatorStatusFactory {
   protected final SpecConfig specConfig;
@@ -98,10 +105,54 @@ public abstract class AbstractValidatorStatusFactory implements ValidatorStatusF
     // single thread and then the conversion of individual Validator to ValidatorStatus is done by
     // worker pools. Thus, each Validator instance is still only accessed by a single thread at a
     // time. By the time we get the list back we're back to single threaded mode.
-    return validators.stream()
-        .parallel()
-        .map(validator -> createValidatorStatus(validator, previousEpoch, currentEpoch))
+    final FrozenRanges frozen = FrozenValidators.ranges(validators);
+    if (frozen.isEmpty()) {
+      return validators.stream()
+          .parallel()
+          .map(validator -> createValidatorStatus(validator, previousEpoch, currentEpoch))
+          .toList();
+    }
+    // Validators of frozen supernodes get the frozen status without being read (null below); the
+    // others are read in order by the iterating thread and converted in parallel, as above
+    final Iterator<Validator> unfrozenValidators =
+        new UnfrozenValidatorIterator(validators, frozen);
+    return StreamSupport.stream(
+            Spliterators.spliterator(
+                unfrozenValidators, validators.size(), Spliterator.ORDERED | Spliterator.SIZED),
+            true)
+        .map(
+            validator ->
+                validator == null
+                    ? ValidatorStatus.frozen()
+                    : createValidatorStatus(validator, previousEpoch, currentEpoch))
         .toList();
+  }
+
+  /** Every validator in index order, {@code null} for those held by frozen supernodes. */
+  private static final class UnfrozenValidatorIterator implements Iterator<Validator> {
+    private final SszList<Validator> validators;
+    private final FrozenRanges.Cursor frozen;
+    private int index = 0;
+
+    private UnfrozenValidatorIterator(
+        final SszList<Validator> validators, final FrozenRanges frozen) {
+      this.validators = validators;
+      this.frozen = frozen.cursor();
+    }
+
+    @Override
+    public boolean hasNext() {
+      return index < validators.size();
+    }
+
+    @Override
+    public Validator next() {
+      if (!hasNext()) {
+        throw new NoSuchElementException();
+      }
+      final int current = index++;
+      return frozen.isFrozen(current) ? null : validators.get(current);
+    }
   }
 
   @Override

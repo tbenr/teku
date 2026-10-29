@@ -245,6 +245,7 @@ public class StorageConfiguration {
     private boolean rocksdbBlobDbEnabled = DEFAULT_ROCKSDB_BLOB_DB_ENABLED;
     private Duration pruningWarnTimeout = DEFAULT_PRUNING_WARN_TIMEOUT;
     private boolean stateDiffsEnabled = false;
+    private boolean stateDiffsFreezeExited = false;
 
     private Builder() {}
 
@@ -418,6 +419,11 @@ public class StorageConfiguration {
       return this;
     }
 
+    public Builder stateDiffsFreezeExited(final boolean stateDiffsFreezeExited) {
+      this.stateDiffsFreezeExited = stateDiffsFreezeExited;
+      return this;
+    }
+
     public StorageConfiguration build() {
       determineDataStorageMode();
       validateStatePruningConfiguration();
@@ -452,14 +458,18 @@ public class StorageConfiguration {
      */
     private StateDiffDagConfig createStateDiffDagConfig() {
       if (!stateDiffsEnabled) {
-        return StateDiffDagConfig.disabled().withRetainedSlots(retainedSlots);
+        return StateDiffDagConfig.disabled()
+            .withRetainedSlots(retainedSlots)
+            .withFreezeExited(stateDiffsFreezeExited);
       }
       if (dataStorageFrequency != DEFAULT_STORAGE_FREQUENCY) {
         LOG.warn(
             "--data-storage-archive-frequency ({}) is ignored when state diff storage is enabled",
             dataStorageFrequency);
       }
-      return StateDiffDagConfig.prune().withRetainedSlots(retainedSlots);
+      return StateDiffDagConfig.prune()
+          .withRetainedSlots(retainedSlots)
+          .withFreezeExited(stateDiffsFreezeExited);
     }
 
     private void determineDataStorageMode() {

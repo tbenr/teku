@@ -261,6 +261,19 @@ public class BeaconNodeDataOptions extends ValidatorClientDataOptions {
   private boolean stateDiffsEnabled = false;
 
   @CommandLine.Option(
+      names = {"--Xdata-storage-state-diffs-freeze-exited"},
+      hidden = true,
+      paramLabel = "<BOOLEAN>",
+      showDefaultValue = Visibility.ALWAYS,
+      description =
+          "Experimental: with state diff storage, keep the validator supernodes whose validators "
+              + "are all withdrawn out of memory in reconstructed states, loading them from the "
+              + "database when read.",
+      fallbackValue = "true",
+      arity = "0..1")
+  private boolean stateDiffsFreezeExited = false;
+
+  @CommandLine.Option(
       names = {"--force-clear-db"},
       paramLabel = "<BOOLEAN>",
       showDefaultValue = Visibility.ALWAYS,
@@ -303,6 +316,7 @@ public class BeaconNodeDataOptions extends ValidatorClientDataOptions {
                 .forceClearDb(forceClearDb)
                 .rocksdbBlobDbEnabled(rocksdbBlobDbEnabled)
                 .stateDiffsEnabled(stateDiffsEnabled)
+                .stateDiffsFreezeExited(stateDiffsFreezeExited)
                 .pruningWarnTimeout(Duration.ofSeconds(pruningWarnTimeoutSeconds)));
     // A chain started from an anchor starts its store before the new database stores the anchor,
     // so the store reads the request itself; a loaded database tells the store what it resolved

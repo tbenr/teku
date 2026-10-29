@@ -36,6 +36,7 @@ import org.hyperledger.besu.plugin.services.MetricsSystem;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
 import tech.pegasys.teku.infrastructure.statediff.DiffLevels;
 import tech.pegasys.teku.infrastructure.statediff.MissingSupernodeException;
+import tech.pegasys.teku.infrastructure.statediff.SupernodeFreezer;
 import tech.pegasys.teku.infrastructure.statediff.SupernodeSource;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.SupernodeEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiffApplier;
@@ -77,11 +78,16 @@ public class StateDiffDag {
   private static final Function<Bytes32, Optional<TreeNode>> NO_KNOWN_TREES =
       root -> Optional.empty();
 
+  /** The supernode freezer of a reconstruction, by the slot of the node reconstructed. */
+  private static final Function<UInt64, SupernodeFreezer> NO_FREEZER =
+      slot -> SupernodeFreezer.NONE;
+
   private final StateDiffDagConfig config;
   private final DiffLevels levels;
   private final BeaconStateDiffSupport support;
   private final LevelBaseCache baseCache;
   private final StateDiffMetrics metrics;
+  private final Optional<ExitedValidatorFreezer> exitedValidatorFreezer;
   private final AtomicLong lastReconstructionFailureLogMillis = new AtomicLong(Long.MIN_VALUE);
   private final AtomicLong suppressedReconstructionFailureLogs = new AtomicLong();
 
@@ -92,6 +98,35 @@ public class StateDiffDag {
     this.support = new BeaconStateDiffSupport(spec);
     this.baseCache = new LevelBaseCache(levels.levelCount());
     this.metrics = new StateDiffMetrics(metricsSystem);
+    this.exitedValidatorFreezer =
+        config.freezeExited() ? Optional.of(new ExitedValidatorFreezer(spec)) : Optional.empty();
+  }
+
+  /** The freezer of exited validator supernodes, when {@link StateDiffDagConfig#freezeExited()}. */
+  public Optional<ExitedValidatorFreezer> getExitedValidatorFreezer() {
+    return exitedValidatorFreezer;
+  }
+
+  /**
+   * The freezers of reconstructions reading committed nodes of {@code dao}: frozen supernodes
+   * reload their content from its supernode column, which outlives any state.
+   */
+  private Function<UInt64, SupernodeFreezer> committedFreezers(final KvStoreCombinedDao dao) {
+    return exitedValidatorFreezer
+        .<Function<UInt64, SupernodeFreezer>>map(
+            freezer ->
+                slot ->
+                    freezer.forSlot(
+                        slot,
+                        hash ->
+                            dao.getStateSupernode(hash)
+                                .orElseThrow(
+                                    () ->
+                                        new IllegalStateException(
+                                            "Frozen supernode "
+                                                + hash
+                                                + " is no longer in the supernode column"))))
+        .orElse(NO_FREEZER);
   }
 
   public StateDiffDagConfig getConfig() {
@@ -107,7 +142,9 @@ public class StateDiffDag {
    *     recorded one
    */
   public Optional<BeaconState> reconstruct(final KvStoreCombinedDao dao, final Bytes32 blockRoot) {
-    return reconstruct(new CommittedNodeReader(dao), blockRoot);
+    return reconstructNode(
+            new CommittedNodeReader(dao), blockRoot, NO_KNOWN_TREES, committedFreezers(dao))
+        .map(ReconstructedNode::state);
   }
 
   /**
@@ -118,7 +155,8 @@ public class StateDiffDag {
    */
   public Optional<BeaconState> reconstructAndCache(
       final KvStoreCombinedDao dao, final Bytes32 blockRoot) {
-    return reconstructNode(new CommittedNodeReader(dao), blockRoot, NO_KNOWN_TREES)
+    return reconstructNode(
+            new CommittedNodeReader(dao), blockRoot, NO_KNOWN_TREES, committedFreezers(dao))
         .map(
             node -> {
               baseCache.put(LevelBaseCache.cacheLevel(node.record()), blockRoot, node.state());
@@ -281,7 +319,7 @@ public class StateDiffDag {
                   "No state diff node for the finalized checkpoint root " + anchorRoot.get());
         } else {
           try {
-            applyChain(reader, anchorRoot.get(), chain, Optional.empty(), start);
+            applyChain(reader, anchorRoot.get(), chain, Optional.empty(), start, NO_FREEZER);
           } catch (final StateDiffVerificationException e) {
             metrics.onVerificationFailure();
             throw e;
@@ -389,15 +427,16 @@ public class StateDiffDag {
       final NodeReader reader,
       final Bytes32 blockRoot,
       final Function<Bytes32, Optional<TreeNode>> knownTrees) {
-    return reconstructNode(reader, blockRoot, knownTrees).map(ReconstructedNode::state);
+    return reconstructNode(reader, blockRoot, knownTrees, NO_FREEZER).map(ReconstructedNode::state);
   }
 
   private Optional<ReconstructedNode> reconstructNode(
       final NodeReader reader,
       final Bytes32 blockRoot,
-      final Function<Bytes32, Optional<TreeNode>> knownTrees) {
+      final Function<Bytes32, Optional<TreeNode>> knownTrees,
+      final Function<UInt64, SupernodeFreezer> freezers) {
     try {
-      return reconstructChain(reader, blockRoot, knownTrees);
+      return reconstructChain(reader, blockRoot, knownTrees, freezers);
     } catch (final StateDiffVerificationException e) {
       metrics.onVerificationFailure();
       throw e;
@@ -413,7 +452,8 @@ public class StateDiffDag {
   private Optional<ReconstructedNode> reconstructChain(
       final NodeReader reader,
       final Bytes32 blockRoot,
-      final Function<Bytes32, Optional<TreeNode>> knownTrees) {
+      final Function<Bytes32, Optional<TreeNode>> knownTrees,
+      final Function<UInt64, SupernodeFreezer> freezers) {
     final long start = System.nanoTime();
     // Set by the link that ends the chain when its state tree is known
     final AtomicReference<TreeNode> knownStartTree = new AtomicReference<>();
@@ -437,7 +477,8 @@ public class StateDiffDag {
       return Optional.empty();
     }
     return Optional.of(
-        applyChain(reader, blockRoot, chain, Optional.ofNullable(knownStartTree.get()), start));
+        applyChain(
+            reader, blockRoot, chain, Optional.ofNullable(knownStartTree.get()), start, freezers));
   }
 
   /**
@@ -446,13 +487,15 @@ public class StateDiffDag {
    * last link, its snapshot. Checks the state root of the result against the node's record.
    *
    * @param startNanos when the reconstruction started, for the reconstruction time metric
+   * @param freezers the supernode freezer of the reconstruction, by the node's slot
    */
   private ReconstructedNode applyChain(
       final NodeReader reader,
       final Bytes32 blockRoot,
       final List<ChainLink> chain,
       final Optional<TreeNode> startTree,
-      final long startNanos) {
+      final long startNanos,
+      final Function<UInt64, SupernodeFreezer> freezers) {
     // Every link of a chain has the milestone of its snapshot, since a node whose parent is from
     // another milestone is written as a snapshot; the folded delta fields rely on one schema
     final ChainLink last = chain.getLast();
@@ -463,7 +506,8 @@ public class StateDiffDag {
             .applierFor(bottom.blockSlot())
             .startChain(
                 startTree.orElseGet(() -> support.schemaFor(bottom.blockSlot()).getDefaultTree()),
-                reader);
+                reader,
+                freezers.apply(chain.getFirst().record().blockSlot()));
     for (int i = appliedLinks - 1; i >= 0; i--) {
       final StateDiffNodeRecord record = chain.get(i).record();
       if (!support.sameMilestone(record.blockSlot(), bottom.blockSlot())) {

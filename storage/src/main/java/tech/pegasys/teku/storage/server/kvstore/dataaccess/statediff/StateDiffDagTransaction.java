@@ -17,6 +17,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Suppliers;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -26,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Supplier;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes;
@@ -81,7 +83,8 @@ public class StateDiffDagTransaction {
   private final Map<Bytes32, Optional<Bytes>> committedNodes = new HashMap<>();
 
   /** SSZ of the supernodes referenced by nodes written in this transaction. */
-  private final Map<Bytes32, Bytes> pendingSupernodes = new HashMap<>();
+  // Content suppliers, so a frozen supernode is loaded only when its content is needed
+  private final Map<Bytes32, Supplier<Bytes>> pendingSupernodes = new HashMap<>();
 
   /** Net reference count change per supernode hash, in first-touched order. */
   private final Map<Bytes32, Long> refCountDeltas = new LinkedHashMap<>();
@@ -139,8 +142,8 @@ public class StateDiffDagTransaction {
 
           @Override
           public Optional<Bytes> load(final Bytes32 hash) {
-            final Bytes pending = pendingSupernodes.get(hash);
-            return pending != null ? Optional.of(pending) : dao.getStateSupernode(hash);
+            final Supplier<Bytes> pending = pendingSupernodes.get(hash);
+            return pending != null ? Optional.of(pending.get()) : dao.getStateSupernode(hash);
           }
 
           @Override
@@ -148,9 +151,9 @@ public class StateDiffDagTransaction {
             final Map<Bytes32, Bytes> loaded = new HashMap<>();
             final List<Bytes32> committed = new ArrayList<>();
             for (final Bytes32 hash : hashes) {
-              final Bytes pending = pendingSupernodes.get(hash);
+              final Supplier<Bytes> pending = pendingSupernodes.get(hash);
               if (pending != null) {
-                loaded.put(hash, pending);
+                loaded.put(hash, pending.get());
               } else {
                 committed.add(hash);
               }
@@ -290,11 +293,15 @@ public class StateDiffDagTransaction {
             ? dag.support().schemaFor(state.getSlot()).getDefaultTree()
             : diffBase(parent.get());
     final long walkStart = System.nanoTime();
-    final Map<Bytes32, Bytes> referencedSupernodes = new LinkedHashMap<>();
+    final Map<Bytes32, Supplier<Bytes>> referencedSupernodes = new LinkedHashMap<>();
     final TreeDiff diff =
         dag.support()
             .differFor(state.getSlot())
-            .diff(base, state.getBackingNode(), referencedSupernodes::putIfAbsent);
+            .diffLazy(
+                base,
+                state.getBackingNode(),
+                (hash, content) ->
+                    referencedSupernodes.putIfAbsent(hash, Suppliers.memoize(content::get)));
     final long encodeStart = System.nanoTime();
     final TreeDiffCodec.Encoded encodedDiff = StateDiffNodeRecordCodec.encodePayload(diff);
 
@@ -538,8 +545,9 @@ public class StateDiffDagTransaction {
           if (current.isEmpty()) {
             // The count is absent exactly when the bytes are; rewriting immutable,
             // content-addressed bytes would be harmless anyway
-            final Bytes ssz = pendingSupernodes.get(hash);
-            checkState(ssz != null, "No SSZ for new supernode %s", hash);
+            final Supplier<Bytes> content = pendingSupernodes.get(hash);
+            checkState(content != null, "No SSZ for new supernode %s", hash);
+            final Bytes ssz = content.get();
             writes.add(
                 () -> {
                   updater.putStateSupernode(hash, ssz);

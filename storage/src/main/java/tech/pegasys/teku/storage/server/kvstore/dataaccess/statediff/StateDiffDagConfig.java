@@ -28,19 +28,32 @@ import tech.pegasys.teku.infrastructure.statediff.DiffLevels;
  *     before the finalized checkpoint (the retention window); 0 keeps all of it. Applies whenever
  *     the database uses state diff storage, also when it was enabled by the database's marker
  *     rather than by this configuration
+ * @param freezeExited whether reconstructed states keep the validator supernodes whose validators
+ *     are all withdrawn as frozen supernodes loaded from the supernode column on demand
+ *     (exploration, state diff tier 3)
  */
-public record StateDiffDagConfig(boolean enabled, List<Long> levels, long retainedSlots) {
+public record StateDiffDagConfig(
+    boolean enabled, List<Long> levels, long retainedSlots, boolean freezeExited) {
 
   private static final List<Long> PRUNE_LEVELS = List.of(256L, 64L, 16L, 1L);
 
   public StateDiffDagConfig(
-      final boolean enabled, final List<Long> levels, final long retainedSlots) {
+      final boolean enabled,
+      final List<Long> levels,
+      final long retainedSlots,
+      final boolean freezeExited) {
     checkArgument(retainedSlots >= 0, "Retained slots must not be negative: %s", retainedSlots);
     this.enabled = enabled;
     this.levels = List.copyOf(levels);
     this.retainedSlots = retainedSlots;
+    this.freezeExited = freezeExited;
     // Validates the period list
     DiffLevels.of(this.levels);
+  }
+
+  public StateDiffDagConfig(
+      final boolean enabled, final List<Long> levels, final long retainedSlots) {
+    this(enabled, levels, retainedSlots, false);
   }
 
   /** Unbounded finalized history. */
@@ -58,7 +71,11 @@ public record StateDiffDagConfig(boolean enabled, List<Long> levels, long retain
   }
 
   public StateDiffDagConfig withRetainedSlots(final long retainedSlots) {
-    return new StateDiffDagConfig(enabled, levels, retainedSlots);
+    return new StateDiffDagConfig(enabled, levels, retainedSlots, freezeExited);
+  }
+
+  public StateDiffDagConfig withFreezeExited(final boolean freezeExited) {
+    return new StateDiffDagConfig(enabled, levels, retainedSlots, freezeExited);
   }
 
   public DiffLevels diffLevels() {
