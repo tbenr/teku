@@ -1035,3 +1035,35 @@ checkpoint nodes went through the DAG.
     tmp/statediff-alloc.html and tmp/statediff-alloc-live.html in the main
     checkout. Steady-state repeat still to do once the node is in sync.
 
+
+## Payload v2 soak on the local mainnet clone (2026-10-29, build 31634aa01c)
+
+75. **DERIVED. Payload v2 on mainnet: deltas solved, participation leaves now dominate.**
+    Fresh clone `soak/mainnet-v4` (archive + 4096-slot window, -Xmx8g), synced
+    from the Oct-19 anchor to head ("Syncing completed" 10:41 local), stopped
+    at slot 15,537,142 / finalized 485,533. Over 2,160 node writes:
+    - Deltas: 10.85 GB raw -> 555 MB zstd, **19.5x** (~257 KB per node; the
+      synthetic estimate was 4x on balances alone).
+    - Leaves: 4.06 GB raw, 141.9 M entries = **~65.7k leaves (~1.9 MB) per
+      node**, i.e. one full participation list per epoch node (the previous-
+      epoch flags rewritten every epoch). Not application-compressed.
+    - Patches 6.4 KB per node; whole supernode references 2.9 MB total.
+    - Node write 70 ms average while syncing (walk 59 ms, encode 9.6 ms, base
+      0.8 ms, store 0.1 ms); base cache 2,151 hits, 0 misses; 0 skipped, 0
+      verification failures, 2 late anchors (migration only), 1 late block
+      import warning in ~3 h.
+    Offline on the stopped database: `verify-state-diffs` clean (145 nodes,
+    9,357 supernodes all hash-checked, anchor chain 17 rebuilt in 1.23 s).
+    `rocksdb usage --filter=STATE`: STATE_DIFF_NODES 266 MiB live / 313 MiB SST
+    for 145 nodes = **~1.8 MiB per epoch on disk**, STATE_SUPERNODES 148 MiB
+    (snapshot validator sets), refcounts 0.7 MiB. Against the v1 window soak
+    (decision 61: ~3 MiB per epoch, 1.5 MiB nodes + 1.3 MiB supernodes) that is
+    ~40% less per epoch and ~0.4 GiB per day of mainnet history. On-disk bytes
+    per node are close to raw, so RocksDB compresses the participation leaves
+    little (bottom-most compression disabled).
+    Next candidate (payload v3): zstd the leaves section like the deltas;
+    participation flags are low-entropy (mostly 0b111), so the expected per-
+    epoch node is a few hundred KB. Gloas adds `ptc_window` (~0.4 MB per
+    epoch, decision log fork-crossing notes) on top.
+    Process: RSS 9.2 GB at -Xmx8g; GC 6,332 young (250 s total), 19 full
+    (9.1 s) over 3 h of sync.
