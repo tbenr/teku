@@ -13,7 +13,6 @@
 
 package tech.pegasys.teku.infrastructure.statediff;
 
-import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 
 /**
@@ -27,13 +26,27 @@ public final class VarInts {
 
   private VarInts() {}
 
-  public static void writeUnsigned(final ByteArrayOutputStream out, final long value) {
+  /** The number of bytes {@link #writeUnsigned} writes for {@code value}: 1 to 10. */
+  public static int unsignedLength(final long value) {
+    // 7 bits per byte; zero still takes one byte
+    return 1 + (63 - Long.numberOfLeadingZeros(value | 1)) / 7;
+  }
+
+  /**
+   * Writes {@code value} into {@code out} at {@code position}, which must have room for {@link
+   * #unsignedLength} bytes.
+   *
+   * @return the position after the written bytes
+   */
+  public static int writeUnsigned(final byte[] out, final int position, final long value) {
+    int index = position;
     long remaining = value;
     while ((remaining & ~0x7FL) != 0) {
-      out.write((int) ((remaining & 0x7F) | 0x80));
+      out[index++] = (byte) ((remaining & 0x7F) | 0x80);
       remaining >>>= 7;
     }
-    out.write((int) remaining);
+    out[index++] = (byte) remaining;
+    return index;
   }
 
   public static long readUnsigned(final ByteBuffer in) {
@@ -51,8 +64,9 @@ public final class VarInts {
     throw new IllegalArgumentException("Varint longer than " + MAX_VARINT_BYTES + " bytes");
   }
 
-  public static void writeSigned(final ByteArrayOutputStream out, final long value) {
-    writeUnsigned(out, zigzagEncode(value));
+  /** Writes {@code value} zigzag-mapped; see {@link #writeUnsigned}. */
+  public static int writeSigned(final byte[] out, final int position, final long value) {
+    return writeUnsigned(out, position, zigzagEncode(value));
   }
 
   public static long readSigned(final ByteBuffer in) {

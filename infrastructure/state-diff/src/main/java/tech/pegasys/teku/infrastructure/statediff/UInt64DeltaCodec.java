@@ -13,7 +13,6 @@
 
 package tech.pegasys.teku.infrastructure.statediff;
 
-import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 
 /**
@@ -28,18 +27,33 @@ public final class UInt64DeltaCodec {
 
   private UInt64DeltaCodec() {}
 
+  /**
+   * Encodes {@code target} against {@code base} into an array of exactly the encoded size: a first
+   * pass sums the varint lengths, a second writes them, so a multi-MB list is neither written byte
+   * by byte through a stream nor copied to trim it.
+   */
   public static byte[] encode(final long[] base, final long[] target) {
-    final ByteArrayOutputStream out = new ByteArrayOutputStream();
-    VarInts.writeUnsigned(out, base.length);
-    VarInts.writeUnsigned(out, target.length);
     final int commonCount = Math.min(base.length, target.length);
+    long size = (long) VarInts.unsignedLength(base.length) + VarInts.unsignedLength(target.length);
     for (int i = 0; i < commonCount; i++) {
-      VarInts.writeSigned(out, target[i] - base[i]);
+      size += VarInts.unsignedLength(VarInts.zigzagEncode(target[i] - base[i]));
     }
     for (int i = base.length; i < target.length; i++) {
-      VarInts.writeUnsigned(out, target[i]);
+      size += VarInts.unsignedLength(target[i]);
     }
-    return out.toByteArray();
+    if (size > Integer.MAX_VALUE - 8) {
+      throw new IllegalArgumentException("Deltas of " + target.length + " elements too large");
+    }
+    final byte[] out = new byte[(int) size];
+    int position = VarInts.writeUnsigned(out, 0, base.length);
+    position = VarInts.writeUnsigned(out, position, target.length);
+    for (int i = 0; i < commonCount; i++) {
+      position = VarInts.writeSigned(out, position, target[i] - base[i]);
+    }
+    for (int i = base.length; i < target.length; i++) {
+      position = VarInts.writeUnsigned(out, position, target[i]);
+    }
+    return out;
   }
 
   public static long[] apply(final long[] base, final byte[] encoded) {

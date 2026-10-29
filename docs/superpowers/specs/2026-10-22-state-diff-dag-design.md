@@ -296,7 +296,8 @@ Reconstruction of node `N`: load its chain, materialize the snapshot by
 applying its payload to the default tree, then apply each diff payload in order
 with `TreeUpdates`. When a node of the chain below `N` has its state in the
 base cache (5.5), the chain is loaded only down to it and the payloads above it
-are applied to its tree instead; `N`'s own payload is always applied. Delta sections compose additively, so they are folded along
+are applied to its tree instead; `N`'s own payload is always applied. Delta sections compose additively (each link's delta entries are
+decompressed when its payload is decoded, 6.2), so they are folded along
 the chain into one value array per field (the snapshot's starting from the
 empty default list) and each delta field is built once after the last link,
 instead of once per link (decision 40); every link of a chain has its
@@ -534,9 +535,13 @@ section are sorted and delta-coded.
    field's list schema.
 3. `ZEROED`: count, then gIndex deltas of subtrees to replace with the zero tree
    of the matching depth.
-4. `DELTA`: for each delta field: field index, base count, target count, then
-   zigzag varint deltas for `min(base, target)` elements and raw values for
-   appended elements. Shrinking is supported (deltas for the surviving prefix).
+4. `DELTA`: for each delta field: field index, raw length, compressed length,
+   then the field's delta block compressed as one zstd frame (payload version
+   2, decision 63). The raw block is base count, target count, then zigzag
+   varint deltas for `min(base, target)` elements and raw values for appended
+   elements. Shrinking is supported (deltas for the surviving prefix). A
+   reader checks the raw length against the frame header's content size and
+   against the frame size (zstd expands at most 32768x) before allocating.
 
 The applier groups entries by tree depth, because `TreeUpdates` rejects mixed
 depths (`getDepthAndValidate`), and applies one `TreeUpdates` per depth in
@@ -550,8 +555,20 @@ progressive (Gloas) lists go through
 `ListSchemaUtil.createPackedProgressiveListTree`, and both produce the hash
 tree root and SSZ of `createTreeFromElements`.
 
-The format is versioned per node; adding sections or changing an encoding is a
-new version, old nodes stay readable.
+The format is versioned per node (a leading version byte, now 2); adding
+sections or changing an encoding is a new version. Version 1 (the same layout
+with uncompressed delta blocks) is not read: the flag is experimental and the
+only version 1 databases are soak copies, so a version 1 payload is rejected
+with a message to re-sync into a fresh data directory, which the anchor
+reconstruction at startup turns into the unrecoverable error and
+`verify-state-diffs` lists as a corrupt node (decision 64). Later versions
+should keep reading older ones once the format is no longer experimental.
+
+The encoder writes into one buffer sized for the worst case, compresses each
+delta block straight into it and trims it once; the delta codec sizes its
+output exactly in a first pass. The decoder reads the payload in place: leaf
+data are views (tree leaves copy them), supernode and zero roots are copied,
+delta blocks are decompressed straight from the payload (decision 68).
 
 ### 6.3 Expected sizes (to be measured, see 10)
 
@@ -561,6 +578,16 @@ level the ratio will be worse. Budget: a few MB per epoch before DB
 compression. If measurements show the delta section compresses poorly under
 LZ4, application-level compression of that section alone is an isolated
 change behind the format version.
+
+Measured (decision 61, window soak): balances 3.9 MB raw per node, every node;
+inactivity scores 2.4 MB raw on one node in four; nodes 1.47 MiB on disk
+against 5.35 MB raw under RocksDB LZ4, uncompressed at the bottom-most level.
+Payload version 2 compresses each delta block with zstd (decision 63): on a
+synthetic mainnet-like node (2M balances, 12k leaves) the payload drops from
+6.4 MB to 1.4 MB, balances 4.0 MB to 1.0 MB (4.0x), a 2M-element inactivity
+block of zeros to 212 bytes, for about 17 ms of compression and 6 ms of
+decompression per node. The ratio on real data is read off
+`section_bytes_total{section=deltas|deltas_compressed}`.
 
 ## 7. Storage layout
 
@@ -699,9 +726,10 @@ phase 2.
 - `storage_state_diff_write_phase_seconds_total{phase=base|walk|encode|store}`:
   seconds spent in each phase of the node writes, a counter of fractional
   seconds (`base`: previous node and parent resolution and the diff base, which
-  reconstructs on a base cache miss; `walk`: `TreeDiffer.diff`; `encode`:
-  `TreeDiffCodec.serialize`; `store`: node record encoding, the node put and
-  the supernode bookkeeping; the supernode puts themselves happen at commit)
+  reconstructs on a base cache miss; `walk`: `TreeDiffer.diff`, the delta
+  blocks' varint encoding included; `encode`: `TreeDiffCodec.encode`, delta
+  compression included; `store`: node record encoding, the node put and the
+  supernode bookkeeping; the supernode puts themselves happen at commit)
 - `storage_state_diff_reconstruct_seconds` histogram and
   `storage_state_diff_reconstruct_chain_length`
 - `storage_state_diff_reconstruct_list_builds_total`: packed uint64 lists built
@@ -718,16 +746,17 @@ phase 2.
 - `storage_state_diff_snapshots_total{reason=forced|periodic|milestone|no_parent}`
   (`periodic`: a node at the coarsest level; a `no_parent` snapshot outside
   bootstrap is a regression signal and also logs a WARN)
-- `storage_state_diff_section_bytes_total{section=leaves|supernodes|zeroed|copied|deltas}`
-  and `storage_state_diff_section_entries_total{section=...}`: payload of the
-  written nodes by section, counted from the diff before encoding (leaf data
-  bytes, 32 per supernode reference and zeroed subtree, 16 per copied subtree,
-  encoded delta bytes); a DEBUG line per node gives epochs, level, reason,
-  total bytes and the five section byte counts
-- `storage_state_diff_delta_field_bytes_total{field}` and
-  `storage_state_diff_delta_field_entries_total{field}`: the deltas section
-  broken down by state field (`balances`, `inactivity_scores`), so the share of
-  inactivity-score deltas can be read off
+- `storage_state_diff_section_bytes_total{section=leaves|supernodes|zeroed|copied|deltas|deltas_compressed}`
+  and `storage_state_diff_section_entries_total{section=leaves|supernodes|zeroed|copied|deltas}`:
+  payload of the written nodes by section, counted from the diff before
+  encoding (leaf data bytes, 32 per supernode reference and zeroed subtree, 16
+  per copied subtree, raw encoded delta bytes), plus the delta bytes after
+  compression as stored (`deltas_compressed`, bytes only), so the compression
+  ratio can be read off; a DEBUG line per node gives epochs, level, reason,
+  total bytes, the five section byte counts and the compressed delta bytes.
+  (The per-field `delta_field_bytes_total{field}` and
+  `delta_field_entries_total{field}` counters of the window wave were removed
+  once they had sized the inactivity share, decision 66.)
 - `storage_state_diff_window_start_epoch`: gauge, the first finalized epoch an
   archive database serves (5.11); absent on prune databases
 - `storage_state_supernodes_total{op=inserted|incremented|deleted}` and bytes
