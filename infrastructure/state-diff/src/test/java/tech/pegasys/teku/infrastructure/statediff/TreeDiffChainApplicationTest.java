@@ -67,6 +67,8 @@ class TreeDiffChainApplicationTest {
     assertThat(SyntheticState.serialize(folded)).isEqualTo(SyntheticState.serialize(perLink));
     assertThat(chain.listBuilds()).isEqualTo(1);
     assertThat(diffs).allSatisfy(diff -> assertThat(diff.deltas()).hasSize(1));
+    // Patches apply link by link, against the tree of the previous link
+    assertThat(diffs).anySatisfy(diff -> assertThat(diff.patches()).isNotEmpty());
   }
 
   @Test
@@ -104,12 +106,14 @@ class TreeDiffChainApplicationTest {
             List.of(),
             List.of(),
             List.of(),
+            List.of(),
             List.of(new CopiedEntry(fieldGIndex(PREV), fieldGIndex(BALANCES))),
             List.of());
     // Writes a leaf below the balances it also carries deltas for
     final TreeDiff leafInOwnDeltaField =
         new TreeDiff(
             List.of(new LeafEntry(fieldGIndex(BALANCES) * 2, Bytes.wrap(new byte[32]))),
+            List.of(),
             List.of(),
             List.of(),
             List.of(),
@@ -132,7 +136,7 @@ class TreeDiffChainApplicationTest {
     final TreeNode s0 = SyntheticState.create(random, VALIDATOR_COUNT);
     final DeltaEntry delta = diff(SCHEMA.getDefaultTree(), s0).deltas().getFirst();
     final TreeDiff duplicate =
-        new TreeDiff(List.of(), List.of(), List.of(), List.of(), List.of(delta, delta));
+        new TreeDiff(List.of(), List.of(), List.of(), List.of(), List.of(), List.of(delta, delta));
 
     assertThatThrownBy(() -> applier.apply(SCHEMA.getDefaultTree(), duplicate, source))
         .isInstanceOf(IllegalArgumentException.class);

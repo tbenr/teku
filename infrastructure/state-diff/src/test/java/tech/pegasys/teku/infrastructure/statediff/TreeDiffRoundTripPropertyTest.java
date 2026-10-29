@@ -44,15 +44,23 @@ class TreeDiffRoundTripPropertyTest {
   void randomMutationSequencesRoundTrip() {
     final Random random = new Random(12345);
     final TreeNode genesis = SyntheticState.create(random, INITIAL_VALIDATORS);
+    int patches = 0;
+    int supernodes = 0;
 
     for (int iteration = 0; iteration < ITERATIONS; iteration++) {
       final List<TreeDiff> chain = new ArrayList<>();
       TreeNode base = genesis;
       for (int step = 0; step < CHAIN_LENGTH; step++) {
         final TreeNode target = mutate(random, base);
-        final TreeDiff decoded =
-            TreeDiffCodec.deserialize(
-                TreeDiffCodec.serialize(differ.diff(base, target, supernodeStore::put)));
+        final TreeDiff diff = differ.diff(base, target, supernodeStore::put);
+        final Bytes encoded = TreeDiffCodec.serialize(diff);
+        final TreeDiff decoded = TreeDiffCodec.deserialize(encoded);
+        assertThat(decoded.entryCount()).isEqualTo(diff.entryCount());
+        assertThat(TreeDiffCodec.serialize(decoded)).isEqualTo(encoded);
+        // Patches between the supernodes and the other sections are skipped correctly
+        assertThat(TreeDiffCodec.supernodeEntries(encoded)).isEqualTo(decoded.supernodes());
+        patches += decoded.patches().size();
+        supernodes += decoded.supernodes().size();
 
         assertReproduces(applier.apply(base, decoded, source), target, iteration, step);
         chain.add(decoded);
@@ -65,6 +73,9 @@ class TreeDiffRoundTripPropertyTest {
       }
       assertReproduces(reconstructed, base, iteration, CHAIN_LENGTH);
     }
+    // Changed validators are patched, validators appended past a supernode referenced whole
+    assertThat(patches).isPositive();
+    assertThat(supernodes).isPositive();
   }
 
   private static void assertReproduces(
