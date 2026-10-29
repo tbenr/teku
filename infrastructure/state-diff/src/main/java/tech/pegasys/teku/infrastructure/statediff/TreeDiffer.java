@@ -13,15 +13,19 @@
 
 package tech.pegasys.teku.infrastructure.statediff;
 
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntList;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.ints.IntSet;
 import it.unimi.dsi.fastutil.ints.IntSets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.stream.IntStream;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
+import tech.pegasys.teku.infrastructure.ssz.schema.SszCollectionSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszContainerSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszUInt64ListSchema;
@@ -34,6 +38,7 @@ import tech.pegasys.teku.infrastructure.ssz.tree.TreeUtil;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.CopiedEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.DeltaEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.LeafEntry;
+import tech.pegasys.teku.infrastructure.statediff.TreeDiff.PatchEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.SupernodeEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.ZeroedEntry;
 
@@ -44,8 +49,15 @@ import tech.pegasys.teku.infrastructure.statediff.TreeDiff.ZeroedEntry;
  * <p>Per container field: a delta field (a packed uint64 list) is emitted as element deltas; a
  * field whose new subtree equals the base subtree of another field of the same schema is emitted as
  * a copy (list rotation); anything else is walked. The walk emits a zeroed entry for a subtree that
- * is the zero tree, a supernode reference (handing the bytes to the supernode sink) for an {@link
- * SszSuperNode}, the data of any other leaf, and recurses into branches.
+ * is the zero tree, a patch or a supernode reference for an {@link SszSuperNode}, the data of any
+ * other leaf, and recurses into branches.
+ *
+ * <p>A changed supernode whose base is a non-empty supernode of the same depth, and which has at
+ * least as many elements, is compared element by element and emitted as a patch of the changed and
+ * appended elements when that takes fewer bytes than a whole reference: the reference's 32-byte
+ * hash plus the supernode's content, which the reference adds to the supernode store. Otherwise,
+ * and always for a snapshot (its base, a default tree, holds no non-empty supernode), the supernode
+ * is emitted as a whole reference and its bytes handed to the supernode sink.
  *
  * <p>Equal roots do not imply equal trees. A leaf's root is its data zero-padded to 32 bytes and a
  * supernode's root ignores trailing zero elements, so appending a zero element to a packed list or
@@ -217,10 +229,69 @@ public final class TreeDiffer {
     return branch.left() == branch.right();
   }
 
-  private static final class Collector {
+  /**
+   * The patch turning {@code base} into {@code target}, the supernodes at {@code gIndex} of field
+   * {@code fieldIndex}, or {@code null} when a whole reference to {@code target} is the cheaper
+   * entry or a patch cannot express the change (another depth, an empty or a longer base).
+   */
+  private PatchEntry patch(
+      final int fieldIndex, final long gIndex, final SszSuperNode base, final SszSuperNode target) {
+    final Bytes baseData = base.getData();
+    final Bytes targetData = target.getData();
+    if (base.getDepth() != target.getDepth()
+        || target.getDepth() > PatchEntry.MAX_DEPTH
+        || baseData.isEmpty()
+        || targetData.size() < baseData.size()
+        || !(schema.getChildSchema(fieldIndex) instanceof SszCollectionSchema<?, ?> listSchema)) {
+      return null;
+    }
+    final int elementSize = listSchema.getSupernodeElementTemplate().getSszLength();
+    if (baseData.size() % elementSize != 0 || targetData.size() % elementSize != 0) {
+      return null;
+    }
+    final int baseCount = baseData.size() / elementSize;
+    final int targetCount = targetData.size() / elementSize;
+    // Both entries carry a gIndex and a depth; a patch adds two counts, a reference its hash and
+    // the content it stores
+    final long referenceBytes = (long) Bytes32.SIZE + targetData.size();
+    long patchBytes = 2L * VarInts.unsignedLength(targetCount);
+    final byte[] baseBytes = baseData.toArrayUnsafe();
+    final byte[] targetBytes = targetData.toArrayUnsafe();
+    final IntList written = new IntArrayList();
+    int previous = -1;
+    for (int i = 0; i < targetCount; i++) {
+      final int from = i * elementSize;
+      final int to = from + elementSize;
+      if (i < baseCount && Arrays.equals(baseBytes, from, to, targetBytes, from, to)) {
+        continue;
+      }
+      patchBytes += VarInts.unsignedLength(i - previous - 1) + elementSize;
+      if (patchBytes >= referenceBytes) {
+        return null;
+      }
+      written.add(i);
+      previous = i;
+    }
+    final byte[] elements = new byte[written.size() * elementSize];
+    for (int i = 0; i < written.size(); i++) {
+      System.arraycopy(
+          targetBytes, written.getInt(i) * elementSize, elements, i * elementSize, elementSize);
+    }
+    return new PatchEntry(
+        fieldIndex,
+        gIndex,
+        target.getDepth(),
+        targetCount,
+        elementSize,
+        written,
+        Bytes.wrap(elements));
+  }
+
+  private final class Collector {
     private final BiConsumer<Bytes32, Bytes> sink;
     private final List<LeafEntry> leaves = new ArrayList<>();
     private final List<SupernodeEntry> supernodes = new ArrayList<>();
+    private final List<PatchEntry> patches = new ArrayList<>();
     private final List<ZeroedEntry> zeroed = new ArrayList<>();
     private final List<CopiedEntry> copied = new ArrayList<>();
     private final List<DeltaEntry> deltas = new ArrayList<>();
@@ -248,8 +319,17 @@ public final class TreeDiffer {
         }
       } else if (targetNode instanceof SszSuperNode superNode) {
         if (!sameRoot || !sameLeafData(baseNode, targetNode)) {
-          supernodes.add(new SupernodeEntry(fieldIndex, gIndex, superNode.getDepth(), targetRoot));
-          sink.accept(targetRoot, superNode.getData());
+          final PatchEntry patch =
+              baseNode instanceof SszSuperNode baseSuperNode
+                  ? patch(fieldIndex, gIndex, baseSuperNode, superNode)
+                  : null;
+          if (patch != null) {
+            patches.add(patch);
+          } else {
+            supernodes.add(
+                new SupernodeEntry(fieldIndex, gIndex, superNode.getDepth(), targetRoot));
+            sink.accept(targetRoot, superNode.getData());
+          }
         }
       } else if (targetNode instanceof LeafDataNode leaf) {
         if (!sameRoot || !sameLeafData(baseNode, targetNode)) {
@@ -282,7 +362,7 @@ public final class TreeDiffer {
     }
 
     private TreeDiff toTreeDiff() {
-      return new TreeDiff(leaves, supernodes, zeroed, copied, deltas);
+      return new TreeDiff(leaves, supernodes, patches, zeroed, copied, deltas);
     }
   }
 }

@@ -5,7 +5,8 @@ on mainnet and on sepolia (Gloas); Fulu to Gloas fork crossing verified on a
 kurtosis devnet (decisions log, 2026-10-28 fork crossing section). Phase 2,
 first slice (archive finalized states in the DAG, retention window) implemented
 and soaked on mainnet with a 128-epoch window (decisions log 51, 61). Node
-payload version 2 (zstd-compressed delta section, decisions log 63-68)
+payload version 2 (zstd-compressed delta section, decisions log 63-68;
+per-validator supernode patches and node record header version 2, 69-72)
 implemented, not yet soaked. Living document, last updated 2026-10-29.
 
 Design: [docs/superpowers/specs/2026-10-22-state-diff-dag-design.md](superpowers/specs/2026-10-22-state-diff-dag-design.md).
@@ -20,8 +21,9 @@ With state diff storage, epoch-boundary states are stored as a DAG of small
 tree-based diffs keyed by checkpoint-block root. Finalization becomes a pointer
 move, the finalized anchor and hot epoch states are reconstructed from a
 snapshot plus a bounded chain of diffs, and old nodes are pruned as finality
-advances. Changed validator supernodes are stored once, content-addressed, and
-reference-counted. The same store is the foundation for an archive node
+advances. Snapshots store the validator supernodes once, content-addressed and
+reference-counted; a diff patches the few changed validators of a supernode
+inline instead of storing a new 31 KB copy. The same store is the foundation for an archive node
 (phase 2) and for offloading exited validators from memory (phase 3).
 
 ## How to run it
@@ -39,11 +41,12 @@ teku --network=mainnet --data-storage-mode=minimal --Xdata-storage-state-diffs
   removed later. There is no downgrade path; try it on a copy of your data
   directory first.
 - Databases written in state diff mode by a build before node payload version
-  2 (before 2026-10-29) are not readable: startup fails with an unrecoverable
-  error saying the payload is version 1 and the database must be re-synced
-  into a fresh data directory, and `verify-state-diffs` lists the nodes as
-  corrupt with the same text. Re-sync from a checkpoint into a new data
-  directory.
+  2 (before 2026-10-29) are not readable: their node records (record version
+  1) and payloads (payload version 1) are both rejected, startup fails with an
+  unrecoverable error saying the payload is version 1 and the database must be
+  re-synced into a fresh data directory, and `verify-state-diffs` lists the
+  nodes as corrupt with the same text. Re-sync from a checkpoint into a new
+  data directory.
 - `--Xhot-state-persistence-frequency` and `--data-storage-archive-frequency`
   are ignored while it is on (a WARN says so).
 - Only the storage changes; block import, fork choice and the APIs are untouched.
@@ -105,7 +108,7 @@ Metrics (Prometheus, `storage_state_diff_*`): `nodes_total{state}`,
 `snapshots_total{reason}`, `node_bytes{level}`, `section_bytes_total{section}`
 and `section_entries_total{section}` (`deltas` counts the raw delta bytes,
 `deltas_compressed` the same bytes compressed as stored, so their ratio is the
-delta compression ratio), `write_seconds`, `write_phase_seconds_total{phase}`, `reconstruct_seconds`,
+delta compression ratio; `patches` the patched validator bytes), `write_seconds`, `write_phase_seconds_total{phase}`, `reconstruct_seconds`,
 `reconstruct_chain_length`, `base_cache_total{result}`,
 `verification_failures_total`, `window_start_epoch` (archive only); plus
 `storage_store_state_diff_nodes_skipped_total`.
@@ -144,9 +147,18 @@ times, and the on-disk footprint of state storage by about 3.5 times, for about
    level, which Teku leaves uncompressed. The ratio on real data is to be
    read off `section_bytes_total{section=deltas|deltas_compressed}` on the
    next soak. Version 1 databases must be re-synced (see How to run it).
-2. **Per-validator supernode patches** (decisions log 41). Changed supernodes
-   are stored whole (31 KB); patching only the changed 121-byte validators
-   mainly helps coarse nodes and refcount churn.
+2. **Per-validator supernode patches**: closed (decisions log 41, 69-71). A
+   changed supernode is stored as a patch of its changed and appended
+   121-byte validators whenever that is smaller than a whole 31 KB copy plus
+   its reference, i.e. unless nearly all its validators changed; patches are
+   inline, so they add nothing to the supernode column and its reference
+   counts. On a synthetic node with 25 changed supernodes and 4 deposits the
+   supernode cost drops from 788 KB (references plus stored content) to a
+   5.8 KB patch section; on an Electra state with 6 changed validators from
+   155 KB to 767 bytes. The supernode column now holds the snapshots' validator
+   sets and the rare whole references (a supernode the registry grows into);
+   reconstruction rehashes each patched supernode once (~0.2 ms each). To be
+   measured on the next soak.
 3. **Cold base-cache reconstruction on the live node**: closed. The anchor
    reconstructed at startup seeds the base cache and every reconstruction stops
    at the first cached node of its chain (decisions log 49, measured in 50):

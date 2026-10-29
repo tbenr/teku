@@ -124,8 +124,9 @@ class StateDiffMetrics {
             TekuMetricCategory.STORAGE,
             "state_diff_section_bytes_total",
             "Payload bytes of written state diff DAG nodes by section: leaf data, 32 per supernode"
-                + " reference and zeroed subtree, 16 per copied subtree, encoded delta bytes before"
-                + " (deltas) and after (deltas_compressed) compression",
+                + " reference and zeroed subtree, written elements of supernode patches, 16 per"
+                + " copied subtree, encoded delta bytes before (deltas) and after"
+                + " (deltas_compressed) compression",
             "section");
     this.sectionEntries =
         metricsSystem.createLabelledCounter(

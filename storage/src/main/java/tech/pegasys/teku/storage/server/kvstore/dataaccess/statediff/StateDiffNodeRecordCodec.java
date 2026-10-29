@@ -18,20 +18,25 @@ import static com.google.common.base.Preconditions.checkArgument;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.apache.tuweni.bytes.MutableBytes;
+import tech.pegasys.teku.infrastructure.statediff.TreeDiffCodec;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 
 /**
  * Binary encoding of a {@link StateDiffNodeRecord}.
  *
- * <p>Layout: {@code u8 version=1}, {@code u64 blockSlot}, 32-byte stateRoot, {@code u64
- * firstEpoch}, {@code u64 lastEpoch}, {@code u8 level}, {@code u8 snapshot}, 32-byte prevNodeRoot,
- * 32-byte parentNodeRoot, then the payload as the remaining bytes. Integers are big-endian. The
- * header has a fixed size, so {@link #patchLastEpoch} rewrites the last epoch in place without
- * touching the payload.
+ * <p>Layout: {@code u8 version=2}, {@code u64 blockSlot}, 32-byte stateRoot, {@code u64
+ * firstEpoch}, {@code u64 lastEpoch}, {@code u8 level}, {@code u8 snapshot}, 32-byte
+ * parentNodeRoot, then the payload as the remaining bytes. Integers are big-endian. The header has
+ * a fixed size, so {@link #patchLastEpoch} rewrites the last epoch in place without touching the
+ * payload.
+ *
+ * <p>Version 1 also stored the previous node's root, which nothing read. It is not read: its
+ * records hold version 1 payloads, which are not readable either, so it is rejected with the same
+ * message to re-sync.
  */
 public final class StateDiffNodeRecordCodec {
 
-  static final int VERSION = 1;
+  static final int VERSION = 2;
 
   private static final int VERSION_OFFSET = 0;
   private static final int BLOCK_SLOT_OFFSET = VERSION_OFFSET + 1;
@@ -40,8 +45,7 @@ public final class StateDiffNodeRecordCodec {
   private static final int LAST_EPOCH_OFFSET = FIRST_EPOCH_OFFSET + Long.BYTES;
   private static final int LEVEL_OFFSET = LAST_EPOCH_OFFSET + Long.BYTES;
   private static final int SNAPSHOT_OFFSET = LEVEL_OFFSET + 1;
-  private static final int PREV_NODE_ROOT_OFFSET = SNAPSHOT_OFFSET + 1;
-  private static final int PARENT_NODE_ROOT_OFFSET = PREV_NODE_ROOT_OFFSET + Bytes32.SIZE;
+  private static final int PARENT_NODE_ROOT_OFFSET = SNAPSHOT_OFFSET + 1;
   private static final int HEADER_SIZE = PARENT_NODE_ROOT_OFFSET + Bytes32.SIZE;
 
   private StateDiffNodeRecordCodec() {}
@@ -55,7 +59,6 @@ public final class StateDiffNodeRecordCodec {
     header.set(LAST_EPOCH_OFFSET, uint64(record.lastEpoch()));
     header.set(LEVEL_OFFSET, (byte) record.level());
     header.set(SNAPSHOT_OFFSET, (byte) (record.snapshot() ? 1 : 0));
-    header.set(PREV_NODE_ROOT_OFFSET, record.prevNodeRoot());
     header.set(PARENT_NODE_ROOT_OFFSET, record.parentNodeRoot());
     return Bytes.wrap(header, record.payload());
   }
@@ -71,7 +74,6 @@ public final class StateDiffNodeRecordCodec {
         readUInt64(encoded, LAST_EPOCH_OFFSET),
         Byte.toUnsignedInt(encoded.get(LEVEL_OFFSET)),
         snapshot == 1,
-        Bytes32.wrap(encoded.slice(PREV_NODE_ROOT_OFFSET, Bytes32.SIZE)),
         Bytes32.wrap(encoded.slice(PARENT_NODE_ROOT_OFFSET, Bytes32.SIZE)),
         encoded.slice(HEADER_SIZE));
   }
@@ -85,13 +87,17 @@ public final class StateDiffNodeRecordCodec {
   }
 
   private static void checkHeader(final Bytes encoded) {
+    checkArgument(!encoded.isEmpty(), "Empty state diff node record");
+    final int version = Byte.toUnsignedInt(encoded.get(VERSION_OFFSET));
+    if (version == 1) {
+      throw new IllegalArgumentException(TreeDiffCodec.VERSION_ONE_MESSAGE);
+    }
+    checkArgument(version == VERSION, "Unknown state diff node record version %s", version);
     checkArgument(
         encoded.size() >= HEADER_SIZE,
         "State diff node record of %s bytes is shorter than its %s byte header",
         encoded.size(),
         HEADER_SIZE);
-    final int version = Byte.toUnsignedInt(encoded.get(VERSION_OFFSET));
-    checkArgument(version == VERSION, "Unknown state diff node record version %s", version);
   }
 
   private static Bytes uint64(final UInt64 value) {

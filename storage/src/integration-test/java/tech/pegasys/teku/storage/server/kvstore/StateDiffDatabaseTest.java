@@ -224,7 +224,8 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
 
     // The late anchor node chains through its finalized ancestors, keeping node 6's parent
     assertThat(stateDiffNodeCount("anchor_created_late")).isEqualTo(1);
-    assertThat(stateDiffNode(anchor5).prevNodeRoot()).isEqualTo(epoch4NodeRoot);
+    // Written late at the finest level, its parent is its previous node
+    assertThat(stateDiffNode(anchor5).parentNodeRoot()).isEqualTo(epoch4NodeRoot);
     final Set<Bytes32> expected = new HashSet<>(stateDiffReconstructionChain(anchor5));
     expected.add(epoch6NodeBlock.getRoot());
     assertThat(storedStateDiffNodeRoots()).isEqualTo(expected);
@@ -370,7 +371,7 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
     assertThat(stateDiffNode(node3).parentNodeRoot()).isEqualTo(node2);
     // The node of checkpoint 2, above the genesis anchor, gets corrupted
     try (final KvStoreCombinedDao.HotUpdater updater = dao().hotUpdater()) {
-      updater.putStateDiffNode(node2, Bytes.of(1, 2, 3));
+      updater.putStateDiffNode(node2, Bytes.of(2, 2, 3));
       updater.commit();
     }
 
@@ -390,7 +391,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
     final SignedBlockAndState checkpoint4BlockAndState = chainBuilder.getBlockAndStateAtSlot(32);
     final StateDiffNodeRecord node4 = stateDiffNode(checkpoint4BlockAndState.getRoot());
     assertThat(node4.snapshot()).isTrue();
-    assertThat(node4.prevNodeRoot()).isEqualTo(node3);
     assertThat(database.getHotState(checkpoint4BlockAndState.getRoot()))
         .contains(checkpoint4BlockAndState.getState());
   }

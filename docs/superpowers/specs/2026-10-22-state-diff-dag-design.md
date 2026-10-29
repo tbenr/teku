@@ -131,18 +131,24 @@ Node record (`STATE_DIFF_NODES`, key = block root):
 
 | Field | Type | Notes |
 |---|---|---|
-| version | u8 | format version |
+| version | u8 | format version, now 2 (7) |
 | block slot | u64 | slot of the checkpoint block |
 | state root | bytes32 | hash tree root of the node state, used to verify reconstruction |
 | first epoch | u64 | first epoch this block is the checkpoint block for |
 | last epoch | u64 | last such epoch known at write time (updated when a later block extends it; see 5.4) |
 | level | u8 | index into the configured period list; snapshots use a dedicated value |
-| prev node root | bytes32 | the previous node on this branch (level-1 chain); zero for snapshots with no predecessor |
 | parent node root | bytes32 | the diff base; zero for snapshots |
 | payload | bytes | diff payload, section 6 |
 
 Nodes are immutable once written except for `last epoch`, which is only ever
 raised.
+
+The previous node on the branch (the level-1 chain) is not stored: it is the
+first of the node's ancestor checkpoint blocks that has a node (5.4), resolved
+when the node is written and only used to start the parent resolution (5.2).
+Record version 1 stored it as `prev node root`; nothing read it after the
+parent walk replaced the prev-pointer walk (decisions 27, 40), and version 2
+drops it (decision 72).
 
 ### 5.2 Levels and parents
 
@@ -163,8 +169,8 @@ because the parent root is stored, readers never need the period list.
 Reconstruction chain of a node = follow parent pointers to the first snapshot.
 Bound for [256, 64, 16, 1]: 3 + 3 + 15 = 21 diffs plus one snapshot.
 
-Parent resolution at write time: start at `prev node root` and follow
-`parent node root` pointers (not `prev node root`) until a node of level
+Parent resolution at write time: start at the previous node and follow
+`parent node root` pointers (not previous-node links) until a node of level
 coarser than or equal to `L` is found. Parent chains have non-increasing level
 index and skip only finer nodes, so they reach the same nearest-coarser
 ancestor as a prev-pointer walk would, and they stay inside retained chains:
@@ -213,8 +219,8 @@ parent state (`cacheIfEpochState`, "ADD.PRE"). It was just used to compute
 `ancestorCheckpointRoots` is computed from fork choice: walk `R`'s ancestors
 collecting every block that is itself a checkpoint block (its child's epoch is
 greater than its epoch), down to and including the finalized anchor root. The
-writer uses the first of these that exists as a node as `prev node root`; this
-is what makes skipped nodes (below) harmless for the prev-pointer chain. The
+writer uses the first of these that exists as a node as the previous node; this
+is what makes skipped nodes (below) harmless for the level-1 chain. The
 anchor always has a node (5.6), so the list always resolves. The list is short
 in practice (a few entries) and bounded by the non-finality length.
 
@@ -330,7 +336,7 @@ previous one. Garbage after this finalization is
 where `chain(x)` is the reconstruction chain of `x`. Nodes between `A'` and `A`
 are the just-finalized canonical block roots, which the finalization update
 already carries (`finalizedChildToParentMap`); those that have a node are the
-candidates. (An earlier draft walked `prev node root` from `A`; that misses
+candidates. (An earlier draft walked previous-node pointers from `A`; that misses
 nodes when the anchor node itself was created late, decision 29.) Each
 finalization therefore touches a handful of nodes. Steady state on disk is one
 snapshot, at most 3 L64, 3 L16, 15 L1 nodes and the hot nodes above the anchor.
@@ -356,9 +362,17 @@ Deleting a node decrements every supernode it references and removes both
 entries when the count reaches zero. Multiple increments of the same key
 within one transaction are accumulated in memory and written once.
 
-Because snapshots reference every supernode of their state and the retention
-rules always keep a complete chain for every retained node, the column always
-contains every supernode of every retained state. Phase 3 depends on this.
+Only whole references are stored and counted. A changed supernode that a diff
+patches (6.2, decision 69) is carried inline in the payload and adds nothing
+to either column; a whole reference is written when the patch would not be
+smaller, when the base holds no non-empty supernode there (snapshots, a
+supernode the list grows into) or when the supernode shrank.
+
+Snapshots reference every supernode of their state and the retention rules
+always keep a complete chain for every retained node, so the column contains
+every supernode of every retained snapshot, but not the supernodes a diff of
+a retained chain patched since. Phase 3 freezes only supernodes whose hash is
+in the column (9).
 
 ### 5.10 Bootstrap, flag and mode marker
 
@@ -497,8 +511,10 @@ walks the two trees schema-guided from the state container down:
   by field name through the schema at that slot), read both packed UInt64
   lists and emit a delta section.
 - For all other subtrees, recurse comparing hashes. At a leaf, emit the leaf.
-  At an `SszSuperNode`, emit a supernode reference (and store the supernode
-  bytes). At a subtree whose target root is the zero root for its depth, emit a
+  At an `SszSuperNode`, emit a patch of its changed and appended elements when
+  the base holds a non-empty supernode of the same depth there and the patch
+  is smaller than a whole reference (6.2); otherwise emit a supernode
+  reference (and store the supernode bytes). At a subtree whose target root is the zero root for its depth, emit a
   "zeroed subtree" entry instead of descending (list shrink).
 - List length leaves are ordinary leaves.
 
@@ -531,11 +547,26 @@ section are sorted and delta-coded.
 1. `LEAVES`: count, then (gIndex delta, length, bytes). Length 32 for packed
    leaves, variable for small `LeafDataNode`s.
 2. `SUPERNODES`: for each list field with supernodes: field index, count, then
-   (gIndex delta, hash32). The applier obtains the `SszNodeTemplate` from the
+   (gIndex delta, depth, hash32). The applier obtains the `SszNodeTemplate` from the
    field's list schema.
-3. `ZEROED`: count, then gIndex deltas of subtrees to replace with the zero tree
+3. `PATCHES` (decision 69): for each list field with patched supernodes: field
+   index, element size, count, then per patch (gIndex delta, depth, element
+   count, written count, the written element indices as gaps from the
+   previous index plus one, then the written elements back to back). The
+   applier reads the supernode at the gIndex of the base tree, which must be
+   a supernode of that depth with at most the element count, copies its
+   bytes extended with zeros to the element count, writes the elements and
+   builds a plain supernode whose root is computed from its content, so the
+   state root check covers it. The element size must be the field template's.
+   Patches are applied link by link in a chain application, like the other
+   non-delta sections. The differ patches when the written elements, their
+   index gaps and the two counts take fewer bytes than a whole reference's
+   32-byte hash plus the supernode's content (decision 70).
+4. `ZEROED`: count, then gIndex deltas of subtrees to replace with the zero tree
    of the matching depth.
-4. `DELTA`: for each delta field: field index, raw length, compressed length,
+5. `COPIED`: count, then (target gIndex, source gIndex) of subtrees equal to
+   another field of the base (participation rotation).
+6. `DELTA`: for each delta field: field index, raw length, compressed length,
    then the field's delta block compressed as one zstd frame (payload version
    2, decision 63). The raw block is base count, target count, then zigzag
    varint deltas for `min(base, target)` elements and raw values for appended
@@ -556,7 +587,8 @@ progressive (Gloas) lists go through
 tree root and SSZ of `createTreeFromElements`.
 
 The format is versioned per node (a leading version byte, now 2); adding
-sections or changing an encoding is a new version. Version 1 (the same layout
+sections or changing an encoding is a new version. (The `PATCHES` section was
+added to version 2 in place, before any version 2 database existed.) Version 1 (the same layout
 with uncompressed delta blocks) is not read: the flag is experimental and the
 only version 1 databases are soak copies, so a version 1 payload is rejected
 with a message to re-sync into a fresh data directory, which the anchor
@@ -589,15 +621,33 @@ block of zeros to 212 bytes, for about 17 ms of compression and 6 ms of
 decompression per node. The ratio on real data is read off
 `section_bytes_total{section=deltas|deltas_compressed}`.
 
+Supernode patches (decisions 69-71): on a synthetic node with 25 changed
+supernodes (20 with one changed validator, 4 with three, 1 with ten) and 4
+deposits into the last supernode, the supernode cost of the node drops from
+787,872 bytes (888 bytes of references in the payload plus 786,984 bytes of
+content for the supernode column) to a 5,757-byte patch section and nothing in
+the column; on a random 8192-validator Electra state with 6 validators changed
+in 5 supernodes, from 155,057 bytes to 767. Applying the 26 patches and
+hashing the result takes 5.2 ms against 0.08 ms for the whole references,
+whose roots are known: about 0.2 ms per patched supernode left in the final
+tree of a reconstruction.
+
 ## 7. Storage layout
 
 | Column / variable | ID | Key | Value | Static data |
 |---|---|---|---|---|
-| `STATE_DIFF_NODES` | hot column 10 | block root | node record (5.1) | yes |
+| `STATE_DIFF_NODES` | hot column 10 | block root | node record (5.1), header version 2 | yes |
 | `STATE_SUPERNODES` | hot column 11 | supernode hash | supernode SSZ bytes | yes |
 | `STATE_SUPERNODE_REFCOUNTS` | hot column 13 | supernode hash | u64 reference count | no |
 | `STATE_DIFF_MODE` | hot variable 13 | - | marker + format version | - |
 | `STATE_DIFF_WINDOW_START` | hot variable 14 | - | u64 epoch: first finalized epoch an archive database serves (5.11) | - |
+
+Node record layout, version 2: `u8 version`, `u64 block slot`, `bytes32 state
+root`, `u64 first epoch`, `u64 last epoch`, `u8 level`, `u8 snapshot`,
+`bytes32 parent node root`, then the payload (6.2); integers big-endian, a
+fixed 91-byte header so `last epoch` is rewritten in place. Version 1 had a
+32-byte `prev node root` before the parent root; its records hold version 1
+payloads and are rejected with the same re-sync message (decisions 64, 72).
 
 Both backends get the columns through `V6SchemaCombined`, so every V6 variant
 (snapshot, tree, and both RocksDB and LevelDB) carries them; they stay empty
@@ -658,7 +708,11 @@ epoch; the supernode is frozen at the epoch boundary after that epoch passes
 and the effective balances are confirmed zero. Only states that were loaded
 from, or diffed into, a database-backed tree can freeze, so reference tests
 and in-memory tests are unaffected. The diff walker compares hashes, so a
-frozen supernode is never loaded at write time.
+frozen supernode is never loaded at write time. Since supernode patches
+(decision 69) the store holds only the supernodes of snapshots and of whole
+references, so a supernode freezes only when its hash is in
+`STATE_SUPERNODES`; the supernodes of exited validators rarely change after
+the snapshot that stored them, so this covers nearly all of them.
 
 **Why materialize-on-write is required.** Two fields of a withdrawn validator
 can still change: `withdrawal_credentials` via a BLS-to-execution change (no
@@ -746,14 +800,15 @@ phase 2.
 - `storage_state_diff_snapshots_total{reason=forced|periodic|milestone|no_parent}`
   (`periodic`: a node at the coarsest level; a `no_parent` snapshot outside
   bootstrap is a regression signal and also logs a WARN)
-- `storage_state_diff_section_bytes_total{section=leaves|supernodes|zeroed|copied|deltas|deltas_compressed}`
-  and `storage_state_diff_section_entries_total{section=leaves|supernodes|zeroed|copied|deltas}`:
+- `storage_state_diff_section_bytes_total{section=leaves|supernodes|patches|zeroed|copied|deltas|deltas_compressed}`
+  and `storage_state_diff_section_entries_total{section=leaves|supernodes|patches|zeroed|copied|deltas}`:
   payload of the written nodes by section, counted from the diff before
-  encoding (leaf data bytes, 32 per supernode reference and zeroed subtree, 16
-  per copied subtree, raw encoded delta bytes), plus the delta bytes after
+  encoding (leaf data bytes, 32 per supernode reference and zeroed subtree,
+  the written element bytes of supernode patches, 16 per copied subtree, raw
+  encoded delta bytes), plus the delta bytes after
   compression as stored (`deltas_compressed`, bytes only), so the compression
   ratio can be read off; a DEBUG line per node gives epochs, level, reason,
-  total bytes, the five section byte counts and the compressed delta bytes.
+  total bytes, the six section byte counts and the compressed delta bytes.
   (The per-field `delta_field_bytes_total{field}` and
   `delta_field_entries_total{field}` counters of the window wave were removed
   once they had sized the inactivity share, decision 66.)

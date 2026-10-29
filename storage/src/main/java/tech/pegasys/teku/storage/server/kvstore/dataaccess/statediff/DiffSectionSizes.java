@@ -18,19 +18,21 @@ import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.DeltaEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.LeafEntry;
+import tech.pegasys.teku.infrastructure.statediff.TreeDiff.PatchEntry;
 
 /**
  * Entry counts and approximate payload bytes of the sections of a {@link TreeDiff}, for metrics and
  * logs. Bytes count the data each entry carries, not the varint gIndexes and length prefixes around
- * it: the leaf data, 32 per supernode reference and per zeroed subtree root, 16 per copied subtree
- * (its two gIndexes) and the raw encoded deltas. The compressed size of the deltas, as stored, is
- * given separately.
+ * it: the leaf data, 32 per supernode reference and per zeroed subtree root, the written elements
+ * of the supernode patches, 16 per copied subtree (its two gIndexes) and the raw encoded deltas.
+ * The compressed size of the deltas, as stored, is given separately.
  *
  * @param compressedDeltaBytes the bytes of the delta entries after compression, as stored
  */
 record DiffSectionSizes(
     Section leaves,
     Section supernodes,
+    Section patches,
     Section zeroed,
     Section copied,
     Section deltas,
@@ -46,6 +48,10 @@ record DiffSectionSizes(
     for (final LeafEntry leaf : diff.leaves()) {
       leafBytes += leaf.data().size();
     }
+    long patchBytes = 0;
+    for (final PatchEntry patch : diff.patches()) {
+      patchBytes += patch.elements().size();
+    }
     long deltaBytes = 0;
     for (final DeltaEntry delta : diff.deltas()) {
       deltaBytes += delta.encodedDeltas().length;
@@ -54,6 +60,7 @@ record DiffSectionSizes(
         new Section("leaves", diff.leaves().size(), leafBytes),
         new Section(
             "supernodes", diff.supernodes().size(), (long) Bytes32.SIZE * diff.supernodes().size()),
+        new Section("patches", diff.patches().size(), patchBytes),
         new Section("zeroed", diff.zeroed().size(), (long) Bytes32.SIZE * diff.zeroed().size()),
         new Section(
             "copied", diff.copied().size(), (long) COPIED_ENTRY_BYTES * diff.copied().size()),
@@ -62,7 +69,7 @@ record DiffSectionSizes(
   }
 
   List<Section> sections() {
-    return List.of(leaves, supernodes, zeroed, copied, deltas);
+    return List.of(leaves, supernodes, patches, zeroed, copied, deltas);
   }
 
   record Section(String label, int entries, long bytes) {}

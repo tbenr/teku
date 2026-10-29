@@ -607,7 +607,7 @@ class KvStoreDatabaseTest {
             db, schema, new V4FinalizedStateSnapshotStorageLogic<>(1), new StubMetricsSystem());
     assertThat(dao.getStateDiffNode(genesis.getRoot())).isPresent();
     try (final HotUpdater updater = dao.hotUpdater()) {
-      updater.putStateDiffNode(genesis.getRoot(), Bytes.of(1, 2, 3));
+      updater.putStateDiffNode(genesis.getRoot(), Bytes.of(2, 2, 3));
       updater.commit();
     }
 
@@ -649,7 +649,6 @@ class KvStoreDatabaseTest {
             stored.lastEpoch(),
             stored.level(),
             stored.snapshot(),
-            stored.prevNodeRoot(),
             stored.parentNodeRoot(),
             Bytes.of(1, 0, 0, 0, 0, 0));
     try (final HotUpdater updater = fixture.dao.hotUpdater()) {
@@ -678,6 +677,40 @@ class KvStoreDatabaseTest {
             });
     assertThat(report.anchorReconstructionError())
         .hasValueSatisfying(error -> assertThat(error).contains("payload version 1"));
+    assertThat(report.hasProblems()).isTrue();
+  }
+
+  @Test
+  void stateDiffs_versionOneRecordFailsStartupAndVerifyWithResyncMessage() {
+    final StateDiffFixture fixture = new StateDiffFixture();
+    fixture.open(StateDiffDagConfig.prune()).storeInitialAnchor(fixture.genesis);
+    final Bytes32 anchorRoot = fixture.genesis.getRoot();
+    final Bytes stored = fixture.dao.getStateDiffNode(anchorRoot).orElseThrow();
+    // The record as an earlier build wrote it: version 1, with a previous node root before the
+    // parent node root (at offset 59 of the version 2 header)
+    final Bytes versionOne =
+        Bytes.concatenate(Bytes.of(1), stored.slice(1, 58), Bytes32.ZERO, stored.slice(59));
+    try (final HotUpdater updater = fixture.dao.hotUpdater()) {
+      updater.putStateDiffNode(anchorRoot, versionOne);
+      updater.commit();
+    }
+
+    final Database database = fixture.open(StateDiffDagConfig.prune());
+
+    assertThatThrownBy(database::createMemoryStore)
+        .isInstanceOfSatisfying(
+            DatabaseStorageException.class, e -> assertThat(e.isUnrecoverable()).isTrue())
+        .hasMessageContaining("State diff storage cannot reconstruct the finalized state")
+        .hasMessageContaining(TreeDiffCodec.VERSION_ONE_MESSAGE)
+        .hasCauseInstanceOf(StateDiffVerificationException.class);
+    final StateDiffVerificationReport report = database.verifyStateDiffs();
+    assertThat(report.corruptNodes())
+        .singleElement()
+        .satisfies(
+            node -> {
+              assertThat(node.root()).isEqualTo(anchorRoot);
+              assertThat(node.reason()).contains(TreeDiffCodec.VERSION_ONE_MESSAGE);
+            });
     assertThat(report.hasProblems()).isTrue();
   }
 

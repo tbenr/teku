@@ -29,7 +29,6 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
  * @param lastEpoch last epoch this node serves as a checkpoint state for
  * @param level diff level of the node, coarser levels being lower
  * @param snapshot whether {@code payload} is a diff against the schema's default tree
- * @param prevNodeRoot block root of the previous node on this chain, or zero for none
  * @param parentNodeRoot block root of the node {@code payload} is a diff against, zero for a
  *     snapshot
  * @param payload the encoded tree diff
@@ -41,7 +40,6 @@ public record StateDiffNodeRecord(
     UInt64 lastEpoch,
     int level,
     boolean snapshot,
-    Bytes32 prevNodeRoot,
     Bytes32 parentNodeRoot,
     Bytes payload) {
 
@@ -52,7 +50,6 @@ public record StateDiffNodeRecord(
       final UInt64 lastEpoch,
       final int level,
       final boolean snapshot,
-      final Bytes32 prevNodeRoot,
       final Bytes32 parentNodeRoot,
       final Bytes payload) {
     checkArgument(level >= 0 && level <= 0xFF, "Level %s does not fit in a byte", level);
@@ -66,7 +63,6 @@ public record StateDiffNodeRecord(
     this.lastEpoch = checkNotNull(lastEpoch, "lastEpoch");
     this.level = level;
     this.snapshot = snapshot;
-    this.prevNodeRoot = checkNotNull(prevNodeRoot, "prevNodeRoot");
     this.parentNodeRoot = checkNotNull(parentNodeRoot, "parentNodeRoot");
     this.payload = checkNotNull(payload, "payload");
   }
