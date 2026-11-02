@@ -65,8 +65,8 @@ import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedEx
 import tech.pegasys.teku.spec.datastructures.lightclient.LightClientUpdate;
 import tech.pegasys.teku.spec.datastructures.state.AnchorPoint;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
-import tech.pegasys.teku.spec.datastructures.type.SszKZGProof;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
+import tech.pegasys.teku.spec.datastructures.type.SszKZGProof;
 import tech.pegasys.teku.spec.datastructures.util.DataColumnSlotAndIdentifier;
 import tech.pegasys.teku.spec.generator.ChainBuilder;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
@@ -102,7 +102,14 @@ class KvStoreDatabaseTest {
     final int halfColumns = spec.getNumberOfDataColumns().orElseThrow() / 2;
     final KvStoreCombinedDao dao = mock(KvStoreCombinedDao.class);
     final FinalizedUpdater updater = mock(FinalizedUpdater.class);
-    final KvStoreDatabase database = new KvStoreDatabase(dao, StateStorageMode.PRUNE, false, spec);
+    final KvStoreDatabase database =
+        new KvStoreDatabase(
+            dao,
+            StateStorageMode.PRUNE,
+            false,
+            spec,
+            StateDiffDagConfig.disabled(),
+            new StubMetricsSystem());
     when(dao.streamDataColumnIdentifiers(slot, slot))
         .thenReturn(
             IntStream.range(0, halfColumns)
@@ -128,7 +135,14 @@ class KvStoreDatabaseTest {
     final int columns = spec.getNumberOfDataColumns().orElseThrow();
     final KvStoreCombinedDao dao = mock(KvStoreCombinedDao.class);
     final FinalizedUpdater updater = mock(FinalizedUpdater.class);
-    final KvStoreDatabase database = new KvStoreDatabase(dao, StateStorageMode.PRUNE, false, spec);
+    final KvStoreDatabase database =
+        new KvStoreDatabase(
+            dao,
+            StateStorageMode.PRUNE,
+            false,
+            spec,
+            StateDiffDagConfig.disabled(),
+            new StubMetricsSystem());
     when(dao.streamDataColumnIdentifiers(slot, slot))
         .thenReturn(
             IntStream.range(0, columns)
@@ -162,7 +176,14 @@ class KvStoreDatabaseTest {
             .toList();
     final KvStoreCombinedDao dao = mock(KvStoreCombinedDao.class);
     final FinalizedUpdater updater = mock(FinalizedUpdater.class);
-    final KvStoreDatabase database = new KvStoreDatabase(dao, StateStorageMode.PRUNE, false, spec);
+    final KvStoreDatabase database =
+        new KvStoreDatabase(
+            dao,
+            StateStorageMode.PRUNE,
+            false,
+            spec,
+            StateDiffDagConfig.disabled(),
+            new StubMetricsSystem());
     when(dao.streamDataColumnIdentifiers(slot, slot))
         .thenAnswer(__ -> sidecars.stream().map(DataColumnSlotAndIdentifier::fromDataColumn));
     when(dao.getSlotForFinalizedBlockRoot(block.getRoot())).thenReturn(Optional.of(slot));
@@ -202,7 +223,14 @@ class KvStoreDatabaseTest {
     final int columns = spec.getNumberOfDataColumns().orElseThrow();
     final KvStoreCombinedDao dao = mock(KvStoreCombinedDao.class);
     final FinalizedUpdater updater = mock(FinalizedUpdater.class);
-    final KvStoreDatabase database = new KvStoreDatabase(dao, StateStorageMode.PRUNE, false, spec);
+    final KvStoreDatabase database =
+        new KvStoreDatabase(
+            dao,
+            StateStorageMode.PRUNE,
+            false,
+            spec,
+            StateDiffDagConfig.disabled(),
+            new StubMetricsSystem());
     final List<DataColumnSlotAndIdentifier> identifiers = new ArrayList<>();
     final UInt64 corruptSlot = UInt64.valueOf(2);
     final KvStoreDeserializationException corruption =
@@ -301,7 +329,15 @@ class KvStoreDatabaseTest {
             when(dao.getSidecar(DataColumnSlotAndIdentifier.fromDataColumn(sidecar)))
                 .thenReturn(Optional.of(sidecar.sszSerialize())));
     return new ArchiveSlotFixture(
-        new KvStoreDatabase(dao, StateStorageMode.PRUNE, false, spec), updater, sidecars);
+        new KvStoreDatabase(
+            dao,
+            StateStorageMode.PRUNE,
+            false,
+            spec,
+            StateDiffDagConfig.disabled(),
+            new StubMetricsSystem()),
+        updater,
+        sidecars);
   }
 
   private record ArchiveSlotFixture(

@@ -49,8 +49,8 @@ import tech.pegasys.teku.storage.api.SidecarArchivePrunableChannel;
 import tech.pegasys.teku.storage.server.DatabaseVersion;
 import tech.pegasys.teku.storage.server.StateStorageMode;
 import tech.pegasys.teku.storage.server.StorageConfiguration;
-import tech.pegasys.teku.storage.server.pruner.DataColumnSidecarPruner;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
+import tech.pegasys.teku.storage.server.pruner.DataColumnSidecarPruner;
 import tech.pegasys.teku.storage.server.pruner.StatePruner;
 
 class StorageServiceTest {
