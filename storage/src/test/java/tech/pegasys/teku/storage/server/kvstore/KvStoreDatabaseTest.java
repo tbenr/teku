@@ -66,8 +66,8 @@ import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedEx
 import tech.pegasys.teku.spec.datastructures.lightclient.LightClientUpdate;
 import tech.pegasys.teku.spec.datastructures.state.AnchorPoint;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
-import tech.pegasys.teku.spec.datastructures.type.SszKZGProof;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
+import tech.pegasys.teku.spec.datastructures.type.SszKZGProof;
 import tech.pegasys.teku.spec.datastructures.util.DataColumnSlotAndIdentifier;
 import tech.pegasys.teku.spec.datastructures.util.SlotAndBlockRootAndBlobIndex;
 import tech.pegasys.teku.spec.generator.ChainBuilder;
@@ -109,7 +109,13 @@ class KvStoreDatabaseTest {
     final FinalizedUpdater updater = mock(FinalizedUpdater.class);
     final KvStoreDatabase database =
         new KvStoreDatabase(
-            dao, StateStorageMode.PRUNE, false, spec, new StubMetricsSystem(), false);
+            dao,
+            StateStorageMode.PRUNE,
+            false,
+            spec,
+            StateDiffDagConfig.disabled(),
+            new StubMetricsSystem(),
+            false);
     when(dao.streamDataColumnIdentifiers(slot, slot))
         .thenReturn(
             IntStream.range(0, halfColumns)
@@ -137,7 +143,13 @@ class KvStoreDatabaseTest {
     final FinalizedUpdater updater = mock(FinalizedUpdater.class);
     final KvStoreDatabase database =
         new KvStoreDatabase(
-            dao, StateStorageMode.PRUNE, false, spec, new StubMetricsSystem(), false);
+            dao,
+            StateStorageMode.PRUNE,
+            false,
+            spec,
+            StateDiffDagConfig.disabled(),
+            new StubMetricsSystem(),
+            false);
     when(dao.streamDataColumnIdentifiers(slot, slot))
         .thenReturn(
             IntStream.range(0, columns)
@@ -173,7 +185,13 @@ class KvStoreDatabaseTest {
     final FinalizedUpdater updater = mock(FinalizedUpdater.class);
     final KvStoreDatabase database =
         new KvStoreDatabase(
-            dao, StateStorageMode.PRUNE, false, spec, new StubMetricsSystem(), false);
+            dao,
+            StateStorageMode.PRUNE,
+            false,
+            spec,
+            StateDiffDagConfig.disabled(),
+            new StubMetricsSystem(),
+            false);
     when(dao.streamDataColumnIdentifiers(slot, slot))
         .thenAnswer(__ -> sidecars.stream().map(DataColumnSlotAndIdentifier::fromDataColumn));
     when(dao.getSlotForFinalizedBlockRoot(block.getRoot())).thenReturn(Optional.of(slot));
@@ -215,7 +233,13 @@ class KvStoreDatabaseTest {
     final FinalizedUpdater updater = mock(FinalizedUpdater.class);
     final KvStoreDatabase database =
         new KvStoreDatabase(
-            dao, StateStorageMode.PRUNE, false, spec, new StubMetricsSystem(), false);
+            dao,
+            StateStorageMode.PRUNE,
+            false,
+            spec,
+            StateDiffDagConfig.disabled(),
+            new StubMetricsSystem(),
+            false);
     final List<DataColumnSlotAndIdentifier> identifiers = new ArrayList<>();
     final UInt64 corruptSlot = UInt64.valueOf(2);
     final KvStoreDeserializationException corruption =
@@ -315,7 +339,13 @@ class KvStoreDatabaseTest {
                 .thenReturn(Optional.of(sidecar.sszSerialize())));
     return new ArchiveSlotFixture(
         new KvStoreDatabase(
-            dao, StateStorageMode.PRUNE, false, spec, new StubMetricsSystem(), false),
+            dao,
+            StateStorageMode.PRUNE,
+            false,
+            spec,
+            StateDiffDagConfig.disabled(),
+            new StubMetricsSystem(),
+            false),
         updater,
         sidecars);
   }
