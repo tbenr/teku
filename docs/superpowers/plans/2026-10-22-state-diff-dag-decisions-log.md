@@ -1136,3 +1136,64 @@ checkpoint nodes went through the DAG.
     pubkey index are the prerequisites for any gain. Full report:
     `.superpowers/sdd/2026-10-29-state-diff-tier3/tier3-attempt-report.md` on
     that branch.
+
+
+## AWS mainnet soak, archive and minimal boxes (2026-10-29 to 2026-11-13, builds 2454573a3e and 29aa3cff11)
+
+78. **DERIVED. Archive box filled its disk with backfilled blocks, and verify-state-diffs leaked the node records it read.**
+    Both boxes ran 2454573a3e (the rebased branch, fresh data directories per
+    entry 76) from 2026-10-29.
+    - **Archive disk full, 2026-11-06 06:40 UTC to 2026-11-13 13:31 UTC.**
+      Every database commit failed for a week, so archive soak data for that
+      span is invalid. Cause: archive mode backfills blocks to genesis
+      (`storesAllBlocks` -> `fetchAllHistoricBlocks`), not state diffs. RocksDB
+      LOG stats: `FINALIZED_BLOCKS_BY_SLOT` 769.5 GiB of 783 GiB (slots 3.5M ->
+      15.6M; LZ4 at ~0.53 of raw SSZ), `STATE_DIFF_NODES` 6.7 GiB (~1.8 MiB per
+      epoch, as entry 75 predicted), data columns 5.9 GiB, supernodes 0.3 GiB.
+      After `/data` was grown to 1.3 TiB, RocksDB stayed in its background-error
+      state until Teku was restarted; it then resumed from the head it last
+      saved on Nov 6 (slot 15,593,601). Sizing note for any archive soak: budget
+      for full block history (~0.8 TiB on mainnet today), not for the DAG.
+    - The archive box's 2026-11-02 00:05 reboot was an AWS SSM Run Command
+      (CVE-2026-98432 check, nftables mitigation, `linux-aws` kernel upgrade,
+      `systemctl reboot`), not Teku. Fleet patching can reboot the boxes again.
+    - **Offline verify, Teku stopped (2026-11-13 14:00 UTC, 2454573a3e):** clean
+      (4,096 nodes, 20,947 supernodes all hash-checked, anchor rebuilt from a
+      16-link chain in 4.2 s), but only at `-Xmx13g`; it ran out of heap at
+      `-Xmx10g`. The debug command ignores `--Xdata-storage-state-diffs`; the
+      database marker decides.
+    - **Cause and fix (29aa3cff11).** `StateDiffNodeRecordCodec.decode` built
+      `stateRoot` and `parentNodeRoot` as `Bytes32.wrap(encoded.slice(...))`,
+      views that keep the whole record array (payload included) alive.
+      `StateDiffDag.verify` keeps every node's parent root in `parentRoots`
+      until the report is built, so it held every node record read, about the
+      6.7 GiB of `STATE_DIFF_NODES`. Decode now copies the two roots
+      (`readRoot`); the payload is still read in place. The format is
+      unchanged. Test: `StateDiffNodeRecordCodecTest.decodedRootsDoNotShareTheRecordArray`.
+      Re-run on the archive at `-Xmx10g` (2026-11-13 16:24 UTC): 5,046 nodes,
+      22,999 supernodes, 0 problems, anchor rebuilt from a 9-link chain in
+      2.9 s, 79 s total, peak heap 1,088 MB, 788 MB live after GC, no full GC.
+      The running node keeps decoded roots only for the length of a chain walk,
+      so its heap is not expected to change; not measured.
+    - **Catch-up GC on the archive (2454573a3e, -Xmx10g, 15.6 GB host).** After
+      the 14:04 restart it caught up at ~225 slots/min net, with 98 full GCs
+      (218 s) in the first 1.6 h, against 7 in 11 days at head before the disk
+      filled. Syncing drives full GCs. Whether they stop at head is open (see
+      below).
+    - Historical block backfill below slot 3,510,451 did not move after the
+      restart. That is by design: `HistoricalBlockSyncService.isActive()`
+      requires the node to be in sync, so backfill waits until head.
+    - One new warning after the restart, from master code: `ProtoArray: Initial
+      canonical block root not found`, probably because the saved canonical
+      head was not among the blocks loaded at startup. Benign so far.
+    - **Minimal box (2454573a3e, at head throughout):** 3,452 nodes written and
+      3,436 deleted since 2026-10-29, 0 verification failures, 0 storage
+      errors; 210 full GCs (623.5 s) over 15 days.
+    - **Redeploy:** both boxes run 29aa3cff11 (cb2dd56e6f plus the fix) since
+      2026-11-13 16:33 UTC on their existing databases. cb2dd56e6f differs from
+      2454573a3e only in tests and one import, and master changed no schema
+      between the two bases. Both restarted cleanly: anchor rebuilt, 0
+      verification failures.
+    Open: whether the archive's full GCs settle once it reaches head, and
+    whether backfill below 3.51M makes progress once it does (peers may not
+    serve blocks that old).
