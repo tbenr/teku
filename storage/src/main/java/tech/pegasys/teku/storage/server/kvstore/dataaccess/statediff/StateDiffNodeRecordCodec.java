@@ -90,12 +90,12 @@ public final class StateDiffNodeRecordCodec {
     checkArgument(snapshot <= 1, "Invalid snapshot flag %s", snapshot);
     return new StateDiffNodeRecord(
         readUInt64(encoded, BLOCK_SLOT_OFFSET),
-        Bytes32.wrap(encoded.slice(STATE_ROOT_OFFSET, Bytes32.SIZE)),
+        readRoot(encoded, STATE_ROOT_OFFSET),
         readUInt64(encoded, FIRST_EPOCH_OFFSET),
         readUInt64(encoded, LAST_EPOCH_OFFSET),
         Byte.toUnsignedInt(encoded.get(LEVEL_OFFSET)),
         snapshot == 1,
-        Bytes32.wrap(encoded.slice(PARENT_NODE_ROOT_OFFSET, Bytes32.SIZE)),
+        readRoot(encoded, PARENT_NODE_ROOT_OFFSET),
         // Read in place by the tree diff codec, without copying it out of the record
         TreeDiffCodec.payloadView(
             encoded.toArrayUnsafe(), HEADER_SIZE, encoded.size() - HEADER_SIZE));
@@ -122,5 +122,13 @@ public final class StateDiffNodeRecordCodec {
 
   private static UInt64 readUInt64(final Bytes encoded, final int offset) {
     return UInt64.fromLongBits(encoded.getLong(offset));
+  }
+
+  /**
+   * A copy of the root at {@code offset}: a view would keep the whole record, payload included,
+   * alive for as long as the root is kept.
+   */
+  private static Bytes32 readRoot(final Bytes encoded, final int offset) {
+    return Bytes32.wrap(encoded.slice(offset, Bytes32.SIZE).toArray());
   }
 }
