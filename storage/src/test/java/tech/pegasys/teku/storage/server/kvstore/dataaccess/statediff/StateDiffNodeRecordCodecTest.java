@@ -16,6 +16,7 @@ package tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.Arrays;
 import java.util.List;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
@@ -67,6 +68,18 @@ class StateDiffNodeRecordCodecTest {
     assertThat(StateDiffNodeRecordCodec.decode(encoded)).isEqualTo(diffRecord);
     assertThat(StateDiffNodeRecordCodec.decode(StateDiffNodeRecordCodec.encode(snapshotRecord)))
         .isEqualTo(snapshotRecord);
+  }
+
+  @Test
+  void decodedRootsDoNotShareTheRecordArray() {
+    // A root kept after decoding (verify keeps every parent root) must not retain the record
+    final byte[] array = StateDiffNodeRecordCodec.encode(diffRecord).toArray();
+
+    final StateDiffNodeRecord decoded = StateDiffNodeRecordCodec.decode(Bytes.wrap(array));
+    Arrays.fill(array, (byte) 0xff);
+
+    assertThat(decoded.stateRoot()).isEqualTo(diffRecord.stateRoot());
+    assertThat(decoded.parentNodeRoot()).isEqualTo(diffRecord.parentNodeRoot());
   }
 
   @Test
