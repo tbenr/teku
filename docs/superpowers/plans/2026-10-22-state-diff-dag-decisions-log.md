@@ -1194,9 +1194,16 @@ checkpoint nodes went through the DAG.
       2454573a3e only in tests and one import, and master changed no schema
       between the two bases. Both restarted cleanly: anchor rebuilt, 0
       verification failures.
-    Open: whether the archive's full GCs settle once it reaches head, and
-    whether backfill below 3.51M makes progress once it does (peers may not
-    serve blocks that old).
+    - **Archive at head (29aa3cff11, same evening).** Catch-up from the 16:33
+      restart took until ~18:03 UTC (~15.6k slots), with 118 full GCs (256 s),
+      a rate close to 2454573a3e's. From 18:44 to 19:04 UTC at head, with
+      backfill running, there were 0 new full GCs, and old gen rose and fell
+      between 5.5 and 7 GB. Full GCs come from syncing and stop at head. The
+      20-minute window is short; the longer baseline is the 7 full GCs in 11
+      days at head before the disk filled.
+    - **Backfill resumed at head.** It reached slot 3,418,819 by 19:04 UTC at
+      ~2,000 slots/min (~28 h to genesis), with 482 GiB free. So enough peers
+      still serve blocks that old.
 
 
 ## Rebase onto master 21788914ee (2026-11-14)
