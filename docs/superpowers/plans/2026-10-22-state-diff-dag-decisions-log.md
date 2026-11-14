@@ -1348,3 +1348,62 @@ checkpoint nodes went through the DAG.
     `StateDiffDagTest.writeNodeOrSnapshotWritesSnapshotWhenPreviousNodeRecordIsUnreadable`,
     the first unit test of that fallback, and
     `periodicSnapshotIsWrittenWhenPreviousNodeRecordIsUnreadable`.
+
+
+## AWS soak: hot variable migration and redeploys (2026-11-14, builds acd8591d5c and 3eccf1f8d5)
+
+82. **DERIVED. Soak boxes migrated to hot variable 15, then moved to acd8591d5c and 3eccf1f8d5; the soak check now requests states.**
+    - **Fleet reboot.** AWS patching rebooted both boxes at 10:06 UTC
+      (`linux-aws` 7.0.0-1014 -> 1017), as on Nov 2 (entry 78). Teku came back
+      up by itself on 29aa3cff11.
+    - **Entry 79 migration.** A one-off tool, kept outside the repository
+      (`~/soak-migrate/` in the sandbox VM; on the boxes
+      `/opt/teku/migrate-statediff-mode.jar`), opens the hot RocksDB with
+      Teku's rocksdbjni, with auto-compaction off. In one synced write batch it
+      puts variable 15 = `02` and deletes variable 13, then reads both back.
+      It refuses to write when variable 13 holds 32 bytes (a fast confirmed
+      root), when variable 15 is already set, or when neither variable holds the
+      marker. It defaults to a dry run, and a second run does nothing.
+      `--revert` moves the marker back to 13. It was tested on synthetic
+      RocksDB fixtures, then run with Teku stopped: minimal at 14:43 UTC,
+      archive at 14:50 UTC. Variable 14 is epoch 483,376 (`0x76030`) on the
+      archive and absent on minimal. Verify with acd8591d5c at `-Xmx10g`:
+      minimal 12 nodes and 9,403 supernodes; archive 5,801 nodes and 26,129
+      supernodes in 91 s; 0 problems on both. Teku was down ~20 s on minimal
+      and ~2 min on the archive. Rolling back to a build from before the
+      rebase now needs `--revert` first.
+    - **acd8591d5c at head.** Each box rebuilt its anchor and wrote its first
+      node with 0 verification failures. Writes took <= 250 ms, except 2-3 right
+      after the restart that missed the cold base cache (~2.8 s rebuild per
+      miss). Archive full GCs: 11 in the first 48 min after the restart
+      (timing unknown, no GC log), 2 within ~2 min of historical state
+      requests, then 0 in 25 min at head without requests (15:52-16:17 UTC);
+      old gen stayed between 4.8 and 6.3 GB of 10 GB. Minimal had none.
+    - **State requests in the soak check.** `soak-check.sh` now calls
+      `/eth/v1/beacon/states/{slot}/root`, so the node rebuilds the state but
+      returns only 32 bytes, and compares the root with the block header's
+      `state_root`. The archive gets a random historical slot since its anchor
+      (slot 15,468,032). Minimal gets a random slot in the first unfinalized
+      epoch, because head minus a few slots is served from memory (4 ms) and
+      proves nothing. On acd8591d5c: archive 7.8-11.6 s, minimal 0.3-2.0 s,
+      every root matched. Each historical request is expected to cost the
+      archive about one full GC. Two additions on 2026-11-15:
+      - The archive also gets an unfinalized request.
+      - Each root is also compared with the header `state_root` that a public
+        mainnet beacon node (PublicNode) serves for the same slot. The request
+        goes out from the sandbox VM, so only the slot number leaves it.
+
+      The first run matched on all three requests, locally and against
+      PublicNode.
+    - **Backfill toward genesis.** ~2,000 slots/min near slot 3.4M on Nov 13,
+      ~750 slots/min near 2.4M on Nov 14, at 2,160,171 by 21:43 UTC. The
+      change in rate was not investigated.
+    - **Redeploy of 3eccf1f8d5 (entries 80-81, no format change).** Each box's
+      deploy was gated on a verify: with Teku stopped, the new build verified
+      the database at `-Xmx10g` before `current` was switched, and a failed
+      verify would have gone back to the previous build. Minimal at 21:31 UTC
+      (9 nodes, 9,406 supernodes) and archive at 21:37 UTC (5,865 nodes,
+      27,145 supernodes, 91 s) were both clean. After the restart, both wrote
+      nodes on the new write path with 0 verification failures, and both state
+      requests matched: archive historical in 15.9 s right after the restart,
+      minimal unfinalized in 2.8-3.9 s.
