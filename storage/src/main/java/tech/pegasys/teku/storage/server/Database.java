@@ -47,7 +47,6 @@ import tech.pegasys.teku.storage.api.UpdateResult;
 import tech.pegasys.teku.storage.api.WeakSubjectivityState;
 import tech.pegasys.teku.storage.api.WeakSubjectivityUpdate;
 import tech.pegasys.teku.storage.archive.BlobSidecarsArchiver;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationReport;
 
 public interface Database extends AutoCloseable {
 
@@ -125,8 +124,9 @@ public interface Database extends AutoCloseable {
   boolean isStateDiffStorageActive();
 
   /**
-   * Checks the state diff storage: recounts supernode references, checks parent pointers and
-   * reconstructs the finalized anchor state. Reads every node, so it is meant for offline use.
+   * Checks the state diff storage: recounts supernode references, checks that the content of every
+   * referenced supernode hashes to its key, checks parent pointers and reconstructs the finalized
+   * anchor state. Reads every node and supernode, so it is meant for offline use.
    *
    * @throws IllegalStateException when state diff storage is not active
    */
@@ -221,13 +221,6 @@ public interface Database extends AutoCloseable {
   void pruneHotStateRoots(final List<Bytes32> stateRoots);
 
   Optional<BeaconState> getLatestAvailableFinalizedState(UInt64 maxSlot);
-
-  /**
-   * The slot from which {@link #getLatestAvailableFinalizedState} serves finalized states: the
-   * earliest stored finalized state's, or with state diff storage the start of its retention window
-   * or finalized history. Empty when no finalized state is stored.
-   */
-  Optional<UInt64> getEarliestAvailableFinalizedStateSlot();
 
   @MustBeClosed
   Stream<Map.Entry<Bytes32, UInt64>> getFinalizedStateRoots();

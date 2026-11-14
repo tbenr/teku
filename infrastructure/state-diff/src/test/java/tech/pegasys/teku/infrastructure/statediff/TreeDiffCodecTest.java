@@ -37,13 +37,11 @@ class TreeDiffCodecTest {
 
   @Test
   void roundTripsEmptyDiff() {
-    final Bytes serialized = TreeDiffCodec.serialize(TreeDiff.empty());
+    final Bytes serialized = TestTreeDiffs.serialize(TestTreeDiffs.EMPTY);
 
     assertThat(serialized.size()).isEqualTo(7);
     final TreeDiff deserialized = TreeDiffCodec.deserialize(serialized);
-    assertThat(deserialized).isEqualTo(TreeDiff.empty());
-    assertThat(deserialized.isEmpty()).isTrue();
-    assertThat(deserialized.entryCount()).isZero();
+    assertThat(deserialized).isEqualTo(TestTreeDiffs.EMPTY);
   }
 
   @Test
@@ -58,11 +56,10 @@ class TreeDiffCodecTest {
             List.of(new CopiedEntry(13, 5)),
             List.of(new DeltaEntry(12, new byte[] {1, 2, 3})));
 
-    final TreeDiff deserialized = TreeDiffCodec.deserialize(TreeDiffCodec.serialize(diff));
+    final TreeDiff deserialized = TreeDiffCodec.deserialize(TestTreeDiffs.serialize(diff));
 
     assertThat(deserialized).isEqualTo(diff);
-    assertThat(deserialized.isEmpty()).isFalse();
-    assertThat(deserialized.entryCount()).isEqualTo(6);
+    assertThat(TestTreeDiffs.entryCount(deserialized)).isEqualTo(6);
     assertThat(deserialized.leaves().getFirst().data()).isEqualTo(leafData);
     assertThat(deserialized.deltas().getFirst().encodedDeltas()).containsExactly(1, 2, 3);
   }
@@ -84,7 +81,7 @@ class TreeDiffCodecTest {
             List.of(new ZeroedEntry(13, HASH_B), new ZeroedEntry(15, HASH_A)),
             List.of(new CopiedEntry(13, 5)),
             List.of(new DeltaEntry(12, sequentialBytes(70)), new DeltaEntry(14, new byte[0])));
-    final Bytes serialized = TreeDiffCodec.serialize(diff);
+    final Bytes serialized = TestTreeDiffs.serialize(diff);
 
     assertThat(TreeDiffCodec.supernodeHashes(serialized))
         .isEqualTo(
@@ -94,7 +91,8 @@ class TreeDiffCodecTest {
         .containsExactly(hashC, HASH_A, HASH_B, HASH_B);
     assertThat(TreeDiffCodec.supernodeEntries(serialized))
         .isEqualTo(TreeDiffCodec.deserialize(serialized).supernodes());
-    assertThat(TreeDiffCodec.supernodeHashes(TreeDiffCodec.serialize(TreeDiff.empty()))).isEmpty();
+    assertThat(TreeDiffCodec.supernodeHashes(TestTreeDiffs.serialize(TestTreeDiffs.EMPTY)))
+        .isEmpty();
     // Rejects what a full decode rejects, in any section
     for (int length = 0; length < serialized.size(); length++) {
       final Bytes truncated = serialized.slice(0, length);
@@ -119,7 +117,7 @@ class TreeDiffCodecTest {
             // Another field with another element size
             patch(7, 50, 3, 8, 32, IntList.of(7)));
 
-    final TreeDiff deserialized = TreeDiffCodec.deserialize(TreeDiffCodec.serialize(diff));
+    final TreeDiff deserialized = TreeDiffCodec.deserialize(TestTreeDiffs.serialize(diff));
 
     // Sorted by field index, then gIndex
     assertThat(deserialized.patches())
@@ -128,14 +126,14 @@ class TreeDiffCodecTest {
             diff.patches().get(2),
             diff.patches().get(1),
             diff.patches().get(3));
-    assertThat(deserialized.entryCount()).isEqualTo(4);
-    assertThat(TreeDiffCodec.supernodeEntries(TreeDiffCodec.serialize(diff))).isEmpty();
+    assertThat(TestTreeDiffs.entryCount(deserialized)).isEqualTo(4);
+    assertThat(TreeDiffCodec.supernodeEntries(TestTreeDiffs.serialize(diff))).isEmpty();
   }
 
   @Test
   void rejectsPatchWritingAnElementBeyondItsCount() {
     final Bytes serialized =
-        TreeDiffCodec.serialize(TestTreeDiffs.onlyPatches(patch(2, 8, 2, 3, 4, IntList.of(2))));
+        TestTreeDiffs.serialize(TestTreeDiffs.onlyPatches(patch(2, 8, 2, 3, 4, IntList.of(2))));
     // version, leaf count, supernode groups, patch groups, field index, entry count, gIndex delta,
     // depth, element size, element count 3
     final int elementCountOffset = 9;
@@ -177,7 +175,7 @@ class TreeDiffCodecTest {
             List.of(),
             List.of());
 
-    final TreeDiff deserialized = TreeDiffCodec.deserialize(TreeDiffCodec.serialize(diff));
+    final TreeDiff deserialized = TreeDiffCodec.deserialize(TestTreeDiffs.serialize(diff));
 
     assertThat(deserialized.leaves())
         .containsExactly(
@@ -190,7 +188,7 @@ class TreeDiffCodecTest {
   void rejectsUnknownVersion() {
     // Version 1 too: a database holding it is rejected when it is opened
     for (final int version : List.of(1, 3)) {
-      final MutableBytes serialized = TreeDiffCodec.serialize(TreeDiff.empty()).mutableCopy();
+      final MutableBytes serialized = TestTreeDiffs.serialize(TestTreeDiffs.EMPTY).mutableCopy();
       serialized.set(0, (byte) version);
 
       assertThatThrownBy(() -> TreeDiffCodec.deserialize(serialized))
@@ -204,13 +202,13 @@ class TreeDiffCodecTest {
 
   @Test
   void writesVersionTwo() {
-    assertThat(TreeDiffCodec.serialize(sampleDiff()).get(0)).isEqualTo((byte) 2);
+    assertThat(TestTreeDiffs.serialize(sampleDiff()).get(0)).isEqualTo((byte) 2);
   }
 
   @Test
   void rejectsTruncatedInputAtEveryOffset() {
     final Bytes serialized =
-        TreeDiffCodec.serialize(
+        TestTreeDiffs.serialize(
             new TreeDiff(
                 List.of(new LeafEntry(5, Bytes.of(1, 2, 3))),
                 List.of(new SupernodeEntry(3, 7, 2, HASH_A)),
@@ -258,13 +256,13 @@ class TreeDiffCodecTest {
       assertThat(sections.copied()).isEqualTo(3);
     }
     final TreeDiffCodec.SectionBytes empty =
-        TreeDiffCodec.encode(TreeDiff.empty(), 0).sectionBytes();
+        TreeDiffCodec.encode(TestTreeDiffs.EMPTY, 0).sectionBytes();
     assertThat(empty).isEqualTo(new TreeDiffCodec.SectionBytes(1, 1, 1, 1, 1, 1));
   }
 
   @Test
   void readsPayloadViewInPlace() {
-    final Bytes serialized = TreeDiffCodec.serialize(sampleDiff());
+    final Bytes serialized = TestTreeDiffs.serialize(sampleDiff());
     final byte[] record = Bytes.concatenate(Bytes.of(7, 7, 7), serialized, Bytes.of(9)).toArray();
 
     final Bytes view = TreeDiffCodec.payloadView(record, 3, serialized.size());
@@ -290,7 +288,7 @@ class TreeDiffCodecTest {
             List.of(),
             List.of(),
             List.of());
-    final Bytes serialized = TreeDiffCodec.serialize(diff);
+    final Bytes serialized = TestTreeDiffs.serialize(diff);
 
     assertThat(TreeDiffCodec.deserialize(serialized)).isEqualTo(diff);
     // version, leaf count, gIndex delta 5, length 1, data, gIndex delta 4, length 0
@@ -327,7 +325,7 @@ class TreeDiffCodecTest {
     for (final byte[] block : blocks) {
       final TreeDiff diff = TestTreeDiffs.onlyDeltas(new DeltaEntry(4, block));
 
-      final TreeDiff deserialized = TreeDiffCodec.deserialize(TreeDiffCodec.serialize(diff));
+      final TreeDiff deserialized = TreeDiffCodec.deserialize(TestTreeDiffs.serialize(diff));
 
       assertThat(deserialized).describedAs("block of %s bytes", block.length).isEqualTo(diff);
     }
@@ -342,14 +340,14 @@ class TreeDiffCodecTest {
 
     assertThat(zeros.length).isGreaterThan(2_000_000);
     assertThat(encoded.sectionBytes().deltas()).isLessThan(1_024);
-    assertThat(encoded.payload()).isEqualTo(TreeDiffCodec.serialize(diff));
+    assertThat(encoded.payload()).isEqualTo(TestTreeDiffs.serialize(diff));
     assertThat(encoded.payload().size()).isLessThan(1_100);
   }
 
   @Test
   void rejectsDeltaBlockWhoseRawLengthDoesNotMatch() {
     final TreeDiff diff = TestTreeDiffs.onlyDeltas(new DeltaEntry(4, sequentialBytes(100)));
-    final Bytes serialized = TreeDiffCodec.serialize(diff);
+    final Bytes serialized = TestTreeDiffs.serialize(diff);
     // version, leaf count, supernode groups, patch groups, zeroed count, copied count, delta count,
     // field index, then the raw length 100, a one-byte varint
     final int rawLengthOffset = 8;
@@ -368,7 +366,7 @@ class TreeDiffCodecTest {
   @Test
   void rejectsCorruptCompressedDeltaBlock() {
     final TreeDiff diff = TestTreeDiffs.onlyDeltas(new DeltaEntry(4, sequentialBytes(1_000)));
-    final Bytes serialized = TreeDiffCodec.serialize(diff);
+    final Bytes serialized = TestTreeDiffs.serialize(diff);
     final MutableBytes corrupted = serialized.mutableCopy();
     // The last bytes of the compressed block, past its frame header
     for (int i = serialized.size() - 8; i < serialized.size(); i++) {
@@ -381,7 +379,7 @@ class TreeDiffCodecTest {
 
   @Test
   void rejectsTrailingBytes() {
-    final Bytes serialized = Bytes.concatenate(TreeDiffCodec.serialize(sampleDiff()), Bytes.of(0));
+    final Bytes serialized = Bytes.concatenate(TestTreeDiffs.serialize(sampleDiff()), Bytes.of(0));
 
     assertThatThrownBy(() -> TreeDiffCodec.deserialize(serialized))
         .isInstanceOf(IllegalArgumentException.class);
@@ -403,7 +401,7 @@ class TreeDiffCodecTest {
             List.of(new CopiedEntry(largest, large)),
             List.of());
 
-    assertThat(TreeDiffCodec.deserialize(TreeDiffCodec.serialize(diff))).isEqualTo(diff);
+    assertThat(TreeDiffCodec.deserialize(TestTreeDiffs.serialize(diff))).isEqualTo(diff);
   }
 
   private static TreeDiff sampleDiff() {

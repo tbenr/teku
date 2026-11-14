@@ -1243,3 +1243,108 @@ checkpoint nodes went through the DAG.
     a fresh data directory. The format marker is not bumped: the payload and
     record bytes are unchanged, only the marker's ID. Databases without state
     diffs never wrote variable 13 on the branch and are unaffected.
+
+
+## Neutral simplify wave 2 (2026-11-14)
+
+80. **DERIVED. Behaviour-neutral simplifications (wave "neutral 2": N1-N5, N8, N9, N11-N14 applied; N6 and N10 skipped).**
+    No on-disk format, metric, log line or CLI output changes, except where
+    noted.
+    - **N1, members only tests called.** `TreeDiffApplier.apply` went with the
+      `includeDeltas` branch; a single diff is a chain of one
+      (`startChain`, `apply`, `finish`), and the per-link reference of entry 40
+      is now a chain of one link per step (tests share one helper per module,
+      `TestTreeDiffs.apply` in the `infrastructure/state-diff` and in the
+      storage state diff test sources).
+      `UInt64DeltaCodec` keeps only `applyInPlace`; `applyDeltaValues` and
+      `readDeltaValues` are private. `SupernodeSource` is `loadAll` only.
+      `DiffLevels.period` / `levelOf`, `TreeDiff.empty` / `isEmpty` /
+      `entryCount`, `TreeDiffCodec.serialize`,
+      `StateDiffNodeRecordCodec.encode(record)` and
+      `StateDiffDag.reconstruct(NodeReader, Bytes32)` went (test helpers:
+      `TestTreeDiffs` in both modules, `TestNodeRecords`).
+      `StateDiffDag.reconstructionChain` stays, package-private and
+      `@VisibleForTesting`: the tests assert chains of roots, which no
+      remaining entry point returns.
+    - **N2, amends 51 and 53.** `Database.getEarliestAvailableFinalizedStateSlot`
+      and its four implementations went: no production caller. The archive
+      tests read the window start from the DAO; the fact of entry 53 (served
+      from the start slot of the window start epoch) is unchanged.
+    - **N3, amends 45.** `StateDiffDagConfig(enabled, retainedSlots)`: no
+      levels. `StateDiffDag` takes its `DiffLevels`; production passes
+      `StateDiffDag.DEFAULT_LEVELS` (256/64/16/1, the prune levels, used by
+      archive databases too); `retainedSlots` reaches
+      `StateDiffHotStateStorage` directly. The effective-config rebuild in
+      `KvStoreDatabase` is gone. One factory, `disabled()`; tests build an enabled record directly.
+    - **N4.** Master's four-argument `KvStoreDatabase` constructor is back
+      (state diffs disabled, no-op metrics; a marked database still opens in
+      state diff mode); `createV4` and the nine upstream `KvStoreDatabaseTest`
+      sites use it again.
+    - **N5.** `StateDiffDagTransaction` keeps one node map (read-through on a
+      miss, overwritten by a write or delete): `commit()` writes no node
+      records (they go to the updater when put or deleted), so nothing there
+      had to tell a read from a write. The written state trees come from
+      `writtenNodes`; `WrittenNode` lost its root.
+    - **N8.** `reconstructNode` is folded into `reconstructChain`, which counts
+      every failure as before; three rungs remain.
+    - **N9, amends 46.** `HotStateStorage.activateIfRequested(Supplier<HotUpdater>)`
+      replaces `getPendingActivation` and `Activation`: the legacy storage
+      opens the hot transaction from the database's own updater supplier,
+      writes, commits and logs the same INFO line from the same logger after
+      the commit; nothing is opened when no switch is due (a LevelDB
+      transaction counts in a metric). `addFinalizedState(updater, root, state)`
+      replaces `holdsFinalizedStates()` and the booleans threaded through
+      `KvStoreDatabase`.
+    - **N11, amends 48.** Report order uses `Bytes32`'s natural order (tuweni
+      2.8.0 `Bytes.compareTo`: bit length, then unsigned bytes from the
+      first; for equal lengths the order of the lower-case hex strings). The
+      once-a-minute reconstruction ERROR uses `Throttler` in milliseconds with
+      the same text and count. One helper writes the chain suffix of the four
+      reconstruction messages. The DAO's batch supernode and refcount defaults
+      return `Map.of()`.
+    - **N12, amends 73.** The dedicated message for marker `01` is gone; any
+      marker other than `02` fails as an unknown format.
+    - **N13.** `StateDiffDagConfig` and `StateDiffVerificationReport` moved to
+      `tech.pegasys.teku.storage.server`.
+    - **N14.** Citations in `StateDiffHotStateStorage` use the log numbering
+      (13, 43, 54, 62); `Database.verifyStateDiffs` names the supernode
+      content-hash check (47), `StateDiffVerificationException` the missing
+      supernode (48). `Store`'s `latestEpochBoundary` is master's line and
+      kept its name.
+    - Skipped, **N6** (`writeNode` without its `forceSnapshot` flag, `findPrev`
+      only when a parent is wanted): the split added about 30 lines, and
+      resolving the previous node lazily changes a corruption path. Latent at
+      this tip and kept as is: `writeNodeOrSnapshot`'s snapshot fallback calls
+      `findPrev` again, so when the nearest ancestor record is undecodable it
+      re-throws instead of writing the snapshot.
+    - Skipped, **N10** (`Store.getBlockStateIfAvailable` back to master's
+      body): the Store's own regeneration base walk
+      (`getClosestAvailableBlockRootAndState`) calls it, and in state diff mode
+      finds checkpoint block states that sit only in the epoch states cache (the
+      block state cache holds 8 entries); master's body would load the persisted
+      base from the DAG instead, a behaviour and performance change no soak
+      covered. The wave's test
+      `StoreTransactionUpdatesFactoryTest.diffMode_finalizedStatesIncludeEpochStatesWhenBlockStateEvicted`
+      stays: it pins that an archive update collects finalized states from the
+      epoch states cache in state diff mode.
+
+81. **DERIVED. A snapshot write reads no earlier node (fixes the fallback of entry 80, N6).**
+    `StateDiffDagTransaction.writeNode` looked up the previous node
+    (`findPrev`) before deciding whether the node is a snapshot, so an
+    undecodable record of the nearest ancestor checkpoint block failed writes
+    that need no parent: a periodic snapshot threw, and
+    `writeNodeOrSnapshot`'s forced-snapshot fallback threw a second time,
+    failing the storage update it exists to save. The previous node is now
+    looked up only when a parent is wanted (not forced, not periodic); the
+    `forceSnapshot` flag and the single write path stay, so this is the
+    three-line form of N6 without its restructuring. Behaviour change, in a
+    corruption path only: with an unreadable previous record a periodic node
+    is written as a `periodic` snapshot without an ERROR, and any other node
+    logs the fallback's ERROR and is written as a `forced` snapshot. Healthy
+    databases see the same reasons, the same `no_parent` WARN and the same
+    counters; the `base` write phase of forced and periodic snapshots no
+    longer includes the previous record's read. Tests (both failed before the
+    change with "Corrupt state diff node record"):
+    `StateDiffDagTest.writeNodeOrSnapshotWritesSnapshotWhenPreviousNodeRecordIsUnreadable`,
+    the first unit test of that fallback, and
+    `periodicSnapshotIsWrittenWhenPreviousNodeRecordIsUnreadable`.

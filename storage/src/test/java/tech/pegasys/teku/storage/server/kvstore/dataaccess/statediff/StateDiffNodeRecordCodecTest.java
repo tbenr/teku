@@ -58,7 +58,7 @@ class StateDiffNodeRecordCodecTest {
 
   @Test
   void roundTripsRecord() {
-    final Bytes encoded = StateDiffNodeRecordCodec.encode(diffRecord);
+    final Bytes encoded = TestNodeRecords.encode(diffRecord);
 
     assertThat(encoded.size()).isEqualTo(HEADER_SIZE + diffRecord.payload().size());
     assertThat(encoded.get(0)).isEqualTo((byte) 2);
@@ -66,14 +66,14 @@ class StateDiffNodeRecordCodecTest {
     assertThat(encoded.slice(PARENT_NODE_ROOT_OFFSET, 32)).isEqualTo(diffRecord.parentNodeRoot());
     assertThat(encoded.slice(HEADER_SIZE)).isEqualTo(diffRecord.payload());
     assertThat(StateDiffNodeRecordCodec.decode(encoded)).isEqualTo(diffRecord);
-    assertThat(StateDiffNodeRecordCodec.decode(StateDiffNodeRecordCodec.encode(snapshotRecord)))
+    assertThat(StateDiffNodeRecordCodec.decode(TestNodeRecords.encode(snapshotRecord)))
         .isEqualTo(snapshotRecord);
   }
 
   @Test
   void decodedRootsDoNotShareTheRecordArray() {
     // A root kept after decoding (verify keeps every parent root) must not retain the record
-    final byte[] array = StateDiffNodeRecordCodec.encode(diffRecord).toArray();
+    final byte[] array = TestNodeRecords.encode(diffRecord).toArray();
 
     final StateDiffNodeRecord decoded = StateDiffNodeRecordCodec.decode(Bytes.wrap(array));
     Arrays.fill(array, (byte) 0xff);
@@ -106,7 +106,7 @@ class StateDiffNodeRecordCodecTest {
 
     final Bytes encoded = StateDiffNodeRecordCodec.encode(record, payload);
 
-    assertThat(encoded).isEqualTo(StateDiffNodeRecordCodec.encode(record));
+    assertThat(StateDiffNodeRecordCodec.decode(encoded)).isEqualTo(record);
     assertThat(encoded.toArrayUnsafe()).isSameAs(payload.bytes().toArrayUnsafe());
     assertThat(TreeDiffCodec.deserialize(StateDiffNodeRecordCodec.decode(encoded).payload()))
         .isEqualTo(diff);
@@ -116,7 +116,7 @@ class StateDiffNodeRecordCodecTest {
 
   @Test
   void patchLastEpochOnlyChangesThatField() {
-    final Bytes encoded = StateDiffNodeRecordCodec.encode(diffRecord);
+    final Bytes encoded = TestNodeRecords.encode(diffRecord);
     final UInt64 newLastEpoch = UInt64.valueOf(40_000);
 
     final Bytes patched = StateDiffNodeRecordCodec.patchLastEpoch(encoded, newLastEpoch);
@@ -143,7 +143,7 @@ class StateDiffNodeRecordCodecTest {
 
   @Test
   void rejectsUnknownVersionAndTruncatedRecord() {
-    final Bytes encoded = StateDiffNodeRecordCodec.encode(diffRecord);
+    final Bytes encoded = TestNodeRecords.encode(diffRecord);
     final Bytes truncated = encoded.slice(0, HEADER_SIZE - 1);
 
     // Version 1 too: a database holding it is rejected when it is opened

@@ -48,14 +48,14 @@ class DiffLevelsTest {
   }
 
   @Test
-  void levelOfAlignedEpochs() {
+  void levelOfASingleEpoch() {
     assertThat(levels.levelCount()).isEqualTo(4);
-    assertThat(levels.levelOf(UInt64.valueOf(0))).isEqualTo(0);
-    assertThat(levels.levelOf(UInt64.valueOf(256))).isEqualTo(0);
-    assertThat(levels.levelOf(UInt64.valueOf(64))).isEqualTo(1);
-    assertThat(levels.levelOf(UInt64.valueOf(320))).isEqualTo(1);
-    assertThat(levels.levelOf(UInt64.valueOf(16))).isEqualTo(2);
-    assertThat(levels.levelOf(UInt64.valueOf(17))).isEqualTo(3);
+    assertThat(levels.maxLevelInRange(UInt64.valueOf(0), UInt64.valueOf(0))).isEqualTo(0);
+    assertThat(levels.maxLevelInRange(UInt64.valueOf(256), UInt64.valueOf(256))).isEqualTo(0);
+    assertThat(levels.maxLevelInRange(UInt64.valueOf(64), UInt64.valueOf(64))).isEqualTo(1);
+    assertThat(levels.maxLevelInRange(UInt64.valueOf(320), UInt64.valueOf(320))).isEqualTo(1);
+    assertThat(levels.maxLevelInRange(UInt64.valueOf(16), UInt64.valueOf(16))).isEqualTo(2);
+    assertThat(levels.maxLevelInRange(UInt64.valueOf(17), UInt64.valueOf(17))).isEqualTo(3);
     assertThat(levels.isCoarsest(0)).isTrue();
     assertThat(levels.isCoarsest(1)).isFalse();
   }

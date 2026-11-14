@@ -411,9 +411,11 @@ Implemented (phase 2, first slice, decision 51): the first served epoch is a
 hot variable, `STATE_DIFF_WINDOW_START` (14), written with the anchor snapshot
 when an archive database switches to state diff storage or is created with it
 (the anchor's epoch), and moved by the retention window.
-`Database.getEarliestAvailableFinalizedStateSlot` reports the start slot of
-that epoch (the spec draft said "the slot of the earliest snapshot node"; the
-window start is what reads honour). An archive database without the variable
+The earliest finalized state served is the one of the start slot of that
+epoch (the spec draft said "the slot of the earliest snapshot node"; the
+window start is what reads honour). `Database.getEarliestAvailableFinalizedStateSlot`,
+which reported it, had no production caller and was removed (decision 80);
+tests read the window start from the DAO. An archive database without the variable
 (switched from prune mode, or to state diff storage before this slice) records
 the previous anchor's epoch at its next finalization: before it only the
 anchor chain was kept. Finalized states are no longer written to the legacy
@@ -437,8 +439,9 @@ flag (decision 62); a database in state diff mode by its marker alone is not
 known at configuration time.
 
 Pre-migration history on an existing archive node is not served from the
-legacy snapshot or tree columns (D19); `getEarliestAvailableFinalizedStateSlot`
-reports the earliest snapshot node.
+legacy snapshot or tree columns (D19); the earliest finalized state served is
+the earliest snapshot node's (as implemented, the window start, decisions 53 and
+80).
 
 Reconstruction chain bound with the archive levels: one snapshot plus at most
 7 + 3 + 7 + 3 + 3 + 15 = 38 diffs, independent of how old the target epoch is.
@@ -459,8 +462,8 @@ window unless it is on the new backbone, plus the old backbone minus the new
 one. `--Xdata-storage-archive-finalized-states-retained` (slots) already
 expresses this retention and is reused: `W = retained / slots_per_epoch`
 epochs, the window start being `anchor_epoch - W`; 0 (the default) keeps the
-archive unbounded. `getEarliestAvailableFinalizedStateSlot` reports the
-window start and the snapshot-mode state pruner is not used. History begins
+archive unbounded. Finalized states are served from the window start and the
+snapshot-mode state pruner is not used. History begins
 at the switch or at the checkpoint-sync anchor; no genesis backfill is needed.
 
 As implemented (decision 51): the oldest retained node `O` is the node of the
@@ -658,11 +661,11 @@ fixed 91-byte header so `last epoch` is rewritten in place. Version 1 had a
 32-byte `prev node root` before the parent root (decision 72).
 
 The `STATE_DIFF_MODE` marker is the format gate (decision 73): this build
-writes `02` and opens only a database marked `02`. A database marked `01`,
-written by an earlier experimental build with version 1 records and payloads,
-fails to open with an unrecoverable error asking to re-sync into a fresh data
-directory, and so does `verify-state-diffs`; any other marker fails as an
-unknown format. The codecs carry no version 1 branches.
+writes `02` and opens only a database marked `02`. Any other marker, `01`
+included (written by earlier experimental builds with version 1 records and
+payloads), fails to open with an unrecoverable unknown-format error, and so
+does `verify-state-diffs` (decision 80 dropped the dedicated `01` message). The
+codecs carry no version 1 branches.
 
 Both backends get the columns through `V6SchemaCombined`, so every V6 variant
 (snapshot, tree, and both RocksDB and LevelDB) carries them; they stay empty
@@ -923,7 +926,7 @@ written.
 
 **Phase 2: archive node.**
 Configurable archive levels, `getLatestAvailableFinalizedState` and
-`getEarliestAvailableFinalizedStateSlot` over the DAG, `StateCacheLoader`
+`getEarliestAvailableFinalizedStateSlot` (since removed, decision 80) over the DAG, `StateCacheLoader`
 integration, `--reconstruct-historic-states` integration, retention. Done when
 an archive node serves `/eth/v1/beacon/states/{id}` for arbitrary historical
 epochs with measured latency and disk growth recorded.

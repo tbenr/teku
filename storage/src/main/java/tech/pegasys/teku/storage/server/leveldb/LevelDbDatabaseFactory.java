@@ -20,11 +20,11 @@ import static tech.pegasys.teku.infrastructure.metrics.TekuMetricCategory.STORAG
 import org.hyperledger.besu.plugin.services.MetricsSystem;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.storage.server.Database;
+import tech.pegasys.teku.storage.server.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.StateStorageMode;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreAccessor;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreConfiguration;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreDatabase;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.kvstore.schema.SchemaFinalizedSnapshotStateAdapter;
 import tech.pegasys.teku.storage.server.kvstore.schema.SchemaHotAdapter;
 import tech.pegasys.teku.storage.server.kvstore.schema.V6SchemaCombinedSnapshot;

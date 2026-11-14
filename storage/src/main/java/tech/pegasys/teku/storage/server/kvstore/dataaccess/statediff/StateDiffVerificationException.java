@@ -15,8 +15,8 @@ package tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff;
 
 /**
  * Thrown when the state diff DAG is inconsistent: a reconstructed state does not match its recorded
- * state root, a node's reconstruction chain is broken, or a node record or payload cannot be
- * decoded.
+ * state root, a node's reconstruction chain is broken, a supernode a node references is missing, or
+ * a node record or payload cannot be decoded.
  */
 public class StateDiffVerificationException extends RuntimeException {
 

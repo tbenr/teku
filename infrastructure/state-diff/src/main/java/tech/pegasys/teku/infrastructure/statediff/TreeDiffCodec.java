@@ -117,10 +117,6 @@ public final class TreeDiffCodec {
     return VarInts.unsignedLength(gap) + elementSize;
   }
 
-  public static Bytes serialize(final TreeDiff diff) {
-    return encode(diff, 0).payload();
-  }
-
   /**
    * Encodes {@code diff} into one buffer sized for the worst case, after {@code prefixLength}
    * reserved bytes, compressing each delta entry straight into it, and copies the result once to

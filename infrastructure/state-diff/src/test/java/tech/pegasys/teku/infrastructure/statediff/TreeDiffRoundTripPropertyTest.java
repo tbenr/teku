@@ -20,7 +20,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Random;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
@@ -37,7 +36,7 @@ class TreeDiffRoundTripPropertyTest {
 
   private final Map<Bytes32, Bytes> supernodeStore = new HashMap<>();
   private final TreeDiffer differ = new TreeDiffer(SCHEMA, SyntheticState.DELTA_FIELDS);
-  private final SupernodeSource source = hash -> Optional.ofNullable(supernodeStore.get(hash));
+  private final SupernodeSource source = TestTreeDiffs.source(supernodeStore);
   private final TreeDiffApplier applier = new TreeDiffApplier(SCHEMA);
 
   @Test
@@ -53,25 +52,25 @@ class TreeDiffRoundTripPropertyTest {
       for (int step = 0; step < CHAIN_LENGTH; step++) {
         final TreeNode target = mutate(random, base);
         final TreeDiff diff = differ.diff(base, target, supernodeStore::put);
-        final Bytes encoded = TreeDiffCodec.serialize(diff);
+        final Bytes encoded = TestTreeDiffs.serialize(diff);
         final TreeDiff decoded = TreeDiffCodec.deserialize(encoded);
-        assertThat(decoded.entryCount()).isEqualTo(diff.entryCount());
-        assertThat(TreeDiffCodec.serialize(decoded)).isEqualTo(encoded);
+        assertThat(TestTreeDiffs.entryCount(decoded)).isEqualTo(TestTreeDiffs.entryCount(diff));
+        assertThat(TestTreeDiffs.serialize(decoded)).isEqualTo(encoded);
         // Patches between the supernodes and the other sections are skipped correctly
         assertThat(TreeDiffCodec.supernodeEntries(encoded)).isEqualTo(decoded.supernodes());
         patches += decoded.patches().size();
         supernodes += decoded.supernodes().size();
 
-        assertReproduces(applier.apply(base, decoded, source), target, iteration, step);
+        assertReproduces(
+            TestTreeDiffs.apply(applier, base, decoded, source), target, iteration, step);
         chain.add(decoded);
         base = target;
       }
 
-      TreeNode reconstructed = genesis;
-      for (final TreeDiff diff : chain) {
-        reconstructed = applier.apply(reconstructed, diff, source);
-      }
-      assertReproduces(reconstructed, base, iteration, CHAIN_LENGTH);
+      // The diffs applied link by link above, folded along the chain
+      final TreeDiffApplier.ChainApplication folded = applier.startChain(genesis, source);
+      chain.forEach(folded::apply);
+      assertReproduces(folded.finish(), base, iteration, CHAIN_LENGTH);
     }
     // Changed validators are patched, validators appended past a supernode referenced whole
     assertThat(patches).isPositive();

@@ -7,7 +7,7 @@ first slice (archive finalized states in the DAG, retention window) implemented
 and soaked on mainnet with a 128-epoch window (decisions log 51, 61). Node
 payload version 2 (zstd-compressed delta section, decisions log 63-68;
 per-validator supernode patches and node record header version 2, 69-72)
-implemented, not yet soaked. Living document, last updated 2026-10-29.
+implemented, not yet soaked. Living document, last updated 2026-11-14.
 
 Design: [docs/superpowers/specs/2026-10-22-state-diff-dag-design.md](superpowers/specs/2026-10-22-state-diff-dag-design.md).
 Every non-obvious decision and all measurements:
@@ -44,11 +44,13 @@ teku --network=mainnet --data-storage-mode=minimal --Xdata-storage-state-diffs
 - Databases written in state diff mode by a build before node payload version
   2 (before 2026-10-29), or by a build of 2026-10-29 before the format marker
   moved to 2 (their payloads have the older patch layout), are not readable.
-  Their `STATE_DIFF_MODE` marker is 1, so the database fails to open, at
-  startup and in `verify-state-diffs` alike, with an unrecoverable error
-  saying it was written by an earlier experimental build and must be re-synced
-  into a fresh data directory. Re-sync from a checkpoint into a new data
-  directory.
+  Their `STATE_DIFF_MODE` marker is 1 and sits at hot variable 13, which a
+  build after the rebase of 2026-11-14 reads as master's `FAST_CONFIRMED_ROOT`
+  (decisions log 79): the database is not recognised as a state diff database
+  and fails later, while the store is loaded, because the one-byte value is
+  not a root. Re-sync from a checkpoint into a new data directory. A marker
+  other than 2 at variable 15 fails at open as an unknown state diff storage
+  format.
 - Column IDs (rebase of 2026-10-29 onto master `715545a182`): `STATE_DIFF_NODES`
   is hot column 14 and `STATE_SUPERNODES` hot column 15; `STATE_SUPERNODE_REFCOUNTS`
   stays 13. Master's light client bootstrap change (#11572) took hot columns 10

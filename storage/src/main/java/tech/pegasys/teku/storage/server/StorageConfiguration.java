@@ -30,7 +30,6 @@ import tech.pegasys.teku.infrastructure.exceptions.InvalidConfigurationException
 import tech.pegasys.teku.service.serviceutils.layout.DataConfig;
 import tech.pegasys.teku.service.serviceutils.layout.DataDirLayout;
 import tech.pegasys.teku.spec.Spec;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
 
 public class StorageConfiguration {
   public static final boolean DEFAULT_STORE_NON_CANONICAL_BLOCKS_ENABLED = false;
@@ -451,15 +450,12 @@ public class StorageConfiguration {
      * carrying the state diff marker uses the DAG whatever the flag says.
      */
     private StateDiffDagConfig createStateDiffDagConfig() {
-      if (!stateDiffsEnabled) {
-        return StateDiffDagConfig.disabled().withRetainedSlots(retainedSlots);
-      }
-      if (dataStorageFrequency != DEFAULT_STORAGE_FREQUENCY) {
+      if (stateDiffsEnabled && dataStorageFrequency != DEFAULT_STORAGE_FREQUENCY) {
         LOG.warn(
             "--data-storage-archive-frequency ({}) is ignored when state diff storage is enabled",
             dataStorageFrequency);
       }
-      return StateDiffDagConfig.prune().withRetainedSlots(retainedSlots);
+      return new StateDiffDagConfig(stateDiffsEnabled, retainedSlots);
     }
 
     private void determineDataStorageMode() {

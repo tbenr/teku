@@ -15,7 +15,6 @@ package tech.pegasys.teku.storage.server.kvstore.dataaccess;
 
 import com.google.errorprone.annotations.MustBeClosed;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -135,11 +134,7 @@ public interface KvStoreCombinedDao extends AutoCloseable {
    * supports it. Hashes without a stored supernode are omitted.
    */
   default Map<Bytes32, Bytes> getStateSupernodes(final Collection<Bytes32> hashes) {
-    final Map<Bytes32, Bytes> supernodes = new HashMap<>();
-    for (final Bytes32 hash : hashes) {
-      getStateSupernode(hash).ifPresent(ssz -> supernodes.put(hash, ssz));
-    }
-    return supernodes;
+    return Map.of();
   }
 
   /** The number of state diff DAG nodes referencing the supernode {@code hash}. */
@@ -152,11 +147,7 @@ public interface KvStoreCombinedDao extends AutoCloseable {
    * engine supports it. Hashes without a count are omitted.
    */
   default Map<Bytes32, UInt64> getStateSupernodeRefCounts(final Collection<Bytes32> hashes) {
-    final Map<Bytes32, UInt64> counts = new HashMap<>();
-    for (final Bytes32 hash : hashes) {
-      getStateSupernodeRefCount(hash).ifPresent(count -> counts.put(hash, count));
-    }
-    return counts;
+    return Map.of();
   }
 
   /** The marker recording that hot states are stored in the state diff DAG. */

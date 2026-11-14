@@ -57,19 +57,6 @@ public final class DiffLevels {
     return periods.length;
   }
 
-  public long period(final int level) {
-    return periods[level];
-  }
-
-  public int levelOf(final UInt64 epoch) {
-    for (int level = 0; level < periods.length; level++) {
-      if (epoch.mod(periods[level]).isZero()) {
-        return level;
-      }
-    }
-    throw new IllegalStateException("Unreachable: the finest period is 1");
-  }
-
   /** Returns the coarsest level of any epoch in the inclusive range {@code [first, last]}. */
   public int maxLevelInRange(final UInt64 firstEpoch, final UInt64 lastEpoch) {
     if (firstEpoch.isGreaterThan(lastEpoch)) {

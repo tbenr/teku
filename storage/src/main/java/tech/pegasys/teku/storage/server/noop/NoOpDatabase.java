@@ -51,7 +51,7 @@ import tech.pegasys.teku.storage.api.WeakSubjectivityState;
 import tech.pegasys.teku.storage.api.WeakSubjectivityUpdate;
 import tech.pegasys.teku.storage.archive.BlobSidecarsArchiver;
 import tech.pegasys.teku.storage.server.Database;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationReport;
+import tech.pegasys.teku.storage.server.StateDiffVerificationReport;
 
 public class NoOpDatabase implements Database {
 
@@ -228,11 +228,6 @@ public class NoOpDatabase implements Database {
 
   @Override
   public Optional<BeaconState> getLatestAvailableFinalizedState(final UInt64 maxSlot) {
-    return Optional.empty();
-  }
-
-  @Override
-  public Optional<UInt64> getEarliestAvailableFinalizedStateSlot() {
     return Optional.empty();
   }
 

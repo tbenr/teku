@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -35,14 +36,14 @@ import tech.pegasys.teku.storage.api.HotState;
 import tech.pegasys.teku.storage.api.HotStateNodeInfo;
 import tech.pegasys.teku.storage.api.StorageUpdate;
 import tech.pegasys.teku.storage.server.DatabaseStorageException;
+import tech.pegasys.teku.storage.server.StateDiffVerificationReport;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.FinalizedUpdater;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.HotUpdater;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.FinalizedRetention;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDag;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagTransaction;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationException;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationReport;
 
 /**
  * Hot states and the finalized checkpoint block state stored as nodes of the state diff DAG, on a
@@ -50,25 +51,14 @@ import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVe
  *
  * <p>On an archive database the DAG also holds the finalized states: every finalized node from the
  * window start on is kept and served, either all of them since the switch (no retention window) or
- * those of the last {@link StateDiffDagConfig#retainedSlots()} slots before the finalized
- * checkpoint plus the reconstruction chain of the oldest one (decision 43).
+ * those of the last {@code retainedSlots} slots before the finalized checkpoint plus the
+ * reconstruction chain of the oldest one (decision 43).
  */
 class StateDiffHotStateStorage implements HotStateStorage {
   private static final Logger LOG = LogManager.getLogger();
 
-  /**
-   * The state diff mode marker this build writes and reads: the format of the nodes. Marker 1 was
-   * written by earlier experimental builds, whose node records and payloads (version 1) this build
-   * no longer reads.
-   */
+  /** The state diff mode marker this build writes and reads: the format of the nodes. */
   private static final Bytes STATE_DIFF_MODE_MARKER = Bytes.of(2);
-
-  private static final Bytes VERSION_ONE_MARKER = Bytes.of(1);
-
-  private static final String VERSION_ONE_MESSAGE =
-      "The state diff storage of this database was written by an earlier experimental build in a"
-          + " format that is no longer readable: the database must be re-synced into a fresh data"
-          + " directory";
 
   /**
    * How far the window start moves at one finalization, so that a backlog (a lowered window, or a
@@ -80,6 +70,7 @@ class StateDiffHotStateStorage implements HotStateStorage {
   private final StateDiffDag dag;
   private final Spec spec;
   private final boolean storesFinalizedStates;
+  private final long retainedSlots;
 
   /**
    * The finalized anchor state reconstructed from the state diff DAG when the store was loaded,
@@ -92,11 +83,13 @@ class StateDiffHotStateStorage implements HotStateStorage {
       final KvStoreCombinedDao dao,
       final StateDiffDag dag,
       final Spec spec,
-      final boolean storesFinalizedStates) {
+      final boolean storesFinalizedStates,
+      final long retainedSlots) {
     this.dao = dao;
     this.dag = dag;
     this.spec = spec;
     this.storesFinalizedStates = storesFinalizedStates;
+    this.retainedSlots = retainedSlots;
   }
 
   @Override
@@ -104,20 +97,16 @@ class StateDiffHotStateStorage implements HotStateStorage {
     return true;
   }
 
-  @Override
-  public boolean holdsFinalizedStates() {
-    return storesFinalizedStates;
-  }
-
   /**
    * {@inheritDoc}
    *
    * <p>On an archive database, the state of the node of the checkpoint block of {@code maxSlot}'s
    * epoch (the latest finalized block at or before the epoch's start slot), or of the latest
-   * earlier checkpoint block with a node when that node was skipped; empty before the window start
-   * (history before the switch to state diff storage is not served, decision 19). When the window
-   * start epoch's own node was skipped, the oldest retained node lies below the start (decision
-   * 54): the fallback reaches the one checkpoint block before the start epoch's.
+   * earlier checkpoint block with a node when that node was skipped (decision 54); empty before the
+   * window start (history before the switch to state diff storage is not served, decision 13, and
+   * {@code --reconstruct-historic-states} is rejected with state diffs, decision 62). When the
+   * window start epoch's own node was skipped, the oldest retained node lies below the start
+   * (decision 62): the fallback reaches the one checkpoint block before the start epoch's.
    *
    * @throws StateDiffVerificationException when the node cannot be reconstructed
    */
@@ -136,19 +125,6 @@ class StateDiffHotStateStorage implements HotStateStorage {
       return Optional.empty();
     }
     return findCheckpointNode(epoch, windowStart.get(), root -> dag.reconstruct(dao, root));
-  }
-
-  /**
-   * {@inheritDoc}
-   *
-   * <p>On an archive database, the start slot of the window start epoch.
-   */
-  @Override
-  public Optional<UInt64> getEarliestAvailableFinalizedStateSlot() {
-    if (!storesFinalizedStates) {
-      return dao.getEarliestFinalizedStateSlot();
-    }
-    return dao.getStateDiffWindowStart().map(spec::computeStartSlotAtEpoch);
   }
 
   /**
@@ -225,8 +201,21 @@ class StateDiffHotStateStorage implements HotStateStorage {
   }
 
   @Override
-  public Optional<Activation> getPendingActivation() {
+  public Optional<HotStateStorage> activateIfRequested(final Supplier<HotUpdater> hotUpdaters) {
     return Optional.empty();
+  }
+
+  /**
+   * {@inheritDoc}
+   *
+   * <p>Nothing on an archive database, whose finalized states are the DAG's nodes.
+   */
+  @Override
+  public void addFinalizedState(
+      final FinalizedUpdater updater, final Bytes32 blockRoot, final BeaconState state) {
+    if (!storesFinalizedStates) {
+      updater.addFinalizedState(blockRoot, state);
+    }
   }
 
   @Override
@@ -243,9 +232,6 @@ class StateDiffHotStateStorage implements HotStateStorage {
    * @throws DatabaseStorageException unrecoverable, for a marker written by another build
    */
   static void checkStateDiffMode(final Bytes marker) {
-    if (marker.equals(VERSION_ONE_MARKER)) {
-      throw DatabaseStorageException.unrecoverable(VERSION_ONE_MESSAGE);
-    }
     if (!marker.equals(STATE_DIFF_MODE_MARKER)) {
       throw DatabaseStorageException.unrecoverable(
           "Unknown state diff storage format "
@@ -363,7 +349,6 @@ class StateDiffHotStateStorage implements HotStateStorage {
       transaction.setWindowStart(start);
       return FinalizedRetention.all();
     }
-    final long retainedSlots = dag.getConfig().retainedSlots();
     final UInt64 previousStart = recordedStart.get();
     if (retainedSlots == 0) {
       return FinalizedRetention.all();
@@ -397,9 +382,9 @@ class StateDiffHotStateStorage implements HotStateStorage {
    * Looks up the node of the checkpoint block of {@code epoch} with {@code load}, or when it has
    * none, of the latest earlier checkpoint block that has one, down to the checkpoint block of
    * {@code lowestEpoch} and then the one checkpoint block before it: the oldest retained node of a
-   * window whose start epoch's node was skipped (decision 54). A skipped node is the only reason a
-   * checkpoint block from {@code lowestEpoch} on has no node; below it, nodes are also deleted, so
-   * the walk stops there rather than reaching an older node far below.
+   * window whose start epoch's node was skipped (decisions 54 and 62). A skipped node is the only
+   * reason a checkpoint block from {@code lowestEpoch} on has no node; below it, nodes are also
+   * deleted, so the walk stops there rather than reaching an older node far below.
    */
   private <T> Optional<T> findCheckpointNode(
       final UInt64 epoch, final UInt64 lowestEpoch, final Function<Bytes32, Optional<T>> load) {

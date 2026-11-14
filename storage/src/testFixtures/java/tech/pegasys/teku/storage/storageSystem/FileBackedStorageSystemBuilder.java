@@ -25,9 +25,9 @@ import tech.pegasys.teku.spec.datastructures.interop.MockStartValidatorKeyPairFa
 import tech.pegasys.teku.spec.generator.ChainBuilder;
 import tech.pegasys.teku.storage.server.Database;
 import tech.pegasys.teku.storage.server.DatabaseVersion;
+import tech.pegasys.teku.storage.server.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.StateStorageMode;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreConfiguration;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.kvstore.schema.V6SchemaCombinedSnapshot;
 import tech.pegasys.teku.storage.server.leveldb.LevelDbDatabaseFactory;
 import tech.pegasys.teku.storage.server.rocksdb.RocksDbDatabaseFactory;
@@ -181,11 +181,6 @@ public class FileBackedStorageSystemBuilder {
     };
   }
 
-  private StateDiffDagConfig stateDiffDagConfig() {
-    return (stateDiffsEnabled ? StateDiffDagConfig.prune() : StateDiffDagConfig.disabled())
-        .withRetainedSlots(stateDiffRetainedSlots);
-  }
-
   private Database createLevelDb1Database(final StubMetricsSystem metricsSystem) {
     return LevelDbDatabaseFactory.createLevelDb(
         metricsSystem,
@@ -209,7 +204,7 @@ public class FileBackedStorageSystemBuilder {
         stateStorageFrequency,
         storeNonCanonicalBlocks,
         spec,
-        stateDiffDagConfig());
+        new StateDiffDagConfig(stateDiffsEnabled, stateDiffRetainedSlots));
   }
 
   private Database createLevelDb2Database(final StubMetricsSystem metricsSystem) {
@@ -221,7 +216,7 @@ public class FileBackedStorageSystemBuilder {
         stateStorageFrequency,
         storeNonCanonicalBlocks,
         spec,
-        stateDiffDagConfig());
+        new StateDiffDagConfig(stateDiffsEnabled, stateDiffRetainedSlots));
   }
 
   private Database createRocksDbTreeDatabase(final StubMetricsSystem metricsSystem) {
@@ -233,7 +228,7 @@ public class FileBackedStorageSystemBuilder {
         storeNonCanonicalBlocks,
         10_000,
         spec,
-        stateDiffDagConfig());
+        new StateDiffDagConfig(stateDiffsEnabled, stateDiffRetainedSlots));
   }
 
   private Database createLevelDbTrieDatabase(final StubMetricsSystem metricsSystem) {
@@ -245,7 +240,7 @@ public class FileBackedStorageSystemBuilder {
         storeNonCanonicalBlocks,
         10_000,
         spec,
-        stateDiffDagConfig());
+        new StateDiffDagConfig(stateDiffsEnabled, stateDiffRetainedSlots));
   }
 
   private Database createV5Database(final StubMetricsSystem metricsSystem) {

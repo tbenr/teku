@@ -22,7 +22,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Random;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
@@ -59,7 +58,7 @@ class BeaconStateDiffFuzzTest {
   private static final int MAX_EPOCH_TRANSITION_LEAVES = 1000;
 
   private final Map<Bytes32, Bytes> supernodes = new HashMap<>();
-  private final SupernodeSource supernodeSource = hash -> Optional.ofNullable(supernodes.get(hash));
+  private final SupernodeSource supernodeSource = TestTreeDiffs.source(supernodes);
 
   private Spec spec;
   private DataStructureUtil dataStructureUtil;
@@ -85,9 +84,11 @@ class BeaconStateDiffFuzzTest {
         trialsWithPatches++;
       }
       final TreeNode reconstructed =
-          support
-              .applierFor(base.getSlot())
-              .apply(base.getBackingNode(), roundTripCodec(diff), supernodeSource);
+          TestTreeDiffs.apply(
+              support.applierFor(base.getSlot()),
+              base.getBackingNode(),
+              roundTripCodec(diff),
+              supernodeSource);
 
       assertThat(reconstructed.hashTreeRoot())
           .as("Trial %d: hash tree root", trial)
@@ -117,9 +118,11 @@ class BeaconStateDiffFuzzTest {
     assertThat(supernodes.keySet())
         .containsAll(snapshot.supernodes().stream().map(SupernodeEntry::hash).toList());
     final TreeNode reconstructed =
-        support
-            .applierFor(state.getSlot())
-            .apply(schema.getDefaultTree(), roundTripCodec(snapshot), supernodeSource);
+        TestTreeDiffs.apply(
+            support.applierFor(state.getSlot()),
+            schema.getDefaultTree(),
+            roundTripCodec(snapshot),
+            supernodeSource);
 
     assertThat(reconstructed.hashTreeRoot()).isEqualTo(state.hashTreeRoot());
     assertSameState(reconstructed, state, "Snapshot");
@@ -140,21 +143,23 @@ class BeaconStateDiffFuzzTest {
     // instances with the original states, as it would be when rebuilt from disk
     final List<Bytes> encodedDiffs = new ArrayList<>();
     encodedDiffs.add(
-        TreeDiffCodec.serialize(
+        TestTreeDiffs.serialize(
             support
                 .differFor(first.getSlot())
                 .diff(schema.getDefaultTree(), first.getBackingNode(), supernodes::put)));
     for (int i = 1; i < CHAIN_LENGTH; i++) {
-      encodedDiffs.add(TreeDiffCodec.serialize(diff(states.get(i - 1), states.get(i))));
+      encodedDiffs.add(TestTreeDiffs.serialize(diff(states.get(i - 1), states.get(i))));
     }
 
     TreeNode current = schema.getDefaultTree();
     for (int i = 0; i < CHAIN_LENGTH; i++) {
       final BeaconState expected = states.get(i);
       current =
-          support
-              .applierFor(expected.getSlot())
-              .apply(current, TreeDiffCodec.deserialize(encodedDiffs.get(i)), supernodeSource);
+          TestTreeDiffs.apply(
+              support.applierFor(expected.getSlot()),
+              current,
+              TreeDiffCodec.deserialize(encodedDiffs.get(i)),
+              supernodeSource);
       assertThat(current.hashTreeRoot())
           .as("Chain state %d: hash tree root", i)
           .isEqualTo(expected.hashTreeRoot());
@@ -190,9 +195,11 @@ class BeaconStateDiffFuzzTest {
     assertThat(diff.copied()).noneMatch(entry -> isWithin(entry.targetGIndex(), balancesGIndex));
 
     final TreeNode reconstructed =
-        support
-            .applierFor(base.getSlot())
-            .apply(base.getBackingNode(), roundTripCodec(diff), supernodeSource);
+        TestTreeDiffs.apply(
+            support.applierFor(base.getSlot()),
+            base.getBackingNode(),
+            roundTripCodec(diff),
+            supernodeSource);
     assertThat(reconstructed.hashTreeRoot()).isEqualTo(target.hashTreeRoot());
     assertSameState(reconstructed, target, "Epoch transition");
   }
@@ -208,10 +215,9 @@ class BeaconStateDiffFuzzTest {
    * compared through its encoding rather than entry order.
    */
   private static TreeDiff roundTripCodec(final TreeDiff diff) {
-    final Bytes encoded = TreeDiffCodec.serialize(diff);
+    final Bytes encoded = TestTreeDiffs.serialize(diff);
     final TreeDiff decoded = TreeDiffCodec.deserialize(encoded);
-    assertThat(decoded.entryCount()).isEqualTo(diff.entryCount());
-    assertThat(TreeDiffCodec.serialize(decoded)).isEqualTo(encoded);
+    assertThat(TestTreeDiffs.serialize(decoded)).isEqualTo(encoded);
     return decoded;
   }
 

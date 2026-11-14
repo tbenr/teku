@@ -27,7 +27,7 @@ class UInt64DeltaCodecTest {
     final byte[] encoded = UInt64DeltaCodec.encode(values, values.clone());
 
     assertThat(encoded.length).isLessThanOrEqualTo(2 + values.length);
-    assertThat(UInt64DeltaCodec.apply(values, encoded)).containsExactly(values);
+    assertThat(UInt64DeltaCodec.applyInPlace(values.clone(), encoded)).containsExactly(values);
   }
 
   @Test
@@ -60,14 +60,14 @@ class UInt64DeltaCodecTest {
     final byte[] encoded = UInt64DeltaCodec.encode(empty, empty);
 
     assertThat(encoded).hasSize(2);
-    assertThat(UInt64DeltaCodec.apply(empty, encoded)).isEmpty();
+    assertThat(UInt64DeltaCodec.applyInPlace(empty, encoded)).isEmpty();
   }
 
   @Test
   void rejectsBaseCountMismatch() {
     final byte[] encoded = UInt64DeltaCodec.encode(new long[] {1L, 2L, 3L}, new long[] {1L, 2L});
 
-    assertThatThrownBy(() -> UInt64DeltaCodec.apply(new long[] {1L, 2L}, encoded))
+    assertThatThrownBy(() -> UInt64DeltaCodec.applyInPlace(new long[] {1L, 2L}, encoded))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -76,7 +76,7 @@ class UInt64DeltaCodecTest {
     // baseCount = 0, targetCount = 2^31 - 1 followed by a single byte
     final byte[] encoded = {0x00, (byte) 0xff, (byte) 0xff, (byte) 0xff, (byte) 0xff, 0x07, 0x01};
 
-    assertThatThrownBy(() -> UInt64DeltaCodec.apply(new long[0], encoded))
+    assertThatThrownBy(() -> UInt64DeltaCodec.applyInPlace(new long[0], encoded))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -92,33 +92,22 @@ class UInt64DeltaCodecTest {
   }
 
   @Test
-  void appliesInPlaceAsTheAllocatingApply() {
+  void appliesInPlaceWhenTheLengthIsKept() {
     final Random rng = new Random(43);
     for (int iteration = 0; iteration < 200; iteration++) {
       final long[] base = randomArray(rng, rng.nextInt(101));
       // Same length half of the time, else growing or shrinking
       final long[] target = randomArray(rng, rng.nextBoolean() ? base.length : rng.nextInt(101));
       final byte[] encoded = UInt64DeltaCodec.encode(base, target);
-      final long[] expected = UInt64DeltaCodec.apply(base.clone(), encoded);
 
       final long[] values = base.clone();
       final long[] result = UInt64DeltaCodec.applyInPlace(values, encoded);
 
-      assertThat(result).containsExactly(expected).containsExactly(target);
+      assertThat(result).containsExactly(target);
       if (target.length == base.length) {
         assertThat(result).isSameAs(values);
       }
     }
-  }
-
-  @Test
-  void applyLeavesItsBaseUnchanged() {
-    final long[] base = {10L, 20L, 30L};
-    final byte[] encoded = UInt64DeltaCodec.encode(base, new long[] {11L, 19L, 31L});
-
-    UInt64DeltaCodec.apply(base, encoded);
-
-    assertThat(base).containsExactly(10L, 20L, 30L);
   }
 
   private static long[] randomArray(final Random rng, final int length) {
@@ -131,6 +120,6 @@ class UInt64DeltaCodecTest {
 
   private static void assertRoundTrip(final long[] base, final long[] target) {
     final byte[] encoded = UInt64DeltaCodec.encode(base, target);
-    assertThat(UInt64DeltaCodec.apply(base, encoded)).containsExactly(target);
+    assertThat(UInt64DeltaCodec.applyInPlace(base.clone(), encoded)).containsExactly(target);
   }
 }
