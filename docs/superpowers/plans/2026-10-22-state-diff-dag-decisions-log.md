@@ -1197,3 +1197,42 @@ checkpoint nodes went through the DAG.
     Open: whether the archive's full GCs settle once it reaches head, and
     whether backfill below 3.51M makes progress once it does (peers may not
     serve blocks that old).
+
+
+## Rebase onto master 21788914ee (2026-11-14)
+
+79. **DERIVED. `STATE_DIFF_MODE` moved from hot variable 13 to 15; `STATE_DIFF_WINDOW_START` stays at 14.**
+    Master commit 21788914ee (#11573, "FCR: Add a mechanism for providing a
+    restart-resilient confirmed root") added the hot variable
+    `FAST_CONFIRMED_ROOT` = 13 (`Bytes32`) in `V6SchemaCombined`, the ID entry
+    10 had taken for `STATE_DIFF_MODE`. Master is authoritative, so the branch
+    moves, as in entry 76: `STATE_DIFF_MODE` to hot variable 15.
+    `STATE_DIFF_WINDOW_START` keeps 14 (entry 51), so only one
+    variable changes and the mode marker takes the next free ID above it.
+    Master's static variables now stop at 13; the `finalizedOffset + N`
+    variables (1-7) are at 129-135 in the V6 and tree layouts and in the
+    separate finalized database in the V4 split layout, so 14 and 15 collide
+    with nothing. The renumbering is applied in the phase 1 commit (15, with
+    14 left free until the retention window commit defines it), so no commit
+    of the rebased branch defines 13 for state diffs;
+    `StateDiffDaoTest.columnIdsAreFourteenFifteenThirteen` pins both variable
+    IDs. Columns are untouched (nodes 14, supernodes 15, refcounts 13).
+    The same master commit added `fastConfirmedRoot` to `OnDiskStoreData`,
+    `StoreBuilder`, `Store` and `StorageUpdate`; the branch keeps it next to
+    `stateDiffStorageActive` and the persistence policy, `fastConfirmedRoot`
+    first.
+    Consequence: every state diff database written by a branch build before
+    this rebase (up to fc17eb9f59, including the two AWS soak boxes, archive
+    i-045302325bafe77fd and minimal i-06bfe88f23cd166e3, on 29aa3cff11) is
+    incompatible with a rebased build. Its format marker (one byte, `02`) sits
+    at variable 13, which a rebased build reads as `FAST_CONFIRMED_ROOT`:
+    `Bytes32.wrap` rejects the one-byte value, so loading the store at startup
+    fails; and variable 15 is empty, so the database would not be recognised
+    as a state diff database either. No migration is written. Before a
+    rebased build runs on such a database it needs a one-off migration, with
+    the node stopped: copy the value of hot variable 13 to hot variable 15 and
+    delete variable 13 (master then sees no fast confirmed root, which is its
+    normal first-start state). Variable 14 does not move. The alternative is
+    a fresh data directory. The format marker is not bumped: the payload and
+    record bytes are unchanged, only the marker's ID. Databases without state
+    diffs never wrote variable 13 on the branch and are unaffected.
