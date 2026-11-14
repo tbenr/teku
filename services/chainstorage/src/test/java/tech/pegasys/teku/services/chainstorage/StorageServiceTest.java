@@ -47,9 +47,9 @@ import tech.pegasys.teku.spec.SpecMilestone;
 import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.storage.api.SidecarArchivePrunableChannel;
 import tech.pegasys.teku.storage.server.DatabaseVersion;
+import tech.pegasys.teku.storage.server.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.StateStorageMode;
 import tech.pegasys.teku.storage.server.StorageConfiguration;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.pruner.DataColumnSidecarPruner;
 import tech.pegasys.teku.storage.server.pruner.StatePruner;
 
@@ -124,8 +124,7 @@ class StorageServiceTest {
   void shouldNotSetupStatePrunerWhenStateDiffStorageKeepsTheArchiveRetentionWindow() {
     when(storageConfiguration.getDataStorageMode()).thenReturn(StateStorageMode.ARCHIVE);
     when(storageConfiguration.getRetainedSlots()).thenReturn(5L);
-    when(storageConfiguration.getStateDiffDagConfig())
-        .thenReturn(StateDiffDagConfig.prune().withRetainedSlots(5));
+    when(storageConfiguration.getStateDiffDagConfig()).thenReturn(new StateDiffDagConfig(true, 5));
     final SafeFuture<?> future = storageService.doStart();
     assertThat(future).isCompleted();
     assertThat(storageService.getStatePruner()).isEmpty();

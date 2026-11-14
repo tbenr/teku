@@ -24,10 +24,10 @@ import tech.pegasys.teku.spec.datastructures.interop.MockStartValidatorKeyPairFa
 import tech.pegasys.teku.spec.generator.ChainBuilder;
 import tech.pegasys.teku.storage.server.Database;
 import tech.pegasys.teku.storage.server.DatabaseVersion;
+import tech.pegasys.teku.storage.server.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.StateStorageMode;
 import tech.pegasys.teku.storage.server.kvstore.InMemoryKvStoreDatabaseFactory;
 import tech.pegasys.teku.storage.server.kvstore.MockKvStoreInstance;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.kvstore.schema.Schema;
 import tech.pegasys.teku.storage.server.kvstore.schema.SchemaFinalizedSnapshotStateAdapter;
 import tech.pegasys.teku.storage.server.kvstore.schema.V6SchemaCombinedSnapshot;
@@ -196,7 +196,12 @@ public class InMemoryStorageSystemBuilder {
       hotDb = MockKvStoreInstance.createEmpty(schema.getAllColumns(), schema.getAllVariables());
     }
     return InMemoryKvStoreDatabaseFactory.createTree(
-        hotDb, storageMode, storeNonCanonicalBlocks, spec, stateDiffDagConfig(), metricsSystem);
+        hotDb,
+        storageMode,
+        storeNonCanonicalBlocks,
+        spec,
+        new StateDiffDagConfig(stateDiffsEnabled, stateDiffRetainedSlots),
+        metricsSystem);
   }
 
   private Database createV6Database(final StubMetricsSystem metricsSystem) {
@@ -210,13 +215,8 @@ public class InMemoryStorageSystemBuilder {
         stateStorageFrequency,
         storeNonCanonicalBlocks,
         spec,
-        stateDiffDagConfig(),
+        new StateDiffDagConfig(stateDiffsEnabled, stateDiffRetainedSlots),
         metricsSystem);
-  }
-
-  private StateDiffDagConfig stateDiffDagConfig() {
-    return (stateDiffsEnabled ? StateDiffDagConfig.prune() : StateDiffDagConfig.disabled())
-        .withRetainedSlots(stateDiffRetainedSlots);
   }
 
   // V5 only differs by the RocksDB configuration which doesn't apply to the in-memory version

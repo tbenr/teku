@@ -67,8 +67,11 @@ public class StateDiffDagTransaction {
   private final NodeReader reader;
   private final FinalizedChainMaintenance maintenance;
 
-  /** Node records written (present) or deleted (empty) in this transaction. */
-  private final Map<Bytes32, Optional<Bytes>> pendingNodes = new HashMap<>();
+  /**
+   * Node records by block root as this transaction sees them: written (present) or deleted (empty)
+   * in it, or else read from the committed store, absent ones included.
+   */
+  private final Map<Bytes32, Optional<Bytes>> nodes = new HashMap<>();
 
   /**
    * Node records read and decoded in this transaction, absent ones included, so that a record of
@@ -76,9 +79,6 @@ public class StateDiffDagTransaction {
    * entry is dropped when this transaction writes or deletes its node.
    */
   private final Map<Bytes32, Optional<StateDiffNodeRecord>> decodedNodes = new HashMap<>();
-
-  /** Committed records read in this transaction, absent ones included, by block root. */
-  private final Map<Bytes32, Optional<Bytes>> committedNodes = new HashMap<>();
 
   /** SSZ of the supernodes referenced by nodes written in this transaction. */
   private final Map<Bytes32, Bytes> pendingSupernodes = new HashMap<>();
@@ -90,15 +90,10 @@ public class StateDiffDagTransaction {
    * Nodes written in this transaction by root, in the order of their latest write. Their metrics
    * and base cache entries are recorded by {@link #commit()}, so a failed transaction neither
    * counts nor caches them. A node written twice, as an anchor created late and then repaired, is
-   * recorded once, as last written.
+   * recorded once, as last written. Their state trees are the diff bases of later nodes in the
+   * transaction and the start of the reconstructions through them.
    */
   private final Map<Bytes32, WrittenNode> writtenNodes = new LinkedHashMap<>();
-
-  /**
-   * State trees of the nodes written in this transaction: the diff bases of later nodes in it and
-   * the start of the reconstructions through them.
-   */
-  private final Map<Bytes32, TreeNode> writtenTrees = new HashMap<>();
 
   /** The window start recorded in this transaction, published to the metrics on commit. */
   private Optional<UInt64> windowStart = Optional.empty();
@@ -116,12 +111,7 @@ public class StateDiffDagTransaction {
         new NodeReader() {
           @Override
           public Optional<Bytes> getEncodedNode(final Bytes32 blockRoot) {
-            final Optional<Bytes> pending = pendingNodes.get(blockRoot);
-            // A map entry holding Optional.empty() records a deletion
-            if (pendingNodes.containsKey(blockRoot)) {
-              return pending;
-            }
-            return committedNodes.computeIfAbsent(blockRoot, dao::getStateDiffNode);
+            return nodes.computeIfAbsent(blockRoot, dao::getStateDiffNode);
           }
 
           @Override
@@ -135,12 +125,6 @@ public class StateDiffDagTransaction {
                 getEncodedNode(blockRoot).map(encoded -> NodeReader.decode(blockRoot, encoded));
             decodedNodes.put(blockRoot, record);
             return record;
-          }
-
-          @Override
-          public Optional<Bytes> load(final Bytes32 hash) {
-            final Bytes pending = pendingSupernodes.get(hash);
-            return pending != null ? Optional.of(pending) : dao.getStateSupernode(hash);
           }
 
           @Override
@@ -203,9 +187,10 @@ public class StateDiffDagTransaction {
 
   /**
    * Writes the node of the checkpoint block {@code blockRoot} as {@link #writeNode} does without
-   * forcing a snapshot, but writes it as a snapshot, logging at ERROR, when its diff base, an
-   * earlier node, cannot be reconstructed. Failing instead would fail block import on every retry;
-   * a snapshot needs no base and later nodes chain to it.
+   * forcing a snapshot, but writes it as a snapshot, logging at ERROR, when an earlier node's
+   * record cannot be read or its diff base, an earlier node, cannot be reconstructed. Failing
+   * instead would fail block import on every retry; a snapshot reads no earlier node and later
+   * nodes chain to it.
    *
    * @param ancestorCheckpointRoots checkpoint block roots of the ancestors, nearest first
    */
@@ -255,12 +240,11 @@ public class StateDiffDagTransaction {
 
     final long start = System.nanoTime();
     final boolean periodic = dag.levels().isCoarsest(level);
-    final Optional<ChainLink> prev = findPrev(ancestorCheckpointRoots);
-    // A snapshot needs no parent, so none is resolved for it
-    final Optional<ChainLink> parent =
-        forceSnapshot || periodic
-            ? Optional.empty()
-            : prev.flatMap(link -> resolveParent(link, level));
+    // A snapshot needs no parent, so no earlier node is read for it: an unreadable earlier record
+    // must not fail a write that does not depend on it
+    final Optional<ChainLink> prev =
+        forceSnapshot || periodic ? Optional.empty() : findPrev(ancestorCheckpointRoots);
+    final Optional<ChainLink> parent = prev.flatMap(link -> resolveParent(link, level));
     final Optional<SnapshotReason> snapshotReason;
     if (forceSnapshot) {
       snapshotReason = Optional.of(SnapshotReason.FORCED);
@@ -319,13 +303,11 @@ public class StateDiffDagTransaction {
 
     final long end = System.nanoTime();
 
-    writtenTrees.put(blockRoot, state.getBackingNode());
     // Removed first so that a rewritten node moves to the end of the write order
     writtenNodes.remove(blockRoot);
     writtenNodes.put(
         blockRoot,
         new WrittenNode(
-            blockRoot,
             state,
             record,
             snapshotReason,
@@ -414,7 +396,7 @@ public class StateDiffDagTransaction {
         continue;
       }
       final boolean released = releaseReferencesTolerantly(blockRoot);
-      setPendingNode(blockRoot, Optional.empty());
+      setNode(blockRoot, Optional.empty());
       updater.deleteStateDiffNode(blockRoot);
       if (released) {
         dag.metrics().onNodeDeleted();
@@ -468,7 +450,7 @@ public class StateDiffDagTransaction {
       releaseReferencesTolerantly(blockRoot);
       // Forgotten rather than deleted, since it is put again below: a delete and a put of one key
       // in one batch is not ordered by every store
-      setPendingNode(blockRoot, Optional.empty());
+      setNode(blockRoot, Optional.empty());
     }
     writeNode(
         blockRoot,
@@ -559,16 +541,16 @@ public class StateDiffDagTransaction {
           }
         });
     writes.forEach(Runnable::run);
-    writtenNodes.values().forEach(this::recordWritten);
+    writtenNodes.forEach(this::recordWritten);
     windowStart.ifPresent(dag.metrics()::onWindowStart);
   }
 
-  private void recordWritten(final WrittenNode node) {
+  private void recordWritten(final Bytes32 blockRoot, final WrittenNode node) {
     final StateDiffNodeRecord record = node.record();
     // A node deleted later in this transaction is not cached. One rewritten, as by an anchor
     // repair, is recorded once as last written and has the same state either way
-    if (pendingNodes.getOrDefault(node.blockRoot(), Optional.empty()).isPresent()) {
-      dag.baseCache().put(LevelBaseCache.cacheLevel(record), node.blockRoot(), node.state());
+    if (nodes.getOrDefault(blockRoot, Optional.empty()).isPresent()) {
+      dag.baseCache().put(LevelBaseCache.cacheLevel(record), blockRoot, node.state());
     }
     dag.metrics().onNodeWritten(record.level(), record.snapshot(), node.encodedBytes());
     node.snapshotReason().ifPresent(reason -> dag.metrics().onSnapshotWritten(reason));
@@ -581,7 +563,7 @@ public class StateDiffDagTransaction {
           "Wrote state diff node {} for epochs {}..{} at level {} as {}: {} bytes, section bytes"
               + " leaves {}, supernodes {}, patches {}, zeroed {}, copied {}, deltas {} ({}"
               + " compressed)",
-          node.blockRoot(),
+          blockRoot,
           record.firstEpoch(),
           record.lastEpoch(),
           record.level(),
@@ -602,13 +584,13 @@ public class StateDiffDagTransaction {
   }
 
   private void putNode(final Bytes32 blockRoot, final Bytes encoded) {
-    setPendingNode(blockRoot, Optional.of(encoded));
+    setNode(blockRoot, Optional.of(encoded));
     updater.putStateDiffNode(blockRoot, encoded);
   }
 
   /** Records a write (present) or deletion (empty) of a node, superseding any record read. */
-  private void setPendingNode(final Bytes32 blockRoot, final Optional<Bytes> encoded) {
-    pendingNodes.put(blockRoot, encoded);
+  private void setNode(final Bytes32 blockRoot, final Optional<Bytes> encoded) {
+    nodes.put(blockRoot, encoded);
     decodedNodes.remove(blockRoot);
   }
 
@@ -678,7 +660,8 @@ public class StateDiffDagTransaction {
   }
 
   private Optional<TreeNode> writtenTree(final Bytes32 blockRoot) {
-    return Optional.ofNullable(writtenTrees.get(blockRoot));
+    return Optional.ofNullable(writtenNodes.get(blockRoot))
+        .map(node -> node.state().getBackingNode());
   }
 
   /**
@@ -702,7 +685,6 @@ public class StateDiffDagTransaction {
   }
 
   private record WrittenNode(
-      Bytes32 blockRoot,
       BeaconState state,
       StateDiffNodeRecord record,
       Optional<SnapshotReason> snapshotReason,

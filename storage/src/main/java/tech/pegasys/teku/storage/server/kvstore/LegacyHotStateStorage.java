@@ -15,6 +15,7 @@ package tech.pegasys.teku.storage.server.kvstore;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -23,9 +24,10 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.storage.api.StorageUpdate;
+import tech.pegasys.teku.storage.server.StateDiffVerificationReport;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao;
+import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.FinalizedUpdater;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.HotUpdater;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationReport;
 
 /**
  * Hot states and the finalized checkpoint block state stored whole in the legacy columns. When
@@ -52,18 +54,8 @@ class LegacyHotStateStorage implements HotStateStorage {
   }
 
   @Override
-  public boolean holdsFinalizedStates() {
-    return false;
-  }
-
-  @Override
   public Optional<BeaconState> getLatestAvailableFinalizedState(final UInt64 maxSlot) {
     return dao.getLatestAvailableFinalizedState(maxSlot);
-  }
-
-  @Override
-  public Optional<UInt64> getEarliestAvailableFinalizedStateSlot() {
-    return dao.getEarliestFinalizedStateSlot();
   }
 
   @Override
@@ -85,7 +77,7 @@ class LegacyHotStateStorage implements HotStateStorage {
    * stored.
    */
   @Override
-  public Optional<Activation> getPendingActivation() {
+  public Optional<HotStateStorage> activateIfRequested(final Supplier<HotUpdater> hotUpdaters) {
     if (requestedStateDiffStorage.isEmpty()) {
       return Optional.empty();
     }
@@ -95,23 +87,16 @@ class LegacyHotStateStorage implements HotStateStorage {
     }
     final Checkpoint finalizedCheckpoint = dao.getFinalizedCheckpoint().orElseThrow();
     final StateDiffHotStateStorage stateDiffStorage = requestedStateDiffStorage.get();
-    return Optional.of(
-        new Activation() {
-          @Override
-          public HotStateStorage write(final HotUpdater updater) {
-            stateDiffStorage.writeAnchorSnapshot(
-                updater, finalizedCheckpoint, latestFinalizedState.get());
-            updater.deleteLatestFinalizedState();
-            return stateDiffStorage;
-          }
-
-          @Override
-          public void logActivated() {
-            LOG.info(
-                "Switched the database to state diff storage at finalized checkpoint {}",
-                finalizedCheckpoint);
-          }
-        });
+    try (final HotUpdater updater = hotUpdaters.get()) {
+      stateDiffStorage.writeAnchorSnapshot(
+          updater, finalizedCheckpoint, latestFinalizedState.get());
+      updater.deleteLatestFinalizedState();
+      updater.commit();
+    }
+    LOG.info(
+        "Switched the database to state diff storage at finalized checkpoint {}",
+        finalizedCheckpoint);
+    return Optional.of(stateDiffStorage);
   }
 
   /**
@@ -130,6 +115,12 @@ class LegacyHotStateStorage implements HotStateStorage {
     }
     updater.setLatestFinalizedState(anchorState);
     return this;
+  }
+
+  @Override
+  public void addFinalizedState(
+      final FinalizedUpdater updater, final Bytes32 blockRoot, final BeaconState state) {
+    updater.addFinalizedState(blockRoot, state);
   }
 
   @Override

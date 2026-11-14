@@ -25,7 +25,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Random;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
@@ -43,7 +42,7 @@ class TreeDiffChainApplicationTest {
   private final Random random = new Random(5);
   private final Map<Bytes32, Bytes> supernodeStore = new HashMap<>();
   private final TreeDiffer differ = new TreeDiffer(SCHEMA, SyntheticState.DELTA_FIELDS);
-  private final SupernodeSource source = hash -> Optional.ofNullable(supernodeStore.get(hash));
+  private final SupernodeSource source = TestTreeDiffs.source(supernodeStore);
   private final TreeDiffApplier applier = new TreeDiffApplier(SCHEMA);
 
   @Test
@@ -137,8 +136,6 @@ class TreeDiffChainApplicationTest {
     final DeltaEntry delta = diff(SCHEMA.getDefaultTree(), s0).deltas().getFirst();
     final TreeDiff duplicate = TestTreeDiffs.onlyDeltas(delta, delta);
 
-    assertThatThrownBy(() -> applier.apply(SCHEMA.getDefaultTree(), duplicate, source))
-        .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> applier.startChain(SCHEMA.getDefaultTree(), source).apply(duplicate))
         .isInstanceOf(IllegalArgumentException.class);
   }
@@ -150,7 +147,7 @@ class TreeDiffChainApplicationTest {
     chain.finish();
 
     assertThatThrownBy(chain::finish).isInstanceOf(IllegalStateException.class);
-    assertThatThrownBy(() -> chain.apply(TreeDiff.empty()))
+    assertThatThrownBy(() -> chain.apply(TestTreeDiffs.EMPTY))
         .isInstanceOf(IllegalStateException.class);
   }
 
@@ -179,7 +176,7 @@ class TreeDiffChainApplicationTest {
     final List<TreeDiff> diffs = new ArrayList<>();
     TreeNode base = SCHEMA.getDefaultTree();
     for (final TreeNode state : states) {
-      diffs.add(TreeDiffCodec.deserialize(TreeDiffCodec.serialize(diff(base, state))));
+      diffs.add(TreeDiffCodec.deserialize(TestTreeDiffs.serialize(diff(base, state))));
       base = state;
     }
     return diffs;
@@ -192,7 +189,7 @@ class TreeDiffChainApplicationTest {
   private TreeNode applyPerLink(final List<TreeDiff> diffs) {
     TreeNode tree = SCHEMA.getDefaultTree();
     for (final TreeDiff diff : diffs) {
-      tree = applier.apply(tree, diff, source);
+      tree = TestTreeDiffs.apply(applier, tree, diff, source);
     }
     return tree;
   }

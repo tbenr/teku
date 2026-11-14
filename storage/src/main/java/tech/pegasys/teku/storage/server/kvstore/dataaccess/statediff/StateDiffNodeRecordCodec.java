@@ -47,13 +47,6 @@ public final class StateDiffNodeRecordCodec {
 
   private StateDiffNodeRecordCodec() {}
 
-  public static Bytes encode(final StateDiffNodeRecord record) {
-    final MutableBytes encoded = MutableBytes.create(HEADER_SIZE + record.payload().size());
-    writeHeader(record, encoded);
-    record.payload().copyTo(encoded, HEADER_SIZE);
-    return encoded;
-  }
-
   /** Encodes {@code diff} with room for a record header before it, for the encode taking it. */
   static TreeDiffCodec.Encoded encodePayload(final TreeDiff diff) {
     return TreeDiffCodec.encode(diff, HEADER_SIZE);

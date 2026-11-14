@@ -389,6 +389,24 @@ class StoreTransactionUpdatesFactoryTest {
   }
 
   @Test
+  void diffMode_finalizedStatesIncludeEpochStatesWhenBlockStateEvicted() {
+    final UpdatableStore store = createGenesisStore(StoreConfig.createDefault(), true);
+    chainBuilder.generateBlocksUpToSlot(spec.computeStartSlotAtEpoch(UInt64.valueOf(2)));
+    importOneBlockPerTransaction(store, 1, chainBuilder.getLatestSlot().longValue());
+    final SignedBlockAndState checkpointBlock = chainBuilder.getBlockAndStateAtSlot(7);
+    ((Store) store).removeBlockAndState(checkpointBlock.getRoot());
+    ((Store) store).getEpochStates().orElseThrow().put(checkpointBlock.getRoot(), checkpointBlock);
+    final List<StorageUpdate> updates = new ArrayList<>();
+    final UpdatableStore.StoreTransaction tx = store.startTransaction(capturingChannel(updates));
+    tx.setFinalizedCheckpoint(chainBuilder.getCurrentCheckpointForEpoch(2), false);
+
+    assertThat(tx.commit()).isCompleted();
+
+    assertThat(updates.getFirst().getFinalizedStates())
+        .containsEntry(checkpointBlock.getRoot(), checkpointBlock.getState());
+  }
+
+  @Test
   void legacyMode_unchanged() {
     final UpdatableStore store = createGenesisStore(StoreConfig.createDefault(), false);
     chainBuilder.generateBlocksUpToSlot(spec.computeStartSlotAtEpoch(UInt64.valueOf(4)));

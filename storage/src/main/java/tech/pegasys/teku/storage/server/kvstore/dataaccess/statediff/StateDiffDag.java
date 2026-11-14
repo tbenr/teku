@@ -13,6 +13,7 @@
 
 package tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff;
 
+import com.google.common.annotations.VisibleForTesting;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -40,13 +41,15 @@ import tech.pegasys.teku.infrastructure.statediff.SupernodeSource;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.SupernodeEntry;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiffApplier;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiffCodec;
+import tech.pegasys.teku.infrastructure.time.Throttler;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
+import tech.pegasys.teku.storage.server.StateDiffVerificationReport;
+import tech.pegasys.teku.storage.server.StateDiffVerificationReport.CorruptNode;
 import tech.pegasys.teku.storage.server.kvstore.ColumnEntry;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationReport.CorruptNode;
 
 /**
  * The state diff DAG: beacon states of checkpoint blocks stored as diffs against coarser ancestor
@@ -67,35 +70,35 @@ public class StateDiffDag {
   /** Upper bound on any pointer walk, so a corrupted pointer cycle fails instead of looping. */
   static final int MAX_WALK_LENGTH = 1 << 16;
 
-  private static final Comparator<Bytes32> BY_HEX = Comparator.comparing(Bytes32::toHexString);
-
   /** The number of supernodes {@link #verify} loads in one batch to check their content. */
   private static final int VERIFY_SUPERNODE_BATCH_SIZE = 1024;
-
-  private static final long RECONSTRUCTION_FAILURE_LOG_INTERVAL_MILLIS = 60_000;
 
   private static final Function<Bytes32, Optional<TreeNode>> NO_KNOWN_TREES =
       root -> Optional.empty();
 
-  private final StateDiffDagConfig config;
+  /**
+   * The epoch periods of the diff levels: a snapshot every 256 epochs, then diffs every 64, 16 and
+   * 1 epochs, archive databases included (decision 45).
+   */
+  public static final DiffLevels DEFAULT_LEVELS = DiffLevels.of(List.of(256L, 64L, 16L, 1L));
+
   private final DiffLevels levels;
   private final BeaconStateDiffSupport support;
   private final LevelBaseCache baseCache;
   private final StateDiffMetrics metrics;
-  private final AtomicLong lastReconstructionFailureLogMillis = new AtomicLong(Long.MIN_VALUE);
-  private final AtomicLong suppressedReconstructionFailureLogs = new AtomicLong();
 
-  public StateDiffDag(
-      final Spec spec, final StateDiffDagConfig config, final MetricsSystem metricsSystem) {
-    this.config = config;
-    this.levels = config.diffLevels();
+  /** Reconstruction failures are logged at most once a minute, timed in milliseconds. */
+  private final Throttler<Logger> reconstructionFailureLog =
+      new Throttler<>(LOG, UInt64.valueOf(60_000));
+
+  /** The reconstruction failures since the last one logged, the one being logged included. */
+  private final AtomicLong unloggedReconstructionFailures = new AtomicLong();
+
+  public StateDiffDag(final Spec spec, final DiffLevels levels, final MetricsSystem metricsSystem) {
+    this.levels = levels;
     this.support = new BeaconStateDiffSupport(spec);
     this.baseCache = new LevelBaseCache(levels.levelCount());
     this.metrics = new StateDiffMetrics(metricsSystem);
-  }
-
-  public StateDiffDagConfig getConfig() {
-    return config;
   }
 
   /**
@@ -107,7 +110,7 @@ public class StateDiffDag {
    *     recorded one
    */
   public Optional<BeaconState> reconstruct(final KvStoreCombinedDao dao, final Bytes32 blockRoot) {
-    return reconstruct(new CommittedNodeReader(dao), blockRoot);
+    return reconstruct(new CommittedNodeReader(dao), blockRoot, NO_KNOWN_TREES);
   }
 
   /**
@@ -118,7 +121,7 @@ public class StateDiffDag {
    */
   public Optional<BeaconState> reconstructAndCache(
       final KvStoreCombinedDao dao, final Bytes32 blockRoot) {
-    return reconstructNode(new CommittedNodeReader(dao), blockRoot, NO_KNOWN_TREES)
+    return reconstructChain(new CommittedNodeReader(dao), blockRoot, NO_KNOWN_TREES)
         .map(
             node -> {
               baseCache.put(LevelBaseCache.cacheLevel(node.record()), blockRoot, node.state());
@@ -146,27 +149,25 @@ public class StateDiffDag {
   /** Logs a reconstruction failure at most once per interval, counting the others. */
   private void logReconstructionFailure(
       final Bytes32 blockRoot, final StateDiffVerificationException e) {
-    final long now = System.currentTimeMillis();
-    final long last = lastReconstructionFailureLogMillis.get();
-    final boolean due =
-        last == Long.MIN_VALUE || now - last >= RECONSTRUCTION_FAILURE_LOG_INTERVAL_MILLIS;
-    if (!due || !lastReconstructionFailureLogMillis.compareAndSet(last, now)) {
-      suppressedReconstructionFailureLogs.incrementAndGet();
-      return;
-    }
-    LOG.error(
-        "Cannot reconstruct the state of block {} from state diff storage, regenerating it by"
-            + " replaying blocks instead ({} similar errors not logged since the last one)",
-        blockRoot,
-        suppressedReconstructionFailureLogs.getAndSet(0),
-        e);
+    unloggedReconstructionFailures.incrementAndGet();
+    reconstructionFailureLog.invoke(
+        UInt64.valueOf(System.currentTimeMillis()),
+        log ->
+            log.error(
+                "Cannot reconstruct the state of block {} from state diff storage, regenerating it"
+                    + " by replaying blocks instead ({} similar errors not logged since the last"
+                    + " one)",
+                blockRoot,
+                unloggedReconstructionFailures.getAndSet(0) - 1,
+                e));
   }
 
   /**
    * The roots of the nodes needed to reconstruct {@code blockRoot}: the node itself, then each
    * parent up to and including the snapshot. Empty when there is no node for {@code blockRoot}.
    */
-  public List<Bytes32> reconstructionChain(final KvStoreCombinedDao dao, final Bytes32 blockRoot) {
+  @VisibleForTesting
+  List<Bytes32> reconstructionChain(final KvStoreCombinedDao dao, final Bytes32 blockRoot) {
     return loadChain(new CommittedNodeReader(dao), blockRoot).stream()
         .map(ChainLink::root)
         .collect(Collectors.toList());
@@ -212,7 +213,7 @@ public class StateDiffDag {
             }
           });
     }
-    corruptNodes.sort(Comparator.comparing(CorruptNode::root, BY_HEX));
+    corruptNodes.sort(Comparator.comparing(CorruptNode::root));
     final Map<Bytes32, UInt64> storedCounts = new HashMap<>();
     try (final Stream<ColumnEntry<Bytes32, UInt64>> counts = dao.streamStateSupernodeRefCounts()) {
       counts.forEach(entry -> storedCounts.put(entry.getKey(), entry.getValue()));
@@ -226,7 +227,7 @@ public class StateDiffDag {
     countedHashes.addAll(storedCounts.keySet());
     final List<StateDiffVerificationReport.RefCountMismatch> refCountMismatches =
         countedHashes.stream()
-            .sorted(BY_HEX)
+            .sorted()
             .flatMap(
                 hash -> {
                   final long expected = referencingNodes.getOrDefault(hash, 0L);
@@ -245,22 +246,22 @@ public class StateDiffDag {
     final List<Bytes32> missingSupernodes =
         referencingNodes.keySet().stream()
             .filter(hash -> !storedSupernodes.contains(hash))
-            .sorted(BY_HEX)
+            .sorted()
             .toList();
     final List<Bytes32> unreferencedSupernodes =
         storedSupernodes.stream()
             .filter(hash -> !referencingNodes.containsKey(hash))
-            .sorted(BY_HEX)
+            .sorted()
             .toList();
     final List<Bytes32> hashChecked =
-        storedSupernodes.stream().filter(supernodeReferences::containsKey).sorted(BY_HEX).toList();
+        storedSupernodes.stream().filter(supernodeReferences::containsKey).sorted().toList();
     final List<Bytes32> supernodeHashMismatches =
         findSupernodeHashMismatches(dao, hashChecked, supernodeReferences);
     final List<Bytes32> nodesWithMissingParent =
         parentRoots.entrySet().stream()
             .filter(entry -> !nodeRoots.contains(entry.getValue()))
             .map(Map.Entry::getKey)
-            .sorted(BY_HEX)
+            .sorted()
             .toList();
 
     final Optional<Bytes32> anchorRoot = dao.getFinalizedCheckpoint().map(Checkpoint::getRoot);
@@ -371,73 +372,59 @@ public class StateDiffDag {
   }
 
   /**
-   * Reconstructs the state of {@code blockRoot}, counting any failure as a verification failure.
-   * Codec errors in a node record or payload and a missing supernode are reported as a {@link
-   * StateDiffVerificationException} naming the node, so that one type carries every reason the DAG
-   * cannot serve a state.
-   */
-  Optional<BeaconState> reconstruct(final NodeReader reader, final Bytes32 blockRoot) {
-    return reconstruct(reader, blockRoot, NO_KNOWN_TREES);
-  }
-
-  /**
-   * Reconstructs the state of {@code blockRoot} as {@link #reconstruct(NodeReader, Bytes32)} does,
+   * Reconstructs the state of {@code blockRoot}, counting any failure as a verification failure,
    * also starting from a state tree of {@code knownTrees}, such as one written in the running
-   * transaction, when its node is in the chain.
+   * transaction, when its node is in the chain. Codec errors in a node record or payload and a
+   * missing supernode are reported as a {@link StateDiffVerificationException} naming the node, so
+   * that one type carries every reason the DAG cannot serve a state.
    */
   Optional<BeaconState> reconstruct(
       final NodeReader reader,
       final Bytes32 blockRoot,
       final Function<Bytes32, Optional<TreeNode>> knownTrees) {
-    return reconstructNode(reader, blockRoot, knownTrees).map(ReconstructedNode::state);
-  }
-
-  private Optional<ReconstructedNode> reconstructNode(
-      final NodeReader reader,
-      final Bytes32 blockRoot,
-      final Function<Bytes32, Optional<TreeNode>> knownTrees) {
-    try {
-      return reconstructChain(reader, blockRoot, knownTrees);
-    } catch (final StateDiffVerificationException e) {
-      metrics.onVerificationFailure();
-      throw e;
-    }
+    return reconstructChain(reader, blockRoot, knownTrees).map(ReconstructedNode::state);
   }
 
   /**
    * Loads the chain of {@code blockRoot} down to its snapshot or to the first link below the node
    * whose state tree is known, from {@code knownTrees} or the base cache, and applies the payloads
    * above it. The node's own payload is always applied, so a read never skips the record it asks
-   * for. The state root of the result is checked against the node's record either way.
+   * for. The state root of the result is checked against the node's record either way. Any failure
+   * is counted as a verification failure.
    */
   private Optional<ReconstructedNode> reconstructChain(
       final NodeReader reader,
       final Bytes32 blockRoot,
       final Function<Bytes32, Optional<TreeNode>> knownTrees) {
     final long start = System.nanoTime();
-    // Set by the link that ends the chain when its state tree is known
-    final AtomicReference<TreeNode> knownStartTree = new AtomicReference<>();
-    final List<ChainLink> chain =
-        loadChain(
-            reader,
-            blockRoot,
-            link -> {
-              final Optional<TreeNode> tree =
-                  knownTrees.apply(link.root()).or(() -> baseCache.find(link.root()));
-              // A cached tree of another state than the record's never starts a chain
-              final boolean usable =
-                  tree.map(known -> known.hashTreeRoot().equals(link.record().stateRoot()))
-                      .orElse(false);
-              if (usable) {
-                knownStartTree.set(tree.get());
-              }
-              return usable;
-            });
-    if (chain.isEmpty()) {
-      return Optional.empty();
+    try {
+      // Set by the link that ends the chain when its state tree is known
+      final AtomicReference<TreeNode> knownStartTree = new AtomicReference<>();
+      final List<ChainLink> chain =
+          loadChain(
+              reader,
+              blockRoot,
+              link -> {
+                final Optional<TreeNode> tree =
+                    knownTrees.apply(link.root()).or(() -> baseCache.find(link.root()));
+                // A cached tree of another state than the record's never starts a chain
+                final boolean usable =
+                    tree.map(known -> known.hashTreeRoot().equals(link.record().stateRoot()))
+                        .orElse(false);
+                if (usable) {
+                  knownStartTree.set(tree.get());
+                }
+                return usable;
+              });
+      if (chain.isEmpty()) {
+        return Optional.empty();
+      }
+      return Optional.of(
+          applyChain(reader, blockRoot, chain, Optional.ofNullable(knownStartTree.get()), start));
+    } catch (final StateDiffVerificationException e) {
+      metrics.onVerificationFailure();
+      throw e;
     }
-    return Optional.of(
-        applyChain(reader, blockRoot, chain, Optional.ofNullable(knownStartTree.get()), start));
   }
 
   /**
@@ -476,8 +463,8 @@ public class StateDiffDag {
                 + last.root()
                 + " at slot "
                 + bottom.blockSlot()
-                + " below it; chain from node to snapshot or cached node: "
-                + describe(chain));
+                + " below it"
+                + describeChainSuffix(chain));
       }
       try {
         application.apply(TreeDiffCodec.deserialize(record.payload()));
@@ -491,8 +478,7 @@ public class StateDiffDag {
                 + chain.get(i).root()
                 + " in the reconstruction chain of node "
                 + blockRoot
-                + "; chain from node to snapshot or cached node: "
-                + describe(chain),
+                + describeChainSuffix(chain),
             e);
       }
     }
@@ -514,8 +500,7 @@ public class StateDiffDag {
               + actualRoot
               + " but the node records "
               + head.stateRoot()
-              + "; chain from node to snapshot or cached node: "
-              + describe(chain));
+              + describeChainSuffix(chain));
     }
     metrics.onReconstruct(System.nanoTime() - startNanos, appliedLinks);
     return new ReconstructedNode(head, state);
@@ -533,8 +518,7 @@ public class StateDiffDag {
             + blockRoot
             + ": "
             + cause.getMessage()
-            + "; chain from node to snapshot or cached node: "
-            + describe(chain),
+            + describeChainSuffix(chain),
         cause);
   }
 
@@ -607,6 +591,11 @@ public class StateDiffDag {
     return chain;
   }
 
+  /** The suffix of the exception messages of a reconstruction that names its loaded chain. */
+  private static String describeChainSuffix(final List<ChainLink> chain) {
+    return "; chain from node to snapshot or cached node: " + describe(chain);
+  }
+
   private static String describe(final List<ChainLink> chain) {
     return chain.stream()
         .map(link -> link.root().toHexString())
@@ -652,11 +641,6 @@ public class StateDiffDag {
     @Override
     public Optional<Bytes> getEncodedNode(final Bytes32 blockRoot) {
       return dao.getStateDiffNode(blockRoot);
-    }
-
-    @Override
-    public Optional<Bytes> load(final Bytes32 hash) {
-      return dao.getStateSupernode(hash);
     }
 
     @Override

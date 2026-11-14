@@ -20,7 +20,6 @@ import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.spy;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -41,6 +40,7 @@ import tech.pegasys.infrastructure.logging.LogCaptor;
 import tech.pegasys.teku.infrastructure.metrics.StubMetricsSystem;
 import tech.pegasys.teku.infrastructure.metrics.TekuMetricCategory;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
+import tech.pegasys.teku.infrastructure.statediff.DiffLevels;
 import tech.pegasys.teku.infrastructure.statediff.MissingSupernodeException;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff;
 import tech.pegasys.teku.infrastructure.statediff.TreeDiff.SupernodeEntry;
@@ -59,6 +59,7 @@ import tech.pegasys.teku.spec.generator.ChainBuilder;
 import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.EpochProcessingException;
 import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.SlotProcessingException;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
+import tech.pegasys.teku.storage.server.StateDiffVerificationReport;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreAccessor;
 import tech.pegasys.teku.storage.server.kvstore.MockKvStoreInstance;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.CombinedKvStoreDao;
@@ -71,13 +72,12 @@ import tech.pegasys.teku.storage.server.kvstore.schema.V6SchemaCombinedSnapshot;
 class StateDiffDagTest {
 
   private static final int VALIDATOR_COUNT = 32;
-  private static final Comparator<Bytes32> BY_HEX = Comparator.comparing(Bytes32::toHexString);
 
   private Spec spec = TestSpecFactory.createMinimalElectra();
   private DataStructureUtil dataStructureUtil = new DataStructureUtil(spec);
   private KvStoreCombinedDao dao = createDao(spec);
   private final StubMetricsSystem metricsSystem = new StubMetricsSystem();
-  private StateDiffDag dag = new StateDiffDag(spec, StateDiffDagConfig.prune(), metricsSystem);
+  private StateDiffDag dag = new StateDiffDag(spec, StateDiffDag.DEFAULT_LEVELS, metricsSystem);
 
   private final List<BeaconState> states = new ArrayList<>();
   private final List<Bytes32> roots = new ArrayList<>();
@@ -160,7 +160,7 @@ class StateDiffDagTest {
     writeEpochs(0, 40);
 
     final StubMetricsSystem restartedMetrics = new StubMetricsSystem();
-    dag = new StateDiffDag(spec, StateDiffDagConfig.prune(), restartedMetrics);
+    dag = new StateDiffDag(spec, StateDiffDag.DEFAULT_LEVELS, restartedMetrics);
     writeEpochs(41, 42);
 
     assertThat(record(roots.get(41)).parentNodeRoot()).isEqualTo(roots.get(40));
@@ -232,7 +232,7 @@ class StateDiffDagTest {
         .isEqualTo(
             StateDiffNodeRecordCodec.decode(
                 StateDiffNodeRecordCodec.patchLastEpoch(
-                    StateDiffNodeRecordCodec.encode(original), epoch(17))));
+                    TestNodeRecords.encode(original), epoch(17))));
 
     // A smaller last epoch never lowers the stored one
     update(
@@ -257,7 +257,7 @@ class StateDiffDagTest {
     spec = TestSpecFactory.createMinimalWithFuluForkEpoch(UInt64.valueOf(4));
     dataStructureUtil = new DataStructureUtil(spec);
     dao = createDao(spec);
-    dag = new StateDiffDag(spec, StateDiffDagConfig.prune(), metricsSystem);
+    dag = new StateDiffDag(spec, StateDiffDag.DEFAULT_LEVELS, metricsSystem);
     buildChain(6);
 
     writeEpochs(0, 5);
@@ -292,9 +292,7 @@ class StateDiffDagTest {
             record.snapshot(),
             record.parentNodeRoot(),
             record.payload());
-    updateDao(
-        updater ->
-            updater.putStateDiffNode(roots.get(1), StateDiffNodeRecordCodec.encode(corrupted)));
+    updateDao(updater -> updater.putStateDiffNode(roots.get(1), TestNodeRecords.encode(corrupted)));
 
     assertThatThrownBy(() -> dag.reconstruct(dao, roots.get(1)))
         .isInstanceOf(StateDiffVerificationException.class)
@@ -382,7 +380,7 @@ class StateDiffDagTest {
         updater ->
             updater.putStateDiffNode(
                 roots.get(1),
-                StateDiffNodeRecordCodec.encode(
+                TestNodeRecords.encode(
                     new StateDiffNodeRecord(
                         record.blockSlot(),
                         record.stateRoot(),
@@ -494,7 +492,7 @@ class StateDiffDagTest {
 
   @Test
   void retainFinalizedChainDropsOldSnapshotAfterNewOne() {
-    dag = new StateDiffDag(spec, new StateDiffDagConfig(true, List.of(4L, 2L, 1L)), metricsSystem);
+    dag = new StateDiffDag(spec, DiffLevels.of(List.of(4L, 2L, 1L)), metricsSystem);
     buildChain(10);
     writeEpochs(0, 5);
     // A forced snapshot at epoch 6, as written for a new anchor
@@ -697,6 +695,50 @@ class StateDiffDagTest {
   }
 
   @Test
+  void writeNodeOrSnapshotWritesSnapshotWhenPreviousNodeRecordIsUnreadable() {
+    buildChain(3);
+    writeEpochs(0, 1);
+    updateDao(updater -> updater.putStateDiffNode(roots.get(1), Bytes.of(2, 2, 3)));
+
+    try (final LogCaptor logCaptor = LogCaptor.forClass(StateDiffDagTransaction.class)) {
+      update(
+          tx ->
+              tx.writeNodeOrSnapshot(
+                  roots.get(2), states.get(2), epoch(2), epoch(2), ancestorsBefore(2)));
+
+      assertThat(logCaptor.getErrorLogs())
+          .singleElement()
+          .satisfies(
+              log ->
+                  assertThat(log)
+                      .contains(roots.get(2).toHexString())
+                      .contains("writing it as a snapshot"));
+    }
+
+    assertThat(record(roots.get(2)).snapshot()).isTrue();
+    assertThat(snapshots("forced")).isEqualTo(1);
+    assertReconstructs(2);
+  }
+
+  @Test
+  void periodicSnapshotIsWrittenWhenPreviousNodeRecordIsUnreadable() {
+    dag = new StateDiffDag(spec, DiffLevels.of(List.of(4L, 2L, 1L)), metricsSystem);
+    buildChain(5);
+    writeEpochs(0, 3);
+    updateDao(updater -> updater.putStateDiffNode(roots.get(3), Bytes.of(2, 2, 3)));
+    final long periodicBefore = snapshots("periodic");
+
+    update(
+        tx ->
+            tx.writeNode(
+                roots.get(4), states.get(4), epoch(4), epoch(4), ancestorsBefore(4), false));
+
+    assertThat(record(roots.get(4)).snapshot()).isTrue();
+    assertThat(snapshots("periodic")).isEqualTo(periodicBefore + 1);
+    assertReconstructs(4);
+  }
+
+  @Test
   void corruptPayloadFailsWithVerificationException() {
     buildChain(2);
     writeEpochs(0, 1);
@@ -711,9 +753,7 @@ class StateDiffDagTest {
             record.snapshot(),
             record.parentNodeRoot(),
             Bytes.of(9, 9, 9));
-    updateDao(
-        updater ->
-            updater.putStateDiffNode(roots.get(1), StateDiffNodeRecordCodec.encode(corrupted)));
+    updateDao(updater -> updater.putStateDiffNode(roots.get(1), TestNodeRecords.encode(corrupted)));
 
     assertThatThrownBy(() -> dag.reconstruct(dao, roots.get(1)))
         .isInstanceOf(StateDiffVerificationException.class)
@@ -754,7 +794,7 @@ class StateDiffDagTest {
       final TreeDiff diff = TreeDiffCodec.deserialize(record(root).payload());
       perLinkListBuilds += diff.deltas().size();
       diff.deltas().forEach(delta -> deltaFields.add(delta.fieldIndex()));
-      perLink = applier.apply(perLink, diff, dao::getStateSupernode);
+      perLink = TestTreeDiffs.apply(applier, perLink, diff, dao::getStateSupernodes);
     }
     final long listBuildsBefore = listBuilds();
 
@@ -821,7 +861,7 @@ class StateDiffDagTest {
     // Node 0 is lost and, after a restart, node 1, the diff base of a late anchor node of epoch 2,
     // is not cached: it cannot be reconstructed
     updateDao(updater -> updater.deleteStateDiffNode(roots.get(0)));
-    dag = new StateDiffDag(spec, StateDiffDagConfig.prune(), metricsSystem);
+    dag = new StateDiffDag(spec, StateDiffDag.DEFAULT_LEVELS, metricsSystem);
 
     try (final LogCaptor logCaptor = LogCaptor.forClass(StateDiffDagTransaction.class)) {
       update(
@@ -866,7 +906,7 @@ class StateDiffDagTest {
         updater ->
             updater.putStateDiffNode(
                 roots.get(10),
-                StateDiffNodeRecordCodec.encode(
+                TestNodeRecords.encode(
                     new StateDiffNodeRecord(
                         record.blockSlot(),
                         record.stateRoot(),
@@ -897,7 +937,7 @@ class StateDiffDagTest {
 
   @Test
   void writesPeriodicSnapshotAtCoarsestLevel() {
-    dag = new StateDiffDag(spec, new StateDiffDagConfig(true, List.of(4L, 2L, 1L)), metricsSystem);
+    dag = new StateDiffDag(spec, DiffLevels.of(List.of(4L, 2L, 1L)), metricsSystem);
     buildChain(21);
 
     writeEpochs(0, 20);
@@ -962,7 +1002,7 @@ class StateDiffDagTest {
     buildChain(10);
     writeEpochs(0, 9);
     final Map<String, List<Double>> histograms = new HashMap<>();
-    dag = new StateDiffDag(spec, StateDiffDagConfig.prune(), recordingMetrics(histograms));
+    dag = new StateDiffDag(spec, StateDiffDag.DEFAULT_LEVELS, recordingMetrics(histograms));
     final BeaconState fullChain = dag.reconstruct(dao, roots.get(9)).orElseThrow();
     assertThat(dag.reconstructionChain(dao, roots.get(9))).hasSize(10);
 
@@ -982,7 +1022,7 @@ class StateDiffDagTest {
     buildChain(2);
     writeEpochs(0, 1);
     final Map<String, List<Double>> histograms = new HashMap<>();
-    dag = new StateDiffDag(spec, StateDiffDagConfig.prune(), recordingMetrics(histograms));
+    dag = new StateDiffDag(spec, StateDiffDag.DEFAULT_LEVELS, recordingMetrics(histograms));
     assertThat(dag.reconstructAndCache(dao, roots.get(1))).isPresent();
 
     assertReconstructs(1);
@@ -998,7 +1038,7 @@ class StateDiffDagTest {
     final Map<String, List<Double>> histograms = new HashMap<>();
     dag =
         new StateDiffDag(
-            spec, StateDiffDagConfig.prune(), recordingMetrics(restartedMetrics, histograms));
+            spec, StateDiffDag.DEFAULT_LEVELS, recordingMetrics(restartedMetrics, histograms));
     // The finalized anchor, reconstructed when the store is loaded
     assertThat(dag.reconstructAndCache(dao, roots.get(10))).isPresent();
     final int reconstructions = histograms.get("state_diff_reconstruct_chain_length").size();
@@ -1020,7 +1060,7 @@ class StateDiffDagTest {
     final Map<String, List<Double>> histograms = new HashMap<>();
     dag =
         new StateDiffDag(
-            spec, StateDiffDagConfig.prune(), recordingMetrics(restartedMetrics, histograms));
+            spec, StateDiffDag.DEFAULT_LEVELS, recordingMetrics(restartedMetrics, histograms));
     assertThat(dag.reconstructAndCache(dao, roots.get(8))).isPresent();
 
     // The parent, node 12, is not cached: nodes 9 to 12 are applied to the cached node 8
@@ -1204,7 +1244,7 @@ class StateDiffDagTest {
 
   @Test
   void windowKeepsTheSnapshotThatStartsTheNewOldestChain() {
-    dag = new StateDiffDag(spec, new StateDiffDagConfig(true, List.of(4L, 2L, 1L)), metricsSystem);
+    dag = new StateDiffDag(spec, DiffLevels.of(List.of(4L, 2L, 1L)), metricsSystem);
     buildChain(12);
     writeEpochs(0, 11);
     // Epochs 0, 4 and 8, the coarsest level, are snapshots
@@ -1463,7 +1503,7 @@ class StateDiffDagTest {
                 false));
     final Set<Bytes32> allHashes = new HashSet<>(supernodeHashes(roots.get(0)));
     allHashes.addAll(supernodeHashes(changedRoot));
-    final List<Bytes32> hashes = allHashes.stream().sorted(BY_HEX).toList();
+    final List<Bytes32> hashes = allHashes.stream().sorted().toList();
     assertThat(hashes).hasSizeGreaterThan(1);
     final Bytes32 flippedHash = hashes.get(0);
     final Bytes32 truncatedHash = hashes.get(1);
@@ -1553,7 +1593,9 @@ class StateDiffDagTest {
       assertThat(loaded.keySet()).containsExactlyInAnyOrderElementsOf(found);
       assertThat(loaded.get(committedHash))
           .isEqualTo(dao.getStateSupernode(committedHash).orElseThrow());
-      assertThat(dag.reconstruct(transaction.reader(), changedRoot).orElseThrow())
+      assertThat(
+              dag.reconstruct(transaction.reader(), changedRoot, root -> Optional.empty())
+                  .orElseThrow())
           .isEqualTo(changed);
     }
   }
@@ -1565,7 +1607,10 @@ class StateDiffDagTest {
     final TreeDiffApplier applier = dag.support().applierFor(states.get(0).getSlot());
 
     assertReconstructs(0);
-    update(tx -> assertThat(dag.reconstruct(tx.reader(), roots.get(0))).isPresent());
+    update(
+        tx ->
+            assertThat(dag.reconstruct(tx.reader(), roots.get(0), root -> Optional.empty()))
+                .isPresent());
 
     assertThat(dag.support().applierFor(states.get(0).getSlot())).isSameAs(applier);
   }
@@ -1632,7 +1677,7 @@ class StateDiffDagTest {
     spec = newSpec;
     dataStructureUtil = new DataStructureUtil(spec);
     dao = createDao(spec);
-    dag = new StateDiffDag(spec, StateDiffDagConfig.prune(), metricsSystem);
+    dag = new StateDiffDag(spec, StateDiffDag.DEFAULT_LEVELS, metricsSystem);
   }
 
   /**
@@ -1863,7 +1908,7 @@ class StateDiffDagTest {
 
   /** A DAG over the same database with nothing cached, as after a restart. */
   private StateDiffDag uncachedDag() {
-    return new StateDiffDag(spec, dag.getConfig(), metricsSystem);
+    return new StateDiffDag(spec, dag.levels(), metricsSystem);
   }
 
   private static UInt64 epoch(final int epoch) {

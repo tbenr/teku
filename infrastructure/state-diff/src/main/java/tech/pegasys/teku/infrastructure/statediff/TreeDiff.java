@@ -42,9 +42,6 @@ public record TreeDiff(
     List<CopiedEntry> copied,
     List<DeltaEntry> deltas) {
 
-  private static final TreeDiff EMPTY =
-      new TreeDiff(List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
-
   public TreeDiff(
       final List<LeafEntry> leaves,
       final List<SupernodeEntry> supernodes,
@@ -58,23 +55,6 @@ public record TreeDiff(
     this.zeroed = List.copyOf(zeroed);
     this.copied = List.copyOf(copied);
     this.deltas = List.copyOf(deltas);
-  }
-
-  public static TreeDiff empty() {
-    return EMPTY;
-  }
-
-  public boolean isEmpty() {
-    return entryCount() == 0;
-  }
-
-  public int entryCount() {
-    return leaves.size()
-        + supernodes.size()
-        + patches.size()
-        + zeroed.size()
-        + copied.size()
-        + deltas.size();
   }
 
   /**

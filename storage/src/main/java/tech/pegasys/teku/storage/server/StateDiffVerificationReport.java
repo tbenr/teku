@@ -11,7 +11,7 @@
  * specific language governing permissions and limitations under the License.
  */
 
-package tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff;
+package tech.pegasys.teku.storage.server;
 
 import java.util.List;
 import java.util.Optional;

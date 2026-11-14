@@ -28,8 +28,8 @@ import tech.pegasys.teku.config.TekuConfiguration;
 import tech.pegasys.teku.infrastructure.exceptions.InvalidConfigurationException;
 import tech.pegasys.teku.spec.networks.Eth2Network;
 import tech.pegasys.teku.storage.server.DatabaseVersion;
+import tech.pegasys.teku.storage.server.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.StorageConfiguration;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
 
 public class BeaconNodeDataOptionsTest extends AbstractBeaconNodeCommandTest {
   private static final Path TEST_PATH = Path.of("/tmp/teku");
@@ -320,7 +320,7 @@ public class BeaconNodeDataOptionsTest extends AbstractBeaconNodeCommandTest {
     final TekuConfiguration tekuConfig =
         getTekuConfigurationFromArguments("--Xdata-storage-state-diffs");
     assertThat(tekuConfig.storageConfiguration().getStateDiffDagConfig())
-        .isEqualTo(StateDiffDagConfig.prune());
+        .isEqualTo(new StateDiffDagConfig(true, 0));
     assertThat(tekuConfig.beaconChain().storeConfig().isStateDiffsEnabled()).isTrue();
   }
 
@@ -332,7 +332,7 @@ public class BeaconNodeDataOptionsTest extends AbstractBeaconNodeCommandTest {
             "--data-storage-mode=archive",
             "--Xdata-storage-archive-finalized-states-retained=4096");
     assertThat(tekuConfig.storageConfiguration().getStateDiffDagConfig())
-        .isEqualTo(StateDiffDagConfig.prune().withRetainedSlots(4096));
+        .isEqualTo(new StateDiffDagConfig(true, 4096));
   }
 
   @Test

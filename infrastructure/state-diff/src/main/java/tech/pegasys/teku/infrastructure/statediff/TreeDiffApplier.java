@@ -53,10 +53,11 @@ import tech.pegasys.teku.infrastructure.statediff.TreeDiff.ZeroedEntry;
  * Applies a {@link TreeDiff} produced by {@link TreeDiffer} to a base tree of the same container
  * schema. Applying a diff taken against {@code schema.getDefaultTree()} rebuilds a snapshot.
  *
- * <p>Entries are applied in the order copied, deltas, zeroed, supernodes and patches, leaves. Copy
- * sources and patched supernodes are read from the unmodified base tree. Within each section the
- * updates are grouped by tree depth, since {@link TreeUpdates} rejects mixed depths, and applied
- * deepest first.
+ * <p>Diffs are applied as a chain ({@link #startChain}). The entries of each diff other than its
+ * deltas are applied in the order copied, zeroed, supernodes and patches, leaves; copy sources and
+ * patched supernodes are read from the tree the diff applies to. Within each section the updates
+ * are grouped by tree depth, since {@link TreeUpdates} rejects mixed depths, and applied deepest
+ * first. Delta sections are folded per field and written when the chain is finished.
  *
  * <p>The supernodes a diff references are loaded from the {@link SupernodeSource} passed with each
  * application, all those of one diff in one {@link SupernodeSource#loadAll} call. A supernode is
@@ -71,46 +72,37 @@ public final class TreeDiffApplier {
     this.schema = schema;
   }
 
-  /**
-   * Applies {@code diff} to {@code base}, loading the supernodes it references from {@code source}.
-   */
-  public TreeNode apply(final TreeNode base, final TreeDiff diff, final SupernodeSource source) {
-    return applySections(base, diff, true, source);
-  }
-
   /** Replaces the uint64 list field {@code fieldIndex} of {@code tree} by {@code values}. */
-  public TreeNode applyDeltaValues(final TreeNode tree, final int fieldIndex, final long[] values) {
+  private TreeNode applyDeltaValues(
+      final TreeNode tree, final int fieldIndex, final long[] values) {
     final TreeNode listNode = PackedUInt64Lists.write(uint64ListSchema(fieldIndex), values);
     return tree.updated(schema.getChildGeneralizedIndex(fieldIndex), listNode);
   }
 
   /** The values of the uint64 list field {@code fieldIndex} of {@code tree}. */
-  public long[] readDeltaValues(final TreeNode tree, final int fieldIndex) {
+  private long[] readDeltaValues(final TreeNode tree, final int fieldIndex) {
     return PackedUInt64Lists.read(
         uint64ListSchema(fieldIndex), tree.get(schema.getChildGeneralizedIndex(fieldIndex)));
   }
 
   /**
    * Starts applying a chain of diffs to {@code base}, each diff taken against the result of the
-   * previous one. The result equals applying the diffs one by one with {@link #apply}, but delta
-   * sections compose: they are folded into one value array per field and each such field is built
-   * once, by {@link ChainApplication#finish()}, instead of once per diff. A folded field starts
-   * from its values in {@code base}, which can be any tree of the schema, a live state's included.
-   * The supernodes of every diff of the chain are loaded from {@code source}.
+   * previous one; a single diff is a chain of one. Delta sections compose: they are folded into one
+   * value array per field and each such field is built once, by {@link ChainApplication#finish()},
+   * instead of once per diff. A folded field starts from its values in {@code base}, which can be
+   * any tree of the schema, a live state's included. The supernodes of every diff of the chain are
+   * loaded from {@code source}.
    */
   public ChainApplication startChain(final TreeNode base, final SupernodeSource source) {
     return new ChainApplication(base, source);
   }
 
   /**
-   * Applies the sections of {@code diff} to {@code base}; without {@code includeDeltas} the delta
-   * fields of {@code base} are left as they are, for a chain application folding them.
+   * Applies the sections of {@code diff} other than its deltas to {@code base}, leaving the delta
+   * fields of {@code base} as they are for the chain application folding them.
    */
-  private TreeNode applySections(
-      final TreeNode base,
-      final TreeDiff diff,
-      final boolean includeDeltas,
-      final SupernodeSource source) {
+  private TreeNode applySectionsExceptDeltas(
+      final TreeNode base, final TreeDiff diff, final SupernodeSource source) {
     TreeNode tree = base;
 
     final UpdatesByDepth copied = new UpdatesByDepth();
@@ -118,19 +110,6 @@ public final class TreeDiffApplier {
       copied.put(entry.targetGIndex(), base.get(entry.sourceGIndex()));
     }
     tree = copied.applyTo(tree);
-
-    if (includeDeltas) {
-      final UpdatesByDepth deltas = new UpdatesByDepth();
-      for (final DeltaEntry entry : diff.deltas()) {
-        final long[] values =
-            UInt64DeltaCodec.apply(
-                readDeltaValues(base, entry.fieldIndex()), entry.encodedDeltas());
-        deltas.put(
-            schema.getChildGeneralizedIndex(entry.fieldIndex()),
-            PackedUInt64Lists.write(uint64ListSchema(entry.fieldIndex()), values));
-      }
-      tree = deltas.applyTo(tree);
-    }
 
     final UpdatesByDepth zeroed = new UpdatesByDepth();
     for (final ZeroedEntry entry : diff.zeroed()) {
@@ -327,7 +306,7 @@ public final class TreeDiffApplier {
                 current != null ? current : readDeltaValues(tree, fieldIndex),
                 entry.encodedDeltas()));
       }
-      tree = applySections(tree, diff, false, source);
+      tree = applySectionsExceptDeltas(tree, diff, source);
     }
 
     /** Writes the folded delta fields and returns the tree of the last diff applied. */

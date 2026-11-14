@@ -94,6 +94,8 @@ import tech.pegasys.teku.storage.api.WeakSubjectivityUpdate;
 import tech.pegasys.teku.storage.archive.BlobSidecarsArchiver;
 import tech.pegasys.teku.storage.server.Database;
 import tech.pegasys.teku.storage.server.DatabaseStorageException;
+import tech.pegasys.teku.storage.server.StateDiffDagConfig;
+import tech.pegasys.teku.storage.server.StateDiffVerificationReport;
 import tech.pegasys.teku.storage.server.StateStorageMode;
 import tech.pegasys.teku.storage.server.kvstore.HotStateStorage.HotStateUpdate;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.CombinedKvStoreDao;
@@ -109,8 +111,6 @@ import tech.pegasys.teku.storage.server.kvstore.dataaccess.V4FinalizedStateStora
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.V4FinalizedStateTreeStorageLogic;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.V4HotKvStoreDao;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDag;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationReport;
 import tech.pegasys.teku.storage.server.kvstore.schema.SchemaCombined;
 import tech.pegasys.teku.storage.server.kvstore.schema.SchemaCombinedSnapshotState;
 import tech.pegasys.teku.storage.server.kvstore.schema.SchemaCombinedTreeState;
@@ -154,6 +154,24 @@ public class KvStoreDatabase implements Database {
     String displayName() {
       return displayName;
     }
+  }
+
+  /** A database without state diff storage, unless it carries the state diff mode marker. */
+  KvStoreDatabase(
+      final KvStoreCombinedDao dao,
+      final StateStorageMode stateStorageMode,
+      final boolean storeNonCanonicalBlocks,
+      final Spec spec,
+      final MetricsSystem metricsSystem,
+      final boolean prunedSlotCompactionEnabled) {
+    this(
+        dao,
+        stateStorageMode,
+        storeNonCanonicalBlocks,
+        spec,
+        StateDiffDagConfig.disabled(),
+        metricsSystem,
+        prunedSlotCompactionEnabled);
   }
 
   KvStoreDatabase(
@@ -213,22 +231,18 @@ public class KvStoreDatabase implements Database {
     if (!stateDiffDagConfig.enabled() && !marked) {
       return new LegacyHotStateStorage(dao, Optional.empty());
     }
-    final StateDiffDagConfig effectiveConfig;
-    if (stateDiffDagConfig.enabled()) {
-      effectiveConfig = stateDiffDagConfig;
-    } else {
+    if (!stateDiffDagConfig.enabled()) {
       LOG.info(
           "The database uses state diff storage, which remains in use although "
               + "--Xdata-storage-state-diffs is not enabled");
-      effectiveConfig =
-          StateDiffDagConfig.prune().withRetainedSlots(stateDiffDagConfig.retainedSlots());
     }
     final StateDiffHotStateStorage stateDiffStorage =
         new StateDiffHotStateStorage(
             dao,
-            new StateDiffDag(spec, effectiveConfig, metricsSystem),
+            new StateDiffDag(spec, StateDiffDag.DEFAULT_LEVELS, metricsSystem),
             spec,
-            stateStorageMode.storesFinalizedStates());
+            stateStorageMode.storesFinalizedStates(),
+            stateDiffDagConfig.retainedSlots());
     return marked
         ? stateDiffStorage
         : new LegacyHotStateStorage(dao, Optional.of(stateDiffStorage));
@@ -259,7 +273,6 @@ public class KvStoreDatabase implements Database {
         stateStorageMode,
         storeNonCanonicalBlocks,
         spec,
-        StateDiffDagConfig.disabled(),
         metricsSystem,
         prunedSlotCompactionEnabled);
   }
@@ -847,8 +860,7 @@ public class KvStoreDatabase implements Database {
             storeAnchorStateAndBlock(updater, anchorState, block);
           });
 
-      putFinalizedState(
-          updater, anchorRoot, anchorState, nextHotStateStorage.holdsFinalizedStates());
+      putFinalizedState(updater, nextHotStateStorage, anchorRoot, anchorState);
       if (initialAnchor.isGenesis()
           && spec.atSlot(initialAnchor.getSlot())
               .getMilestone()
@@ -969,20 +981,6 @@ public class KvStoreDatabase implements Database {
     return hotStateStorage.verify();
   }
 
-  /** Switches the database to state diff storage, if requested and not done yet. */
-  private void activateStateDiffStorageIfRequested() {
-    final Optional<HotStateStorage.Activation> activation = hotStateStorage.getPendingActivation();
-    if (activation.isEmpty()) {
-      return;
-    }
-    try (final HotUpdater updater = hotUpdater()) {
-      final HotStateStorage activated = activation.get().write(updater);
-      updater.commit();
-      hotStateStorage = activated;
-    }
-    activation.get().logActivated();
-  }
-
   /** The state of the finalized checkpoint block. */
   private Optional<BeaconState> getLatestFinalizedState() {
     return hotStateStorage.getLatestFinalizedState();
@@ -996,7 +994,10 @@ public class KvStoreDatabase implements Database {
       return Optional.empty();
     }
     final UInt64 genesisTime = maybeGenesisTime.get();
-    activateStateDiffStorageIfRequested();
+    // Switches to state diff storage, if requested and not done yet
+    hotStateStorage
+        .activateIfRequested(this::hotUpdater)
+        .ifPresent(activated -> hotStateStorage = activated);
     final Optional<Checkpoint> maybeAnchor = dao.getAnchor();
     final Checkpoint justifiedCheckpoint = dao.getJustifiedCheckpoint().orElseThrow();
     final Checkpoint finalizedCheckpoint = dao.getFinalizedCheckpoint().orElseThrow();
@@ -1158,11 +1159,6 @@ public class KvStoreDatabase implements Database {
   @Override
   public Optional<BeaconState> getLatestAvailableFinalizedState(final UInt64 maxSlot) {
     return hotStateStorage.getLatestAvailableFinalizedState(maxSlot);
-  }
-
-  @Override
-  public Optional<UInt64> getEarliestAvailableFinalizedStateSlot() {
-    return hotStateStorage.getEarliestAvailableFinalizedStateSlot();
   }
 
   @Override
@@ -2341,8 +2337,6 @@ public class KvStoreDatabase implements Database {
     // Get previously finalized block to build on top of
     final BeaconBlockSummary baseBlock = getLatestFinalizedBlockOrSummary();
 
-    // With state diff storage the finalized states are DAG nodes; only their roots are indexed
-    final boolean writeFinalizedStates = !hotStateStorage.holdsFinalizedStates();
     final List<Bytes32> finalizedRoots =
         HashTree.builder()
             .rootHash(baseBlock.getRoot())
@@ -2371,9 +2365,7 @@ public class KvStoreDatabase implements Database {
               .or(() -> getHotState(blockRoot))
               .ifPresent(
                   state -> {
-                    if (writeFinalizedStates) {
-                      updater.addFinalizedState(blockRoot, state);
-                    }
+                    hotStateStorage.addFinalizedState(updater, blockRoot, state);
                     recorder.acceptNextState(state);
                   });
 
@@ -2560,18 +2552,16 @@ public class KvStoreDatabase implements Database {
   }
 
   /**
-   * Writes the finalized state of {@code blockRoot} in archive mode, or only indexes its root when
-   * {@code stateHeldByDag}, the state diff DAG holding it as a node.
+   * Writes the finalized state of {@code blockRoot} in archive mode as {@code storage} stores
+   * finalized states, and indexes its root.
    */
   private void putFinalizedState(
       final FinalizedUpdater updater,
+      final HotStateStorage storage,
       final Bytes32 blockRoot,
-      final BeaconState state,
-      final boolean stateHeldByDag) {
+      final BeaconState state) {
     if (stateStorageMode.storesFinalizedStates()) {
-      if (!stateHeldByDag) {
-        updater.addFinalizedState(blockRoot, state);
-      }
+      storage.addFinalizedState(updater, blockRoot, state);
       updater.addFinalizedStateRoot(state.hashTreeRoot(), state.getSlot());
     }
   }

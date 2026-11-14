@@ -79,6 +79,7 @@ import tech.pegasys.teku.storage.api.StorageUpdate;
 import tech.pegasys.teku.storage.archive.BlobSidecarsArchiver;
 import tech.pegasys.teku.storage.server.Database;
 import tech.pegasys.teku.storage.server.DatabaseStorageException;
+import tech.pegasys.teku.storage.server.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.StateStorageMode;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreAccessor.KvStoreTransaction;
 import tech.pegasys.teku.storage.server.kvstore.KvStoreDatabase.DataColumnSidecarType;
@@ -90,7 +91,6 @@ import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.Sl
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao.SlotRangeDataFile;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.V4FinalizedStateSnapshotStorageLogic;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDag;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagConfig;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffDagTransaction;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffNodeRecordCodec;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationException;
@@ -109,13 +109,7 @@ class KvStoreDatabaseTest {
     final FinalizedUpdater updater = mock(FinalizedUpdater.class);
     final KvStoreDatabase database =
         new KvStoreDatabase(
-            dao,
-            StateStorageMode.PRUNE,
-            false,
-            spec,
-            StateDiffDagConfig.disabled(),
-            new StubMetricsSystem(),
-            false);
+            dao, StateStorageMode.PRUNE, false, spec, new StubMetricsSystem(), false);
     when(dao.streamDataColumnIdentifiers(slot, slot))
         .thenReturn(
             IntStream.range(0, halfColumns)
@@ -143,13 +137,7 @@ class KvStoreDatabaseTest {
     final FinalizedUpdater updater = mock(FinalizedUpdater.class);
     final KvStoreDatabase database =
         new KvStoreDatabase(
-            dao,
-            StateStorageMode.PRUNE,
-            false,
-            spec,
-            StateDiffDagConfig.disabled(),
-            new StubMetricsSystem(),
-            false);
+            dao, StateStorageMode.PRUNE, false, spec, new StubMetricsSystem(), false);
     when(dao.streamDataColumnIdentifiers(slot, slot))
         .thenReturn(
             IntStream.range(0, columns)
@@ -185,13 +173,7 @@ class KvStoreDatabaseTest {
     final FinalizedUpdater updater = mock(FinalizedUpdater.class);
     final KvStoreDatabase database =
         new KvStoreDatabase(
-            dao,
-            StateStorageMode.PRUNE,
-            false,
-            spec,
-            StateDiffDagConfig.disabled(),
-            new StubMetricsSystem(),
-            false);
+            dao, StateStorageMode.PRUNE, false, spec, new StubMetricsSystem(), false);
     when(dao.streamDataColumnIdentifiers(slot, slot))
         .thenAnswer(__ -> sidecars.stream().map(DataColumnSlotAndIdentifier::fromDataColumn));
     when(dao.getSlotForFinalizedBlockRoot(block.getRoot())).thenReturn(Optional.of(slot));
@@ -233,13 +215,7 @@ class KvStoreDatabaseTest {
     final FinalizedUpdater updater = mock(FinalizedUpdater.class);
     final KvStoreDatabase database =
         new KvStoreDatabase(
-            dao,
-            StateStorageMode.PRUNE,
-            false,
-            spec,
-            StateDiffDagConfig.disabled(),
-            new StubMetricsSystem(),
-            false);
+            dao, StateStorageMode.PRUNE, false, spec, new StubMetricsSystem(), false);
     final List<DataColumnSlotAndIdentifier> identifiers = new ArrayList<>();
     final UInt64 corruptSlot = UInt64.valueOf(2);
     final KvStoreDeserializationException corruption =
@@ -339,13 +315,7 @@ class KvStoreDatabaseTest {
                 .thenReturn(Optional.of(sidecar.sszSerialize())));
     return new ArchiveSlotFixture(
         new KvStoreDatabase(
-            dao,
-            StateStorageMode.PRUNE,
-            false,
-            spec,
-            StateDiffDagConfig.disabled(),
-            new StubMetricsSystem(),
-            false),
+            dao, StateStorageMode.PRUNE, false, spec, new StubMetricsSystem(), false),
         updater,
         sidecars);
   }
@@ -385,7 +355,6 @@ class KvStoreDatabaseTest {
           StateStorageMode.PRUNE,
           false,
           gloasScheduledSpec,
-          StateDiffDagConfig.disabled(),
           new StubMetricsSystem(),
           false);
 
@@ -441,13 +410,7 @@ class KvStoreDatabaseTest {
         .thenAnswer(invocation -> chainBuilder.getBlock(invocation.getArgument(0)));
     final KvStoreDatabase database =
         new KvStoreDatabase(
-            dao,
-            StateStorageMode.PRUNE,
-            false,
-            gloasSpec,
-            StateDiffDagConfig.disabled(),
-            new StubMetricsSystem(),
-            false);
+            dao, StateStorageMode.PRUNE, false, gloasSpec, new StubMetricsSystem(), false);
     final Map<Bytes32, Bytes32> finalizedChildToParent = new HashMap<>();
     chainBuilder
         .streamBlocksAndStates(1, 4)
@@ -507,14 +470,7 @@ class KvStoreDatabaseTest {
     final FinalizedUpdater finalizedUpdater = mock(FinalizedUpdater.class);
     final HotUpdater hotUpdater = mock(HotUpdater.class);
     final KvStoreDatabase database =
-        new KvStoreDatabase(
-            dao,
-            storageMode,
-            false,
-            gloasSpec,
-            StateDiffDagConfig.disabled(),
-            new StubMetricsSystem(),
-            false) {
+        new KvStoreDatabase(dao, storageMode, false, gloasSpec, new StubMetricsSystem(), false) {
           @Override
           protected FinalizedUpdater finalizedUpdater() {
             return finalizedUpdater;
@@ -1009,6 +965,9 @@ class KvStoreDatabaseTest {
     }
   }
 
+  /** State diff storage enabled, keeping all finalized history. */
+  private static final StateDiffDagConfig STATE_DIFFS_ENABLED = new StateDiffDagConfig(true, 0);
+
   @Test
   void stateDiffs_bootstrapOfLegacyDatabaseIsOneTransaction() {
     final Spec spec = TestSpecFactory.createMinimalAltair();
@@ -1025,7 +984,8 @@ class KvStoreDatabaseTest {
             false,
             spec,
             StateDiffDagConfig.disabled(),
-            new StubMetricsSystem())
+            new StubMetricsSystem(),
+            false)
         .storeInitialAnchor(genesis);
 
     final KvStoreCombinedDao dao =
@@ -1038,8 +998,9 @@ class KvStoreDatabaseTest {
             StateStorageMode.PRUNE,
             false,
             spec,
-            StateDiffDagConfig.prune(),
-            new StubMetricsSystem()) {
+            STATE_DIFFS_ENABLED,
+            new StubMetricsSystem(),
+            false) {
           @Override
           @MustBeClosed
           @SuppressWarnings("MustBeClosedChecker") // closing the mock closes the delegate
@@ -1075,8 +1036,9 @@ class KvStoreDatabaseTest {
             1,
             false,
             spec,
-            StateDiffDagConfig.prune(),
-            new StubMetricsSystem())
+            STATE_DIFFS_ENABLED,
+            new StubMetricsSystem(),
+            false)
         .storeInitialAnchor(genesis);
     final KvStoreCombinedDao dao =
         new CombinedKvStoreDao<>(
@@ -1095,8 +1057,9 @@ class KvStoreDatabaseTest {
             1,
             false,
             spec,
-            StateDiffDagConfig.prune(),
-            new StubMetricsSystem());
+            STATE_DIFFS_ENABLED,
+            new StubMetricsSystem(),
+            false);
 
     assertThatThrownBy(restarted::createMemoryStore)
         .isInstanceOfSatisfying(
@@ -1109,41 +1072,32 @@ class KvStoreDatabaseTest {
   }
 
   @Test
-  void stateDiffs_databaseOfAnEarlierFormatFailsAtOpenWithResyncMessage() {
+  void stateDiffs_databaseOfAnotherFormatFailsAtOpen() {
     final StateDiffFixture fixture = new StateDiffFixture();
-    fixture.open(StateDiffDagConfig.prune()).storeInitialAnchor(fixture.genesis);
+    fixture.open(STATE_DIFFS_ENABLED).storeInitialAnchor(fixture.genesis);
     assertThat(fixture.dao.getStateDiffMode()).contains(Bytes.of(2));
-    // The marker as an earlier experimental build wrote it, with its nodes in a format no longer
-    // read
-    try (final HotUpdater updater = fixture.dao.hotUpdater()) {
-      updater.setStateDiffMode(Bytes.of(1));
-      updater.commit();
-    }
 
-    // Opened by the node, and by verify-state-diffs, whatever the configuration
-    for (final StateDiffDagConfig config :
-        List.of(StateDiffDagConfig.prune(), StateDiffDagConfig.disabled())) {
-      assertThatThrownBy(() -> fixture.open(config))
-          .isInstanceOfSatisfying(
-              DatabaseStorageException.class, e -> assertThat(e.isUnrecoverable()).isTrue())
-          .hasMessageContaining("earlier experimental build")
-          .hasMessageContaining("must be re-synced into a fresh data directory");
+    // Marker 1, as earlier experimental builds wrote it, and one no build wrote yet
+    for (final Bytes marker : List.of(Bytes.of(1), Bytes.of(3))) {
+      try (final HotUpdater updater = fixture.dao.hotUpdater()) {
+        updater.setStateDiffMode(marker);
+        updater.commit();
+      }
+      // Opened by the node, and by verify-state-diffs, whatever the configuration
+      for (final StateDiffDagConfig config :
+          List.of(STATE_DIFFS_ENABLED, StateDiffDagConfig.disabled())) {
+        assertThatThrownBy(() -> fixture.open(config))
+            .isInstanceOfSatisfying(
+                DatabaseStorageException.class, e -> assertThat(e.isUnrecoverable()).isTrue())
+            .hasMessageContaining("Unknown state diff storage format " + marker);
+      }
     }
-
-    try (final HotUpdater updater = fixture.dao.hotUpdater()) {
-      updater.setStateDiffMode(Bytes.of(3));
-      updater.commit();
-    }
-    assertThatThrownBy(() -> fixture.open(StateDiffDagConfig.prune()))
-        .isInstanceOfSatisfying(
-            DatabaseStorageException.class, e -> assertThat(e.isUnrecoverable()).isTrue())
-        .hasMessageContaining("Unknown state diff storage format 0x03");
   }
 
   @Test
   void stateDiffs_missingSupernodeOfTheAnchorSurfacesAsVerificationFailure() {
     final StateDiffFixture fixture = new StateDiffFixture();
-    fixture.open(StateDiffDagConfig.prune()).storeInitialAnchor(fixture.genesis);
+    fixture.open(STATE_DIFFS_ENABLED).storeInitialAnchor(fixture.genesis);
     final Bytes32 anchorRoot = fixture.genesis.getRoot();
     final Bytes32 hash =
         TreeDiffCodec.supernodeHashes(
@@ -1156,7 +1110,7 @@ class KvStoreDatabaseTest {
       updater.commit();
     }
 
-    final Database database = fixture.open(StateDiffDagConfig.prune());
+    final Database database = fixture.open(STATE_DIFFS_ENABLED);
 
     // The anchor's node has no fallback: the failure surfaces as the DAG's one exception type
     assertThatThrownBy(() -> database.getHotState(anchorRoot))
@@ -1198,8 +1152,9 @@ class KvStoreDatabaseTest {
             StateStorageMode.PRUNE,
             false,
             spec,
-            StateDiffDagConfig.prune(),
-            new StubMetricsSystem());
+            STATE_DIFFS_ENABLED,
+            new StubMetricsSystem(),
+            false);
     database.storeInitialAnchor(anchor);
     clearInvocations(dao);
     assertThat(database.createMemoryStore()).isPresent();
@@ -1217,13 +1172,13 @@ class KvStoreDatabaseTest {
   @Test
   void stateDiffs_anchorLoadedWithTheStoreIsTheDiffBaseOfTheNextNode() {
     final StateDiffFixture fixture = new StateDiffFixture();
-    fixture.open(StateDiffDagConfig.prune()).storeInitialAnchor(fixture.genesis);
+    fixture.open(STATE_DIFFS_ENABLED).storeInitialAnchor(fixture.genesis);
     // As after a restart: nothing is cached until the store is loaded
     final StubMetricsSystem metricsSystem = new StubMetricsSystem();
     final StateDiffDag dag =
-        new StateDiffDag(fixture.spec, StateDiffDagConfig.prune(), metricsSystem);
+        new StateDiffDag(fixture.spec, StateDiffDag.DEFAULT_LEVELS, metricsSystem);
     final StateDiffHotStateStorage storage =
-        new StateDiffHotStateStorage(fixture.dao, dag, fixture.spec, false);
+        new StateDiffHotStateStorage(fixture.dao, dag, fixture.spec, false, 0);
     final BeaconState anchorState = storage.loadLatestFinalizedState().orElseThrow();
     final BeaconState childState =
         anchorState.updated(
@@ -1270,7 +1225,7 @@ class KvStoreDatabaseTest {
   @Test
   void stateDiffs_flagActivatesStateDiffStorageWithTheInitialAnchorOfANewDatabase() {
     final StateDiffFixture fixture = new StateDiffFixture();
-    final Database database = fixture.open(StateDiffDagConfig.prune());
+    final Database database = fixture.open(STATE_DIFFS_ENABLED);
     assertThat(database.isStateDiffStorageActive()).isFalse();
 
     database.storeInitialAnchor(fixture.genesis);
@@ -1286,7 +1241,7 @@ class KvStoreDatabaseTest {
   void stateDiffs_flagMigratesALegacyDatabaseWhenTheStoreIsLoaded() {
     final StateDiffFixture fixture = new StateDiffFixture();
     fixture.open(StateDiffDagConfig.disabled()).storeInitialAnchor(fixture.genesis);
-    final Database database = fixture.open(StateDiffDagConfig.prune());
+    final Database database = fixture.open(STATE_DIFFS_ENABLED);
     assertThat(database.isStateDiffStorageActive()).isFalse();
 
     final OnDiskStoreData storeData = database.createMemoryStore().orElseThrow();
@@ -1302,7 +1257,7 @@ class KvStoreDatabaseTest {
   @Test
   void stateDiffs_markerKeepsStateDiffStorageWithoutTheFlag() {
     final StateDiffFixture fixture = new StateDiffFixture();
-    fixture.open(StateDiffDagConfig.prune()).storeInitialAnchor(fixture.genesis);
+    fixture.open(STATE_DIFFS_ENABLED).storeInitialAnchor(fixture.genesis);
 
     final Database database = fixture.open(StateDiffDagConfig.disabled());
 
@@ -1316,7 +1271,7 @@ class KvStoreDatabaseTest {
   @Test
   void stateDiffs_hotStateWithoutItsPlaceInTheDagFailsTheUpdate() {
     final StateDiffFixture fixture = new StateDiffFixture();
-    final Database database = fixture.open(StateDiffDagConfig.prune());
+    final Database database = fixture.open(STATE_DIFFS_ENABLED);
     database.storeInitialAnchor(fixture.genesis);
     final StorageUpdate update =
         new StorageUpdate(
@@ -1366,7 +1321,8 @@ class KvStoreDatabaseTest {
           false,
           spec,
           stateDiffDagConfig,
-          new StubMetricsSystem());
+          new StubMetricsSystem(),
+          false);
     }
   }
 
@@ -1390,7 +1346,6 @@ class KvStoreDatabaseTest {
         StateStorageMode.PRUNE,
         false,
         spec,
-        StateDiffDagConfig.disabled(),
         new StubMetricsSystem(),
         prunedSlotCompactionEnabled) {
 

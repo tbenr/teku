@@ -48,12 +48,12 @@ import tech.pegasys.teku.storage.api.HotStateNodeInfo;
 import tech.pegasys.teku.storage.api.StorageUpdate;
 import tech.pegasys.teku.storage.server.Database;
 import tech.pegasys.teku.storage.server.DatabaseContext;
+import tech.pegasys.teku.storage.server.StateDiffVerificationReport;
 import tech.pegasys.teku.storage.server.StateStorageMode;
 import tech.pegasys.teku.storage.server.TestDatabaseContext;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.KvStoreCombinedDao;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffNodeRecord;
 import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffNodeRecordCodec;
-import tech.pegasys.teku.storage.server.kvstore.dataaccess.statediff.StateDiffVerificationReport;
 import tech.pegasys.teku.storage.store.StoreConfig;
 import tech.pegasys.teku.storage.store.UpdatableStore;
 
@@ -588,7 +588,7 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
       assertThat(slots).isEmpty();
     }
     // History starts at the genesis anchor
-    assertThat(database.getEarliestAvailableFinalizedStateSlot()).contains(ZERO);
+    assertThat(earliestAvailableFinalizedStateSlot()).contains(ZERO);
     assertFinalizedStatesServedFromDag(ZERO, anchor.getSlot());
     // Without any state in memory
     restartStorage();
@@ -631,7 +631,7 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
           .describedAs("nodes after finalizing epoch %s", finalizedEpoch)
           .isEqualTo(expected);
       final UInt64 windowStartSlot = spec.computeStartSlotAtEpoch(UInt64.valueOf(windowStart));
-      assertThat(database.getEarliestAvailableFinalizedStateSlot()).contains(windowStartSlot);
+      assertThat(earliestAvailableFinalizedStateSlot()).contains(windowStartSlot);
       assertThat(database.getLatestAvailableFinalizedState(windowStartSlot.minus(ONE))).isEmpty();
       assertFinalizedStatesServedFromDag(windowStartSlot, anchor.getSlot());
       assertStateDiffsVerify();
@@ -646,7 +646,7 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
 
     // The window survives a restart
     restartStorage();
-    assertThat(database.getEarliestAvailableFinalizedStateSlot())
+    assertThat(earliestAvailableFinalizedStateSlot())
         .contains(spec.computeStartSlotAtEpoch(UInt64.valueOf(18)));
     assertFinalizedStatesServedFromDag(
         spec.computeStartSlotAtEpoch(UInt64.valueOf(18)),
@@ -695,8 +695,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
         UInt64.valueOf(302), chainBuilder.getLatestBlockAndStateAtEpochBoundary(302));
 
     assertThat(dao().getStateDiffWindowStart()).contains(UInt64.valueOf(301));
-    assertThat(database.getEarliestAvailableFinalizedStateSlot())
-        .contains(spec.computeStartSlotAtEpoch(UInt64.valueOf(301)));
     assertThat(database.getLatestAvailableFinalizedState(epoch300StartSlot)).isEmpty();
     assertStateDiffsVerify();
   }
@@ -736,7 +734,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
     // The window starts at epoch 5, so its oldest retained node is epoch 4's, below the start
     assertThat(dao().getStateDiffWindowStart()).contains(UInt64.valueOf(5));
     final UInt64 windowStartSlot = spec.computeStartSlotAtEpoch(UInt64.valueOf(5));
-    assertThat(database.getEarliestAvailableFinalizedStateSlot()).contains(windowStartSlot);
     assertThat(storedStateDiffNodeRoots()).contains(epoch4CheckpointBlock.getRoot());
     // Reads of the window start epoch fall back to that node, and its blocks are replayed on it
     for (UInt64 slot = windowStartSlot;
@@ -805,6 +802,11 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
       assertThat(database.getSlotForFinalizedStateRoot(block.getState().hashTreeRoot()))
           .contains(slot);
     }
+  }
+
+  /** The slot from which finalized states are served: the start slot of the window start epoch. */
+  private Optional<UInt64> earliestAvailableFinalizedStateSlot() {
+    return dao().getStateDiffWindowStart().map(spec::computeStartSlotAtEpoch);
   }
 
   /**
