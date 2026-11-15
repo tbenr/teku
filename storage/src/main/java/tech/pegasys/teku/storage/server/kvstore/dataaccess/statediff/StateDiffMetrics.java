@@ -51,7 +51,6 @@ class StateDiffMetrics {
   private final LabelledMetric<Counter> sectionBytes;
   private final LabelledMetric<Counter> sectionEntries;
   private final SettableLabelledGauge windowStartEpoch;
-  private final Counter reconstructListBuilds;
   private final Map<WritePhase, DoubleAdder> writePhaseSeconds = new EnumMap<>(WritePhase.class);
 
   StateDiffMetrics(final MetricsSystem metricsSystem) {
@@ -137,12 +136,6 @@ class StateDiffMetrics {
             TekuMetricCategory.STORAGE,
             "state_diff_window_start_epoch",
             "First epoch whose finalized state an archive database serves from the state diff DAG");
-    this.reconstructListBuilds =
-        metricsSystem.createCounter(
-            TekuMetricCategory.STORAGE,
-            "state_diff_reconstruct_list_builds_total",
-            "Packed uint64 lists built by reconstructions: one per delta field and chain, as the"
-                + " deltas of a chain are folded before the list is built");
     final LabelledSuppliedMetric phaseSeconds =
         metricsSystem.createLabelledSuppliedCounter(
             TekuMetricCategory.STORAGE,
@@ -213,10 +206,6 @@ class StateDiffMetrics {
   /** The total time recorded for {@code phase}, in seconds. */
   double writePhaseSeconds(final WritePhase phase) {
     return writePhaseSeconds.get(phase).sum();
-  }
-
-  void onReconstructListBuilds(final int listBuilds) {
-    reconstructListBuilds.inc(listBuilds);
   }
 
   void onReconstruct(final long nanos, final int chainLength) {

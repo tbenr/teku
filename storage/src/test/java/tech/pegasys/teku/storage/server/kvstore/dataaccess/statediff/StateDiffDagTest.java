@@ -766,12 +766,12 @@ class StateDiffDagTest {
   }
 
   @Test
-  void reconstructChainFoldsDeltasOnce() {
+  void reconstructChainMatchesPerLinkApplication() {
     assertFoldedReconstructionMatchesPerLinkReference();
   }
 
   @Test
-  void reconstructChainFoldsDeltasOnceWithProgressiveLists() {
+  void reconstructChainMatchesPerLinkApplicationWithProgressiveLists() {
     useSpec(TestSpecFactory.createMinimalGloas());
     assertThat(dag.support().schemaFor(UInt64.ZERO)).isInstanceOf(BeaconStateSchemaGloas.class);
 
@@ -788,15 +788,12 @@ class StateDiffDagTest {
     final BeaconStateSchema<?, ?> schema = dag.support().schemaFor(states.get(9).getSlot());
     final TreeDiffApplier applier = new TreeDiffApplier(schema);
     TreeNode perLink = schema.getDefaultTree();
-    int perLinkListBuilds = 0;
-    final Set<Integer> deltaFields = new HashSet<>();
+    int deltaSections = 0;
     for (final Bytes32 root : chain.reversed()) {
       final TreeDiff diff = TreeDiffCodec.deserialize(record(root).payload());
-      perLinkListBuilds += diff.deltas().size();
-      diff.deltas().forEach(delta -> deltaFields.add(delta.fieldIndex()));
+      deltaSections += diff.deltas().size();
       perLink = TestTreeDiffs.apply(applier, perLink, diff, dao::getStateSupernodes);
     }
-    final long listBuildsBefore = listBuilds();
 
     final BeaconState folded = uncachedDag().reconstruct(dao, roots.get(9)).orElseThrow();
 
@@ -804,9 +801,8 @@ class StateDiffDagTest {
     assertThat(folded.sszSerialize())
         .isEqualTo(schema.createFromBackingNode(perLink).sszSerialize());
     assertThat(folded).isEqualTo(states.get(9));
-    // Balances change every epoch, so the per-link path builds them once per link
-    assertThat(perLinkListBuilds).isGreaterThanOrEqualTo(chain.size());
-    assertThat(listBuilds() - listBuildsBefore).isEqualTo(deltaFields.size());
+    // Balances change every epoch, so every link carries deltas for the reconstruction to fold
+    assertThat(deltaSections).isGreaterThanOrEqualTo(chain.size());
   }
 
   @Test
@@ -1975,11 +1971,6 @@ class StateDiffDagTest {
   private long sectionBytes(final String section) {
     return metricsSystem.getLabelledCounterValue(
         TekuMetricCategory.STORAGE, "state_diff_section_bytes_total", section);
-  }
-
-  private long listBuilds() {
-    return metricsSystem.getCounterValue(
-        TekuMetricCategory.STORAGE, "state_diff_reconstruct_list_builds_total");
   }
 
   private long supernodeOps(final String op) {

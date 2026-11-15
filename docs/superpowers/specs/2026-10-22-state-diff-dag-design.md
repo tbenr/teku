@@ -951,9 +951,6 @@ phase 2.
   supernode bookkeeping; the supernode puts themselves happen at commit)
 - `storage_state_diff_reconstruct_seconds` histogram and
   `storage_state_diff_reconstruct_chain_length`
-- `storage_state_diff_reconstruct_list_builds_total`: packed uint64 lists built
-  by reconstructions; one per delta field that changed along each chain, since
-  the delta sections of a chain are folded before the list is built
 - `storage_state_diff_base_cache_total{result=hit|miss}`
 - `storage_state_diff_nodes_total{state=written|deleted|deleted_corrupt|anchor_created_late|anchor_repaired}`
   (`deleted_corrupt`: a node deleted on retention or repair whose

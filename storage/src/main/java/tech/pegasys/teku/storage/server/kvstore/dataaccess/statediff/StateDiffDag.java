@@ -488,7 +488,6 @@ public class StateDiffDag {
     } catch (final IllegalArgumentException e) {
       throw corruptPayload(blockRoot, blockRoot, chain, e);
     }
-    metrics.onReconstructListBuilds(application.listBuilds());
     final StateDiffNodeRecord head = chain.getFirst().record();
     final BeaconState state = support.schemaFor(head.blockSlot()).createFromBackingNode(tree);
     final Bytes32 actualRoot = state.hashTreeRoot();

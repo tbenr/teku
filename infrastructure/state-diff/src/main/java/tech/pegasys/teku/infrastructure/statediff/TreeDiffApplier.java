@@ -317,8 +317,11 @@ public final class TreeDiffApplier {
       return tree;
     }
 
-    /** The uint64 lists built so far: one per folded field. */
-    public int listBuilds() {
+    /**
+     * The uint64 lists built so far: one per folded field. Read by tests, to pin that a chain
+     * builds each list once however many links it has.
+     */
+    int listBuilds() {
       return listBuilds;
     }
 
