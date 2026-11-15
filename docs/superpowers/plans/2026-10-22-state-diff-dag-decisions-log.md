@@ -1407,3 +1407,22 @@ checkpoint nodes went through the DAG.
       nodes on the new write path with 0 verification failures, and both state
       requests matched: archive historical in 15.9 s right after the restart,
       minimal unfinalized in 2.8-3.9 s.
+
+83. **DERIVED. `storage_state_diff_reconstruct_list_builds_total` removed; the write phase counter stays (round 3 items M2 and M1).**
+    The list builds counter (entry 40) proved that a reconstruction folds the
+    delta sections of its chain and builds each packed uint64 list once. Since
+    the per-link fallback went (neutral wave of 2026-10-28) the applier builds
+    lists in one place only, at the end of a chain, so on a running node the
+    counter is the number of delta fields the chains touched, at most two per
+    reconstruction: it cannot show a regression and no soak cites it. The
+    counter, `StateDiffMetrics.onReconstructListBuilds` and its call in
+    `StateDiffDag.reconstructChain` are gone. `ChainApplication.listBuilds()`
+    stays, package-private, for `TreeDiffChainApplicationTest`, which pins
+    one build per field over a chain of several links; `StateDiffDagTest`'s
+    two fold tests now assert only that a reconstruction equals per-link
+    application (renamed `reconstructChainMatchesPerLinkApplication*`).
+    `storage_state_diff_write_phase_seconds_total{phase}` is kept: it is the
+    only source of the base / walk / encode / store split of a node write
+    (entry 75 and the results table of `docs/state-diff-storage.md` quote it),
+    and a leaves-compression payload or a differ change would be read off it.
+    To be reconsidered when the metric surface is trimmed for upstream.
