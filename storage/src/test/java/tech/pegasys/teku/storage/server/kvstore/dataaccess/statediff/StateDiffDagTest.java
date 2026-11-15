@@ -476,18 +476,53 @@ class StateDiffDagTest {
                 roots.subList(6, 21),
                 FinalizedRetention.anchorChain()));
 
-    final List<Object> nodeReads =
-        mockingDetails(db).getInvocations().stream()
-            .filter(
-                invocation ->
-                    invocation.getMethod().getName().equals("get")
-                        && invocation.getArguments().length == 2
-                        && invocation.getArgument(0).equals(schema.getColumnStateDiffNodes()))
-            .map(invocation -> invocation.getArgument(1))
-            .toList();
+    final List<Object> nodeReads = nodeRecordReads(db, schema);
     assertThat(nodeReads).contains(roots.get(0), roots.get(5), roots.get(20));
     assertThat(nodeReads).doesNotHaveDuplicates();
     assertStoredEpochs(union(Set.of(0), range(16, 20)));
+  }
+
+  @Test
+  void windowRetentionAfterLookingUpThePreviousOldestNodeReadsEachNodeRecordOnce() {
+    final V6SchemaCombinedSnapshot schema = V6SchemaCombinedSnapshot.createV6(spec);
+    final KvStoreAccessor db =
+        spy(MockKvStoreInstance.createEmpty(schema.getAllColumns(), schema.getAllVariables()));
+    dao =
+        new CombinedKvStoreDao<>(
+            db, schema, new V4FinalizedStateSnapshotStorageLogic<>(1), new StubMetricsSystem());
+    buildChain(10);
+    writeEpochs(0, 9);
+    retainWindow(Optional.empty(), 3);
+    clearInvocations(db);
+
+    // As a finalization that moves the window does: the previous oldest node is looked up, then
+    // its chain is loaded to delete what the new oldest node does not need
+    update(
+        tx -> {
+          assertThat(tx.hasNode(roots.get(3))).isTrue();
+          tx.retainFinalizedChain(
+              Optional.empty(),
+              roots.get(5),
+              List.of(),
+              FinalizedRetention.window(epoch(5), Optional.of(roots.get(3)), roots.subList(3, 6)));
+        });
+
+    final List<Object> nodeReads = nodeRecordReads(db, schema);
+    assertThat(nodeReads).contains(roots.get(3), roots.get(5));
+    assertThat(nodeReads).doesNotHaveDuplicates();
+  }
+
+  /** The block roots whose node records were read from {@code db}, one entry per read. */
+  private static List<Object> nodeRecordReads(
+      final KvStoreAccessor db, final V6SchemaCombinedSnapshot schema) {
+    return mockingDetails(db).getInvocations().stream()
+        .filter(
+            invocation ->
+                invocation.getMethod().getName().equals("get")
+                    && invocation.getArguments().length == 2
+                    && invocation.getArgument(0).equals(schema.getColumnStateDiffNodes()))
+        .map(invocation -> invocation.getArgument(1))
+        .toList();
   }
 
   @Test
