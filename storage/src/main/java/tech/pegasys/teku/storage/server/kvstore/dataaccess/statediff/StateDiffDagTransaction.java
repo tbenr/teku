@@ -679,6 +679,14 @@ public class StateDiffDagTransaction {
     }
   }
 
+  /**
+   * Whether {@code blockRoot} has a node as this transaction sees it. The record is read through
+   * the transaction, so a later operation of the transaction on that node does not read it again.
+   */
+  public boolean hasNode(final Bytes32 blockRoot) {
+    return reader.getEncodedNode(blockRoot).isPresent();
+  }
+
   /** Reads nodes and supernodes as this transaction sees them, its own writes included. */
   NodeReader reader() {
     return reader;

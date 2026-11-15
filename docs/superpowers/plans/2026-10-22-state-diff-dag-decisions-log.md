@@ -1426,3 +1426,30 @@ checkpoint nodes went through the DAG.
     (entry 75 and the results table of `docs/state-diff-storage.md` quote it),
     and a leaves-compression payload or a differ change would be read off it.
     To be reconsidered when the metric surface is trimmed for upstream.
+
+84. **DERIVED. The window's previous oldest node is looked up through the transaction (round 3 item E2, record half); E1 not applied.**
+    With a retention window, `StateDiffHotStateStorage.finalizedRetention`
+    tested whether the previous window start's checkpoint block has a node
+    with `dao.getStateDiffNode(root).isPresent()`, outside the transaction's
+    record memo, and `retainWindow` then loaded that node's chain through the
+    transaction: the same record, about 2 MB on mainnet, was read twice per
+    finalization that moves the window (entry 74's profile had named the
+    site). `StateDiffDagTransaction.hasNode(root)` reads through the memo and
+    `finalizedRetention` calls it, so the chain load finds the record already
+    read. Neutral: the root is an old finalized checkpoint block the
+    transaction has neither written nor deleted, so its view equals the
+    committed one. Test, failing before with a duplicate read:
+    `StateDiffDagTest.windowRetentionAfterLookingUpThePreviousOldestNodeReadsEachNodeRecordOnce`
+    (the call from `finalizedRetention` itself is covered for behaviour by
+    the window tests of `StateDiffDatabaseTest`, not for its read count). Not
+    done: `checkpointBlock(previousStart)` is still loaded twice, once for the
+    lookup and once for the window's checkpoint roots; avoiding it needs a
+    special case in front of the fallback walk for one block load. Unbounded
+    archive and prune databases never ran this path.
+    **E1 (drop base cache slot 0) is not applied:** the claim that the
+    coarsest slot is never a diff base holds on a linear chain only. A probe
+    with levels 4/2/1 (epochs 0..3 written, then a second node for epoch 2)
+    found the snapshot in slot 0 alone and served from it as the sibling's
+    diff base, a hit and no miss. Slot 0 also ends the chains of reads of
+    nodes older than the latest level-1 node. What it retains at head is
+    unmeasured since the resize of entry 49.

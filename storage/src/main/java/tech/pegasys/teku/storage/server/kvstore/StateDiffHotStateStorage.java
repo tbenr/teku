@@ -374,7 +374,7 @@ class StateDiffHotStateStorage implements HotStateStorage {
         findCheckpointNode(
             previousStart,
             UInt64.ZERO,
-            root -> dao.getStateDiffNode(root).isPresent() ? Optional.of(root) : Optional.empty()),
+            root -> transaction.hasNode(root) ? Optional.of(root) : Optional.empty()),
         checkpointRoots(previousStart, newStart));
   }
 
