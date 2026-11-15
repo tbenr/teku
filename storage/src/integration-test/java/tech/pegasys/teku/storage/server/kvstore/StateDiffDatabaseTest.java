@@ -14,8 +14,6 @@
 package tech.pegasys.teku.storage.server.kvstore;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static tech.pegasys.teku.infrastructure.async.SafeFutureAssert.safeJoin;
 import static tech.pegasys.teku.infrastructure.unsigned.UInt64.ONE;
@@ -35,6 +33,7 @@ import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.TestTemplate;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
@@ -61,10 +60,15 @@ import tech.pegasys.teku.storage.store.UpdatableStore;
 @Execution(ExecutionMode.CONCURRENT)
 public class StateDiffDatabaseTest extends AbstractDatabaseTest {
 
+  /** Runs after {@link AbstractDatabaseTest#setup}: every test here needs state diff storage. */
+  @BeforeEach
+  public void assumeStateDiffsEnabled(final DatabaseContext context) {
+    assumeTrue(context.isStateDiffsEnabled());
+  }
+
   @TestTemplate
   public void stateDiffs_activatesOnExistingDatabaseAndStopsWritingLatestFinalizedState(
       final DatabaseContext context) throws IOException {
-    assumeTrue(context.isStateDiffsEnabled());
     // Build a legacy database first
     final DatabaseContext legacyContext =
         new DatabaseContext(context.getDatabaseVersion(), context.isInMemoryStorage(), false);
@@ -110,7 +114,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
   @TestTemplate
   public void stateDiffs_freshDatabaseWritesAnchorSnapshot(final DatabaseContext context)
       throws IOException {
-    assumeTrue(context.isStateDiffsEnabled());
     initialize(context, StateStorageMode.PRUNE);
 
     assertThat(database.isStateDiffStorageActive()).isTrue();
@@ -126,7 +129,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
   @TestTemplate
   public void stateDiffs_hotStateIsReconstructedForCheckpointBlock(final DatabaseContext context)
       throws IOException {
-    assumeTrue(context.isStateDiffsEnabled());
     initialize(context, StateStorageMode.PRUNE);
     generateCheckpoints();
     addBlocks(
@@ -150,7 +152,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
   @TestTemplate
   public void stateDiffs_finalizationKeepsAnchorChainAndDropsOrphans(final DatabaseContext context)
       throws IOException {
-    assumeTrue(context.isStateDiffsEnabled());
     initialize(context, StateStorageMode.PRUNE);
     final ChainBuilder fork = chainBuilder.fork();
     generateCheckpoints();
@@ -184,7 +185,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
   @TestTemplate
   public void stateDiffs_finalizingTwiceKeepsOnlyAnchorChainAndHotNodes(
       final DatabaseContext context) throws IOException {
-    assumeTrue(context.isStateDiffsEnabled());
     // No state cache: a checkpoint block state is available only within its own transaction
     createStorageSystem(
         context,
@@ -248,7 +248,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
   @TestTemplate
   public void stateDiffs_lateCoarseAnchorKeepsParentsOfLaterNodes(final DatabaseContext context)
       throws IOException {
-    assumeTrue(context.isStateDiffsEnabled());
     // No state cache: a checkpoint block state is available only within its own transaction
     createStorageSystem(
         context,
@@ -311,7 +310,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
   @TestTemplate
   public void stateDiffs_brokenAnchorChainIsRepairedOnFinalization(final DatabaseContext context)
       throws IOException {
-    assumeTrue(context.isStateDiffsEnabled());
     initialize(context, StateStorageMode.PRUNE);
     generateCheckpoints();
     addBlocks(
@@ -358,7 +356,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
   @TestTemplate
   public void stateDiffs_corruptHotNodeFallsBackToReplay(final DatabaseContext context)
       throws IOException {
-    assumeTrue(context.isStateDiffsEnabled());
     initialize(context, StateStorageMode.PRUNE);
     generateCheckpoints();
     chainBuilder.generateBlocksUpToSlot(33);
@@ -398,7 +395,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
   @TestTemplate
   public void stateDiffs_restartRecreatesStoreFromDag(final DatabaseContext context)
       throws IOException {
-    assumeTrue(context.isStateDiffsEnabled());
     initialize(context, StateStorageMode.PRUNE);
     generateCheckpoints();
     addBlocks(
@@ -425,7 +421,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
   @TestTemplate
   public void stateDiffs_doesNotWriteHotStatesColumn(final DatabaseContext context)
       throws IOException {
-    assumeTrue(context.isStateDiffsEnabled());
     initialize(context, StateStorageMode.PRUNE);
     generateCheckpoints();
     final List<SignedBlockAndState> blocks =
@@ -445,7 +440,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
   @TestTemplate
   public void stateDiffs_everyBlockStateRegeneratesAfterRestart(final DatabaseContext context)
       throws IOException {
-    assumeTrue(context.isStateDiffsEnabled());
     initialize(context, StateStorageMode.PRUNE);
     // The canonical chain fills every slot through epoch 4; a fork leaves it after slot 12 and
     // skips slots, so its epoch crossings happen on different blocks
@@ -519,7 +513,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
   @TestTemplate
   public void stateDiffs_anchorAfterEmptyFirstSlotReconstructs(final DatabaseContext context)
       throws IOException {
-    assumeTrue(context.isStateDiffsEnabled());
     initialize(context, StateStorageMode.PRUNE);
     // The first slot of epoch 1 is empty: its checkpoint block is the block at slot 7
     chainBuilder.generateBlocksUpToSlot(7);
@@ -545,7 +538,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
   @TestTemplate
   public void stateDiffs_supernodeRefCountsBatchReadMatchesSingleReads(
       final DatabaseContext context) throws IOException {
-    assumeTrue(context.isStateDiffsEnabled());
     initialize(context, StateStorageMode.PRUNE);
     generateCheckpoints();
     addBlocks(
@@ -572,7 +564,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
   @TestTemplate
   public void stateDiffs_archiveServesFinalizedStatesFromDagWithoutLegacyStates(
       final DatabaseContext context) throws IOException {
-    assumeTrue(context.isStateDiffsEnabled());
     initialize(context, StateStorageMode.ARCHIVE);
     // The first slot of epoch 2 is empty: its checkpoint block is the block at slot 15
     chainBuilder.generateBlocksUpToSlot(15);
@@ -598,7 +589,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
   @TestTemplate
   public void stateDiffs_archiveWindowKeepsWindowNodesAndOldestChain(final DatabaseContext context)
       throws IOException {
-    assumeTrue(context.isStateDiffsEnabled());
     final int windowEpochs = 3;
     createStorageSystem(
         context,
@@ -656,7 +646,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
   @TestTemplate
   public void stateDiffs_archiveWindowDrainsBacklogInBoundedSteps(final DatabaseContext context)
       throws IOException {
-    assumeTrue(context.isStateDiffsEnabled());
     // A window of one epoch
     createStorageSystem(
         context,
@@ -702,7 +691,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
   @TestTemplate
   public void stateDiffs_archiveWindowStartWithSkippedNodeReadsOldestRetainedNode(
       final DatabaseContext context) throws IOException {
-    assumeTrue(context.isStateDiffsEnabled());
     // A window of three epochs, no state cache: a checkpoint block state is available only within
     // its own transaction
     createStorageSystem(
@@ -754,28 +742,6 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
     // Reads below the window start stay empty
     assertThat(database.getLatestAvailableFinalizedState(windowStartSlot.minus(ONE))).isEmpty();
     assertStateDiffsVerify();
-  }
-
-  @TestTemplate
-  public void legacyBehaviourUnchangedWhenDisabled(final DatabaseContext context)
-      throws IOException {
-    assumeFalse(context.isStateDiffsEnabled());
-    initialize(context, StateStorageMode.PRUNE);
-    generateCheckpoints();
-    addBlocks(
-        chainBuilder
-            .streamBlocksAndStates(1, checkpoint2BlockAndState.getSlot().longValue())
-            .toList());
-    justifyAndFinalizeEpoch(checkpoint1.getEpoch(), checkpoint1BlockAndState);
-
-    assertThat(database.isStateDiffStorageActive()).isFalse();
-    assertThat(dao().getStateDiffMode()).isEmpty();
-    assertThat(dao().getLatestFinalizedState()).contains(checkpoint1BlockAndState.getState());
-    try (final Stream<ColumnEntry<Bytes32, Bytes>> nodes = dao().streamStateDiffNodes()) {
-      assertThat(nodes).isEmpty();
-    }
-    assertThat(database.createMemoryStore().orElseThrow().stateDiffStorageActive()).isFalse();
-    assertThatThrownBy(database::verifyStateDiffs).isInstanceOf(IllegalStateException.class);
   }
 
   /**

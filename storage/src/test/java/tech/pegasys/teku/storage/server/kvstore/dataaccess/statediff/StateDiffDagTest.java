@@ -279,29 +279,15 @@ class StateDiffDagTest {
   void verificationFailureThrows() {
     buildChain(2);
     writeEpochs(0, 1);
-    final StateDiffNodeRecord record = record(roots.get(1));
-    final byte[] corruptedRoot = record.stateRoot().toArrayUnsafe().clone();
+    final byte[] corruptedRoot = record(roots.get(1)).stateRoot().toArrayUnsafe().clone();
     corruptedRoot[0] ^= 1;
-    final StateDiffNodeRecord corrupted =
-        new StateDiffNodeRecord(
-            record.blockSlot(),
-            Bytes32.wrap(corruptedRoot),
-            record.firstEpoch(),
-            record.lastEpoch(),
-            record.level(),
-            record.snapshot(),
-            record.parentNodeRoot(),
-            record.payload());
-    updateDao(updater -> updater.putStateDiffNode(roots.get(1), TestNodeRecords.encode(corrupted)));
+    overwriteStateRoot(roots.get(1), Bytes32.wrap(corruptedRoot));
 
     assertThatThrownBy(() -> dag.reconstruct(dao, roots.get(1)))
         .isInstanceOf(StateDiffVerificationException.class)
         .hasMessageContaining(roots.get(1).toHexString())
         .hasMessageContaining(roots.get(0).toHexString());
-    assertThat(
-            metricsSystem.getCounterValue(
-                TekuMetricCategory.STORAGE, "state_diff_verification_failures_total"))
-        .isEqualTo(1);
+    assertThat(verificationFailures()).isEqualTo(1);
   }
 
   @Test
@@ -341,10 +327,7 @@ class StateDiffDagTest {
         .hasMessageContaining(hash.toHexString())
         .hasMessageContaining(roots.get(0).toHexString())
         .hasCauseInstanceOf(MissingSupernodeException.class);
-    assertThat(
-            metricsSystem.getCounterValue(
-                TekuMetricCategory.STORAGE, "state_diff_verification_failures_total"))
-        .isEqualTo(1);
+    assertThat(verificationFailures()).isEqualTo(1);
   }
 
   @Test
@@ -374,22 +357,8 @@ class StateDiffDagTest {
     writeEpochs(0, 2);
     final Set<Bytes32> corruptHashes = supernodeHashes(roots.get(1));
     final Set<Bytes32> releasedHashes = supernodeHashes(roots.get(2));
-    final StateDiffNodeRecord record = record(roots.get(1));
     // A pruned fork node whose payload cannot be decoded
-    updateDao(
-        updater ->
-            updater.putStateDiffNode(
-                roots.get(1),
-                TestNodeRecords.encode(
-                    new StateDiffNodeRecord(
-                        record.blockSlot(),
-                        record.stateRoot(),
-                        record.firstEpoch(),
-                        record.lastEpoch(),
-                        record.level(),
-                        record.snapshot(),
-                        record.parentNodeRoot(),
-                        Bytes.of(9, 9, 9)))));
+    overwritePayload(roots.get(1), Bytes.of(9, 9, 9));
     final Map<Bytes32, Optional<UInt64>> countsBefore = new HashMap<>();
     corruptHashes.forEach(hash -> countsBefore.put(hash, dao.getStateSupernodeRefCount(hash)));
     final long deletedBefore = nodeCount("deleted");
@@ -676,26 +645,18 @@ class StateDiffDagTest {
     assertThatThrownBy(() -> dag.reconstruct(dao, roots.get(7)))
         .isInstanceOf(StateDiffVerificationException.class);
 
-    try (final LogCaptor logCaptor = LogCaptor.forClass(StateDiffDagTransaction.class)) {
-      update(
-          tx ->
-              tx.onAnchorFinalized(
-                  Optional.of(roots.get(5)),
-                  roots.get(7),
-                  states.get(7),
-                  epoch(7),
-                  List.of(roots.get(6), roots.get(5)),
-                  List.of(roots.get(6), roots.get(7)),
-                  FinalizedRetention.anchorChain()));
-
-      assertThat(logCaptor.getErrorLogs())
-          .singleElement()
-          .satisfies(
-              log ->
-                  assertThat(log)
-                      .contains(roots.get(7).toHexString())
-                      .contains("its chain or the previous anchor's cannot be loaded"));
-    }
+    updateLoggingOneError(
+        roots.get(7),
+        "its chain or the previous anchor's cannot be loaded",
+        tx ->
+            tx.onAnchorFinalized(
+                Optional.of(roots.get(5)),
+                roots.get(7),
+                states.get(7),
+                epoch(7),
+                List.of(roots.get(6), roots.get(5)),
+                List.of(roots.get(6), roots.get(7)),
+                FinalizedRetention.anchorChain()));
 
     assertThat(nodeCount("anchor_repaired")).isEqualTo(1);
     assertThat(nodeCount("anchor_created_late")).isZero();
@@ -723,10 +684,7 @@ class StateDiffDagTest {
         .isInstanceOf(StateDiffVerificationException.class)
         .hasMessageContaining(roots.get(1).toHexString())
         .hasCauseInstanceOf(IllegalArgumentException.class);
-    assertThat(
-            metricsSystem.getCounterValue(
-                TekuMetricCategory.STORAGE, "state_diff_verification_failures_total"))
-        .isEqualTo(1);
+    assertThat(verificationFailures()).isEqualTo(1);
   }
 
   @Test
@@ -735,20 +693,12 @@ class StateDiffDagTest {
     writeEpochs(0, 1);
     updateDao(updater -> updater.putStateDiffNode(roots.get(1), Bytes.of(2, 2, 3)));
 
-    try (final LogCaptor logCaptor = LogCaptor.forClass(StateDiffDagTransaction.class)) {
-      update(
-          tx ->
-              tx.writeNodeOrSnapshot(
-                  roots.get(2), states.get(2), epoch(2), epoch(2), ancestorsBefore(2)));
-
-      assertThat(logCaptor.getErrorLogs())
-          .singleElement()
-          .satisfies(
-              log ->
-                  assertThat(log)
-                      .contains(roots.get(2).toHexString())
-                      .contains("writing it as a snapshot"));
-    }
+    updateLoggingOneError(
+        roots.get(2),
+        "writing it as a snapshot",
+        tx ->
+            tx.writeNodeOrSnapshot(
+                roots.get(2), states.get(2), epoch(2), epoch(2), ancestorsBefore(2)));
 
     assertThat(record(roots.get(2)).snapshot()).isTrue();
     assertThat(snapshots("forced")).isEqualTo(1);
@@ -777,27 +727,13 @@ class StateDiffDagTest {
   void corruptPayloadFailsWithVerificationException() {
     buildChain(2);
     writeEpochs(0, 1);
-    final StateDiffNodeRecord record = record(roots.get(1));
-    final StateDiffNodeRecord corrupted =
-        new StateDiffNodeRecord(
-            record.blockSlot(),
-            record.stateRoot(),
-            record.firstEpoch(),
-            record.lastEpoch(),
-            record.level(),
-            record.snapshot(),
-            record.parentNodeRoot(),
-            Bytes.of(9, 9, 9));
-    updateDao(updater -> updater.putStateDiffNode(roots.get(1), TestNodeRecords.encode(corrupted)));
+    overwritePayload(roots.get(1), Bytes.of(9, 9, 9));
 
     assertThatThrownBy(() -> dag.reconstruct(dao, roots.get(1)))
         .isInstanceOf(StateDiffVerificationException.class)
         .hasMessageContaining(roots.get(1).toHexString())
         .hasCauseInstanceOf(IllegalArgumentException.class);
-    assertThat(
-            metricsSystem.getCounterValue(
-                TekuMetricCategory.STORAGE, "state_diff_verification_failures_total"))
-        .isEqualTo(1);
+    assertThat(verificationFailures()).isEqualTo(1);
   }
 
   @Test
@@ -894,26 +830,18 @@ class StateDiffDagTest {
     updateDao(updater -> updater.deleteStateDiffNode(roots.get(0)));
     dag = new StateDiffDag(spec, StateDiffDag.DEFAULT_LEVELS, metricsSystem);
 
-    try (final LogCaptor logCaptor = LogCaptor.forClass(StateDiffDagTransaction.class)) {
-      update(
-          tx ->
-              tx.onAnchorFinalized(
-                  Optional.of(roots.get(1)),
-                  roots.get(2),
-                  states.get(2),
-                  epoch(2),
-                  ancestorsBefore(2),
-                  List.of(roots.get(2)),
-                  FinalizedRetention.anchorChain()));
-
-      assertThat(logCaptor.getErrorLogs())
-          .singleElement()
-          .satisfies(
-              log ->
-                  assertThat(log)
-                      .contains(roots.get(2).toHexString())
-                      .contains("its missing node cannot be created"));
-    }
+    updateLoggingOneError(
+        roots.get(2),
+        "its missing node cannot be created",
+        tx ->
+            tx.onAnchorFinalized(
+                Optional.of(roots.get(1)),
+                roots.get(2),
+                states.get(2),
+                epoch(2),
+                ancestorsBefore(2),
+                List.of(roots.get(2)),
+                FinalizedRetention.anchorChain()));
 
     assertThat(nodeCount("anchor_created_late")).isZero();
     assertThat(nodeCount("anchor_repaired")).isEqualTo(1);
@@ -932,21 +860,7 @@ class StateDiffDagTest {
     writeEpochs(0, 21);
     retain(Optional.empty(), 5);
     // Node 10 is finalized by the move to anchor 20 and is not in the chain of anchor 20
-    final StateDiffNodeRecord record = record(roots.get(10));
-    updateDao(
-        updater ->
-            updater.putStateDiffNode(
-                roots.get(10),
-                TestNodeRecords.encode(
-                    new StateDiffNodeRecord(
-                        record.blockSlot(),
-                        record.stateRoot(),
-                        record.firstEpoch(),
-                        record.lastEpoch(),
-                        record.level(),
-                        record.snapshot(),
-                        record.parentNodeRoot(),
-                        Bytes.of(9, 9, 9)))));
+    overwritePayload(roots.get(10), Bytes.of(9, 9, 9));
     final long deletedBefore = nodeCount("deleted");
 
     update(
@@ -1890,6 +1804,46 @@ class StateDiffDagTest {
     }
   }
 
+  /**
+   * Runs {@link #update} and checks it logs exactly one error, which names {@code root} and
+   * contains {@code message}.
+   */
+  private void updateLoggingOneError(
+      final Bytes32 root, final String message, final Consumer<StateDiffDagTransaction> action) {
+    try (final LogCaptor logCaptor = LogCaptor.forClass(StateDiffDagTransaction.class)) {
+      update(action);
+
+      assertThat(logCaptor.getErrorLogs())
+          .singleElement()
+          .satisfies(log -> assertThat(log).contains(root.toHexString()).contains(message));
+    }
+  }
+
+  /** Stores the record of {@code root} again with {@code payload}, which may be any bytes. */
+  private void overwritePayload(final Bytes32 root, final Bytes payload) {
+    overwriteNode(root, record(root).stateRoot(), payload);
+  }
+
+  /** Stores the record of {@code root} again with {@code stateRoot}. */
+  private void overwriteStateRoot(final Bytes32 root, final Bytes32 stateRoot) {
+    overwriteNode(root, stateRoot, record(root).payload());
+  }
+
+  private void overwriteNode(final Bytes32 root, final Bytes32 stateRoot, final Bytes payload) {
+    final StateDiffNodeRecord record = record(root);
+    final StateDiffNodeRecord rewritten =
+        new StateDiffNodeRecord(
+            record.blockSlot(),
+            stateRoot,
+            record.firstEpoch(),
+            record.lastEpoch(),
+            record.level(),
+            record.snapshot(),
+            record.parentNodeRoot(),
+            payload);
+    updateDao(updater -> updater.putStateDiffNode(root, TestNodeRecords.encode(rewritten)));
+  }
+
   private StateDiffNodeRecord record(final Bytes32 root) {
     return StateDiffNodeRecordCodec.decode(dao.getStateDiffNode(root).orElseThrow());
   }
@@ -1978,6 +1932,11 @@ class StateDiffDagTest {
   private long baseCache(final StubMetricsSystem metrics, final String result) {
     return metrics.getLabelledCounterValue(
         TekuMetricCategory.STORAGE, "state_diff_base_cache_total", result);
+  }
+
+  private long verificationFailures() {
+    return metricsSystem.getCounterValue(
+        TekuMetricCategory.STORAGE, "state_diff_verification_failures_total");
   }
 
   private long nodeCount(final String state) {
