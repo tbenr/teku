@@ -1,0 +1,25 @@
+# Three Teku nodes for the fork partition test mode (see README.md).
+# Uneven validator split: cl-1 and cl-2 together hold 80% of the stake, so they can
+# finalize on their own while cl-3 is left in partition mode.
+# All supernodes: every node must custody the columns of every fork's blocks to import them.
+participants:
+  - el_type: geth
+    cl_type: teku
+    cl_image: consensys/teku:develop
+    supernode: true
+    validator_count: 64
+  - el_type: geth
+    cl_type: teku
+    cl_image: consensys/teku:develop
+    supernode: true
+    validator_count: 64
+  - el_type: geth
+    cl_type: teku
+    cl_image: consensys/teku:develop
+    supernode: true
+    validator_count: 32
+network_params:
+  preset: minimal
+additional_services:
+  - dora
+  - prometheus_grafana

@@ -128,6 +128,7 @@ import tech.pegasys.teku.statetransition.synccommittee.SyncCommitteeMessagePool;
 import tech.pegasys.teku.statetransition.validation.InternalValidationResult;
 import tech.pegasys.teku.storage.client.ChainHead;
 import tech.pegasys.teku.storage.client.CombinedChainDataClient;
+import tech.pegasys.teku.storage.protoarray.ForkPartitionTestMode;
 import tech.pegasys.teku.validator.api.CommitteeSubscriptionRequest;
 import tech.pegasys.teku.validator.api.NodeSyncingException;
 import tech.pegasys.teku.validator.api.PublishSignedExecutionPayloadResult;
@@ -900,6 +901,9 @@ public class ValidatorApiHandler implements ValidatorApiChannel, SlotEventsChann
             maybeBlindedBlockContainer.getSlot());
 
     final boolean isLocallyCreated = isLocallyCreatedBlock(maybeBlindedBlockContainer);
+
+    // TEST ONLY: mark the block as this node's own before it is imported
+    ForkPartitionTestMode.recordLocalBlock(maybeBlindedBlockContainer.getSignedBlock().getRoot());
 
     LOG.info("starting to publish block at slot {}", maybeBlindedBlockContainer.getSlot());
 

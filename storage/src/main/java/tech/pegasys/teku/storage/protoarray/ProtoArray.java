@@ -744,6 +744,10 @@ public class ProtoArray {
       return false;
     }
 
+    if (!ForkPartitionTestMode.isEligibleForHead(node)) {
+      return false;
+    }
+
     // The voting source should be either at the same height as the store's justified checkpoint or
     // not more than two epochs ago
     if (!isVotingSourceWithinAcceptableRange(

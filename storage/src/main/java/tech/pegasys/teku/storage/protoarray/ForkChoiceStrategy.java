@@ -144,6 +144,7 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
     votesLock.writeLock().lock();
     balancesLock.writeLock().lock();
     try {
+      ForkPartitionTestMode.refresh(currentSlot);
       final ForkChoiceModel forkChoiceModel = getForkChoiceModel(currentSlot);
       final HeadSelectionContext headSelectionContext =
           forkChoiceModelFactory.createHeadSelectionContext(
