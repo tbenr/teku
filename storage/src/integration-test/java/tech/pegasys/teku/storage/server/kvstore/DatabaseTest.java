@@ -2534,6 +2534,28 @@ public class DatabaseTest extends AbstractDatabaseTest {
   }
 
   @TestTemplate
+  public void legacyBehaviourUnchangedWhenDisabled(final DatabaseContext context)
+      throws IOException {
+    assumeFalse(context.isStateDiffsEnabled());
+    initialize(context, StateStorageMode.PRUNE);
+    generateCheckpoints();
+    addBlocks(
+        chainBuilder
+            .streamBlocksAndStates(1, checkpoint2BlockAndState.getSlot().longValue())
+            .toList());
+    justifyAndFinalizeEpoch(checkpoint1.getEpoch(), checkpoint1BlockAndState);
+
+    assertThat(database.isStateDiffStorageActive()).isFalse();
+    assertThat(dao().getStateDiffMode()).isEmpty();
+    assertThat(dao().getLatestFinalizedState()).contains(checkpoint1BlockAndState.getState());
+    try (final Stream<ColumnEntry<Bytes32, Bytes>> nodes = dao().streamStateDiffNodes()) {
+      assertThat(nodes).isEmpty();
+    }
+    assertThat(database.createMemoryStore().orElseThrow().stateDiffStorageActive()).isFalse();
+    assertThatThrownBy(database::verifyStateDiffs).isInstanceOf(IllegalStateException.class);
+  }
+
+  @TestTemplate
   public void shouldHandleRestartWithUnrecoverableForkBlocks_archive(final DatabaseContext context)
       throws IOException {
     testShouldHandleRestartWithUnrecoverableForkBlocks(context, StateStorageMode.ARCHIVE);

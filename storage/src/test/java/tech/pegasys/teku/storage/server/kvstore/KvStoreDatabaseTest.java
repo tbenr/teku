@@ -970,34 +970,18 @@ class KvStoreDatabaseTest {
 
   @Test
   void stateDiffs_bootstrapOfLegacyDatabaseIsOneTransaction() {
-    final Spec spec = TestSpecFactory.createMinimalAltair();
-    final V6SchemaCombinedSnapshot schema = V6SchemaCombinedSnapshot.createV6(spec);
-    final MockKvStoreInstance db =
-        MockKvStoreInstance.createEmpty(schema.getAllColumns(), schema.getAllVariables());
-    final AnchorPoint genesis =
-        AnchorPoint.fromGenesisState(spec, ChainBuilder.create(spec).generateGenesis().getState());
-    KvStoreDatabase.createWithStateSnapshots(
-            db,
-            schema,
-            StateStorageMode.PRUNE,
-            1,
-            false,
-            spec,
-            StateDiffDagConfig.disabled(),
-            new StubMetricsSystem(),
-            false)
-        .storeInitialAnchor(genesis);
+    final StateDiffFixture fixture = new StateDiffFixture();
+    final AnchorPoint genesis = fixture.genesis;
+    fixture.open(StateDiffDagConfig.disabled()).storeInitialAnchor(genesis);
 
-    final KvStoreCombinedDao dao =
-        new CombinedKvStoreDao<>(
-            db, schema, new V4FinalizedStateSnapshotStorageLogic<>(1), new StubMetricsSystem());
+    final KvStoreCombinedDao dao = fixture.dao;
     // The last write of the bootstrap transaction fails
     final KvStoreDatabase database =
         new KvStoreDatabase(
             dao,
             StateStorageMode.PRUNE,
             false,
-            spec,
+            fixture.spec,
             STATE_DIFFS_ENABLED,
             new StubMetricsSystem(),
             false) {
@@ -1023,43 +1007,16 @@ class KvStoreDatabaseTest {
 
   @Test
   void stateDiffs_corruptAnchorFailsStartupWithActionableError() {
-    final Spec spec = TestSpecFactory.createMinimalAltair();
-    final V6SchemaCombinedSnapshot schema = V6SchemaCombinedSnapshot.createV6(spec);
-    final MockKvStoreInstance db =
-        MockKvStoreInstance.createEmpty(schema.getAllColumns(), schema.getAllVariables());
-    final AnchorPoint genesis =
-        AnchorPoint.fromGenesisState(spec, ChainBuilder.create(spec).generateGenesis().getState());
-    KvStoreDatabase.createWithStateSnapshots(
-            db,
-            schema,
-            StateStorageMode.PRUNE,
-            1,
-            false,
-            spec,
-            STATE_DIFFS_ENABLED,
-            new StubMetricsSystem(),
-            false)
-        .storeInitialAnchor(genesis);
-    final KvStoreCombinedDao dao =
-        new CombinedKvStoreDao<>(
-            db, schema, new V4FinalizedStateSnapshotStorageLogic<>(1), new StubMetricsSystem());
-    assertThat(dao.getStateDiffNode(genesis.getRoot())).isPresent();
-    try (final HotUpdater updater = dao.hotUpdater()) {
+    final StateDiffFixture fixture = new StateDiffFixture();
+    final AnchorPoint genesis = fixture.genesis;
+    fixture.open(STATE_DIFFS_ENABLED).storeInitialAnchor(genesis);
+    assertThat(fixture.dao.getStateDiffNode(genesis.getRoot())).isPresent();
+    try (final HotUpdater updater = fixture.dao.hotUpdater()) {
       updater.putStateDiffNode(genesis.getRoot(), Bytes.of(2, 2, 3));
       updater.commit();
     }
 
-    final Database restarted =
-        KvStoreDatabase.createWithStateSnapshots(
-            db,
-            schema,
-            StateStorageMode.PRUNE,
-            1,
-            false,
-            spec,
-            STATE_DIFFS_ENABLED,
-            new StubMetricsSystem(),
-            false);
+    final Database restarted = fixture.open(STATE_DIFFS_ENABLED);
 
     assertThatThrownBy(restarted::createMemoryStore)
         .isInstanceOfSatisfying(
@@ -1127,31 +1084,23 @@ class KvStoreDatabaseTest {
 
   @Test
   void stateDiffs_finalizedBlockSummaryReusesAnchorStateReconstructedOnLoad() {
-    final Spec spec = TestSpecFactory.createMinimalAltair();
-    final V6SchemaCombinedSnapshot schema = V6SchemaCombinedSnapshot.createV6(spec);
-    final MockKvStoreInstance db =
-        MockKvStoreInstance.createEmpty(schema.getAllColumns(), schema.getAllVariables());
-    final SignedBlockAndState genesis = ChainBuilder.create(spec).generateGenesis();
+    final StateDiffFixture fixture = new StateDiffFixture();
+    final AnchorPoint genesis = fixture.genesis;
+    final SignedBeaconBlock genesisBlock = genesis.getSignedBeaconBlock().orElseThrow();
     // A checkpoint-synced anchor: its block is not stored, so the summary comes from its state
     final AnchorPoint anchor =
         AnchorPoint.create(
-            spec,
+            fixture.spec,
             new Checkpoint(UInt64.ZERO, genesis.getRoot()),
             genesis.getState(),
             Optional.empty());
-    final KvStoreCombinedDao dao =
-        spy(
-            new CombinedKvStoreDao<>(
-                db,
-                schema,
-                new V4FinalizedStateSnapshotStorageLogic<>(1),
-                new StubMetricsSystem()));
+    final KvStoreCombinedDao dao = spy(fixture.dao);
     final KvStoreDatabase database =
         new KvStoreDatabase(
             dao,
             StateStorageMode.PRUNE,
             false,
-            spec,
+            fixture.spec,
             STATE_DIFFS_ENABLED,
             new StubMetricsSystem(),
             false);
@@ -1162,11 +1111,10 @@ class KvStoreDatabaseTest {
     clearInvocations(dao);
 
     // Backfilling down from the anchor needs the finalized block summary
-    database.storeFinalizedBlocks(
-        List.of(genesis.getBlock()), Map.of(), Map.of(), Optional.empty());
+    database.storeFinalizedBlocks(List.of(genesisBlock), Map.of(), Map.of(), Optional.empty());
 
     verify(dao, never()).getStateDiffNode(any());
-    assertThat(database.getFinalizedBlockAtSlot(UInt64.ZERO)).contains(genesis.getBlock());
+    assertThat(database.getFinalizedBlockAtSlot(UInt64.ZERO)).contains(genesisBlock);
   }
 
   @Test

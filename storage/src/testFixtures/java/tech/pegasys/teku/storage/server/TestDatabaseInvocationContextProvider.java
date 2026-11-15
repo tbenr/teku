@@ -52,12 +52,28 @@ class TestDatabaseInvocationContextProvider implements TestTemplateInvocationCon
       // State diff storage is only supported by the single-database (V6 family) versions
       databaseVersions.stream()
           .filter(STATE_DIFF_VERSIONS::contains)
+          .map(
+              databaseVersion ->
+                  inMemoryStorage ? inMemoryEquivalent(databaseVersion) : databaseVersion)
+          .distinct()
           .map(databaseVersion -> new DatabaseContext(databaseVersion, inMemoryStorage, true))
           .map(this::generateContext)
           .forEach(configurations::add);
     }
 
     return configurations.stream();
+  }
+
+  /**
+   * The version whose in-memory database {@code databaseVersion} gets: LevelDB and RocksDB only
+   * differ on disk, see {@code InMemoryStorageSystemBuilder}.
+   */
+  private static DatabaseVersion inMemoryEquivalent(final DatabaseVersion databaseVersion) {
+    return switch (databaseVersion) {
+      case LEVELDB2 -> DatabaseVersion.V6;
+      case LEVELDB_TREE -> DatabaseVersion.ROCKSDB_TREE;
+      default -> databaseVersion;
+    };
   }
 
   private TestTemplateInvocationContext generateContext(final DatabaseContext databaseContext) {

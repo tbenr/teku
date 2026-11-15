@@ -1453,3 +1453,52 @@ checkpoint nodes went through the DAG.
     diff base, a hit and no miss. Slot 0 also ends the chains of reads of
     nodes older than the latest level-1 node. What it retains at head is
     unmeasured since the resize of entry 49.
+
+## Test suite tidy (2026-11-15)
+
+85. **DERIVED. Test-only tidy (round 3 items T1-T4): T1a, T1b, T3 (KDT fixture, DAGT helpers) and T4 applied; T2 and three T3 parts skipped. No `src/main` change.**
+    **T1a.** `StateDiffDatabaseTest` makes its "state diffs only" assumption
+    once, in a `@BeforeEach` that runs after `AbstractDatabaseTest.setup`
+    (which only builds the genesis, as it did before the per-test
+    assumption), instead of in 17 tests. Its one legacy test,
+    `legacyBehaviourUnchangedWhenDisabled`, moved unchanged to `DatabaseTest`
+    next to the other legacy-only templates: the unit test
+    `KvStoreDatabaseTest.stateDiffs_legacyStorageWithoutFlagOrMarker` does not
+    cover it (no blocks, no finalization, so neither "no state diff node after
+    import and finalization" nor "finalization writes LATEST_FINALIZED_STATE",
+    and only the in-memory V6 database).
+    **T1b.** In memory, LEVELDB2 runs as V6 and LEVELDB_TREE as ROCKSDB_TREE
+    all the way down (`InMemoryStorageSystemBuilder.build`, its restart copy,
+    `InMemoryKvStoreDatabaseFactory`, `DatabaseContext`; nothing else reads
+    the version on that path), so `TestDatabaseInvocationContextProvider`
+    maps each in-memory state diff version to its equivalent and keeps one
+    context per pair. File-backed and legacy contexts are unchanged. 22 → 20
+    contexts per template.
+    **T3.** `KvStoreDatabaseTest`: the corrupt-anchor, legacy-bootstrap and
+    finalized-block-summary tests use `StateDiffFixture` (the last one spies
+    the fixture's DAO and takes the genesis block from the fixture's anchor).
+    `StateDiffDagTest`: `overwritePayload` / `overwriteStateRoot` replace the
+    four hand-built record rewrites, `verificationFailures()` the four inline
+    counter reads, `updateLoggingOneError` the three identical LogCaptor
+    blocks (the window test's differently shaped log assertion stays).
+    **T4.** `StorageSystemTest` sets every `StoreConfig` field off its default,
+    compares `StorageSystem.requestingStateDiffs`'s copy field by field
+    (reflection, flag excepted) and pins the field list, so a new field fails
+    until the copy carries it. Checked by dropping `blockCacheSize` from the
+    copy: the test failed on that field.
+    Skipped: **T2**, every one of the four mode-resolution unit tests asserts
+    something no integration test does (state before `storeInitialAnchor` or
+    before the store loads, the verify error message, verification and
+    `stateDiffStorageActive` after reopening on the marker alone), so none is
+    deleted. **T3 shared DAO factory**: the five blocks need a spied
+    accessor, the schema or the db alongside the DAO, so a factory would
+    only serve the existing `createDao`. **T3 state-diff test holder**: the
+    four one-line fields are used at ~70 sites, a holder makes each longer.
+    **T3 StorageUpdate literal**: no testFixtures home serves both source
+    sets without a new class for one literal.
+    Counts (tests/failures/skipped) before → after: state-diff 121/0/0 →
+    121/0/0 (up to date), storage test 1118/0/17 → 1119/0/17 (+1
+    `StorageSystemTest`), storage integrationTest 3334/0/279 → 3042/0/269
+    (`DatabaseTest` 2816/0/32 → 2580/0/30, `StateDiffDatabaseTest` 396/0/246
+    → 340/0/238), teku 532/0/2 → 532/0/2, chainstorage 15/0/0 → 15/0/0 (up
+    to date).
