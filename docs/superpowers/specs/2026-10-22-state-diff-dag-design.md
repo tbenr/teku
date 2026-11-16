@@ -1021,15 +1021,15 @@ Record the numbers in the PR.
 
 ## 13. Risks and open points
 
-- **Write-path CPU.** The walk is estimated at tens of milliseconds per epoch;
-  the delta encoding reads two 11 MB arrays. Must be measured on mainnet
-  states. Mitigation if needed: compute the payload outside the transaction and
-  commit only the bytes.
-- **Per-level cache memory.** Worst case one full state per cached level.
-  Configurable level count; reconstruct-on-miss exists anyway.
-- **DB-level compression of deltas.** LZ4 may compress varint deltas worse than
-  gzip did in the hackmd. Format is versioned; an application-level codec for
-  the delta section is a contained change.
+- **Write-path CPU.** Settled: 48 ms per node on mainnet in the first soak
+  and 70 ms while syncing with payload version 2 (decisions log 75), inside
+  the transaction; no mitigation needed.
+- **Per-level cache memory.** Settled: 3 trees at the finest level and 1 at
+  each coarser level, not configurable (decisions log 49); 0.7 GB more live
+  heap than a stock node in the A/B of the first soak.
+- **DB-level compression of deltas.** Settled by node payload version 2: the
+  delta section is compressed with zstd before it reaches the database, 19.5
+  times smaller than raw on mainnet (decisions log 63, 75).
 - **Skipped nodes.** A checkpoint-block state missing from the cache at write
   time produces a gap. The anchor is always written on finalization, so the
   gap only costs replay time. The skip counter must be watched during the soak.

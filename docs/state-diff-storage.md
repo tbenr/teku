@@ -1,13 +1,11 @@
 # State diff storage (experimental)
 
-Status: phase 1 (non-archive nodes) implemented behind a hidden flag; soak-tested
-on mainnet and on sepolia (Gloas); Fulu to Gloas fork crossing verified on a
-kurtosis devnet (decisions log, 2026-10-28 fork crossing section). Phase 2,
-first slice (archive finalized states in the DAG, retention window) implemented
-and soaked on mainnet with a 128-epoch window (decisions log 51, 61). Node
-payload version 2 (zstd-compressed delta section, decisions log 63-68;
-per-validator supernode patches and node record header version 2, 69-72)
-implemented, not yet soaked. Living document, last updated 2026-11-14.
+Status: implemented behind a hidden flag, for prune nodes and for archive nodes
+(finalized states in the DAG, optional retention window), with node payload
+version 2. Soaked on mainnet (local clones, and an archive and a minimal box on
+AWS since 2026-10-29); the first build was also soaked on sepolia (Gloas), and
+the Fulu to Gloas fork crossing was verified on a kurtosis devnet. Living
+document, last updated 2026-11-16.
 
 Design: [docs/superpowers/specs/2026-10-22-state-diff-dag-design.md](superpowers/specs/2026-10-22-state-diff-dag-design.md).
 Every non-obvious decision and all measurements:
@@ -41,29 +39,12 @@ teku --network=mainnet --data-storage-mode=minimal --Xdata-storage-state-diffs
 - The mode is sticky: a marker in the database keeps it on even if the flag is
   removed later. There is no downgrade path; try it on a copy of your data
   directory first.
-- Databases written in state diff mode by a build before node payload version
-  2 (before 2026-10-29), or by a build of 2026-10-29 before the format marker
-  moved to 2 (their payloads have the older patch layout), are not readable.
-  Their `STATE_DIFF_MODE` marker is 1 and sits at hot variable 13, which a
-  build after the rebase of 2026-11-14 reads as master's `FAST_CONFIRMED_ROOT`
-  (decisions log 79): the database is not recognised as a state diff database
-  and fails later, while the store is loaded, because the one-byte value is
-  not a root. Re-sync from a checkpoint into a new data directory. A marker
-  other than 2 at variable 15 fails at open as an unknown state diff storage
-  format.
-- Column IDs (rebase of 2026-10-29 onto master `715545a182`): `STATE_DIFF_NODES`
-  is hot column 14 and `STATE_SUPERNODES` hot column 15; `STATE_SUPERNODE_REFCOUNTS`
-  stays 13. Master's light client bootstrap change (#11572) took hot columns 10
-  and 11 for `LIGHT_CLIENT_BOOTSTRAPS_BY_SLOT` and
-  `LIGHT_CLIENT_SYNC_COMMITTEES_BY_PERIOD`, which the branch had used for nodes
-  and supernodes until then (12 is the hot blob sidecar column of V4 databases).
-  Databases written by earlier branch builds (up to 31634aa01c, including the
-  two AWS soak boxes) are incompatible with a rebased build: their column 10
-  and 11 data would be read as light client bootstraps and sync committees, and
-  columns 14 and 15 would be empty, so no node is found and the mode marker
-  points at a DAG that is not there. Re-sync them into a fresh data directory,
-  or move the two column families to 14 and 15 with a migration, before running
-  a rebased build.
+- Databases written in state diff mode by a branch build from before 2026-11-14
+  are not readable as they are: the payload format, two column IDs and the
+  variable ID of the mode marker changed since (decisions log 73, 76, 79). Use
+  a fresh data directory or, for a database already on payload version 2, the
+  one-off migrations of entries 76, 79 and 82. A marker other than 2 fails at
+  open as an unknown state diff storage format.
 - `--Xhot-state-persistence-frequency` and `--data-storage-archive-frequency`
   are ignored while it is on (a WARN says so).
 - Only the storage changes; block import, fork choice and the APIs are untouched.
@@ -135,9 +116,9 @@ ratio is the delta compression ratio), `write_seconds`,
 
 ## Measured so far
 
-Soak on copies of real MINIMAL-mode databases with the stub execution engine
-(the same way those nodes were already run), 7 hours on the final build after
-the migration path, with `verify-state-diffs` clean on both.
+First soak (payload version 1, 2026-10-22 and 23): copies of real MINIMAL-mode
+databases with the stub execution engine, 7 hours on the final build after the
+migration path, with `verify-state-diffs` clean on both.
 
 | | Mainnet (Fulu, ~2M registry entries) | Sepolia (Gloas) |
 |---|---|---|
@@ -155,67 +136,60 @@ So on a mainnet prune node, bytes written for states drop by roughly 30 to 50
 times, and the on-disk footprint of state storage by about 3.5 times, for about
 0.7 GB more heap.
 
-## Known limits and open decisions
+Since then, on mainnet:
 
-1. **Delta section compression**: closed (decisions log 42, 63). Node payload
-   version 2 compresses each delta field with zstd (pure Java, level 3). On a
-   synthetic mainnet-like node the balance deltas go from 4.0 MB to 1.0 MB
-   (4.0x), a 2M-element inactivity-score block of zeros from 2.0 MB to 212
-   bytes, and the whole payload from 6.4 MB to 1.4 MB, for ~17 ms of
-   compression per node write and ~6 ms of decompression per chain link. The
-   compression happens before RocksDB, so it also holds at the bottom-most
-   level, which Teku leaves uncompressed. The ratio on real data is to be
-   read off `section_bytes_total{section=deltas|deltas_compressed}` on the
-   next soak. Databases marked 1 must be re-synced (see How to run it).
-2. **Per-validator supernode patches**: closed (decisions log 41, 69-71). A
-   changed supernode is stored as a patch of its changed and appended
-   121-byte validators whenever that is smaller than a whole 31 KB copy plus
-   its reference, i.e. unless nearly all its validators changed; patches are
-   inline, so they add nothing to the supernode column and its reference
-   counts. On a synthetic node with 25 changed supernodes and 4 deposits the
-   supernode cost drops from 788 KB (references plus stored content) to a
-   5.8 KB patch section; on an Electra state with 6 changed validators from
-   155 KB to 767 bytes. The supernode column now holds the snapshots' validator
-   sets and the rare whole references (a supernode the registry grows into);
-   reconstruction rehashes each patched supernode once (~0.2 ms each). To be
-   measured on the next soak.
-3. **Cold base-cache reconstruction on the live node**: closed. The anchor
-   reconstructed at startup seeds the base cache and every reconstruction stops
-   at the first cached node of its chain (decisions log 49, measured in 50):
-   after a restart at a mid-period anchor, the startup reconstruction walked 12
-   links in ~1.2 s and the first node write rebuilt its parent in 1 link under
-   0.25 s, where it took 14.5 s before. A chain that bypasses the anchor
-   through a coarser node still starts at the snapshot.
-4. The per-level base cache holds 3 trees at the finest level and 1 at each
-   coarser level, every level cached (decisions log 49); not configurable.
-5. Retention after a long non-finality period decodes every intermediate node's
-   payload in one transaction; store the supernode hash list in the record
-   header or batch deletions if this matters.
+- **Payload version 2** (decisions log 75; local archive clone, 2,160 node
+  writes): the compressed delta section is 19.5 times smaller than raw and
+  supernode patches take 6.4 KB per node. A node costs about 1.8 MiB per epoch
+  on disk, about 0.4 GiB per day of history, most of it the participation
+  leaves, which are stored uncompressed. Node writes take 70 ms on average
+  while syncing (walk 59 ms, encode 9.6 ms), and a 17-link anchor chain
+  rebuilds in 1.23 s.
+- **Restart** (decisions log 49, 50): the anchor reconstructed at startup seeds
+  the base cache and every reconstruction stops at the first cached node of
+  its chain. After a restart at a mid-period anchor the startup reconstruction
+  walked 12 links in about 1.2 s and the first node write rebuilt its parent
+  in 1 link under 0.25 s, where it took 14.5 s before.
+- **Archive retention window** (payload version 1, decisions log 61):
+  historical reads take 1.6-3 s at a checkpoint slot, plus block replay inside
+  the epoch.
+- **AWS boxes** (decisions log 78, 82): the minimal box wrote 3,452 nodes in
+  15 days at head with no verification failure and no storage error. On the
+  archive box the nodes take 6.7 GiB next to 770 GiB of blocks, and an offline
+  verify of 5,046 nodes is clean in 79 s. Full GCs come with syncing and stop
+  at head.
+
+## Known limits
+
+- No downgrade, and an archive database serves no history from before the
+  switch (see How to run it).
+- Archive databases use the prune levels: an old epoch costs a snapshot plus
+  up to 21 diffs, and a snapshot of about 20 MB is written every 256 epochs.
+- The base cache holds 3 trees at the finest level and 1 at each coarser
+  level and is not configurable (decisions log 49). The A/B of the first soak
+  measured 0.7 GB more live heap than a stock node.
+- Participation leaves are not compressed by the application and are most of
+  a node's bytes (decisions log 75).
+- Retention after a long non-finality period decodes every intermediate
+  node's payload in one transaction.
 
 ## Next steps
 
-- Measured on the window soak (decisions log 61): about 3 MiB per epoch on disk
-  (nodes 1.5 MiB after LZ4 plus supernodes 1.3 MiB), about 0.65 GB per day of
-  mainnet history; historical reads 1.6-3 s at a checkpoint slot, plus block
-  replay inside the epoch; inactivity-score deltas are ~14% of the delta
-  section. Payload version 2 (delta compression) is in; soak it on a fresh
-  data directory and read the real compression ratio off the metrics.
-  Still to soak: an unbounded archive over days, and a longer window.
-- Phase 2, archive node: configurable coarse levels above 256 epochs (archive
-  databases use the prune levels today, so an old epoch costs a snapshot plus
-  up to 21 diffs and a 20 MB snapshot every 256 epochs), and the
-  `--reconstruct-historic-states` integration (spec 5.11); until then that
-  option is rejected with the flag.
-- Phase 2, reconstruction anchor: let a fresh node supply an older finalized
-  state so backfill and reconstruction start there instead of genesis; the
-  state is verified against the block's state root once the block backfill
-  reaches it, and an anchor older than the peers' required serving window only
-  warns and keeps retrying.
-- Phase 3, frozen exited-validator supernodes: keep only the hash of supernodes
-  whose validators are all withdrawn, load on demand from the supernode column,
-  skip them in per-epoch iteration (spec section 9).
+- Soak longer: the archive over weeks, a longer retention window, and reorgs
+  at epoch boundaries; flip the default after a clean multi-week run.
+- Payload version 3: compress the leaves section like the deltas (decisions
+  log 75). Gloas adds `ptc_window`, about 0.4 MB per epoch.
+- Archive: configurable coarse levels above 256 epochs, and the
+  `--reconstruct-historic-states` integration (spec 5.11).
+- Reconstruction anchor: let a fresh node supply an older finalized state so
+  backfill and reconstruction start there instead of genesis; the state is
+  verified against the block's state root once the block backfill reaches it,
+  and an anchor older than the peers' required serving window only warns and
+  keeps retrying.
 - Optional tier 2, per-block diffs for hot states: needs a sparse byte-patch
-  section for participation flags first; worth it only for read-heavy hot-state
-  workloads (see the decisions log).
-- Flip the default once items 1 and 3 above are done (both closed now) and a multi-week soak
-  including reorgs at epoch boundaries is clean.
+  section for participation flags first; worth it only for read-heavy
+  hot-state workloads (see the decisions log).
+- Not pursued in its attempted form: frozen exited-validator supernodes
+  (design section 9, decisions log 77).
+- Parked until the feature is in master: the open design calls and the
+  deferred optimisations, with their measurements, are in decisions log 86.
