@@ -1502,3 +1502,124 @@ checkpoint nodes went through the DAG.
     (`DatabaseTest` 2816/0/32 → 2580/0/30, `StateDiffDatabaseTest` 396/0/246
     → 340/0/238), teku 532/0/2 → 532/0/2, chainstorage 15/0/0 → 15/0/0 (up
     to date).
+
+## Parked until the feature is in master (2026-11-16)
+
+86. **RULING (Enrico). Before the merge, simple code and a small diff win; what the third simplification round left is parked here.**
+    Until the branch is in master, no change goes in that complicates the code
+    or widens the diff for speed or structure alone. A slow implementation is
+    still not accepted: good enough is the bar. Changes that make the code
+    shorter stay welcome (entries 80, 83, 84 and 85 were of that kind). This
+    entry is the one list of what round 3 (2026-11-14, four reviewers on the
+    whole branch) raised and did not apply. Items marked "review" are the
+    reviewers' reading and were not re-verified; the others were checked
+    against the code or measured.
+
+    **Design calls, undecided**
+    - **Header column for node records** (v2 simplify skips 5/6; review for
+      the counts). Parent-pointer walks and presence checks read whole 1-3 MB
+      records for a 91-byte header: C + 2 full reads per prune finalization
+      (C = length of the previous anchor's chain), about 25 MB on average,
+      time unmeasured. A fixed-size header column, optionally carrying the
+      supernode hash list so that deletion needs no payload, would remove
+      those reads, the tolerant deletion of undecodable payloads, and about
+      115 lines that exist only because header and payload share one value
+      (`PayloadView`, the reserved prefix, `readRoot`, `patchLastEpoch`, the
+      raw record memo). Cost: a schema change (one column, a marker bump,
+      re-synced databases).
+      Possible without a format change: `firstEpoch` and `lastEpoch` of a
+      stored record are read only for their own upkeep and a DEBUG line
+      (checked by grep), so the `lastEpoch` patch could stop and records
+      become write-once, about 35 lines less.
+    - **Storage mode resolved once, at open** (review). "Flag or marker" is
+      known at open, but the switch happens later, at `createMemoryStore` or
+      `storeInitialAnchor`; hence the volatile strategy field, the legacy
+      strategy holding its successor, `isStateDiffStorageActive() ||
+      enabled()` in `StorageService`, and the flag-only checks that miss a
+      marker-only database (entries 46, 62). Reconciling in one place at open
+      would delete about 70 lines and move the migration to database open.
+    - **Anchor chain repair exists in prune mode only** (review). Archive
+      retention never loads the anchor chain (entry 55), and a restart treats
+      the same condition as unrecoverable. The tolerant paths catch only
+      `StateDiffVerificationException`, and no soak has recorded a
+      verification failure or a repair. Either check "the anchor chain loads"
+      in every mode before retention (drops `loadChainPrefix`, about 35
+      lines), or delete the repair (about 90 lines and its tests).
+    - **SSZ list layout outside infrastructure/ssz** (first round A8, never
+      ruled; review). `PackedUInt64Lists` builds and reads the packed uint64
+      list tree itself; the write side could call the schema's bulk
+      deserialiser and the read side `TreeUtil.iterateLeavesData`, about 90
+      lines less. The 1.5 ms list read of entry 40 would have to be measured
+      again, and PR 11627 edits the same schema interfaces, so order matters.
+    - **`Store.getBlockStateIfAvailable` also returns epoch states in state
+      diff mode** (entry 80, N10). Narrowing it back to master's meaning for
+      outside callers while the store's own regeneration base walk keeps the
+      wide lookup is a design choice nobody has made; all soaks ran wide.
+    - **Tests:** the persistence policy is tested at policy, factory and store
+      level (left alone, entry 85); `StateDiffDatabaseTest` still generates
+      and skips its templates for the legacy contexts, which a per-class
+      filter on `@TestDatabaseContext`, master's fixture API, would avoid.
+
+    **Optimisations, deferred**
+    - **Applier leaf section (round 3 item E3), measured.**
+      `TreeDiffApplier.UpdatesByDepth` groups every entry of a section into
+      `TreeMap<Integer, TreeMap<Long, TreeNode>>`, copies keys and values into
+      two lists, and `expandNonBranchAncestors` walks from the root to every
+      entry. Benchmark (throwaway, not kept): mainnet Fulu state schema, 2.2M
+      validators, `previous_epoch_participation` rewritten on every link, so
+      68,750 leaves per link at depth 42 (the v2 soak had ~65.7k leaves per
+      node, entry 75); 16-link chain, median of 8 rounds after 6 warm-up
+      rounds, two runs, Apple silicon, JaCoCo agent and assertions off (the
+      Gradle test JVM attaches both by default; an init script has to switch
+      them off inside `gradle.projectsEvaluated`, and the run should print its
+      JVM arguments to prove it). Per link:
+
+      | step | ms |
+      |---|---|
+      | whole `ChainApplication.apply` | 13.6-14.5 |
+      | grouping into the `TreeMap`s | 7.1-8.5 |
+      | `expandNonBranchAncestors` | 6.2-6.8 |
+      | key and value list copies | 0.9-1.0 |
+      | `TreeNode.updated(TreeUpdates)` itself | 1.6-1.8 |
+      | `LeafNode.create` for the entries | 0.5 |
+      | payload decode, for scale | 0.7-0.8 |
+
+      About 12 of the 14 ms are bookkeeping. On the same input, one pass
+      appending to per-depth lists with a strictly-increasing check (the codec
+      decodes entries in gIndex order) takes 0.4 ms, and an ancestor check
+      that starts each entry where its path leaves the previous entry's path
+      takes 0.55-0.6 ms: about 3 ms per link in all. That is about 11 ms per
+      link, roughly 0.2 s of the 1.23 s a 17-link anchor chain took on the
+      same machine (entry 75), by arithmetic and not measured on a real
+      reconstruction; writes gain nothing. Cost: 30-40 more lines. To get
+      right: the supernode section merges whole supernodes and patches, so its
+      entries are not sorted and the grouping must sort on an out-of-order
+      entry and still reject duplicates; and once an expansion replaces a
+      subtree the kept path is stale, so the check must fall back to the full
+      walk. Folding the leaf sections of a chain so they are applied once
+      would add a few tens of ms, by estimate, for a last-writer-wins rule
+      across links: not worth it.
+    - **Second load of the window's previous start block** (entry 84): one
+      finalized block deserialised and hashed twice per finalization on an
+      archive database with a retention window.
+    - **Storage updates with nothing for the DAG** (round 3 item E4; review):
+      `StateDiffHotStateStorage` reads the finalized checkpoint and builds a
+      transaction for every update. Microseconds per block; an early return.
+    - **Smaller or speculative, unmeasured** (review): `patchLastEpoch` copies
+      a whole record to change 8 bytes (rare); the ancestor checkpoint list is
+      built under the store write lock (64-96 lookups at head); coarse base
+      cache entries could hold their delta fields as `long[]` instead of
+      trees; multi-MB transient arrays per write may be humongous allocations
+      while syncing (no GC evidence).
+
+    **Closed, not to be raised again without new evidence**
+    - Dropping the coarsest base cache slot (E1): it is a diff base for fork
+      siblings (entry 84).
+    - Canonical packed leaves in infrastructure/ssz to replace the differ's
+      leaf data-length rules (first round C2): base seeding (entry 49) and
+      the participation data of entry 75 removed most of its value.
+    - `expandNonBranchAncestors` moved into the differ or into
+      `LeafNode.updated` (first round C3): both alternatives are worse.
+    - Pinning checkpoint block states so no node is skipped (first round C5):
+      a migration produces the same gaps, so the gap handling stays.
+    - `write_phase_seconds_total{phase}` stays for now (entry 83).
