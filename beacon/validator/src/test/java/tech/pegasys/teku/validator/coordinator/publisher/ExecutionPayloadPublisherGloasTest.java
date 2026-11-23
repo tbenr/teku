@@ -43,6 +43,7 @@ import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionRequests;
 import tech.pegasys.teku.spec.datastructures.validator.BroadcastValidationLevel;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult;
+import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult.FailureReason;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitionsGloas;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 import tech.pegasys.teku.statetransition.blobs.RemoteOrigin;
@@ -167,6 +168,49 @@ class ExecutionPayloadPublisherGloasTest {
 
     assertThat(publish(contents))
         .isCompletedWithValue(PublishSignedExecutionPayloadResult.success(block.getRoot()));
+
+    verify(dataColumnSidecarGossipChannel)
+        .publishDataColumnSidecars(List.of(), RemoteOrigin.LOCAL_PROPOSAL);
+    verifyNoInteractions(executionPayloadGossipChannel);
+    verify(executionPayloadManager, never())
+        .validateAndImportExecutionPayloadForBroadcast(any(), any());
+  }
+
+  @Test
+  public void shouldWaitForTheImportOfAKnownEnvelopeWhichIsStillInProgress() {
+    final SignedBeaconBlock block = blockCommittingTo(payload, executionRequests, 0);
+    prepareKnownBlock(block);
+    when(executionPayloadManager.isExecutionPayloadRecentlySeen(block.getRoot())).thenReturn(true);
+    final SafeFuture<Optional<FailureReason>> importFailure = new SafeFuture<>();
+    when(executionPayloadManager.getRecentExecutionPayloadImportFailure(block.getRoot()))
+        .thenReturn(Optional.of(importFailure));
+
+    final SafeFuture<PublishSignedExecutionPayloadResult> result = publish(contentsFor(block));
+
+    // the blob data is published without waiting
+    verify(dataColumnSidecarGossipChannel)
+        .publishDataColumnSidecars(List.of(), RemoteOrigin.LOCAL_PROPOSAL);
+    assertThat(result).isNotDone();
+
+    importFailure.complete(Optional.empty());
+
+    assertThat(result)
+        .isCompletedWithValue(PublishSignedExecutionPayloadResult.success(block.getRoot()));
+    verifyNoInteractions(executionPayloadGossipChannel);
+  }
+
+  @Test
+  public void shouldReportAKnownEnvelopeWhichFailedToImportAsNotImported() {
+    final SignedBeaconBlock block = blockCommittingTo(payload, executionRequests, 0);
+    prepareKnownBlock(block);
+    when(executionPayloadManager.isExecutionPayloadRecentlySeen(block.getRoot())).thenReturn(true);
+    when(executionPayloadManager.getRecentExecutionPayloadImportFailure(block.getRoot()))
+        .thenReturn(
+            Optional.of(SafeFuture.completedFuture(Optional.of(FailureReason.FAILED_EXECUTION))));
+
+    assertThat(publish(contentsFor(block)))
+        .isCompletedWithValue(
+            PublishSignedExecutionPayloadResult.notImported(block.getRoot(), "FAILED_EXECUTION"));
 
     verify(dataColumnSidecarGossipChannel)
         .publishDataColumnSidecars(List.of(), RemoteOrigin.LOCAL_PROPOSAL);

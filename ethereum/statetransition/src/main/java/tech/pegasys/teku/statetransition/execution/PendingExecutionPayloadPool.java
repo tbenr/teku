@@ -13,6 +13,7 @@
 
 package tech.pegasys.teku.statetransition.execution;
 
+import com.google.common.annotations.VisibleForTesting;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -21,6 +22,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.BiFunction;
 import java.util.function.ToLongFunction;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -55,6 +57,7 @@ class PendingExecutionPayloadPool {
   private final int maxUncheckedEnvelopes;
   private final long maxUncheckedBytes;
   private final ToLongFunction<ExecutionPayloadEnvelope> sizeFunction;
+  private final BiFunction<ExecutionPayloadEnvelope, BeaconBlock, Optional<String>> mismatchFinder;
 
   private final Deque<UncheckedEnvelope> uncheckedEnvelopes = new ArrayDeque<>();
   private final Map<Bytes32, BeaconBlock> validatedBlocks = new HashMap<>();
@@ -66,9 +69,23 @@ class PendingExecutionPayloadPool {
       final int maxUncheckedEnvelopes,
       final long maxUncheckedBytes,
       final ToLongFunction<ExecutionPayloadEnvelope> sizeFunction) {
+    this(
+        maxUncheckedEnvelopes,
+        maxUncheckedBytes,
+        sizeFunction,
+        PendingExecutionPayloadPool::findMismatch);
+  }
+
+  @VisibleForTesting
+  PendingExecutionPayloadPool(
+      final int maxUncheckedEnvelopes,
+      final long maxUncheckedBytes,
+      final ToLongFunction<ExecutionPayloadEnvelope> sizeFunction,
+      final BiFunction<ExecutionPayloadEnvelope, BeaconBlock, Optional<String>> mismatchFinder) {
     this.maxUncheckedEnvelopes = maxUncheckedEnvelopes;
     this.maxUncheckedBytes = maxUncheckedBytes;
     this.sizeFunction = sizeFunction;
+    this.mismatchFinder = mismatchFinder;
   }
 
   synchronized void onSlot(final UInt64 slot) {
@@ -100,7 +117,7 @@ class PendingExecutionPayloadPool {
       return Optional.empty();
     }
     // hashes the payload, so it is done without holding the lock
-    final Optional<String> mismatch = findMismatch(envelope, maybeValidatedBlock.get());
+    final Optional<String> mismatch = mismatchFinder.apply(envelope, maybeValidatedBlock.get());
     if (mismatch.isEmpty()) {
       addChecked(pending);
     }
@@ -115,17 +132,29 @@ class PendingExecutionPayloadPool {
     if (block.getBody().getOptionalExecutionPayloadBid().isEmpty()) {
       return;
     }
+    final Bytes32 beaconBlockRoot = block.getRoot();
     final List<PendingExecutionPayload> candidates;
     synchronized (this) {
       if (isOutsideHeldSlots(block.getSlot())
           || (validatedBlocks.size() >= MAX_VALIDATED_BLOCKS
-              && !validatedBlocks.containsKey(block.getRoot()))) {
+              && !validatedBlocks.containsKey(beaconBlockRoot))) {
         return;
       }
-      validatedBlocks.put(block.getRoot(), block);
-      candidates = removeUnchecked(block.getRoot());
+      validatedBlocks.put(beaconBlockRoot, block);
+      candidates = getUnchecked(beaconBlockRoot);
     }
-    findCommittedEnvelope(candidates, block).ifPresent(this::addChecked);
+    // Hashes the payloads, so it is done without holding the lock. The candidates stay where they
+    // are meanwhile, so that an import of the block which completes first still finds them.
+    final Optional<PendingExecutionPayload> committedEnvelope =
+        findCommittedEnvelope(candidates, block);
+    synchronized (this) {
+      if (!validatedBlocks.containsKey(beaconBlockRoot)) {
+        // the block was imported or its slot passed, either of which dealt with the candidates
+        return;
+      }
+      removeUnchecked(beaconBlockRoot);
+      committedEnvelope.ifPresent(this::putChecked);
+    }
   }
 
   /**
@@ -191,9 +220,26 @@ class PendingExecutionPayloadPool {
     final ExecutionPayloadEnvelope envelope = pending.executionPayload();
     // the block may have been imported or its slot may have passed in the meantime
     if (validatedBlocks.containsKey(envelope.getBeaconBlockRoot())) {
-      // the first to arrive is kept, as its arrival time is what the payload deadline is about
-      checkedEnvelopes.putIfAbsent(envelope.getBeaconBlockRoot(), pending);
+      putChecked(pending);
     }
+  }
+
+  private void putChecked(final PendingExecutionPayload pending) {
+    // the first to arrive is kept, as its arrival time is what the payload deadline is about
+    checkedEnvelopes.merge(
+        pending.executionPayload().getBeaconBlockRoot(),
+        pending,
+        (existing, added) ->
+            existing.arrivalTimestamp().isLessThanOrEqualTo(added.arrivalTimestamp())
+                ? existing
+                : added);
+  }
+
+  private List<PendingExecutionPayload> getUnchecked(final Bytes32 beaconBlockRoot) {
+    return uncheckedEnvelopes.stream()
+        .filter(unchecked -> unchecked.envelope().getBeaconBlockRoot().equals(beaconBlockRoot))
+        .map(UncheckedEnvelope::pending)
+        .toList();
   }
 
   private List<PendingExecutionPayload> removeUnchecked(final Bytes32 beaconBlockRoot) {
@@ -214,14 +260,14 @@ class PendingExecutionPayloadPool {
     return slot.isLessThan(currentSlot) || slot.isGreaterThan(currentSlot.increment());
   }
 
-  private static Optional<PendingExecutionPayload> findCommittedEnvelope(
+  private Optional<PendingExecutionPayload> findCommittedEnvelope(
       final List<PendingExecutionPayload> candidates, final BeaconBlock block) {
     return candidates.stream()
-        .filter(candidate -> findMismatch(candidate.executionPayload(), block).isEmpty())
+        .filter(candidate -> mismatchFinder.apply(candidate.executionPayload(), block).isEmpty())
         .findFirst();
   }
 
-  private static Optional<String> findMismatch(
+  static Optional<String> findMismatch(
       final ExecutionPayloadEnvelope envelope, final BeaconBlock block) {
     return MiscHelpersGloas.findExecutionPayloadEnvelopeMismatch(
         envelope.getPayload(),

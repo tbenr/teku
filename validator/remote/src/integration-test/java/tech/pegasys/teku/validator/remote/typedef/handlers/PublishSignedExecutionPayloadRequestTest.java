@@ -15,6 +15,7 @@ package tech.pegasys.teku.validator.remote.typedef.handlers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static tech.pegasys.teku.infrastructure.http.HttpStatusCodes.SC_ACCEPTED;
+import static tech.pegasys.teku.infrastructure.http.HttpStatusCodes.SC_NOT_FOUND;
 import static tech.pegasys.teku.infrastructure.http.HttpStatusCodes.SC_OK;
 import static tech.pegasys.teku.infrastructure.http.RestApiConstants.HEADER_CONSENSUS_VERSION;
 
@@ -75,5 +76,20 @@ public class PublishSignedExecutionPayloadRequestTest extends AbstractTypeDefReq
         .isEqualTo(
             PublishSignedExecutionPayloadResult.notImported(
                 executionPayload.getBeaconBlockRoot(), "UNKNOWN"));
+    assertThat(result.isPublished()).isTrue();
+  }
+
+  @TestTemplate
+  public void shouldHandle404NotFoundAsBlockNotFoundAndNotPublished() {
+    mockWebServer.enqueue(new MockResponse().setResponseCode(SC_NOT_FOUND));
+
+    final PublishSignedExecutionPayloadResult result =
+        request.submit(executionPayload, Optional.of(BroadcastValidationLevel.GOSSIP));
+
+    assertThat(result)
+        .isEqualTo(
+            PublishSignedExecutionPayloadResult.blockNotFound(
+                executionPayload.getBeaconBlockRoot()));
+    assertThat(result.isPublished()).isFalse();
   }
 }

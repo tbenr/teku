@@ -51,6 +51,7 @@ import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionRequests;
 import tech.pegasys.teku.spec.executionlayer.ExecutionLayerChannel;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult;
+import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult.FailureReason;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitionsGloas;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 import tech.pegasys.teku.statetransition.execution.ExecutionPayloadManager.ValidateAndImportResult;
@@ -390,6 +391,95 @@ class DefaultExecutionPayloadManagerTest {
   }
 
   @Test
+  public void shouldKnowNothingAboutTheImportOfAnEnvelopeWhichWasNotImported() {
+    assertThat(
+            executionPayloadManager.getRecentExecutionPayloadImportFailure(
+                signedExecutionPayload.getBeaconBlockRoot()))
+        .isEmpty();
+  }
+
+  @Test
+  public void shouldReportTheImportOfAnEnvelopeWhileItIsInProgressAndOnceItSucceeded() {
+    final SafeFuture<ExecutionPayloadImportResult> forkChoiceResult = new SafeFuture<>();
+    when(forkChoice.onExecutionPayloadEnvelope(
+            eq(signedExecutionPayload), eq(executionLayer), any()))
+        .thenReturn(forkChoiceResult);
+
+    importExecutionPayload(signedExecutionPayload);
+
+    final SafeFuture<Optional<FailureReason>> importFailure =
+        recentImportFailure(signedExecutionPayload);
+    assertThat(importFailure).isNotDone();
+
+    forkChoiceResult.complete(ExecutionPayloadImportResult.successful(signedExecutionPayload));
+
+    assertThat(importFailure).isCompletedWithValue(Optional.empty());
+  }
+
+  @Test
+  public void shouldReportWhyTheImportOfAnEnvelopeFailed() {
+    givenImportResult(
+        signedExecutionPayload,
+        ExecutionPayloadImportResult.failedExecution(new RuntimeException("oops")));
+
+    importExecutionPayload(signedExecutionPayload);
+
+    assertThat(recentImportFailure(signedExecutionPayload))
+        .isCompletedWithValue(Optional.of(FailureReason.FAILED_EXECUTION));
+  }
+
+  @Test
+  public void shouldReportTheRetriedImportOfAnEnvelopeWhichFailedToImport() {
+    givenImportResult(
+        signedExecutionPayload,
+        ExecutionPayloadImportResult.failedExecution(new RuntimeException("oops")));
+    importExecutionPayload(signedExecutionPayload);
+
+    givenSuccessfulImport(signedExecutionPayload);
+    importExecutionPayload(signedExecutionPayload);
+
+    assertThat(recentImportFailure(signedExecutionPayload)).isCompletedWithValue(Optional.empty());
+  }
+
+  @Test
+  public void shouldKeepReportingASuccessfulImportWhenALaterImportForTheBlockFails() {
+    givenSuccessfulImport(committedExecutionPayload);
+    importExecutionPayload(committedExecutionPayload);
+
+    // for example an envelope fetched by root which is not the one the block commits to
+    final ExecutionPayloadEnvelope forgedExecutionPayload = forgedExecutionPayload();
+    givenImportResult(
+        forgedExecutionPayload,
+        ExecutionPayloadImportResult.failedVerification(new RuntimeException("no")));
+    importExecutionPayload(forgedExecutionPayload);
+
+    assertThat(recentImportFailure(committedExecutionPayload))
+        .isCompletedWithValue(Optional.empty());
+  }
+
+  @Test
+  public void shouldKeepReportingAnImportInProgressWhenAnotherImportForTheBlockFails() {
+    final SafeFuture<ExecutionPayloadImportResult> forkChoiceResult = new SafeFuture<>();
+    when(forkChoice.onExecutionPayloadEnvelope(
+            eq(committedExecutionPayload), eq(executionLayer), any()))
+        .thenReturn(forkChoiceResult);
+    importExecutionPayload(committedExecutionPayload);
+
+    final ExecutionPayloadEnvelope forgedExecutionPayload = forgedExecutionPayload();
+    givenImportResult(
+        forgedExecutionPayload,
+        ExecutionPayloadImportResult.failedVerification(new RuntimeException("no")));
+    importExecutionPayload(forgedExecutionPayload);
+
+    assertThat(recentImportFailure(committedExecutionPayload)).isNotDone();
+
+    forkChoiceResult.complete(ExecutionPayloadImportResult.successful(committedExecutionPayload));
+
+    assertThat(recentImportFailure(committedExecutionPayload))
+        .isCompletedWithValue(Optional.empty());
+  }
+
+  @Test
   public void shouldCacheInvalidExecutionPayloadWhenImportFailsVerification() {
     final ExecutionPayloadImportResult failedImportResult =
         ExecutionPayloadImportResult.failedVerification(new RuntimeException("invalid"));
@@ -502,6 +592,25 @@ class DefaultExecutionPayloadManagerTest {
       final InternalValidationResult validationResult) {
     when(executionPayloadGossipValidator.validate(executionPayload, Optional.empty()))
         .thenReturn(completedFuture(validationResult));
+  }
+
+  private void givenImportResult(
+      final ExecutionPayloadEnvelope executionPayload,
+      final ExecutionPayloadImportResult importResult) {
+    when(forkChoice.onExecutionPayloadEnvelope(eq(executionPayload), eq(executionLayer), any()))
+        .thenReturn(completedFuture(importResult));
+  }
+
+  private void importExecutionPayload(final ExecutionPayloadEnvelope executionPayload) {
+    executionPayloadManager.importExecutionPayload(executionPayload, true).finishStackTrace();
+    asyncRunner.executeDueActions();
+  }
+
+  private SafeFuture<Optional<FailureReason>> recentImportFailure(
+      final ExecutionPayloadEnvelope executionPayload) {
+    return executionPayloadManager
+        .getRecentExecutionPayloadImportFailure(executionPayload.getBeaconBlockRoot())
+        .orElseThrow();
   }
 
   private void givenSuccessfulImport(final ExecutionPayloadEnvelope executionPayload) {

@@ -92,7 +92,7 @@ public class ExecutionPayloadPublisherGloas
    * <p>A block which has not been seen is awaited until the end of the envelope's slot, as it may
    * have been published through another beacon node. An envelope the node already knows, for
    * example because it built and revealed the payload itself, is not broadcast again, but the blob
-   * data of the request still is.
+   * data of the request still is, and the result is that of the import of the known envelope.
    */
   @Override
   public SafeFuture<PublishSignedExecutionPayloadResult> publishSignedExecutionPayload(
@@ -131,8 +131,7 @@ public class ExecutionPayloadPublisherGloas
                             beaconBlockRoot)) {
                           dataColumnSidecarGossipChannel.publishDataColumnSidecars(
                               maybeDataColumnSidecars.get(), RemoteOrigin.LOCAL_PROPOSAL);
-                          return SafeFuture.completedFuture(
-                              PublishSignedExecutionPayloadResult.success(beaconBlockRoot));
+                          return getResultOfKnownExecutionPayload(beaconBlockRoot);
                         }
                         return validateAndPublish(
                             executionPayload,
@@ -206,6 +205,34 @@ public class ExecutionPayloadPublisherGloas
                       });
             })
         .finish(error -> VALIDATOR_LOGGER.executionPayloadDutyFailed(slot, error));
+  }
+
+  /**
+   * An envelope is known from the moment it passes gossip validation, which is before it has been
+   * executed and its data checked for availability, so whether it was imported is only known once
+   * its import has completed.
+   */
+  private SafeFuture<PublishSignedExecutionPayloadResult> getResultOfKnownExecutionPayload(
+      final Bytes32 beaconBlockRoot) {
+    return executionPayloadManager
+        .getRecentExecutionPayloadImportFailure(beaconBlockRoot)
+        .map(
+            importFailure ->
+                importFailure.thenApply(
+                    maybeFailureReason ->
+                        maybeFailureReason
+                            .map(
+                                failureReason ->
+                                    PublishSignedExecutionPayloadResult.notImported(
+                                        beaconBlockRoot, failureReason.name()))
+                            .orElseGet(
+                                () ->
+                                    PublishSignedExecutionPayloadResult.success(beaconBlockRoot))))
+        // nothing is known about the import of an envelope which was seen long enough ago
+        .orElseGet(
+            () ->
+                SafeFuture.completedFuture(
+                    PublishSignedExecutionPayloadResult.success(beaconBlockRoot)));
   }
 
   /**

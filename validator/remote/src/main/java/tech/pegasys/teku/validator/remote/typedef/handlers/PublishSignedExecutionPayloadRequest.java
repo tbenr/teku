@@ -15,6 +15,7 @@ package tech.pegasys.teku.validator.remote.typedef.handlers;
 
 import static java.util.Collections.emptyMap;
 import static tech.pegasys.teku.infrastructure.http.HttpStatusCodes.SC_ACCEPTED;
+import static tech.pegasys.teku.infrastructure.http.HttpStatusCodes.SC_NOT_FOUND;
 import static tech.pegasys.teku.infrastructure.http.HttpStatusCodes.SC_OK;
 import static tech.pegasys.teku.infrastructure.http.RestApiConstants.HEADER_CONSENSUS_VERSION;
 import static tech.pegasys.teku.infrastructure.http.RestApiConstants.PARAM_BROADCAST_VALIDATION;
@@ -33,14 +34,18 @@ import tech.pegasys.teku.spec.SpecMilestone;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelopeContents;
 import tech.pegasys.teku.spec.datastructures.validator.BroadcastValidationLevel;
 import tech.pegasys.teku.validator.api.PublishSignedExecutionPayloadResult;
+import tech.pegasys.teku.validator.api.PublishSignedExecutionPayloadResult.Outcome;
 import tech.pegasys.teku.validator.remote.typedef.ResponseHandler;
 
 public class PublishSignedExecutionPayloadRequest extends AbstractTypeDefRequest {
 
-  private final ResponseHandler<Boolean> responseHandler =
-      new ResponseHandler<Boolean>()
-          .withHandler(SC_OK, (request, response) -> Optional.of(true))
-          .withHandler(SC_ACCEPTED, (request, response) -> Optional.of(false));
+  private final ResponseHandler<Outcome> responseHandler =
+      new ResponseHandler<Outcome>()
+          .withHandler(SC_OK, (request, response) -> Optional.of(Outcome.PUBLISHED))
+          .withHandler(
+              SC_ACCEPTED, (request, response) -> Optional.of(Outcome.PUBLISHED_NOT_IMPORTED))
+          // the beacon node has not seen the beacon block, so it has broadcast nothing
+          .withHandler(SC_NOT_FOUND, (request, response) -> Optional.of(Outcome.BLOCK_NOT_FOUND));
 
   private final Spec spec;
 
@@ -78,15 +83,15 @@ public class PublishSignedExecutionPayloadRequest extends AbstractTypeDefRequest
   }
 
   private PublishSignedExecutionPayloadResult createResult(
-      final Optional<Boolean> maybePublishedAndImported, final Bytes32 beaconBlockRoot) {
-    return maybePublishedAndImported
-        .map(
-            publishedAndImported ->
-                publishedAndImported
-                    ? PublishSignedExecutionPayloadResult.success(beaconBlockRoot)
-                    : PublishSignedExecutionPayloadResult.notImported(beaconBlockRoot, "UNKNOWN"))
-        .orElseGet(
-            () -> PublishSignedExecutionPayloadResult.notImported(beaconBlockRoot, "UNKNOWN"));
+      final Optional<Outcome> maybeOutcome, final Bytes32 beaconBlockRoot) {
+    return switch (maybeOutcome.orElse(Outcome.PUBLISHED_NOT_IMPORTED)) {
+      case PUBLISHED -> PublishSignedExecutionPayloadResult.success(beaconBlockRoot);
+      case PUBLISHED_NOT_IMPORTED ->
+          PublishSignedExecutionPayloadResult.notImported(beaconBlockRoot, "UNKNOWN");
+      case BLOCK_NOT_FOUND -> PublishSignedExecutionPayloadResult.blockNotFound(beaconBlockRoot);
+      case REJECTED ->
+          throw new IllegalStateException("A rejected execution payload is reported as an error");
+    };
   }
 
   private Map<String, String> getHeaders(final UInt64 slot) {

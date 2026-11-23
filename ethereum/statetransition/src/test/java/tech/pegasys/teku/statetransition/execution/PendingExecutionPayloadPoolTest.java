@@ -15,6 +15,8 @@ package tech.pegasys.teku.statetransition.execution;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
@@ -49,9 +51,17 @@ class PendingExecutionPayloadPoolTest {
       dataStructureUtil.executionPayloadEnvelopeForBlock(signedBlock, payload, executionRequests);
 
   private long envelopeSize = ENVELOPE_SIZE;
+  // run once, while the next envelope is being compared with its block
+  private final AtomicReference<Runnable> whileComparing = new AtomicReference<>();
   private final PendingExecutionPayloadPool pool =
       new PendingExecutionPayloadPool(
-          MAX_UNCHECKED_ENVELOPES, MAX_UNCHECKED_BYTES, __ -> envelopeSize);
+          MAX_UNCHECKED_ENVELOPES,
+          MAX_UNCHECKED_BYTES,
+          __ -> envelopeSize,
+          (envelope, envelopeBlock) -> {
+            Optional.ofNullable(whileComparing.getAndSet(null)).ifPresent(Runnable::run);
+            return PendingExecutionPayloadPool.findMismatch(envelope, envelopeBlock);
+          });
 
   @BeforeEach
   void setUp() {
@@ -221,6 +231,38 @@ class PendingExecutionPayloadPoolTest {
     assertThat(pool.getUncheckedBytes()).isEqualTo(ENVELOPE_SIZE);
     assertThat(pool.remove(block).map(PendingExecutionPayload::executionPayload))
         .contains(committedEnvelope);
+  }
+
+  @Test
+  void shouldHandOverTheEnvelopeWhenItsBlockIsImportedWhileItIsBeingChecked() {
+    pool.add(forgedEnvelope(), ARRIVAL);
+    pool.add(committedEnvelope, ARRIVAL);
+
+    final AtomicReference<Optional<PendingExecutionPayload>> handedToImport =
+        new AtomicReference<>(Optional.empty());
+    whileComparing.set(() -> handedToImport.set(pool.remove(block)));
+    pool.onBlockValidated(block);
+
+    assertThat(handedToImport.get())
+        .contains(new PendingExecutionPayload(committedEnvelope, ARRIVAL));
+    // and nothing is left behind for the imported block
+    assertThat(pool.getCheckedCount()).isZero();
+    assertThat(pool.getUncheckedCount()).isZero();
+    assertThat(pool.getUncheckedBytes()).isZero();
+    assertThat(pool.add(forgedEnvelope(), ARRIVAL)).isEmpty();
+  }
+
+  @Test
+  void shouldKeepTheEarlierArrivalWhenTheEnvelopeArrivesAgainWhileItIsBeingChecked() {
+    pool.add(committedEnvelope, ARRIVAL);
+
+    whileComparing.set(() -> pool.add(committedEnvelope, ARRIVAL.plus(100)));
+    pool.onBlockValidated(block);
+
+    assertThat(pool.getCheckedCount()).isEqualTo(1);
+    assertThat(pool.getUncheckedCount()).isZero();
+    assertThat(pool.remove(block))
+        .contains(new PendingExecutionPayload(committedEnvelope, ARRIVAL));
   }
 
   @Test

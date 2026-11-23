@@ -16,6 +16,7 @@ package tech.pegasys.teku.statetransition.execution;
 import static tech.pegasys.teku.spec.config.Constants.VALID_EXECUTION_PAYLOAD_SET_SIZE;
 
 import java.time.Duration;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
@@ -25,6 +26,7 @@ import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.ethereum.events.SlotEventsChannel;
 import tech.pegasys.teku.infrastructure.async.AsyncRunner;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
+import tech.pegasys.teku.infrastructure.collections.LimitedMap;
 import tech.pegasys.teku.infrastructure.collections.LimitedSet;
 import tech.pegasys.teku.infrastructure.subscribers.Subscribers;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
@@ -37,6 +39,7 @@ import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.validator.BroadcastValidationLevel;
 import tech.pegasys.teku.spec.executionlayer.ExecutionLayerChannel;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult;
+import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult.FailureReason;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitionsGloas;
 import tech.pegasys.teku.statetransition.block.ReceivedBlockEventsChannel;
 import tech.pegasys.teku.statetransition.forkchoice.ForkChoice;
@@ -60,6 +63,10 @@ public class DefaultExecutionPayloadManager
       LimitedSet.createSynchronizedNatural(VALID_EXECUTION_PAYLOAD_SET_SIZE);
 
   private final PendingExecutionPayloadPool pendingExecutionPayloads;
+
+  // how the import of the envelope of a block went, for as long as the envelope counts as seen
+  private final Map<Bytes32, SafeFuture<Optional<FailureReason>>> recentImportFailures =
+      LimitedMap.createSynchronizedLRU(VALID_EXECUTION_PAYLOAD_SET_SIZE);
 
   private final Subscribers<FailedPayloadExecutionSubscriber> failedPayloadExecutionSubscribers =
       Subscribers.create(true);
@@ -111,6 +118,12 @@ public class DefaultExecutionPayloadManager
   @Override
   public boolean isExecutionPayloadSeenBeforeDeadline(final Bytes32 beaconBlockRoot) {
     return executionPayloadsSeenBeforePayloadDue.contains(beaconBlockRoot);
+  }
+
+  @Override
+  public Optional<SafeFuture<Optional<FailureReason>>> getRecentExecutionPayloadImportFailure(
+      final Bytes32 beaconBlockRoot) {
+    return Optional.ofNullable(recentImportFailures.get(beaconBlockRoot));
   }
 
   @Override
@@ -215,6 +228,30 @@ public class DefaultExecutionPayloadManager
 
   @Override
   public SafeFuture<ExecutionPayloadImportResult> importExecutionPayload(
+      final ExecutionPayloadEnvelope signedExecutionPayload,
+      final boolean payloadCommitmentVerified) {
+    final SafeFuture<ExecutionPayloadImportResult> importResult =
+        doImportExecutionPayload(signedExecutionPayload, payloadCommitmentVerified);
+    // only the outcome is kept, as a successful result holds on to the whole envelope
+    final SafeFuture<Optional<FailureReason>> importFailure =
+        importResult.thenApply(
+            result ->
+                result.isSuccessful() ? Optional.empty() : Optional.of(result.getFailureReason()));
+    // an import which is in progress or has succeeded is what the envelope of the block came to,
+    // whereas a failed one may be retried
+    recentImportFailures.merge(
+        signedExecutionPayload.getBeaconBlockRoot(),
+        importFailure,
+        (existing, added) -> hasFailed(existing) ? added : existing);
+    return importResult;
+  }
+
+  private static boolean hasFailed(final SafeFuture<Optional<FailureReason>> importFailure) {
+    return importFailure.isCompletedExceptionally()
+        || (importFailure.isCompletedNormally() && importFailure.getImmediately().isPresent());
+  }
+
+  private SafeFuture<ExecutionPayloadImportResult> doImportExecutionPayload(
       final ExecutionPayloadEnvelope signedExecutionPayload,
       final boolean payloadCommitmentVerified) {
     // taken before anything else: verification and the data availability check which follow can

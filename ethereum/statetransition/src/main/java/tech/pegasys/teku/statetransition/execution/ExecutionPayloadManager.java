@@ -22,6 +22,7 @@ import tech.pegasys.teku.spec.datastructures.execution.ExecutionRequests;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.validator.BroadcastValidationLevel;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult;
+import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult.FailureReason;
 import tech.pegasys.teku.statetransition.validation.InternalValidationResult;
 
 public interface ExecutionPayloadManager {
@@ -36,6 +37,12 @@ public interface ExecutionPayloadManager {
         @Override
         public boolean isExecutionPayloadSeenBeforeDeadline(final Bytes32 beaconBlockRoot) {
           return false;
+        }
+
+        @Override
+        public Optional<SafeFuture<Optional<FailureReason>>> getRecentExecutionPayloadImportFailure(
+            final Bytes32 beaconBlockRoot) {
+          return Optional.empty();
         }
 
         @Override
@@ -86,6 +93,17 @@ public interface ExecutionPayloadManager {
    * used for the `payload_present` vote.
    */
   boolean isExecutionPayloadSeenBeforeDeadline(Bytes32 beaconBlockRoot);
+
+  /**
+   * How the import of the {@link ExecutionPayloadEnvelope} referencing the block went. An envelope
+   * is {@link #isExecutionPayloadRecentlySeen(Bytes32) seen} before it is imported, so this is what
+   * tells whether it made it.
+   *
+   * @return a future which completes, once the import has, with the reason the import failed, or
+   *     with empty if it succeeded. Empty when no recent import of the envelope is known.
+   */
+  Optional<SafeFuture<Optional<FailureReason>>> getRecentExecutionPayloadImportFailure(
+      Bytes32 beaconBlockRoot);
 
   /**
    * Performs gossip validation on the {@code signedExecutionPayload} and imports it async if
