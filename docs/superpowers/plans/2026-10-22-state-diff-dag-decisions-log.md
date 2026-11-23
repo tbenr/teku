@@ -1796,3 +1796,86 @@ checkpoint nodes went through the DAG.
     (node values are inline in the SST blocks, so it is believed to read
     them); the finalized by-slot lookup in minimal mode; what startup does
     with leftover hot blocks; how many fork nodes a realistic stall leaves.
+
+## Merge strategy (2026-11-23, tip 387bfba947, proposal only, nothing started)
+
+This section tracks how the branch could reach master. Update it in place as
+decisions are taken. No PR exists and, by Enrico's call on 2026-11-23, no PR
+branch is cut yet.
+
+90. **GREY. Proposed path: staged PRs behind the hidden flag, prune and minimal modes first, archive mode later, default-on last.**
+    The branch is too big for one review: 108 files, +18,460/−392 against
+    master bc4bce09c6; 66 files and +7,044/−115 without docs and tests. The
+    stages follow the diff's directory layout. The split has not been tried.
+    1. **The `infrastructure/state-diff` module.** Codec, differ, applier and
+       their tests, about 4,400 lines, with the four small additions in
+       `infrastructure/ssz` (124 lines with their test) and the
+       `settings.gradle` line. No dependency on storage, no behaviour change,
+       and no consumer in master yet.
+    2. **Storage plumbing with no behaviour change.** The schema columns
+       (13, 14, 15) and variables (14, 15), the `HotStateStorage` strategy
+       with `LegacyHotStateStorage`, and `HotStatePersistencePolicy` in the
+       `Store`. Landing the IDs early ends the collisions with master that
+       entry 79 migrated around.
+    3. **The DAG in prune and minimal modes behind
+       `--Xdata-storage-state-diffs`,** with the metrics and
+       `verify-state-diffs`.
+    4. **Archive mode, as its own PR,** after findings 2 to 4 of entry 88 are
+       fixed.
+    5. **Default-on,** gated by entry 87: the stall test against master, the
+       bounded cleanup of entry 89 if the test shows the need, and the
+       multi-week soak. The header column parked in entry 86 is a format
+       change (marker bump, re-synced databases) and is cheaper to settle
+       before this stage than after.
+
+    **Why prune first.** All four findings of entry 88 are archive-side, and
+    the review asked for the representation to be approved apart from archive
+    migration.
+
+    **Independent of the rest:** the live data size column in the
+    `RocksDbCommand` output can go as its own small PR at any time.
+
+91. **GREY. Open decisions before the first PR. All four are Enrico's; none is taken.**
+    Each gives the recommendation made on 2026-11-23.
+    - **Scope of stage 3.** Archive mode is not separable by file: the window
+      retention lives in the same classes as the prune rule
+      (`FinalizedChainMaintenance`, `FinalizedRetention`,
+      `StateDiffHotStateStorage`). Recommendation: keep the code and reject
+      archive mode when the database is opened, in `resolveHotStateStorage`,
+      where the marker is known. A check on the flag alone would repeat
+      finding 4 of entry 88.
+    - **What the stall test gates.** Recommendation: default-on only. The
+      feature is hidden and opt-in, and the test is easier to repeat once the
+      code is in master. The case for gating stage 3: it already carries the
+      cleanup gap of entry 89 for anyone who enables the flag.
+    - **Which docs go upstream.** The branch adds 3,400 lines under `docs/`,
+      a directory master does not have. Recommendation: only
+      `docs/state-diff-storage.md`; this log, the plan and the design spec
+      stay on the fork.
+    - **Team buy-in before stage 1.** That PR has no consumer in master, so
+      reviewers need the reason first. Recommendation: a design issue on
+      Consensys/teku linking the doc, and a walkthrough before stage 3, since
+      the format is one-way for anyone who tries it (sticky marker, no
+      downgrade).
+
+92. **DERIVED. State of the branch for a merge, read in the code on 2026-11-23; no test was run.**
+    - It sits on upstream master bc4bce09c6 with a clean tree, and the added
+      code has no leftover TODO.
+    - No new third-party dependency: `aircompressor-v3` and `fastutil` are
+      already in `gradle/versions.gradle`.
+    - The schema additions look inert with the flag off. On RocksDB only the
+      column families that already exist are opened
+      (`RocksDbInstanceFactory.getExistingColumnIds`), and master already
+      opens unknown ones, so an older build would still open the database.
+    - Without the flag or the marker the database gets
+      `LegacyHotStateStorage` with no state diff storage attached.
+      `DatabaseTest` has `legacyBehaviourUnchangedWhenDisabled`; its existing
+      cases were kept and moved onto `AbstractDatabaseTest`.
+    - The legacy path now runs through `HotStatePersistencePolicy` at four
+      places in `Store`: the in-memory state lookup, the epoch start check,
+      the regeneration base and the replay tolerance.
+
+    **Not verified.** That stage 1 builds on its own; that the four `Store`
+    call sites behave exactly as before, which stage 2 should show by landing
+    with the existing tests untouched; the full unit, integration and
+    reference suites on this tip.
