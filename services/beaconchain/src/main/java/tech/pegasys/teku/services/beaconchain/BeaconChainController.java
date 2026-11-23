@@ -1099,6 +1099,7 @@ public class BeaconChainController extends Service implements BeaconChainControl
       executionPayloadManager.subscribeFailedPayloadExecution(
           failedExecutionPayloadPool::addFailedExecutionPayload);
       eventChannels.subscribe(ReceivedBlockEventsChannel.class, executionPayloadManager);
+      eventChannels.subscribe(SlotEventsChannel.class, executionPayloadManager);
       this.executionPayloadManager = executionPayloadManager;
     } else {
       executionPayloadManager = ExecutionPayloadManager.NOOP;

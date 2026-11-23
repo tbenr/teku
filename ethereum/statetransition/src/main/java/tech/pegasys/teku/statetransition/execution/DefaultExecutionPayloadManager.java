@@ -16,16 +16,15 @@ package tech.pegasys.teku.statetransition.execution;
 import static tech.pegasys.teku.spec.config.Constants.VALID_EXECUTION_PAYLOAD_SET_SIZE;
 
 import java.time.Duration;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes32;
+import tech.pegasys.teku.ethereum.events.SlotEventsChannel;
 import tech.pegasys.teku.infrastructure.async.AsyncRunner;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
-import tech.pegasys.teku.infrastructure.collections.LimitedMap;
 import tech.pegasys.teku.infrastructure.collections.LimitedSet;
 import tech.pegasys.teku.infrastructure.subscribers.Subscribers;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
@@ -46,21 +45,21 @@ import tech.pegasys.teku.statetransition.validation.InternalValidationResult;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
 public class DefaultExecutionPayloadManager
-    implements ExecutionPayloadManager, ReceivedBlockEventsChannel {
+    implements ExecutionPayloadManager, ReceivedBlockEventsChannel, SlotEventsChannel {
 
   private static final Logger LOG = LogManager.getLogger();
 
-  // A payload is kept pending while its beacon block is still missing. Payloads from before the
-  // finalized slot are never queued, so the cache only needs to span the non-finalized window.
-  // Under healthy finality that window is ~2 epochs (2 * SLOTS_PER_EPOCH = 64 slots on mainnet)
-  private static final int PENDING_EXECUTION_PAYLOADS_CACHE_SIZE = 64;
+  // Envelopes are held before anything about them can be checked, so the budget is kept small.
+  // Honest nodes see about one envelope ahead of its block, and this still leaves room for several
+  // envelopes of the maximum gossip size
+  private static final int PENDING_EXECUTION_PAYLOADS_BYTES_MULTIPLIER = 4;
+  // an envelope holds more memory than its SSZ size once decoded, which matters for small ones
+  private static final int MAX_PENDING_UNCHECKED_EXECUTION_PAYLOADS = 64;
 
   private final Set<Bytes32> executionPayloadsSeenBeforePayloadDue =
       LimitedSet.createSynchronizedNatural(VALID_EXECUTION_PAYLOAD_SET_SIZE);
 
-  // pending pool
-  private final Map<Bytes32, PendingExecutionPayload> pendingExecutionPayloads =
-      LimitedMap.createSynchronizedNatural(PENDING_EXECUTION_PAYLOADS_CACHE_SIZE);
+  private final PendingExecutionPayloadPool pendingExecutionPayloads;
 
   private final Subscribers<FailedPayloadExecutionSubscriber> failedPayloadExecutionSubscribers =
       Subscribers.create(true);
@@ -96,6 +95,12 @@ public class DefaultExecutionPayloadManager
     this.recentChainData = recentChainData;
     this.blockRootsWithInvalidExecutionPayload = blockRootsWithInvalidExecutionPayload;
     this.executionPayloadPublisher = executionPayloadPublisher;
+    this.pendingExecutionPayloads =
+        new PendingExecutionPayloadPool(
+            MAX_PENDING_UNCHECKED_EXECUTION_PAYLOADS,
+            (long) PENDING_EXECUTION_PAYLOADS_BYTES_MULTIPLIER
+                * spec.getNetworkingConfig().getMaxPayloadSize(),
+            envelope -> envelope.getSchema().getSszSize(envelope.getBackingNode()));
   }
 
   @Override
@@ -115,7 +120,6 @@ public class DefaultExecutionPayloadManager
         signedExecutionPayload, Optional.empty(), Optional.empty());
   }
 
-  @SuppressWarnings("FutureReturnValueIgnored")
   @Override
   public SafeFuture<InternalValidationResult> validateAndImportExecutionPayload(
       final ExecutionPayloadEnvelope signedExecutionPayload,
@@ -123,24 +127,26 @@ public class DefaultExecutionPayloadManager
       final Optional<BroadcastValidationLevel> broadcastValidationLevel) {
     final UInt64 arrivalTimestamp =
         maybeArrivalTimestamp.orElseGet(() -> recentChainData.getStore().getTimeInMillis());
-    final SafeFuture<InternalValidationResult> validationResult =
-        executionPayloadGossipValidator.validate(signedExecutionPayload, broadcastValidationLevel);
-    validationResult.thenAccept(
-        result -> {
-          switch (result.code()) {
-            case ACCEPT -> {
-              receivedExecutionPayloadEventsChannelPublisher.onExecutionPayloadValidated(
-                  signedExecutionPayload);
-              recordIfExecutionPayloadIsSeenBeforeDeadline(
-                  signedExecutionPayload, arrivalTimestamp);
-              importExecutionPayload(signedExecutionPayload, true).finishError(LOG);
-            }
-            case SAVE_FOR_FUTURE ->
-                saveForFuture(signedExecutionPayload, arrivalTimestamp, broadcastValidationLevel);
-            case IGNORE, REJECT -> {}
-          }
-        });
-    return validationResult;
+    return executionPayloadGossipValidator
+        .validate(signedExecutionPayload, broadcastValidationLevel)
+        .thenApply(
+            result -> {
+              switch (result.code()) {
+                case ACCEPT -> {
+                  receivedExecutionPayloadEventsChannelPublisher.onExecutionPayloadValidated(
+                      signedExecutionPayload);
+                  recordIfExecutionPayloadIsSeenBeforeDeadline(
+                      signedExecutionPayload, arrivalTimestamp);
+                  importExecutionPayload(signedExecutionPayload, true).finishError(LOG);
+                }
+                case SAVE_FOR_FUTURE -> {
+                  return saveForFuture(
+                      signedExecutionPayload, arrivalTimestamp, broadcastValidationLevel);
+                }
+                case IGNORE, REJECT -> {}
+              }
+              return result;
+            });
   }
 
   @Override
@@ -161,17 +167,25 @@ public class DefaultExecutionPayloadManager
                   return new ValidateAndImportResult(
                       result, Optional.of(importExecutionPayload(signedExecutionPayload, true)));
                 }
-                case SAVE_FOR_FUTURE ->
-                    saveForFuture(
-                        signedExecutionPayload, arrivalTimestamp, broadcastValidationLevel);
+                case SAVE_FOR_FUTURE -> {
+                  return new ValidateAndImportResult(
+                      saveForFuture(
+                          signedExecutionPayload, arrivalTimestamp, broadcastValidationLevel),
+                      Optional.empty());
+                }
                 case IGNORE, REJECT -> {}
               }
               return new ValidateAndImportResult(result, Optional.empty());
             });
   }
 
-  @SuppressWarnings("FutureReturnValueIgnored")
-  private void saveForFuture(
+  /**
+   * Holds an envelope which cannot be validated yet until it can.
+   *
+   * @return the validation result, which is a rejection if the block is already known to commit to
+   *     another envelope
+   */
+  private InternalValidationResult saveForFuture(
       final ExecutionPayloadEnvelope signedExecutionPayload,
       final UInt64 arrivalTimestamp,
       final Optional<BroadcastValidationLevel> broadcastValidationLevel) {
@@ -187,15 +201,16 @@ public class DefaultExecutionPayloadManager
                       .thenCompose(r -> publishPayload(r, signedExecutionPayload)),
               Duration.ofMillis(100))
           .finishError(LOG);
-    } else {
-      // since no slashing is implemented in order to prevent DoS, we keep one pending
-      // payload: the latest candidate received before payload due, or the first candidate
-      // if none arrived before payload due
-      pendingExecutionPayloads.merge(
-          signedExecutionPayload.getBeaconBlockRoot(),
-          new PendingExecutionPayload(signedExecutionPayload, arrivalTimestamp),
-          this::selectPendingExecutionPayload);
+      return InternalValidationResult.SAVE_FOR_FUTURE;
     }
+    return pendingExecutionPayloads
+        .add(signedExecutionPayload, arrivalTimestamp)
+        .map(
+            mismatch ->
+                InternalValidationResult.reject(
+                    "Execution payload envelope is not the one the block with root %s commits to: %s",
+                    signedExecutionPayload.getBeaconBlockRoot(), mismatch))
+        .orElse(InternalValidationResult.SAVE_FOR_FUTURE);
   }
 
   @Override
@@ -297,23 +312,38 @@ public class DefaultExecutionPayloadManager
   }
 
   @Override
-  public void onBlockValidated(final SignedBeaconBlock block) {}
+  public void onSlot(final UInt64 slot) {
+    pendingExecutionPayloads.onSlot(slot);
+  }
+
+  @Override
+  public void onBlockValidated(final SignedBeaconBlock block) {
+    // comparing the pending envelopes with the block hashes their payloads, which must not hold
+    // up the block
+    asyncRunner
+        .runAsync(() -> pendingExecutionPayloads.onBlockValidated(block.getMessage()))
+        .finishError(LOG);
+  }
 
   @Override
   public void onBlockImported(final SignedBeaconBlock block, final boolean executionOptimistic) {
     // Process pending execution payload
-    block
-        .getMessage()
-        .getBody()
-        .toVersionGloas()
-        .map(__ -> pendingExecutionPayloads.remove(block.getRoot()))
-        .ifPresent(
-            pendingExecutionPayload ->
-                validateAndImportExecutionPayload(
-                        pendingExecutionPayload.executionPayload(),
-                        Optional.of(pendingExecutionPayload.arrivalTimestamp()))
-                    .thenCompose(r -> publishPayload(r, pendingExecutionPayload.executionPayload()))
-                    .finishError(LOG));
+    asyncRunner
+        .runAsync(() -> pendingExecutionPayloads.remove(block.getMessage()))
+        .thenCompose(
+            maybePendingExecutionPayload ->
+                maybePendingExecutionPayload
+                    .map(
+                        pendingExecutionPayload ->
+                            validateAndImportExecutionPayload(
+                                    pendingExecutionPayload.executionPayload(),
+                                    Optional.of(pendingExecutionPayload.arrivalTimestamp()))
+                                .thenCompose(
+                                    result ->
+                                        publishPayload(
+                                            result, pendingExecutionPayload.executionPayload())))
+                    .orElse(SafeFuture.COMPLETE))
+        .finishError(LOG);
   }
 
   private void recordIfExecutionPayloadIsSeenBeforeDeadline(
@@ -321,14 +351,6 @@ public class DefaultExecutionPayloadManager
     if (isBeforePayloadDue(signedExecutionPayload, arrivalTimestamp)) {
       executionPayloadsSeenBeforePayloadDue.add(signedExecutionPayload.getBeaconBlockRoot());
     }
-  }
-
-  private PendingExecutionPayload selectPendingExecutionPayload(
-      final PendingExecutionPayload existing, final PendingExecutionPayload candidate) {
-    if (isBeforePayloadDue(candidate.executionPayload(), candidate.arrivalTimestamp())) {
-      return candidate;
-    }
-    return existing;
   }
 
   private boolean isBeforePayloadDue(
@@ -386,7 +408,4 @@ public class DefaultExecutionPayloadManager
     }
     return SafeFuture.COMPLETE;
   }
-
-  public record PendingExecutionPayload(
-      ExecutionPayloadEnvelope executionPayload, UInt64 arrivalTimestamp) {}
 }

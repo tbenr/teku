@@ -14,12 +14,15 @@
 package tech.pegasys.teku.networking.eth2.gossip;
 
 import java.util.Optional;
+import org.hyperledger.besu.plugin.services.MetricsSystem;
 import tech.pegasys.teku.infrastructure.async.AsyncRunner;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.bytes.Bytes4;
 import tech.pegasys.teku.networking.eth2.gossip.encoding.GossipEncoding;
 import tech.pegasys.teku.networking.eth2.gossip.topics.GossipTopicName;
 import tech.pegasys.teku.networking.eth2.gossip.topics.OperationProcessor;
+import tech.pegasys.teku.networking.eth2.gossip.topics.topichandlers.DecodedPrefixFilter;
+import tech.pegasys.teku.networking.eth2.gossip.topics.topichandlers.GossipInFlightLimiter;
 import tech.pegasys.teku.networking.p2p.gossip.GossipNetwork;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.config.NetworkingSpecConfig;
@@ -31,9 +34,16 @@ import tech.pegasys.teku.storage.client.RecentChainData;
 
 public class ExecutionPayloadGossipManager extends AbstractGossipManager<ExecutionPayloadEnvelope> {
 
+  // Limits the total uncompressed size of envelopes waiting to be validated or being validated, as
+  // for blocks. Honest nodes validate about one envelope per slot, and this still leaves room for
+  // several envelopes of the maximum gossip size, where the shared P2P queue alone would hold
+  // thousands of them.
+  static final int MAX_IN_FLIGHT_BYTES_MAX_PAYLOAD_SIZE_MULTIPLIER = 4;
+
   public ExecutionPayloadGossipManager(
       final Spec spec,
       final RecentChainData recentChainData,
+      final MetricsSystem metricsSystem,
       final AsyncRunner asyncRunner,
       final GossipNetwork gossipNetwork,
       final GossipEncoding gossipEncoding,
@@ -58,7 +68,13 @@ public class ExecutionPayloadGossipManager extends AbstractGossipManager<Executi
         message -> recentChainData.getSpec().computeEpochAtSlot(message.getSlot()),
         networkingConfig,
         GossipFailureLogger.createSuppressing(GossipTopicName.EXECUTION_PAYLOAD.toString()),
-        debugDataDumper);
+        debugDataDumper,
+        DecodedPrefixFilter.ACCEPT_ALL,
+        new GossipInFlightLimiter(
+            metricsSystem,
+            GossipTopicName.EXECUTION_PAYLOAD.toString(),
+            (long) MAX_IN_FLIGHT_BYTES_MAX_PAYLOAD_SIZE_MULTIPLIER
+                * networkingConfig.getMaxPayloadSize()));
   }
 
   public SafeFuture<Void> publish(final ExecutionPayloadEnvelope message) {

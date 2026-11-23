@@ -189,6 +189,7 @@ import tech.pegasys.teku.spec.datastructures.execution.versions.electra.Withdraw
 import tech.pegasys.teku.spec.datastructures.execution.versions.fulu.BlobsBundleFulu;
 import tech.pegasys.teku.spec.datastructures.execution.versions.gloas.BuilderDepositRequest;
 import tech.pegasys.teku.spec.datastructures.execution.versions.gloas.BuilderExitRequest;
+import tech.pegasys.teku.spec.datastructures.execution.versions.gloas.ExecutionPayloadGloas;
 import tech.pegasys.teku.spec.datastructures.execution.versions.heze.InclusionList;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
@@ -3801,6 +3802,46 @@ public final class DataStructureUtil {
             randomExecutionRequests(block.getSlot()),
             block.getRoot(),
             block.getParentRoot());
+  }
+
+  /** A Gloas block whose bid commits to the payload and execution requests of the envelope. */
+  public SignedBeaconBlock randomSignedBeaconBlockCommittingTo(
+      final ExecutionPayload payload, final ExecutionRequests executionRequests) {
+    final UInt64 slot = ExecutionPayloadGloas.required(payload).getSlotNumber();
+    final ExecutionPayloadBidSchema schema =
+        getGloasSchemaDefinitions(slot).getExecutionPayloadBidSchema();
+    final ExecutionPayloadBid bid =
+        schema.create(
+            payload.getParentHash(),
+            randomBytes32(),
+            payload.getBlockHash(),
+            payload.hashTreeRoot(),
+            payload.getPrevRandao(),
+            payload.getFeeRecipient(),
+            payload.getGasLimit(),
+            randomUInt64(),
+            slot,
+            randomUInt64(),
+            randomUInt64(),
+            schema.getBlobKzgCommitmentsSchema().getDefault(),
+            executionRequests.hashTreeRoot());
+    return signedBlock(
+        randomBeaconBlock(
+            slot,
+            randomBeaconBlockBody(
+                slot,
+                builder ->
+                    builder.signedExecutionPayloadBid(randomSignedExecutionPayloadBid(bid)))));
+  }
+
+  /** The envelope revealing the payload and execution requests for the block. */
+  public ExecutionPayloadEnvelope executionPayloadEnvelopeForBlock(
+      final SignedBeaconBlock block,
+      final ExecutionPayload payload,
+      final ExecutionRequests executionRequests) {
+    return getGloasSchemaDefinitions(block.getSlot())
+        .getExecutionPayloadEnvelopeSchema()
+        .create(payload, executionRequests, block.getRoot(), block.getParentRoot());
   }
 
   public ExecutionPayloadEnvelopeContents randomExecutionPayloadEnvelopeContents(
