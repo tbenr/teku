@@ -253,6 +253,47 @@ class PendingExecutionPayloadPoolTest {
   }
 
   @Test
+  void shouldHandOverAnEnvelopeOfAValidatedBlockWhenTheBlockIsImportedWhileItIsBeingChecked() {
+    pool.onBlockValidated(block);
+
+    final AtomicReference<Optional<PendingExecutionPayload>> handedToImport =
+        new AtomicReference<>(Optional.empty());
+    whileComparing.set(() -> handedToImport.set(pool.remove(block)));
+    assertThat(pool.add(committedEnvelope, ARRIVAL)).isEmpty();
+
+    assertThat(handedToImport.get())
+        .contains(new PendingExecutionPayload(committedEnvelope, ARRIVAL));
+    // and nothing is left behind for the imported block
+    assertThat(pool.getCheckedCount()).isZero();
+    assertThat(pool.getUncheckedCount()).isZero();
+    assertThat(pool.remove(block)).isEmpty();
+  }
+
+  @Test
+  void shouldNotHandOverAnotherEnvelopeWhenTheBlockIsImportedWhileItIsBeingChecked() {
+    pool.onBlockValidated(block);
+
+    final AtomicReference<Optional<PendingExecutionPayload>> handedToImport =
+        new AtomicReference<>();
+    whileComparing.set(() -> handedToImport.set(pool.remove(block)));
+
+    assertThat(pool.add(forgedEnvelope(), ARRIVAL)).isPresent();
+    assertThat(handedToImport.get()).isEmpty();
+    assertThat(pool.getCheckedCount()).isZero();
+  }
+
+  @Test
+  void shouldNotKeepAnEnvelopeWhoseSlotPassedWhileItWasBeingChecked() {
+    pool.onBlockValidated(block);
+
+    whileComparing.set(() -> pool.onSlot(SLOT.plus(1)));
+    assertThat(pool.add(committedEnvelope, ARRIVAL)).isEmpty();
+
+    assertThat(pool.getCheckedCount()).isZero();
+    assertThat(pool.remove(block)).isEmpty();
+  }
+
+  @Test
   void shouldKeepTheEarlierArrivalWhenTheEnvelopeArrivesAgainWhileItIsBeingChecked() {
     pool.add(committedEnvelope, ARRIVAL);
 

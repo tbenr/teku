@@ -62,6 +62,8 @@ class PendingExecutionPayloadPool {
   private final Deque<UncheckedEnvelope> uncheckedEnvelopes = new ArrayDeque<>();
   private final Map<Bytes32, BeaconBlock> validatedBlocks = new HashMap<>();
   private final Map<Bytes32, PendingExecutionPayload> checkedEnvelopes = new HashMap<>();
+  // envelopes of validated blocks which are being compared with their block right now
+  private final List<PendingExecutionPayload> envelopesBeingCompared = new ArrayList<>();
   private long uncheckedBytes = 0;
   private UInt64 currentSlot = UInt64.ZERO;
 
@@ -101,6 +103,8 @@ class PendingExecutionPayloadPool {
     checkedEnvelopes
         .values()
         .removeIf(pending -> isOutsideHeldSlots(pending.executionPayload().getSlot()));
+    envelopesBeingCompared.removeIf(
+        pending -> isOutsideHeldSlots(pending.executionPayload().getSlot()));
     validatedBlocks.values().removeIf(block -> isOutsideHeldSlots(block.getSlot()));
   }
 
@@ -112,15 +116,14 @@ class PendingExecutionPayloadPool {
    */
   Optional<String> add(final ExecutionPayloadEnvelope envelope, final UInt64 arrivalTimestamp) {
     final PendingExecutionPayload pending = new PendingExecutionPayload(envelope, arrivalTimestamp);
-    final Optional<BeaconBlock> maybeValidatedBlock = addUncheckedUnlessBlockIsValidated(pending);
+    final Optional<BeaconBlock> maybeValidatedBlock = hold(pending);
     if (maybeValidatedBlock.isEmpty()) {
       return Optional.empty();
     }
-    // hashes the payload, so it is done without holding the lock
+    // Hashes the payload, so it is done without holding the lock. The envelope is held meanwhile,
+    // so that an import of the block which completes first still finds it.
     final Optional<String> mismatch = mismatchFinder.apply(envelope, maybeValidatedBlock.get());
-    if (mismatch.isEmpty()) {
-      addChecked(pending);
-    }
+    finishComparison(pending, mismatch.isEmpty());
     return mismatch;
   }
 
@@ -169,6 +172,14 @@ class PendingExecutionPayloadPool {
       validatedBlocks.remove(block.getRoot());
       checked = checkedEnvelopes.remove(block.getRoot());
       candidates = removeUnchecked(block.getRoot());
+      final Iterator<PendingExecutionPayload> iterator = envelopesBeingCompared.iterator();
+      while (iterator.hasNext()) {
+        final PendingExecutionPayload pending = iterator.next();
+        if (pending.executionPayload().getBeaconBlockRoot().equals(block.getRoot())) {
+          iterator.remove();
+          candidates.add(pending);
+        }
+      }
     }
     return Optional.ofNullable(checked).or(() -> findCommittedEnvelope(candidates, block));
   }
@@ -186,11 +197,12 @@ class PendingExecutionPayloadPool {
   }
 
   /**
-   * @return the block of the envelope if it passed gossip validation, in which case the envelope
-   *     has not been added
+   * Holds the envelope as unchecked, unless its block passed gossip validation.
+   *
+   * @return the block of the envelope if it passed gossip validation, in which case the envelope is
+   *     held until {@link #finishComparison} is told how it compares with that block
    */
-  private synchronized Optional<BeaconBlock> addUncheckedUnlessBlockIsValidated(
-      final PendingExecutionPayload pending) {
+  private synchronized Optional<BeaconBlock> hold(final PendingExecutionPayload pending) {
     final ExecutionPayloadEnvelope envelope = pending.executionPayload();
     if (isOutsideHeldSlots(envelope.getSlot())) {
       LOG.trace(
@@ -199,6 +211,7 @@ class PendingExecutionPayloadPool {
     }
     final BeaconBlock validatedBlock = validatedBlocks.get(envelope.getBeaconBlockRoot());
     if (validatedBlock != null) {
+      envelopesBeingCompared.add(pending);
       return Optional.of(validatedBlock);
     }
     final long size = sizeFunction.applyAsLong(envelope);
@@ -216,10 +229,12 @@ class PendingExecutionPayloadPool {
     return Optional.empty();
   }
 
-  private synchronized void addChecked(final PendingExecutionPayload pending) {
-    final ExecutionPayloadEnvelope envelope = pending.executionPayload();
-    // the block may have been imported or its slot may have passed in the meantime
-    if (validatedBlocks.containsKey(envelope.getBeaconBlockRoot())) {
+  private synchronized void finishComparison(
+      final PendingExecutionPayload pending, final boolean isCommittedByBlock) {
+    // no longer held when the block was imported, which took the envelope along, or when its slot
+    // has passed
+    final boolean isStillHeld = envelopesBeingCompared.remove(pending);
+    if (isStillHeld && isCommittedByBlock) {
       putChecked(pending);
     }
   }
