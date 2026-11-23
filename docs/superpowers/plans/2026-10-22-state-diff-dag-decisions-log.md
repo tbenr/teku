@@ -1623,3 +1623,176 @@ checkpoint nodes went through the DAG.
     - Pinning checkpoint block states so no node is skipped (first round C5):
       a migration produces the same gaps, so the gap handling stays.
     - `write_phase_seconds_total{phase}` stays for now (entry 83).
+
+## External review and non-finality (2026-11-23, tip 7b88f16309, no code change)
+
+87. **RULING (Enrico). The design must stay a good choice under adversarial conditions, long non-finality included; the fixes of entries 88 and 89 are parked until a stall test gives evidence.**
+    "Our client must be rock solid." Nothing from entries 88 and 89 is applied
+    now, and entry 86 still holds. The requirement and the parking are
+    Enrico's; the release gate is the proposal of the review exchange, recorded
+    as agreed:
+    - **The test:** the same workload with progressively longer finality
+      stalls, on the branch and on master, with competing branches and skipped
+      checkpoints, a cold restart during the stall, then finality restored and
+      the recovery interrupted by another restart.
+    - **Reported separately:** peak disk before finality returns, and the
+      longest import delay while it recovers. Master is the baseline: what
+      counts is the delay the DAG adds, not the total (entry 89).
+    - **Correctness:** after interrupting recovery and restarting with cold
+      caches, the finalized anchor and every checkpoint expected to remain
+      readable reconstruct to their expected state roots. Without this a
+      cleanup that deletes too much would score well on both numbers.
+    - **The result that matters is the slope:** doubling the stall may double
+      the retained history; it should not double the cost of writing the next
+      checkpoint or of moving the anchor.
+    - **The ancestor checkpoint walk is left alone** unless measured tail
+      latency shows it delays import. `collectAncestorCheckpointRoots` visits
+      every hot block back to the finalized root once per checkpoint per
+      branch, in memory, one fork choice lookup per block; under the store
+      write lock according to entry 86, a review reading that was not
+      re-verified. After a one-week stall that is about 50,000
+      blocks per walk: single-digit milliseconds by estimate, not measured.
+
+88. **DERIVED. Four findings of an external review of 7b88f16309 against master bc4bce09c6: all four hold in the code; two were already recorded as accepted limits.**
+    The reviewer ran the state-diff module tests, the DAG and persistence
+    policy unit tests and `StateDiffDatabaseTest`, all passing. The scenarios
+    below were traced in code; they were not reproduced by a dedicated test.
+    Each finding gives the reviewer's severity, then ours. The fixes are
+    proposals and none is applied.
+    - **A retained state that the window does not serve (P1; ours low).**
+      Scenario: the window start is epoch 4 and has a node, the checkpoint
+      blocks of epochs 5 and 6 are distinct and both were skipped, and the
+      start moves to 6 in one finalization. `retainWindow` picks node 4 as `O`
+      (the last of the roots of 4..6 with a node) and records start 6; a read
+      of epoch 6 tries 6, then 5, and returns empty (`findCheckpointNode`
+      stops at the one checkpoint block below its lowest epoch). This is the
+      "second consecutive skip" that entry 62 left empty. It needs two
+      consecutive skips and a finalization jump of two or more epochs. The
+      result is an empty read for the edge epoch, and for the following epochs
+      of the same skipped run, until the window moves past them; nothing is
+      lost. Moving one epoch at a time does not expose it: from start 5 the
+      roots of 5..6 have no node, the start is kept, and reads walk down to
+      node 4. Proposed fix: persist the root of `O` next to the start epoch,
+      for reads below the start and for retention in place of its walk to
+      epoch 0. Cost: a new variable and a fallback for databases without it.
+    - **Archive to prune strands the archive's nodes (P2; ours P2, new).**
+      `finalizedRetention` clears the window start at the first finalization
+      in prune mode and returns `anchorChain()`, whose candidates are the
+      previous anchor's chain and the newly finalized roots. The older window
+      nodes and their supernode references are never visited again. Legacy
+      storage reclaims the equivalent space through the state pruner. Proposed
+      fix: drain through the window path (target start = the anchor epoch,
+      clear the start once caught up), or reject the transition; test it
+      across a restart with history spanning a snapshot boundary.
+    - **A read racing a window advance reports a verification failure (P2;
+      ours low).** `CommittedNodeReader` reads each node and its supernodes in
+      separate DAO calls, queries run on another runner than updates, and
+      `KvStoreAccessor` has no snapshot read. For this retention race, a node
+      that stays in the window keeps its whole chain before and after the
+      commit, so only a read of an epoch leaving the window in that
+      finalization can lose a node mid-chain: it gets a
+      `StateDiffVerificationException` where the answer should be empty. An
+      unbounded archive deletes nothing, and prune mode serves these reads
+      from the legacy column. Proposed fix: on failure, re-read the window
+      start and return empty when the epoch is now below it. That fixes the
+      result only: the verification failure counter is incremented inside the
+      DAG (`reconstructChain`) before the storage layer sees the exception, so
+      the fix must also keep the false count out of the metric. Not traced to
+      its callers: the same kind of race in prune mode for
+      `getLatestFinalizedState` and for `getHotState` of the anchor root,
+      which read the finalized checkpoint and then its node.
+    - **The storage format has two sources of truth (P2; ours P2).**
+      `TekuConfiguration` rejects `--reconstruct-historic-states` on the flag,
+      while the database picks the DAG on the flag or the marker. With the
+      flag removed after the switch the option is accepted and writes legacy
+      states that DAG-backed reads do not serve. Already in entry 62 ("left as
+      is") and entry 86 ("Storage mode resolved once, at open"). The smallest
+      fix that stops the unused writes is a guard in
+      `storeReconstructedFinalizedState` on an archive database in state diff
+      mode. It is not a substitute for rejecting the unsupported configuration
+      once the effective format is known.
+
+    The review's merge recommendation is agreed: approve the representation
+    separately from archive migration, and do not make it the default on
+    existing archives while pre-switch history is unreadable although on disk
+    (entries 13 and 57, a known scope limit).
+
+89. **GREY. Cleanup when finality returns is the non-finality gap; the options are recorded and none is chosen.**
+    **Established, from the code.** In prune mode
+    `deleteFinalizedNodesOutsideChain` takes every newly finalized root as a
+    candidate, and `deleteNodes` reads each one that has a node in full to
+    release its supernode references. The release parser
+    (`TreeDiffCodec.supernodeEntries`) checks the delta frame headers and
+    skips the compressed bodies, but parses the other sections, leaves
+    included. The nodes of pruned fork blocks are deleted the same way. All of
+    it runs in the hot transaction that moves the anchor, and storage updates
+    are applied in order, so imports queue behind it when finality returns.
+    `MAX_WINDOW_STEP_EPOCHS` bounds the archive window only. This is the known
+    limit of `docs/state-diff-storage.md` ("Retention after a long
+    non-finality period"). Entry 86's header column carrying the supernode
+    hash list would remove the payload reads.
+
+    **Unmeasured: what it costs.** Extrapolating from the mainnet payload-v2
+    section averages of entry 75, a one-week stall with one stored canonical
+    checkpoint per epoch represents roughly 3.5 GB of encoded node records
+    (1,575 x ~2.2 MB), before counting competing branches. This sizes the
+    backlog; it is not a measurement of physical disk reads, peak heap, or
+    recovery delay. An earlier 8 GB figure used the 5.35 MB per node of entry
+    61, which predates payload v2, and is superseded.
+
+    **Baseline.** Master copies each finalized block's body from the hot
+    column to the finalized column in transactions of up to 500 blocks
+    (`TX_BATCH_SIZE`), all within one storage update, and deletes the hot
+    blocks in the hot transaction of that update. The batches bound the
+    transaction size, not the time. The stall test therefore measures the
+    recovery delay the DAG adds over master, not the total.
+
+    **Options.**
+    - **Reuse the window cursor in prune mode** (target start = the anchor
+      epoch): bounded steps for the canonical nodes, and it would also drain
+      the archive-to-prune leftovers of entry 88. To prove first: canonical
+      roots stay discoverable through the finalized block lookup until the
+      cursor passes them, in minimal mode and across a restart; and fork
+      nodes, which the finalized index cannot enumerate, get a bounded path of
+      their own. The 256-epoch step bounds epochs, not latency; the stall test
+      says whether it is a useful batch size.
+    - **Fork nodes without a persisted list:** a resumable sweep of the node
+      column (`KvStoreAccessor.streamKeys(column, from, to)`) that tests each
+      node, with the resume key held in memory since the test is idempotent.
+      Known counterexample for "in neither block index, hence garbage": after
+      a checkpoint sync the anchor's block body can be absent from both the
+      hot blocks and the finalized index (`createMemoryStore` and
+      `addFinalizedBlock` special-case it), while the persisted finalized
+      checkpoint names an anchor node that must survive. Absence from both
+      block indexes does not prove that a node is garbage.
+    - **Candidate prune-mode rule:** keep the hot nodes and the finalized
+      anchor's reconstruction chain. Before using this as a deletion
+      predicate, prove that it also keeps every reconstruction dependency of
+      every retained hot node, including after skipped or late checkpoint
+      writes. This is a separate open question from the counterexample above.
+    - **Deferral.** Node deletion is pure garbage and could move to a bounded
+      step in later storage updates. Block body migration is a move that
+      readers depend on (finalized blocks are read by slot from the finalized
+      column): deferring it needs a small slot-to-root index written
+      synchronously, or a read fallback for the range not yet migrated. That
+      is master-side work with its own design.
+
+    **Constraints.**
+    - Releasing supernode references is a read-modify-write of the counts in
+      `commit()`. The existing pruners run on their own runner with their own
+      transactions, which would race the storage update: a deferred cleanup
+      step has to go through the ordered update path.
+    - Startup streams and deserialises every hot block to build its metadata
+      (`buildHotBlockMetadata`; the bodies are not kept). Hot blocks left at
+      or below the finalized checkpoint would have to be filtered or
+      tolerated.
+    - In minimal mode the block pruner keeps finalized blocks back to the
+      finalized epoch minus the network's `MIN_EPOCHS_FOR_BLOCK_REQUESTS`
+      (`BlockPruner`): 33,024 epochs, about five months, in the mainnet-style
+      configs and 272 in the swift ones. A network constant, not a guarantee a
+      cleanup cursor can rely on.
+
+    **Not verified.** The read cost of a key-only sweep without blob files
+    (node values are inline in the SST blocks, so it is believed to read
+    them); the finalized by-slot lookup in minimal mode; what startup does
+    with leftover hot blocks; how many fork nodes a realistic stall leaves.
