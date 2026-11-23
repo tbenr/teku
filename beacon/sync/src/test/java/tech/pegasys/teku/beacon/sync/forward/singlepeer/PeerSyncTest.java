@@ -52,7 +52,7 @@ import tech.pegasys.teku.spec.SpecMilestone;
 import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.networking.libp2p.rpc.status.versions.phase0.StatusMessagePhase0;
 import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.StateTransitionException;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.BlockImportResult;
@@ -672,7 +672,7 @@ public class PeerSyncTest extends AbstractSyncTest {
         .requestExecutionPayloadEnvelopesByRange(
             eq(gloasSecondSlot), eq(gloasPeerSlotsAhead), any());
 
-    final Map<UInt64, SignedExecutionPayloadEnvelope> executionPayloadsBySlot =
+    final Map<UInt64, ExecutionPayloadEnvelope> executionPayloadsBySlot =
         completeRequestWithExecutionPayloadsAtSlots(
             executionPayloadsRequestFuture, gloasSecondSlot, gloasPeerSlotsAhead);
 

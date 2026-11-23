@@ -13,17 +13,12 @@
 
 package tech.pegasys.teku.spec.generator;
 
-import static tech.pegasys.teku.spec.config.SpecConfigGloas.BUILDER_INDEX_SELF_BUILD;
-
-import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlockAndState;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.logic.common.util.ExecutionPayloadProposalUtil.ExecutionPayloadProposalData;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitionsGloas;
-import tech.pegasys.teku.spec.signatures.Signer;
 
 public class ExecutionPayloadProposalTestUtil {
 
@@ -33,29 +28,16 @@ public class ExecutionPayloadProposalTestUtil {
     this.spec = spec;
   }
 
-  public SafeFuture<SignedExecutionPayloadEnvelope> createExecutionPayload(
-      final Signer signer,
+  public ExecutionPayloadEnvelope createExecutionPayload(
       final UInt64 newSlot,
       final BeaconBlockAndState blockAndState,
       final ExecutionPayloadProposalData executionPayloadProposalData) {
-    final SchemaDefinitionsGloas schemaDefinitions =
-        SchemaDefinitionsGloas.required(spec.atSlot(newSlot).getSchemaDefinitions());
-    final ExecutionPayloadEnvelope executionPayload =
-        schemaDefinitions
-            .getExecutionPayloadEnvelopeSchema()
-            .create(
-                executionPayloadProposalData.executionPayload(),
-                executionPayloadProposalData.executionRequests(),
-                BUILDER_INDEX_SELF_BUILD,
-                blockAndState.getRoot(),
-                blockAndState.getBlock().getParentRoot());
-    // Sign execution payload and set signature
-    return signer
-        .signExecutionPayloadEnvelope(executionPayload, blockAndState.getState().getForkInfo())
-        .thenApply(
-            signature ->
-                schemaDefinitions
-                    .getSignedExecutionPayloadEnvelopeSchema()
-                    .create(executionPayload, signature));
+    return SchemaDefinitionsGloas.required(spec.atSlot(newSlot).getSchemaDefinitions())
+        .getExecutionPayloadEnvelopeSchema()
+        .create(
+            executionPayloadProposalData.executionPayload(),
+            executionPayloadProposalData.executionRequests(),
+            blockAndState.getRoot(),
+            blockAndState.getBlock().getParentRoot());
   }
 }

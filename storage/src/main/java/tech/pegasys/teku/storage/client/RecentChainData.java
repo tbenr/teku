@@ -53,8 +53,8 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceReorgContext;
@@ -798,18 +798,18 @@ public abstract class RecentChainData
     return validatedBlockProvider.getBlock(root);
   }
 
-  public SafeFuture<Optional<SignedExecutionPayloadEnvelope>>
-      retrieveSignedExecutionPayloadByBlockRoot(final Bytes32 beaconBlockRoot) {
+  public SafeFuture<Optional<ExecutionPayloadEnvelope>> retrieveSignedExecutionPayloadByBlockRoot(
+      final Bytes32 beaconBlockRoot) {
     if (store == null) {
-      return EmptyStoreResults.EMPTY_SIGNED_EXECUTION_PAYLOAD_ENVELOPE_FUTURE;
+      return EmptyStoreResults.EMPTY_EXECUTION_PAYLOAD_ENVELOPE_FUTURE;
     }
     return store.retrieveSignedExecutionPayload(beaconBlockRoot);
   }
 
-  public SafeFuture<Optional<SignedBlindedExecutionPayloadEnvelope>>
+  public SafeFuture<Optional<BlindedExecutionPayloadEnvelope>>
       retrieveSignedBlindedExecutionPayloadByBlockRoot(final Bytes32 beaconBlockRoot) {
     if (store == null) {
-      return EmptyStoreResults.EMPTY_SIGNED_BLINDED_EXECUTION_PAYLOAD_ENVELOPE_FUTURE;
+      return EmptyStoreResults.EMPTY_BLINDED_EXECUTION_PAYLOAD_ENVELOPE_FUTURE;
     }
     return store.retrieveSignedBlindedExecutionPayload(beaconBlockRoot);
   }

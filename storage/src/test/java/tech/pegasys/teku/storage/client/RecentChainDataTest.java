@@ -47,7 +47,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.MinimalBeaconBlockSummary;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
@@ -716,7 +716,7 @@ class RecentChainDataTest {
     gloasRecentChainData.initializeFromGenesis(gloasGenesis.getState(), UInt64.ZERO);
 
     final SignedBlockAndState block = gloasChainBuilder.generateBlockAtSlot(1);
-    final SignedExecutionPayloadEnvelope executionPayload =
+    final ExecutionPayloadEnvelope executionPayload =
         gloasChainBuilder.getExecutionPayloadAtSlot(block.getSlot()).orElseThrow();
 
     final StoreTransaction tx = gloasRecentChainData.startStoreTransaction();
@@ -756,7 +756,7 @@ class RecentChainDataTest {
     gloasRecentChainData.initializeFromGenesis(gloasGenesis.getState(), UInt64.ZERO);
 
     final SignedBlockAndState block = gloasChainBuilder.generateBlockAtSlot(1);
-    final SignedExecutionPayloadEnvelope executionPayload =
+    final ExecutionPayloadEnvelope executionPayload =
         gloasChainBuilder.getExecutionPayloadAtSlot(block.getSlot()).orElseThrow();
 
     assertThat(gloasRecentChainData.containsExecutionPayload(block.getRoot())).isFalse();

@@ -57,7 +57,7 @@ import tech.pegasys.teku.spec.config.SpecConfigGloas;
 import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.lightclient.LightClientBootstrap;
 import tech.pegasys.teku.spec.datastructures.lightclient.LightClientFinalityUpdate;
 import tech.pegasys.teku.spec.datastructures.lightclient.LightClientOptimisticUpdate;
@@ -112,12 +112,10 @@ public class BeaconChainMethods {
   private final Optional<Eth2RpcMethod<DataColumnSidecarsByRangeRequestMessage, DataColumnSidecar>>
       dataColumnSidecarsByRange;
   private final Optional<
-          Eth2RpcMethod<
-              ExecutionPayloadEnvelopesByRootRequestMessage, SignedExecutionPayloadEnvelope>>
+          Eth2RpcMethod<ExecutionPayloadEnvelopesByRootRequestMessage, ExecutionPayloadEnvelope>>
       executionPayloadEnvelopesByRoot;
   private final Optional<
-          Eth2RpcMethod<
-              ExecutionPayloadEnvelopesByRangeRequestMessage, SignedExecutionPayloadEnvelope>>
+          Eth2RpcMethod<ExecutionPayloadEnvelopesByRangeRequestMessage, ExecutionPayloadEnvelope>>
       executionPayloadEnvelopesByRange;
   private final Eth2RpcMethod<EmptyMessage, MetadataMessage> getMetadata;
   private final Eth2RpcMethod<PingMessage, PingMessage> ping;
@@ -147,11 +145,11 @@ public class BeaconChainMethods {
           dataColumnSidecarsByRange,
       final Optional<
               Eth2RpcMethod<
-                  ExecutionPayloadEnvelopesByRootRequestMessage, SignedExecutionPayloadEnvelope>>
+                  ExecutionPayloadEnvelopesByRootRequestMessage, ExecutionPayloadEnvelope>>
           executionPayloadEnvelopesByRoot,
       final Optional<
               Eth2RpcMethod<
-                  ExecutionPayloadEnvelopesByRangeRequestMessage, SignedExecutionPayloadEnvelope>>
+                  ExecutionPayloadEnvelopesByRangeRequestMessage, ExecutionPayloadEnvelope>>
           executionPayloadEnvelopesByRange,
       final Eth2RpcMethod<EmptyMessage, MetadataMessage> getMetadata,
       final Eth2RpcMethod<PingMessage, PingMessage> ping,
@@ -643,8 +641,7 @@ public class BeaconChainMethods {
   }
 
   private static Optional<
-          Eth2RpcMethod<
-              ExecutionPayloadEnvelopesByRootRequestMessage, SignedExecutionPayloadEnvelope>>
+          Eth2RpcMethod<ExecutionPayloadEnvelopesByRootRequestMessage, ExecutionPayloadEnvelope>>
       createExecutionPayloadEnvelopesByRoot(
           final Spec spec,
           final AsyncRunner asyncRunner,
@@ -662,11 +659,11 @@ public class BeaconChainMethods {
                 spec.forMilestone(SpecMilestone.GLOAS).getSchemaDefinitions())
             .getExecutionPayloadEnvelopesByRootRequestMessageSchema();
 
-    final RpcContextCodec<Bytes4, SignedExecutionPayloadEnvelope> forkDigestContextCodec =
+    final RpcContextCodec<Bytes4, ExecutionPayloadEnvelope> forkDigestContextCodec =
         RpcContextCodec.forkDigest(
             spec,
             combinedChainDataClient.getRecentChainData(),
-            ForkDigestPayloadContext.SIGNED_EXECUTION_PAYLOAD_ENVELOPE);
+            ForkDigestPayloadContext.EXECUTION_PAYLOAD_ENVELOPE);
 
     final ExecutionPayloadEnvelopesByRootMessageHandler
         executionPayloadEnvelopesByRootMessageHandler =
@@ -687,8 +684,7 @@ public class BeaconChainMethods {
   }
 
   private static Optional<
-          Eth2RpcMethod<
-              ExecutionPayloadEnvelopesByRangeRequestMessage, SignedExecutionPayloadEnvelope>>
+          Eth2RpcMethod<ExecutionPayloadEnvelopesByRangeRequestMessage, ExecutionPayloadEnvelope>>
       createExecutionPayloadEnvelopesByRange(
           final Spec spec,
           final AsyncRunner asyncRunner,
@@ -705,11 +701,11 @@ public class BeaconChainMethods {
             .ExecutionPayloadEnvelopesByRangeRequestMessageSchema
         requestType = ExecutionPayloadEnvelopesByRangeRequestMessage.SSZ_SCHEMA;
 
-    final RpcContextCodec<Bytes4, SignedExecutionPayloadEnvelope> forkDigestContextCodec =
+    final RpcContextCodec<Bytes4, ExecutionPayloadEnvelope> forkDigestContextCodec =
         RpcContextCodec.forkDigest(
             spec,
             combinedChainDataClient.getRecentChainData(),
-            ForkDigestPayloadContext.SIGNED_EXECUTION_PAYLOAD_ENVELOPE);
+            ForkDigestPayloadContext.EXECUTION_PAYLOAD_ENVELOPE);
 
     final ExecutionPayloadEnvelopesByRangeMessageHandler
         executionPayloadEnvelopesByRangeMessageHandler =
@@ -901,8 +897,7 @@ public class BeaconChainMethods {
   }
 
   public Optional<
-          Eth2RpcMethod<
-              ExecutionPayloadEnvelopesByRootRequestMessage, SignedExecutionPayloadEnvelope>>
+          Eth2RpcMethod<ExecutionPayloadEnvelopesByRootRequestMessage, ExecutionPayloadEnvelope>>
       executionPayloadEnvelopesByRoot() {
     return executionPayloadEnvelopesByRoot;
   }
@@ -918,8 +913,7 @@ public class BeaconChainMethods {
   }
 
   public Optional<
-          Eth2RpcMethod<
-              ExecutionPayloadEnvelopesByRangeRequestMessage, SignedExecutionPayloadEnvelope>>
+          Eth2RpcMethod<ExecutionPayloadEnvelopesByRangeRequestMessage, ExecutionPayloadEnvelope>>
       executionPayloadEnvelopesByRange() {
     return executionPayloadEnvelopesByRange;
   }

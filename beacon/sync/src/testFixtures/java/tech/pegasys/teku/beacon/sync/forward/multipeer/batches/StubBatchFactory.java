@@ -31,7 +31,7 @@ import tech.pegasys.teku.networking.eth2.peers.SyncSource;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.statetransition.blobs.BlobSidecarManager;
 
 public class StubBatchFactory extends BatchFactory implements Iterable<Batch> {
@@ -86,7 +86,7 @@ public class StubBatchFactory extends BatchFactory implements Iterable<Batch> {
   }
 
   public void receiveExecutionPayloads(
-      final Batch batch, final SignedExecutionPayloadEnvelope... executionPayloads) {
+      final Batch batch, final ExecutionPayloadEnvelope... executionPayloads) {
     batchSupports.get(batch).syncSource.receiveExecutionPayloadEnvelopes(executionPayloads);
   }
 

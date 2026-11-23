@@ -13,13 +13,13 @@
 
 package tech.pegasys.teku.spec.logic.common.statetransition.results;
 
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 
 class OptimisticSuccessfulExecutionPayloadImportResult
     extends SuccessfulExecutionPayloadImportResult {
 
   OptimisticSuccessfulExecutionPayloadImportResult(
-      final SignedExecutionPayloadEnvelope executionPayload) {
+      final ExecutionPayloadEnvelope executionPayload) {
     super(executionPayload);
   }
 

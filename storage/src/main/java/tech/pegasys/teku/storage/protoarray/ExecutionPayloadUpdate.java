@@ -13,7 +13,7 @@
 
 package tech.pegasys.teku.storage.protoarray;
 
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 
 public record ExecutionPayloadUpdate(
-    SignedExecutionPayloadEnvelope executionPayload, boolean isOptimistic) {}
+    ExecutionPayloadEnvelope executionPayload, boolean isOptimistic) {}

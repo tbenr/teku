@@ -40,7 +40,7 @@ import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.SpecMilestone;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.BlockImportResult;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult;
 import tech.pegasys.teku.statetransition.blobs.BlobSidecarManager;
@@ -249,7 +249,7 @@ public class PeerSync {
                         // received
                         final Optional<List<BlobSidecar>> blobSidecars =
                             blobSidecarListener.getReceivedBlobSidecars(block.getSlot());
-                        final Optional<SignedExecutionPayloadEnvelope> executionPayload =
+                        final Optional<ExecutionPayloadEnvelope> executionPayload =
                             executionPayloadListener.getReceivedExecutionPayload(block.getSlot());
                         return importBlock(block, blobSidecars, executionPayload);
                       });
@@ -342,7 +342,7 @@ public class PeerSync {
     if (rootException instanceof FailedExecutionPayloadImportException importException) {
       final ExecutionPayloadImportResult.FailureReason reason =
           importException.getResult().getFailureReason();
-      final SignedExecutionPayloadEnvelope executionPayload = importException.getExecutionPayload();
+      final ExecutionPayloadEnvelope executionPayload = importException.getExecutionPayload();
 
       if (BAD_EXECUTION_PAYLOAD_FAILURE_REASONS.contains(reason)) {
         logWarningForFailedExecutionPayloadImport(executionPayload, reason, peer);
@@ -384,7 +384,7 @@ public class PeerSync {
   }
 
   private void logWarningForFailedExecutionPayloadImport(
-      final SignedExecutionPayloadEnvelope executionPayload,
+      final ExecutionPayloadEnvelope executionPayload,
       final ExecutionPayloadImportResult.FailureReason reason,
       final Eth2Peer peer) {
     LOG.warn(
@@ -436,7 +436,7 @@ public class PeerSync {
   private SafeFuture<Void> importBlock(
       final SignedBeaconBlock block,
       final Optional<List<BlobSidecar>> maybeBlobSidecars,
-      final Optional<SignedExecutionPayloadEnvelope> maybeExecutionPayload) {
+      final Optional<ExecutionPayloadEnvelope> maybeExecutionPayload) {
     if (stopped.get()) {
       throw new CancellationException("Peer sync was cancelled");
     }
@@ -462,7 +462,7 @@ public class PeerSync {
               if (maybeExecutionPayload.isEmpty()) {
                 return SafeFuture.COMPLETE;
               }
-              final SignedExecutionPayloadEnvelope executionPayload = maybeExecutionPayload.get();
+              final ExecutionPayloadEnvelope executionPayload = maybeExecutionPayload.get();
               return executionPayloadManager
                   .importExecutionPayload(executionPayload, false)
                   .thenAccept(

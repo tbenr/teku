@@ -40,7 +40,7 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.service.serviceutils.Service;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadSummary;
 import tech.pegasys.teku.spec.datastructures.validator.BroadcastValidationLevel;
 import tech.pegasys.teku.spec.logic.common.statetransition.exceptions.BlockProcessingException;
@@ -251,25 +251,24 @@ public class BlockManager extends Service
   }
 
   @Override
-  public void onExecutionPayloadValidated(final SignedExecutionPayloadEnvelope executionPayload) {
+  public void onExecutionPayloadValidated(final ExecutionPayloadEnvelope executionPayload) {
     // No-op until the payload has been imported into fork choice.
   }
 
   @Override
-  public void onExecutionPayloadAvailable(final SignedExecutionPayloadEnvelope executionPayload) {
+  public void onExecutionPayloadAvailable(final ExecutionPayloadEnvelope executionPayload) {
     // No-op until the payload has been imported into fork choice.
   }
 
   @Override
   public void onExecutionPayloadImported(
-      final SignedExecutionPayloadEnvelope executionPayload, final boolean executionOptimistic) {
+      final ExecutionPayloadEnvelope executionPayload, final boolean executionOptimistic) {
     executionPayloadEventsListenerSupplier
         .get()
         .onExecutionPayloadImported(executionPayload.getSlotAndBlockRoot());
     final ParentExecutionPayloadDependency parentExecutionPayloadDependency =
         new ParentExecutionPayloadDependency(
-            executionPayload.getBeaconBlockRoot(),
-            executionPayload.getMessage().getPayload().getBlockHash());
+            executionPayload.getBeaconBlockRoot(), executionPayload.getPayload().getBlockHash());
     final List<SignedBeaconBlock> blocksToRetry =
         removeBlocksPendingParentExecutionPayload(parentExecutionPayloadDependency);
     if (!blocksToRetry.isEmpty()) {

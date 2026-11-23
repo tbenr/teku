@@ -39,8 +39,8 @@ import tech.pegasys.teku.spec.SpecVersion;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.builder.versions.gloas.BuilderConfig;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.GetPayloadResponse;
@@ -219,14 +219,14 @@ public class DefaultExecutionPayloadBidManager
   }
 
   @Override
-  public void onExecutionPayloadValidated(final SignedExecutionPayloadEnvelope executionPayload) {}
+  public void onExecutionPayloadValidated(final ExecutionPayloadEnvelope executionPayload) {}
 
   @Override
-  public void onExecutionPayloadAvailable(final SignedExecutionPayloadEnvelope executionPayload) {}
+  public void onExecutionPayloadAvailable(final ExecutionPayloadEnvelope executionPayload) {}
 
   @Override
   public void onExecutionPayloadImported(
-      final SignedExecutionPayloadEnvelope executionPayload, final boolean executionOptimistic) {
+      final ExecutionPayloadEnvelope executionPayload, final boolean executionOptimistic) {
     retryPendingBids(
         pendingExecutionPayloadBids.removeItemsDependingOn(executionPayload.getBeaconBlockRoot()));
   }

@@ -14,17 +14,16 @@
 package tech.pegasys.teku.beacon.sync.forward.singlepeer;
 
 import tech.pegasys.teku.networking.eth2.rpc.core.InvalidResponseException;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult;
 
 public class FailedExecutionPayloadImportException extends InvalidResponseException {
 
-  private final SignedExecutionPayloadEnvelope executionPayload;
+  private final ExecutionPayloadEnvelope executionPayload;
   private final ExecutionPayloadImportResult result;
 
   public FailedExecutionPayloadImportException(
-      final SignedExecutionPayloadEnvelope executionPayload,
-      final ExecutionPayloadImportResult result) {
+      final ExecutionPayloadEnvelope executionPayload, final ExecutionPayloadImportResult result) {
     super(
         "Unable to import execution payload due to an error "
             + result.getFailureReason()
@@ -34,7 +33,7 @@ public class FailedExecutionPayloadImportException extends InvalidResponseExcept
     this.result = result;
   }
 
-  public SignedExecutionPayloadEnvelope getExecutionPayload() {
+  public ExecutionPayloadEnvelope getExecutionPayload() {
     return executionPayload;
   }
 

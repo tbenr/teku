@@ -23,33 +23,33 @@ import tech.pegasys.teku.kzg.KZGProof;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.Blob;
 import tech.pegasys.teku.spec.datastructures.type.SszKZGProof;
 
-public class SignedExecutionPayloadEnvelopeContents
+public class ExecutionPayloadEnvelopeContents
     extends Container3<
-        SignedExecutionPayloadEnvelopeContents,
-        SignedExecutionPayloadEnvelope,
+        ExecutionPayloadEnvelopeContents,
+        ExecutionPayloadEnvelope,
         SszList<SszKZGProof>,
         SszList<Blob>> {
 
-  SignedExecutionPayloadEnvelopeContents(
-      final SignedExecutionPayloadEnvelopeContentsSchema type, final TreeNode backingNode) {
+  ExecutionPayloadEnvelopeContents(
+      final ExecutionPayloadEnvelopeContentsSchema type, final TreeNode backingNode) {
     super(type, backingNode);
   }
 
-  public SignedExecutionPayloadEnvelopeContents(
-      final SignedExecutionPayloadEnvelopeContentsSchema schema,
-      final SignedExecutionPayloadEnvelope signedExecutionPayloadEnvelope,
+  public ExecutionPayloadEnvelopeContents(
+      final ExecutionPayloadEnvelopeContentsSchema schema,
+      final ExecutionPayloadEnvelope executionPayloadEnvelope,
       final List<KZGProof> kzgProofs,
       final List<Blob> blobs) {
     super(
         schema,
-        signedExecutionPayloadEnvelope,
+        executionPayloadEnvelope,
         schema
             .getKzgProofsSchema()
             .createFromElements(kzgProofs.stream().map(SszKZGProof::new).toList()),
         schema.getBlobsSchema().createFromElements(blobs));
   }
 
-  public SignedExecutionPayloadEnvelope getSignedExecutionPayloadEnvelope() {
+  public ExecutionPayloadEnvelope getExecutionPayloadEnvelope() {
     return getField0();
   }
 
@@ -62,15 +62,15 @@ public class SignedExecutionPayloadEnvelopeContents
   }
 
   public UInt64 getSlot() {
-    return getSignedExecutionPayloadEnvelope().getSlot();
+    return getExecutionPayloadEnvelope().getSlot();
   }
 
   public Bytes32 getBeaconBlockRoot() {
-    return getSignedExecutionPayloadEnvelope().getBeaconBlockRoot();
+    return getExecutionPayloadEnvelope().getBeaconBlockRoot();
   }
 
   @Override
-  public SignedExecutionPayloadEnvelopeContentsSchema getSchema() {
-    return (SignedExecutionPayloadEnvelopeContentsSchema) super.getSchema();
+  public ExecutionPayloadEnvelopeContentsSchema getSchema() {
+    return (ExecutionPayloadEnvelopeContentsSchema) super.getSchema();
   }
 }

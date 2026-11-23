@@ -28,8 +28,6 @@ public enum ValidatorApiMethod {
   SEND_SIGNED_BLINDED_BLOCK_V2("eth/v2/beacon/blinded_blocks"),
   GET_ATTESTATION_DATA("eth/v1/validator/attestation_data"),
   GET_PAYLOAD_ATTESTATION_DATA("eth/v1/validator/payload_attestation_data"),
-  GET_EXECUTION_PAYLOAD_ENVELOPE(
-      "eth/v1/validator/execution_payload_envelopes/:slot/:beacon_block_root"),
   SEND_SIGNED_ATTESTATION("eth/v1/beacon/pool/attestations"),
   SEND_SIGNED_ATTESTATION_V2("eth/v2/beacon/pool/attestations"),
   SEND_PAYLOAD_ATTESTATION_MESSAGES("eth/v1/beacon/pool/payload_attestations"),
@@ -58,7 +56,7 @@ public enum ValidatorApiMethod {
   SEND_VALIDATOR_LIVENESS("/eth/v1/validator/liveness/:epoch"),
   BEACON_COMMITTEE_SELECTIONS("/eth/v1/validator/beacon_committee_selections"),
   SYNC_COMMITTEE_SELECTIONS("/eth/v1/validator/sync_committee_selections"),
-  SEND_SIGNED_EXECUTION_PAYLOAD_ENVELOPE("eth/v1/beacon/execution_payload_envelopes"),
+  SEND_EXECUTION_PAYLOAD_ENVELOPE("eth/v1/beacon/execution_payload_envelopes"),
   SEND_SIGNED_PROPOSER_PREFERENCES("eth/v1/validator/proposer_preferences"),
   SEND_BUILDER_PREFERENCES("eth/v1/validator/builder_preferences"),
   SEND_SIGNED_EXECUTION_PAYLOAD_BID("eth/v1/beacon/execution_payload_bids");

@@ -53,7 +53,7 @@ import tech.pegasys.teku.networking.eth2.rpc.core.encodings.RpcEncoding;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.config.SpecConfigGloas;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.networking.libp2p.rpc.ExecutionPayloadEnvelopesByRangeRequestMessage;
@@ -83,7 +83,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
   final Eth2Peer peer = mock(Eth2Peer.class);
 
   @SuppressWarnings("unchecked")
-  final ResponseCallback<SignedExecutionPayloadEnvelope> callback = mock(ResponseCallback.class);
+  final ResponseCallback<ExecutionPayloadEnvelope> callback = mock(ResponseCallback.class);
 
   private final ChainBuilder chainBuilder = ChainBuilder.create(spec);
 
@@ -166,7 +166,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
 
   @Test
   void onIncomingMessage_respondsAllPayloads() {
-    final List<SignedExecutionPayloadEnvelope> executionPayloadEnvelopes = buildChain(5);
+    final List<ExecutionPayloadEnvelope> executionPayloadEnvelopes = buildChain(5);
     final UInt64 payloadCount = UInt64.valueOf(5);
 
     final ExecutionPayloadEnvelopesByRangeRequestMessage message =
@@ -176,8 +176,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
     // Requesting 5 execution payload envelopes
     verify(peer).approveExecutionPayloadEnvelopesRequest(any(), eq(payloadCount.longValue()));
     verify(callback, times(5)).respond(any());
-    for (final SignedExecutionPayloadEnvelope executionPayloadEnvelope :
-        executionPayloadEnvelopes) {
+    for (final ExecutionPayloadEnvelope executionPayloadEnvelope : executionPayloadEnvelopes) {
       verify(callback).respond(executionPayloadEnvelope);
     }
 
@@ -190,7 +189,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
 
   @Test
   public void onIncomingMessage_respondsWithSomeOfTheExecutionPayloadEnvelopes() {
-    final List<SignedExecutionPayloadEnvelope> executionPayloadEnvelopes = buildChain(4);
+    final List<ExecutionPayloadEnvelope> executionPayloadEnvelopes = buildChain(4);
     final UInt64 payloadCount = UInt64.valueOf(5);
 
     final ExecutionPayloadEnvelopesByRangeRequestMessage message =
@@ -203,8 +202,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
     verify(peer).adjustExecutionPayloadEnvelopesRequest(any(), eq(4L));
     verify(callback, times(4)).respond(any());
 
-    for (final SignedExecutionPayloadEnvelope executionPayloadEnvelope :
-        executionPayloadEnvelopes) {
+    for (final ExecutionPayloadEnvelope executionPayloadEnvelope : executionPayloadEnvelopes) {
       verify(callback).respond(executionPayloadEnvelope);
     }
     verify(callback).completeSuccessfully();
@@ -216,7 +214,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
 
   @Test
   public void onIncomingMessage_respondsFromFinalizedRange() {
-    final List<SignedExecutionPayloadEnvelope> executionPayloadEnvelopes = buildChain(6);
+    final List<ExecutionPayloadEnvelope> executionPayloadEnvelopes = buildChain(6);
     // All requested slots are before the finalized block
     stubFinalizedChainHeadAndBlockLookup(UInt64.valueOf(6));
 
@@ -226,7 +224,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
 
     verify(callback, times(5)).respond(any());
     verify(combinedChainDataClient, never()).getAncestorNodes(any(), any());
-    for (final SignedExecutionPayloadEnvelope executionPayloadEnvelope :
+    for (final ExecutionPayloadEnvelope executionPayloadEnvelope :
         executionPayloadEnvelopes.subList(0, 5)) {
       verify(callback).respond(executionPayloadEnvelope);
       verify(combinedChainDataClient).getBlockAtSlotExact(executionPayloadEnvelope.getSlot());
@@ -238,7 +236,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
   @Test
   public void onIncomingMessage_skipsFinalizedSlotWithoutBlock() {
     // Build 6 slots of blocks and pretend slot 3 was a skipped slot in the finalized chain
-    final List<SignedExecutionPayloadEnvelope> allEnvelopes = buildChain(6).subList(0, 5);
+    final List<ExecutionPayloadEnvelope> allEnvelopes = buildChain(6).subList(0, 5);
     final UInt64 skippedSlot = UInt64.valueOf(3);
 
     when(combinedChainDataClient.getFinalizedBlockSlot())
@@ -261,8 +259,8 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
 
     // 4 envelopes served, skipped slot produces no response
     verify(callback, times(4)).respond(any());
-    for (final SignedExecutionPayloadEnvelope envelope : allEnvelopes) {
-      if (envelope.getMessage().getSlot().equals(skippedSlot)) {
+    for (final ExecutionPayloadEnvelope envelope : allEnvelopes) {
+      if (envelope.getSlot().equals(skippedSlot)) {
         verify(callback, never()).respond(envelope);
       } else {
         verify(callback).respond(envelope);
@@ -305,7 +303,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
     verify(callback, times(3)).respond(any());
     // slots below the servable range are dropped and the count is reduced rather than shifted, so
     // slot 11 is never served even though it is within the servable range
-    for (final SignedExecutionPayloadEnvelope envelope :
+    for (final ExecutionPayloadEnvelope envelope :
         chainBuilder.streamExecutionPayloads(UInt64.valueOf(5), UInt64.valueOf(11)).toList()) {
       if (envelope.getSlot().isLessThan(minServableSlot)
           || envelope.getSlot().isGreaterThan(UInt64.valueOf(10))) {
@@ -329,7 +327,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
         new ExecutionPayloadEnvelopesByRangeRequestMessage(UInt64.valueOf(6), UInt64.valueOf(3));
     handler.onIncomingMessage(PROTOCOL_ID, peer, message, callback);
 
-    final SignedExecutionPayloadEnvelope expected =
+    final ExecutionPayloadEnvelope expected =
         chainBuilder.getExecutionPayloadAtSlot(UInt64.valueOf(8)).orElseThrow();
     verify(callback).respond(expected);
     verify(callback, times(1)).respond(any());
@@ -345,7 +343,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
         new ExecutionPayloadEnvelopesByRangeRequestMessage(UInt64.valueOf(5), UInt64.ONE);
     handler.onIncomingMessage(PROTOCOL_ID, peer, message, callback);
 
-    final SignedExecutionPayloadEnvelope expected =
+    final ExecutionPayloadEnvelope expected =
         chainBuilder.getExecutionPayloadAtSlot(UInt64.valueOf(5)).orElseThrow();
     verify(callback).respond(expected);
     verify(callback).completeSuccessfully();
@@ -354,7 +352,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
 
   @Test
   public void onIncomingMessage_shouldNotServeEnvelopeOfPayloadTheHeadChainDidNotBuildOn() {
-    final List<SignedExecutionPayloadEnvelope> allEnvelopes = buildChain(5);
+    final List<ExecutionPayloadEnvelope> allEnvelopes = buildChain(5);
     // The block at slot 4 built on the EMPTY variant of the block at slot 3, so the payload of
     // slot 3 is not part of the chain even though its envelope is available
     final UInt64 emptySlot = UInt64.valueOf(3);
@@ -365,7 +363,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
     handler.onIncomingMessage(PROTOCOL_ID, peer, message, callback);
 
     verify(callback, times(4)).respond(any());
-    for (final SignedExecutionPayloadEnvelope envelope : allEnvelopes) {
+    for (final ExecutionPayloadEnvelope envelope : allEnvelopes) {
       if (envelope.getSlot().equals(emptySlot)) {
         verify(callback, never()).respond(envelope);
       } else {
@@ -381,7 +379,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
 
   @Test
   public void onIncomingMessage_shouldNotServeHeadEnvelopeWhenHeadPayloadStatusIsEmpty() {
-    final List<SignedExecutionPayloadEnvelope> allEnvelopes = buildChain(5);
+    final List<ExecutionPayloadEnvelope> allEnvelopes = buildChain(5);
     // Fork choice selected the EMPTY variant of the head even though its payload is available
     final UInt64 headSlot = UInt64.valueOf(5);
     stubHeadChainNodes(slot -> slot.equals(headSlot) ? PAYLOAD_STATUS_EMPTY : PAYLOAD_STATUS_FULL);
@@ -391,7 +389,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
     handler.onIncomingMessage(PROTOCOL_ID, peer, message, callback);
 
     verify(callback, times(4)).respond(any());
-    for (final SignedExecutionPayloadEnvelope envelope : allEnvelopes) {
+    for (final ExecutionPayloadEnvelope envelope : allEnvelopes) {
       if (envelope.getSlot().equals(headSlot)) {
         verify(callback, never()).respond(envelope);
       } else {
@@ -404,7 +402,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
 
   @Test
   public void onIncomingMessage_shouldNotServeHeadEnvelopeWhenHeadPayloadStatusIsPending() {
-    final List<SignedExecutionPayloadEnvelope> allEnvelopes = buildChain(5);
+    final List<ExecutionPayloadEnvelope> allEnvelopes = buildChain(5);
     // The head payload has been received but fork choice has not selected the FULL variant
     final UInt64 headSlot = UInt64.valueOf(5);
     stubHeadChainNodes(
@@ -415,7 +413,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
     handler.onIncomingMessage(PROTOCOL_ID, peer, message, callback);
 
     verify(callback, times(4)).respond(any());
-    for (final SignedExecutionPayloadEnvelope envelope : allEnvelopes) {
+    for (final ExecutionPayloadEnvelope envelope : allEnvelopes) {
       if (envelope.getSlot().equals(headSlot)) {
         verify(callback, never()).respond(envelope);
       } else {
@@ -428,7 +426,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
 
   @Test
   public void onIncomingMessage_shouldResolveFinalizedBlockPayloadStatusFromHeadChain() {
-    final List<SignedExecutionPayloadEnvelope> allEnvelopes = buildChain(5);
+    final List<ExecutionPayloadEnvelope> allEnvelopes = buildChain(5);
     // The finalized block is the last requested slot. Whether its payload is part of the chain is
     // only known from the head chain, so it must not be served from the finalized database.
     final UInt64 finalizedSlot = UInt64.valueOf(5);
@@ -450,7 +448,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
 
     // Slots 1 to 4 are served from the finalized database, the finalized block's envelope is not
     verify(callback, times(4)).respond(any());
-    for (final SignedExecutionPayloadEnvelope envelope : allEnvelopes) {
+    for (final ExecutionPayloadEnvelope envelope : allEnvelopes) {
       if (envelope.getSlot().equals(finalizedSlot)) {
         verify(callback, never()).respond(envelope);
         verify(combinedChainDataClient, never()).getBlockAtSlotExact(finalizedSlot);
@@ -465,7 +463,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
 
   @Test
   public void onIncomingMessage_shouldServeRangeStraddlingFinalizedBlockFromBothSources() {
-    final List<SignedExecutionPayloadEnvelope> allEnvelopes = buildChain(5);
+    final List<ExecutionPayloadEnvelope> allEnvelopes = buildChain(5);
     // The finalized block is at slot 3 and the chain built on its payload. Slots before it come
     // from the finalized database, the finalized block and its descendants from the head chain.
     final UInt64 finalizedSlot = UInt64.valueOf(3);
@@ -478,7 +476,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
     handler.onIncomingMessage(PROTOCOL_ID, peer, message, callback);
 
     verify(callback, times(5)).respond(any());
-    for (final SignedExecutionPayloadEnvelope envelope : allEnvelopes) {
+    for (final ExecutionPayloadEnvelope envelope : allEnvelopes) {
       verify(callback).respond(envelope);
       if (envelope.getSlot().isLessThan(finalizedSlot)) {
         verify(combinedChainDataClient).getBlockAtSlotExact(envelope.getSlot());
@@ -558,7 +556,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandlerTest {
     when(combinedChainDataClient.getChainHead()).thenReturn(Optional.of(chainHead));
   }
 
-  private List<SignedExecutionPayloadEnvelope> buildChain(final int chainSize) {
+  private List<ExecutionPayloadEnvelope> buildChain(final int chainSize) {
     // Create some blocks to request
     final UInt64 latestSlot = chainBuilder.getLatestSlot();
     chainBuilder.generateBlocksUpToSlot(latestSlot.plus(chainSize));

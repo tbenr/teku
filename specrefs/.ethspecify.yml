@@ -58,6 +58,9 @@ specrefs:
       - BeaconBlockBody#heze
       - BeaconState#heze
       - ExecutionPayloadBid#heze
+
+      # Removed by consensus-specs PR 5820: the execution payload envelope is not signed
+      - SignedExecutionPayloadEnvelope#gloas
       - SignedExecutionPayloadBid#heze
       - InclusionListBits#heze
       - InclusionListCommittee#heze
@@ -208,6 +211,10 @@ specrefs:
     functions:
       # Unnecessary
       - xor#phase0
+
+      # Removed by consensus-specs PR 5820: the execution payload envelope is not signed
+      - get_execution_payload_envelope_signature#gloas
+      - verify_execution_payload_envelope_signature#gloas
 
       # Implemented differently: Teku derives the time into a slot from a message's arrival
       # timestamp where it is needed (BlockTimelinessTracker), rather than reading it off the

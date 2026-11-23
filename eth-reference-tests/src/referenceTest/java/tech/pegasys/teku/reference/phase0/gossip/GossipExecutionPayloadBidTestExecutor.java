@@ -37,11 +37,11 @@ import tech.pegasys.teku.reference.BlsSetting;
 import tech.pegasys.teku.reference.TestExecutor;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelopeSchema;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBidSchema;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelopeSchema;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedProposerPreferencesSchema;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
@@ -90,8 +90,8 @@ public class GossipExecutionPayloadBidTestExecutor implements TestExecutor {
         SchemaDefinitionsGloas.required(spec.atSlot(state.getSlot()).getSchemaDefinitions());
     final SignedProposerPreferencesSchema proposerPreferencesSchema =
         schemaDefinitions.getSignedProposerPreferencesSchema();
-    final SignedExecutionPayloadEnvelopeSchema envelopeSchema =
-        schemaDefinitions.getSignedExecutionPayloadEnvelopeSchema();
+    final ExecutionPayloadEnvelopeSchema envelopeSchema =
+        schemaDefinitions.getExecutionPayloadEnvelopeSchema();
     final SignedExecutionPayloadBidSchema signedBidSchema =
         schemaDefinitions.getSignedExecutionPayloadBidSchema();
 
@@ -310,11 +310,11 @@ public class GossipExecutionPayloadBidTestExecutor implements TestExecutor {
               .put(preferences.getDependentRoot(), preferences);
         }
       } else if (messageName.startsWith("execution_payload_envelope_")) {
-        final SignedExecutionPayloadEnvelope signedEnvelope =
+        final ExecutionPayloadEnvelope signedEnvelope =
             loadSsz(testDefinition, messageName + ".ssz_snappy", envelopeSchema::sszDeserialize);
         result = safeJoin(envelopeValidator.validate(signedEnvelope));
         if (result.isAccept()) {
-          final ExecutionPayload payload = signedEnvelope.getMessage().getPayload();
+          final ExecutionPayload payload = signedEnvelope.getPayload();
           seenExecutionPayloadGasLimits.put(payload.getBlockHash(), payload.getGasLimit());
           applyExecutionPayloadToStore(spec, ctx.recentChainData, ctx.forkChoice, signedEnvelope);
         }
@@ -346,7 +346,7 @@ public class GossipExecutionPayloadBidTestExecutor implements TestExecutor {
       final Spec spec,
       final RecentChainData recentChainData,
       final ForkChoice forkChoice,
-      final SignedExecutionPayloadEnvelope signedEnvelope) {
+      final ExecutionPayloadEnvelope signedEnvelope) {
     final UpdatableStore.StoreTransaction transaction = recentChainData.startStoreTransaction();
     spec.atSlot(signedEnvelope.getSlot())
         .getForkChoiceUtil()

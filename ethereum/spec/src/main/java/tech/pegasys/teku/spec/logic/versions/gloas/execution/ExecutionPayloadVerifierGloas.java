@@ -13,21 +13,13 @@
 
 package tech.pegasys.teku.spec.logic.versions.gloas.execution;
 
-import static tech.pegasys.teku.spec.config.SpecConfigGloas.BUILDER_INDEX_SELF_BUILD;
-
 import java.util.List;
 import java.util.Optional;
-import org.apache.tuweni.bytes.Bytes;
-import org.apache.tuweni.bytes.Bytes32;
-import tech.pegasys.teku.bls.BLSPublicKey;
-import tech.pegasys.teku.bls.BLSSignatureVerifier;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
-import tech.pegasys.teku.spec.constants.Domain;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlockHeader;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionRequestsDataCodec;
 import tech.pegasys.teku.spec.datastructures.execution.NewPayloadRequest;
@@ -40,72 +32,52 @@ import tech.pegasys.teku.spec.logic.common.execution.ExecutionPayloadVerificatio
 import tech.pegasys.teku.spec.logic.common.execution.ExecutionPayloadVerifier;
 import tech.pegasys.teku.spec.logic.versions.bellatrix.block.OptimisticExecutionPayloadExecutor;
 import tech.pegasys.teku.spec.logic.versions.deneb.types.VersionedHash;
-import tech.pegasys.teku.spec.logic.versions.gloas.helpers.BeaconStateAccessorsGloas;
 import tech.pegasys.teku.spec.logic.versions.gloas.helpers.MiscHelpersGloas;
 
 public class ExecutionPayloadVerifierGloas implements ExecutionPayloadVerifier {
 
   private final MiscHelpersGloas miscHelpers;
-  private final BeaconStateAccessorsGloas beaconStateAccessors;
   private final ExecutionRequestsDataCodec executionRequestsDataCodec;
 
   public ExecutionPayloadVerifierGloas(
       final MiscHelpersGloas miscHelpers,
-      final BeaconStateAccessorsGloas beaconStateAccessors,
       final ExecutionRequestsDataCodec executionRequestsDataCodec) {
     this.miscHelpers = miscHelpers;
-    this.beaconStateAccessors = beaconStateAccessors;
     this.executionRequestsDataCodec = executionRequestsDataCodec;
   }
 
   @Override
   public void verifyExecutionPayloadEnvelope(
-      final SignedExecutionPayloadEnvelope signedEnvelope,
+      final ExecutionPayloadEnvelope envelope,
       final BeaconState state,
-      final BLSSignatureVerifier signatureVerifier,
       final Optional<? extends OptimisticExecutionPayloadExecutor> payloadExecutor)
       throws ExecutionPayloadVerificationException {
-    verifyEnvelope(signedEnvelope, state, state.getSlot(), signatureVerifier, payloadExecutor);
+    verifyEnvelope(envelope, state, state.getSlot(), payloadExecutor);
   }
 
   @Override
   public void verifyCheckpointAnchorExecutionPayloadEnvelope(
-      final SignedExecutionPayloadEnvelope signedEnvelope,
+      final ExecutionPayloadEnvelope envelope,
       final AnchorPoint anchor,
-      final BLSSignatureVerifier signatureVerifier,
       final Optional<? extends OptimisticExecutionPayloadExecutor> payloadExecutor)
       throws ExecutionPayloadVerificationException {
     if (anchor.getSignedBeaconBlock().isPresent()
         || anchor.getState().toVersionGloas().isEmpty()
-        || !signedEnvelope.getBeaconBlockRoot().equals(anchor.getRoot())) {
+        || !envelope.getBeaconBlockRoot().equals(anchor.getRoot())) {
       throw new ExecutionPayloadVerificationException(
           "Envelope does not match a state-only Gloas checkpoint anchor");
     }
     // Empty slots advance the checkpoint state, but the envelope belongs to its latest block.
-    verifyEnvelope(
-        signedEnvelope,
-        anchor.getState(),
-        anchor.getBlockSlot(),
-        signatureVerifier,
-        payloadExecutor);
+    verifyEnvelope(envelope, anchor.getState(), anchor.getBlockSlot(), payloadExecutor);
   }
 
   private void verifyEnvelope(
-      final SignedExecutionPayloadEnvelope signedEnvelope,
+      final ExecutionPayloadEnvelope envelope,
       final BeaconState state,
       final UInt64 verificationSlot,
-      final BLSSignatureVerifier signatureVerifier,
       final Optional<? extends OptimisticExecutionPayloadExecutor> payloadExecutor)
       throws ExecutionPayloadVerificationException {
-    final ExecutionPayloadEnvelope envelope = signedEnvelope.getMessage();
     final ExecutionPayload payload = envelope.getPayload();
-
-    // Verify signature
-    if (!verifyExecutionPayloadEnvelopeSignature(
-        state, signedEnvelope, signatureVerifier, verificationSlot)) {
-      throw new ExecutionPayloadVerificationException(
-          "Signature verification of the execution payload envelope failed");
-    }
 
     // Verify consistency with the beacon block
     if (!envelope.getBeaconBlockRoot().equals(BeaconBlockHeader.fromState(state).hashTreeRoot())) {
@@ -125,10 +97,6 @@ public class ExecutionPayloadVerifierGloas implements ExecutionPayloadVerifier {
     // Verify consistency with the committed bid
     final ExecutionPayloadBid committedBid = stateGloas.getLatestExecutionPayloadBid();
 
-    if (!envelope.getBuilderIndex().equals(committedBid.getBuilderIndex())) {
-      throw new ExecutionPayloadVerificationException(
-          "Builder index of the envelope is not consistent with the builder index of the committed bid");
-    }
     if (!envelope.getPayload().getPrevRandao().equals(committedBid.getPrevRandao())) {
       throw new ExecutionPayloadVerificationException(
           "Prev randao of the envelope is not consistent with the prev randao of the committed bid");
@@ -146,6 +114,10 @@ public class ExecutionPayloadVerifierGloas implements ExecutionPayloadVerifier {
         .equals(envelope.getExecutionRequests().hashTreeRoot())) {
       throw new ExecutionPayloadVerificationException(
           "Execution requests root of the committed bid is not consistent with the execution requests of the payload");
+    }
+    if (!committedBid.getPayloadRoot().equals(payload.hashTreeRoot())) {
+      throw new ExecutionPayloadVerificationException(
+          "Payload root of the committed bid is not consistent with the root of the payload");
     }
 
     // Verify the execution payload is valid
@@ -176,37 +148,6 @@ public class ExecutionPayloadVerifierGloas implements ExecutionPayloadVerifier {
             "Execution payload was not optimistically accepted");
       }
     }
-  }
-
-  @Override
-  public boolean verifyExecutionPayloadEnvelopeSignature(
-      final BeaconState state,
-      final SignedExecutionPayloadEnvelope signedEnvelope,
-      final BLSSignatureVerifier signatureVerifier) {
-    return verifyExecutionPayloadEnvelopeSignature(
-        state, signedEnvelope, signatureVerifier, state.getSlot());
-  }
-
-  private boolean verifyExecutionPayloadEnvelopeSignature(
-      final BeaconState state,
-      final SignedExecutionPayloadEnvelope signedEnvelope,
-      final BLSSignatureVerifier signatureVerifier,
-      final UInt64 signatureSlot) {
-    final UInt64 builderIndex = signedEnvelope.getMessage().getBuilderIndex();
-    final BLSPublicKey pubkey;
-    if (builderIndex.equals(BUILDER_INDEX_SELF_BUILD)) {
-      final UInt64 validatorIndex = state.getLatestBlockHeader().getProposerIndex();
-      pubkey = beaconStateAccessors.getValidatorPubKey(state, validatorIndex).orElseThrow();
-    } else {
-      pubkey = beaconStateAccessors.getBuilderPubKey(state, builderIndex).orElseThrow();
-    }
-    final Bytes32 domain =
-        beaconStateAccessors.getDomain(
-            state.getForkInfo(),
-            Domain.BEACON_BUILDER,
-            miscHelpers.computeEpochAtSlot(signatureSlot));
-    final Bytes signingRoot = miscHelpers.computeSigningRoot(signedEnvelope.getMessage(), domain);
-    return signatureVerifier.verify(pubkey, signingRoot, signedEnvelope.getSignature());
   }
 
   protected NewPayloadRequest computeNewPayloadRequest(

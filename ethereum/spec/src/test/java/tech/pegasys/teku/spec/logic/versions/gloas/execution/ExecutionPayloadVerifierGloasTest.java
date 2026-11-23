@@ -13,34 +13,27 @@
 
 package tech.pegasys.teku.spec.logic.versions.gloas.execution;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import java.util.Optional;
 import org.apache.tuweni.bytes.Bytes;
-import org.apache.tuweni.bytes.Bytes32;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import tech.pegasys.teku.bls.BLSPublicKey;
-import tech.pegasys.teku.bls.BLSSignatureVerifier;
-import tech.pegasys.teku.infrastructure.bytes.Bytes4;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecFactory;
-import tech.pegasys.teku.spec.constants.Domain;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
+import tech.pegasys.teku.spec.datastructures.execution.Transaction;
+import tech.pegasys.teku.spec.datastructures.execution.versions.gloas.ExecutionPayloadGloas;
 import tech.pegasys.teku.spec.datastructures.state.AnchorPoint;
-import tech.pegasys.teku.spec.datastructures.state.Fork;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.generator.ChainBuilder;
 import tech.pegasys.teku.spec.logic.common.execution.ExecutionPayloadVerificationException;
+import tech.pegasys.teku.spec.schemas.SchemaDefinitionsGloas;
 
 class ExecutionPayloadVerifierGloasTest {
   private final Spec spec = TestSpecFactory.createMinimalGloas();
@@ -54,7 +47,7 @@ class ExecutionPayloadVerifierGloasTest {
     final UInt64 checkpointSlot = spec.computeStartSlotAtEpoch(UInt64.ONE);
     final BeaconState postState =
         chainBuilder.generateBlockAtSlot(checkpointSlot.minus(1)).getState();
-    final SignedExecutionPayloadEnvelope envelope =
+    final ExecutionPayloadEnvelope envelope =
         chainBuilder.getExecutionPayloadAtSlot(postState.getSlot()).orElseThrow();
     final BeaconState state =
         advanceState ? spec.processSlots(postState, checkpointSlot) : postState;
@@ -63,17 +56,13 @@ class ExecutionPayloadVerifierGloasTest {
         () ->
             spec.getExecutionPayloadVerifier(envelope.getSlot())
                 .verifyCheckpointAnchorExecutionPayloadEnvelope(
-                    envelope,
-                    AnchorPoint.fromInitialState(spec, state),
-                    BLSSignatureVerifier.NOOP,
-                    Optional.empty()));
+                    envelope, AnchorPoint.fromInitialState(spec, state), Optional.empty()));
 
     if (advanceState) {
       assertThatThrownBy(
               () ->
                   spec.getExecutionPayloadVerifier(envelope.getSlot())
-                      .verifyExecutionPayloadEnvelope(
-                          envelope, state, BLSSignatureVerifier.NOOP, Optional.empty()))
+                      .verifyExecutionPayloadEnvelope(envelope, state, Optional.empty()))
           .isInstanceOf(ExecutionPayloadVerificationException.class)
           .hasMessageContaining("slot");
       return;
@@ -81,55 +70,68 @@ class ExecutionPayloadVerifierGloasTest {
     assertDoesNotThrow(
         () ->
             spec.getExecutionPayloadVerifier(envelope.getSlot())
-                .verifyExecutionPayloadEnvelope(
-                    envelope, state, BLSSignatureVerifier.NOOP, Optional.empty()));
+                .verifyExecutionPayloadEnvelope(envelope, state, Optional.empty()));
   }
 
-  @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  void shouldUseBlockEpochOnlyForAnchorVerification(final boolean checkpoint) throws Exception {
+  @Test
+  void shouldRejectEnvelopeWhosePayloadRootDoesNotMatchTheBid() throws Exception {
     chainBuilder.generateGenesis();
-    final UInt64 checkpointSlot = spec.computeStartSlotAtEpoch(UInt64.ONE);
-    final BeaconState postState =
-        chainBuilder.generateBlockAtSlot(checkpointSlot.minus(1)).getState();
-    final SignedExecutionPayloadEnvelope envelope =
-        chainBuilder.getExecutionPayloadAtSlot(postState.getSlot()).orElseThrow();
-    final BeaconState state =
-        spec.processSlots(postState, checkpointSlot)
-            .updated(
-                mutable ->
-                    mutable.setFork(
-                        new Fork(
-                            Bytes4.fromHexString("0x01000000"),
-                            Bytes4.fromHexString("0x02000000"),
-                            UInt64.ONE)));
-    final BLSSignatureVerifier signatureVerifier = mock(BLSSignatureVerifier.class);
-    when(signatureVerifier.verify(any(BLSPublicKey.class), any(), any())).thenReturn(true);
-    final Bytes32 domain =
-        spec.atSlot(envelope.getSlot())
-            .beaconStateAccessors()
-            .getDomain(
-                state.getForkInfo(), Domain.BEACON_BUILDER, checkpoint ? UInt64.ZERO : UInt64.ONE);
-    final Bytes signingRoot =
-        spec.atSlot(envelope.getSlot())
-            .miscHelpers()
-            .computeSigningRoot(envelope.getMessage(), domain);
+    final SignedBlockAndState block = chainBuilder.generateBlockAtSlot(1);
+    final ExecutionPayloadEnvelope envelope =
+        chainBuilder.getExecutionPayloadAtSlot(block.getSlot()).orElseThrow();
+    // Same block hash, prev randao, gas limit, parent hash, timestamp and withdrawals, but another
+    // payload: only the payload root tells them apart
+    final ExecutionPayloadEnvelope tamperedEnvelope =
+        SchemaDefinitionsGloas.required(spec.atSlot(envelope.getSlot()).getSchemaDefinitions())
+            .getExecutionPayloadEnvelopeSchema()
+            .create(
+                withExtraData(envelope.getPayload(), Bytes.fromHexString("0xdeadbeef")),
+                envelope.getExecutionRequests(),
+                envelope.getBeaconBlockRoot(),
+                envelope.getParentBeaconBlockRoot());
 
-    if (checkpoint) {
-      spec.getExecutionPayloadVerifier(envelope.getSlot())
-          .verifyCheckpointAnchorExecutionPayloadEnvelope(
-              envelope,
-              AnchorPoint.fromInitialState(spec, state),
-              signatureVerifier,
-              Optional.empty());
-    } else {
-      assertThat(
-              spec.getExecutionPayloadVerifier(envelope.getSlot())
-                  .verifyExecutionPayloadEnvelopeSignature(state, envelope, signatureVerifier))
-          .isTrue();
-    }
-    verify(signatureVerifier)
-        .verify(any(BLSPublicKey.class), eq(signingRoot), eq(envelope.getSignature()));
+    assertDoesNotThrow(
+        () ->
+            spec.getExecutionPayloadVerifier(envelope.getSlot())
+                .verifyExecutionPayloadEnvelope(envelope, block.getState(), Optional.empty()));
+    assertThatThrownBy(
+            () ->
+                spec.getExecutionPayloadVerifier(envelope.getSlot())
+                    .verifyExecutionPayloadEnvelope(
+                        tamperedEnvelope, block.getState(), Optional.empty()))
+        .isInstanceOf(ExecutionPayloadVerificationException.class)
+        .hasMessage(
+            "Payload root of the committed bid is not consistent with the root of the payload");
+  }
+
+  private ExecutionPayload withExtraData(final ExecutionPayload payload, final Bytes extraData) {
+    final ExecutionPayloadGloas payloadGloas = ExecutionPayloadGloas.required(payload);
+    return SchemaDefinitionsGloas.required(
+            spec.atSlot(payloadGloas.getSlotNumber()).getSchemaDefinitions())
+        .getExecutionPayloadSchema()
+        .createExecutionPayload(
+            builder ->
+                builder
+                    .parentHash(payloadGloas.getParentHash())
+                    .feeRecipient(payloadGloas.getFeeRecipient())
+                    .stateRoot(payloadGloas.getStateRoot())
+                    .receiptsRoot(payloadGloas.getReceiptsRoot())
+                    .logsBloom(payloadGloas.getLogsBloom())
+                    .prevRandao(payloadGloas.getPrevRandao())
+                    .blockNumber(payloadGloas.getBlockNumber())
+                    .gasLimit(payloadGloas.getGasLimit())
+                    .gasUsed(payloadGloas.getGasUsed())
+                    .timestamp(payloadGloas.getTimestamp())
+                    .extraData(extraData)
+                    .baseFeePerGas(payloadGloas.getBaseFeePerGas())
+                    .blockHash(payloadGloas.getBlockHash())
+                    .transactions(
+                        payloadGloas.getTransactions().stream().map(Transaction::getBytes).toList())
+                    .withdrawals(payloadGloas.getWithdrawals()::asList)
+                    .blobGasUsed(payloadGloas::getBlobGasUsed)
+                    .excessBlobGas(payloadGloas::getExcessBlobGas)
+                    .blockAccessList(() -> payloadGloas.getBlockAccessList().getBytes())
+                    .slotNumber(payloadGloas::getSlotNumber));
   }
 
   @ParameterizedTest
@@ -137,7 +139,7 @@ class ExecutionPayloadVerifierGloasTest {
   void anchorVerificationShouldRejectWrongRootOrBlockBackedAnchor(final boolean blockBacked) {
     chainBuilder.generateGenesis();
     final SignedBlockAndState block = chainBuilder.generateBlockAtSlot(8);
-    final SignedExecutionPayloadEnvelope envelope =
+    final ExecutionPayloadEnvelope envelope =
         chainBuilder.getExecutionPayloadAtSlot(block.getSlot()).orElseThrow();
     final AnchorPoint stateOnlyAnchor = AnchorPoint.fromInitialState(spec, block.getState());
     final AnchorPoint invalidAnchor =
@@ -149,7 +151,7 @@ class ExecutionPayloadVerifierGloasTest {
             () ->
                 spec.getExecutionPayloadVerifier(envelope.getSlot())
                     .verifyCheckpointAnchorExecutionPayloadEnvelope(
-                        envelope, invalidAnchor, BLSSignatureVerifier.NOOP, Optional.empty()))
+                        envelope, invalidAnchor, Optional.empty()))
         .isInstanceOf(ExecutionPayloadVerificationException.class)
         .hasMessageContaining("state-only Gloas checkpoint anchor");
   }

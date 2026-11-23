@@ -32,7 +32,7 @@ import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.lightclient.LightClientBootstrap;
 import tech.pegasys.teku.spec.datastructures.lightclient.LightClientUpdate;
@@ -57,7 +57,7 @@ public interface Database extends AutoCloseable {
   void storeFinalizedBlocks(
       Collection<SignedBeaconBlock> blocks,
       Map<SlotAndBlockRoot, List<BlobSidecar>> blobSidecarsBySlot,
-      Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
+      Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
       Optional<UInt64> maybeEarliestBlobSidecarSlot);
 
   void storeReconstructedFinalizedState(BeaconState state, Bytes32 blockRoot);
@@ -175,10 +175,9 @@ public interface Database extends AutoCloseable {
 
   Optional<SignedBeaconBlock> getHotBlock(final Bytes32 blockRoot);
 
-  Optional<SignedBlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelope(
-      Bytes32 blockRoot);
+  Optional<BlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelope(Bytes32 blockRoot);
 
-  Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelopes(
+  Map<Bytes32, BlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelopes(
       Set<Bytes32> blockRoots);
 
   @MustBeClosed

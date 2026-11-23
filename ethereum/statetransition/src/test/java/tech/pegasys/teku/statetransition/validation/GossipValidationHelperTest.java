@@ -49,7 +49,7 @@ import tech.pegasys.teku.spec.constants.Domain;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
@@ -415,11 +415,11 @@ public class GossipValidationHelperTest {
       final SpecContext specContext) {
     assumeThat(specContext.getSpecMilestone()).isEqualTo(SpecMilestone.GLOAS);
     final RecentChainData recentChainData = mock(RecentChainData.class);
-    final SignedExecutionPayloadEnvelope executionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(1);
+    final ExecutionPayloadEnvelope executionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelope(1);
     final Bytes32 blockRoot = executionPayload.getBeaconBlockRoot();
-    final Bytes32 blockHash = executionPayload.getMessage().getPayload().getBlockHash();
-    final UInt64 gasLimit = executionPayload.getMessage().getPayload().getGasLimit();
+    final Bytes32 blockHash = executionPayload.getPayload().getBlockHash();
+    final UInt64 gasLimit = executionPayload.getPayload().getGasLimit();
 
     when(recentChainData.getExecutionGasLimitForBlockRootAndHash(blockRoot, blockHash))
         .thenReturn(Optional.of(gasLimit));
@@ -1000,8 +1000,8 @@ public class GossipValidationHelperTest {
             dataStructureUtil.randomCheckpoint(),
             dataStructureUtil.randomCheckpoint());
 
-    final SignedExecutionPayloadEnvelope executionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(1);
+    final ExecutionPayloadEnvelope executionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelope(1);
 
     final RecentChainData recentChainDataMock = mock(RecentChainData.class);
     final UpdatableStore storeMock = mock(UpdatableStore.class);
@@ -1078,6 +1078,7 @@ public class GossipValidationHelperTest {
             parentBlockHash,
             parentBlockRoot,
             template.getBlockHash(),
+            Bytes32.ZERO,
             template.getPrevRandao(),
             template.getFeeRecipient(),
             template.getGasLimit(),

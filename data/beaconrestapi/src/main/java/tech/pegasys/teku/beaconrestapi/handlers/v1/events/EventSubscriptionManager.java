@@ -22,6 +22,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.function.Consumer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes;
@@ -44,9 +45,10 @@ import tech.pegasys.teku.spec.datastructures.attestation.ValidatableAttestation;
 import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationMessage;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.operations.Attestation;
@@ -227,12 +229,12 @@ public class EventSubscriptionManager
   }
 
   @Override
-  public void onExecutionPayloadValidated(final SignedExecutionPayloadEnvelope executionPayload) {
+  public void onExecutionPayloadValidated(final ExecutionPayloadEnvelope executionPayload) {
     onNewExecutionPayloadGossip(executionPayload);
   }
 
   @Override
-  public void onExecutionPayloadAvailable(final SignedExecutionPayloadEnvelope executionPayload) {
+  public void onExecutionPayloadAvailable(final ExecutionPayloadEnvelope executionPayload) {
     final ExecutionPayloadAvailableEvent executionPayloadAvailableEvent =
         new ExecutionPayloadAvailableEvent(
             executionPayload.getSlot(), executionPayload.getBeaconBlockRoot());
@@ -241,7 +243,7 @@ public class EventSubscriptionManager
 
   @Override
   public void onExecutionPayloadImported(
-      final SignedExecutionPayloadEnvelope executionPayload, final boolean executionOptimistic) {
+      final ExecutionPayloadEnvelope executionPayload, final boolean executionOptimistic) {
     onNewExecutionPayload(executionPayload, executionOptimistic);
   }
 
@@ -354,18 +356,51 @@ public class EventSubscriptionManager
     notifySubscribersOfEvent(EventType.sync_state, new SyncStateChangeEvent(syncState.name()));
   }
 
-  protected void onNewExecutionPayloadGossip(
-      final SignedExecutionPayloadEnvelope executionPayload) {
-    final ExecutionPayloadGossipEvent executionPayloadGossipEvent =
-        new ExecutionPayloadGossipEvent(executionPayload);
-    notifySubscribersOfEvent(EventType.execution_payload_gossip, executionPayloadGossipEvent);
+  protected void onNewExecutionPayloadGossip(final ExecutionPayloadEnvelope executionPayload) {
+    withExecutionPayloadBid(
+        executionPayload,
+        bid ->
+            notifySubscribersOfEvent(
+                EventType.execution_payload_gossip,
+                new ExecutionPayloadGossipEvent(executionPayload, bid)));
   }
 
   protected void onNewExecutionPayload(
-      final SignedExecutionPayloadEnvelope executionPayload, final boolean executionOptimistic) {
-    final ExecutionPayloadEvent executionPayloadEvent =
-        new ExecutionPayloadEvent(executionPayload, executionOptimistic);
-    notifySubscribersOfEvent(EventType.execution_payload, executionPayloadEvent);
+      final ExecutionPayloadEnvelope executionPayload, final boolean executionOptimistic) {
+    withExecutionPayloadBid(
+        executionPayload,
+        bid ->
+            notifySubscribersOfEvent(
+                EventType.execution_payload,
+                new ExecutionPayloadEvent(executionPayload, bid, executionOptimistic)));
+  }
+
+  /**
+   * The envelope no longer names its builder: the execution payload events take the builder index
+   * and the payload root from the execution payload bid of the envelope's beacon block.
+   */
+  private void withExecutionPayloadBid(
+      final ExecutionPayloadEnvelope executionPayload,
+      final Consumer<ExecutionPayloadBid> eventPublisher) {
+    if (eventSubscribers.isEmpty()) {
+      return;
+    }
+    provider
+        .getExecutionPayloadBid(executionPayload.getBeaconBlockRoot())
+        .thenAccept(
+            maybeBid ->
+                maybeBid.ifPresentOrElse(
+                    eventPublisher,
+                    () ->
+                        LOG.debug(
+                            "No execution payload bid found for block {}, skipping the execution payload event",
+                            executionPayload.getBeaconBlockRoot())))
+        .finish(
+            error ->
+                LOG.debug(
+                    "Failed to look up the execution payload bid of block {}",
+                    executionPayload.getBeaconBlockRoot(),
+                    error));
   }
 
   protected void onExecutionPayloadBid(final SignedExecutionPayloadBid executionPayloadBid) {

@@ -3726,7 +3726,7 @@
 - name: get_data_column_sidecars#gloas
   sources:
     - file: ethereum/spec/src/main/java/tech/pegasys/teku/spec/logic/versions/gloas/helpers/MiscHelpersGloas.java
-      search: public List<DataColumnSidecar> constructDataColumnSidecars\(\s*final SignedExecutionPayloadEnvelope
+      search: public List<DataColumnSidecar> constructDataColumnSidecars\(\s*final ExecutionPayloadEnvelope
       regex: true
     - file: ethereum/spec/src/main/java/tech/pegasys/teku/spec/logic/versions/gloas/util/DataColumnSidecarUtilGloas.java
       search: public List<DataColumnSidecar> constructDataColumnSidecars(
@@ -4088,9 +4088,7 @@
     </spec>
 
 - name: get_execution_payload_envelope_signature#gloas
-  sources:
-    - file: ethereum/spec/src/main/java/tech/pegasys/teku/spec/signatures/LocalSigner.java
-      search: public SafeFuture<BLSSignature> signExecutionPayloadEnvelope(
+  sources: []
   spec: |
     <spec fn="get_execution_payload_envelope_signature" fork="gloas" hash="7291faa5">
     def get_execution_payload_envelope_signature(
@@ -17411,9 +17409,7 @@
     </spec>
 
 - name: verify_execution_payload_envelope_signature#gloas
-  sources:
-    - file: ethereum/spec/src/main/java/tech/pegasys/teku/spec/logic/versions/gloas/execution/ExecutionPayloadVerifierGloas.java
-      search: public boolean verifyExecutionPayloadEnvelopeSignature(
+  sources: []
   spec: |
     <spec fn="verify_execution_payload_envelope_signature" fork="gloas" hash="49483ae2">
     def verify_execution_payload_envelope_signature(

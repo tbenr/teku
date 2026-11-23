@@ -66,8 +66,6 @@ import tech.pegasys.teku.validator.client.duties.ValidatorDutyMetrics;
 import tech.pegasys.teku.validator.client.duties.attestations.AggregationDuty;
 import tech.pegasys.teku.validator.client.duties.attestations.AttestationDutyFactory;
 import tech.pegasys.teku.validator.client.duties.attestations.AttestationProductionDuty;
-import tech.pegasys.teku.validator.client.duties.execution.ExecutionPayloadBidEventsChannel;
-import tech.pegasys.teku.validator.client.duties.execution.ExecutionPayloadDuty;
 import tech.pegasys.teku.validator.client.duties.payloadattestations.PayloadAttestationDutyFactory;
 import tech.pegasys.teku.validator.client.duties.synccommittee.ChainHeadTracker;
 import tech.pegasys.teku.validator.client.duties.synccommittee.SyncCommitteeScheduledDuties;
@@ -484,7 +482,6 @@ public class ValidatorClientService extends Service {
             blockContainerSigner,
             spec,
             validatorDutyMetrics,
-            eventChannels.getPublisher(ExecutionPayloadBidEventsChannel.class),
             builderConfigProvider);
     final boolean dvtSelectionsEndpointEnabled =
         config.getValidatorConfig().isDvtSelectionsEndpointEnabled();
@@ -590,10 +587,6 @@ public class ValidatorClientService extends Service {
     }
 
     if (spec.isMilestoneSupported(SpecMilestone.GLOAS)) {
-      final ExecutionPayloadDuty executionPayloadDuty =
-          new ExecutionPayloadDuty(spec, asyncRunner, validatorApiChannel, VALIDATOR_LOGGER);
-      eventChannels.subscribe(ExecutionPayloadBidEventsChannel.class, executionPayloadDuty);
-
       final PayloadAttestationDutyFactory payloadAttestationDutyFactory =
           new PayloadAttestationDutyFactory(
               spec, forkProvider, validatorApiChannel, validatorDutyMetrics);

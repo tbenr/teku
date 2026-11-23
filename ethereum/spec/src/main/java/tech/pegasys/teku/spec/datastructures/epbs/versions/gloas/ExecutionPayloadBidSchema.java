@@ -24,6 +24,7 @@ import static tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadFi
 import static tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadFields.GAS_LIMIT;
 import static tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadFields.PARENT_BLOCK_HASH;
 import static tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadFields.PARENT_BLOCK_ROOT;
+import static tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadFields.PAYLOAD_ROOT;
 import static tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadFields.PREV_RANDAO;
 import static tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadFields.SLOT;
 import static tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadFields.VALUE;
@@ -33,7 +34,7 @@ import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.bytes.Bytes20;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.infrastructure.ssz.collections.SszByteVector;
-import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema12;
+import tech.pegasys.teku.infrastructure.ssz.containers.ContainerSchema13;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.ProgressiveSchemaUtils;
@@ -47,8 +48,9 @@ import tech.pegasys.teku.spec.datastructures.type.SszKZGCommitment;
 import tech.pegasys.teku.spec.schemas.registry.SchemaRegistry;
 
 public class ExecutionPayloadBidSchema
-    extends ContainerSchema12<
+    extends ContainerSchema13<
         ExecutionPayloadBid,
+        SszBytes32,
         SszBytes32,
         SszBytes32,
         SszBytes32,
@@ -62,7 +64,7 @@ public class ExecutionPayloadBidSchema
         SszList<SszKZGCommitment>,
         SszBytes32> {
 
-  private static final boolean[] ACTIVE_FIELDS = ProgressiveSchemaUtils.allActive(12);
+  private static final boolean[] ACTIVE_FIELDS = ProgressiveSchemaUtils.allActive(13);
 
   public ExecutionPayloadBidSchema(final SchemaRegistry schemaRegistry) {
     super(
@@ -71,6 +73,7 @@ public class ExecutionPayloadBidSchema
         namedSchema(PARENT_BLOCK_HASH, SszPrimitiveSchemas.BYTES32_SCHEMA),
         namedSchema(PARENT_BLOCK_ROOT, SszPrimitiveSchemas.BYTES32_SCHEMA),
         namedSchema(BLOCK_HASH, SszPrimitiveSchemas.BYTES32_SCHEMA),
+        namedSchema(PAYLOAD_ROOT, SszPrimitiveSchemas.BYTES32_SCHEMA),
         namedSchema(PREV_RANDAO, SszPrimitiveSchemas.BYTES32_SCHEMA),
         namedSchema(FEE_RECIPIENT, SszByteVectorSchema.create(Bytes20.SIZE)),
         namedSchema(GAS_LIMIT, SszPrimitiveSchemas.UINT64_SCHEMA),
@@ -86,6 +89,7 @@ public class ExecutionPayloadBidSchema
       final Bytes32 parentBlockHash,
       final Bytes32 parentBlockRoot,
       final Bytes32 blockHash,
+      final Bytes32 payloadRoot,
       final Bytes32 prevRandao,
       final Bytes20 feeRecipient,
       final UInt64 gasLimit,
@@ -100,6 +104,7 @@ public class ExecutionPayloadBidSchema
         parentBlockHash,
         parentBlockRoot,
         blockHash,
+        payloadRoot,
         prevRandao,
         feeRecipient,
         gasLimit,
@@ -127,6 +132,7 @@ public class ExecutionPayloadBidSchema
         executionPayload.getParentHash(),
         parentBlockRoot,
         executionPayload.getBlockHash(),
+        executionPayload.hashTreeRoot(),
         executionPayload.getPrevRandao(),
         executionPayload.getFeeRecipient(),
         executionPayload.getGasLimit(),

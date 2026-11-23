@@ -18,7 +18,7 @@ import tech.pegasys.teku.ethereum.execution.types.Eth1Address;
 import tech.pegasys.teku.infrastructure.bytes.Bytes20;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.infrastructure.ssz.collections.SszByteVector;
-import tech.pegasys.teku.infrastructure.ssz.containers.Container12;
+import tech.pegasys.teku.infrastructure.ssz.containers.Container13;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszBytes32;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.tree.TreeNode;
@@ -26,8 +26,9 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.datastructures.type.SszKZGCommitment;
 
 public class ExecutionPayloadBid
-    extends Container12<
+    extends Container13<
         ExecutionPayloadBid,
+        SszBytes32,
         SszBytes32,
         SszBytes32,
         SszBytes32,
@@ -46,6 +47,7 @@ public class ExecutionPayloadBid
       final Bytes32 parentBlockHash,
       final Bytes32 parentBlockRoot,
       final Bytes32 blockHash,
+      final Bytes32 payloadRoot,
       final Bytes32 prevRandao,
       final Bytes20 feeRecipient,
       final UInt64 gasLimit,
@@ -60,6 +62,7 @@ public class ExecutionPayloadBid
         SszBytes32.of(parentBlockHash),
         SszBytes32.of(parentBlockRoot),
         SszBytes32.of(blockHash),
+        SszBytes32.of(payloadRoot),
         SszBytes32.of(prevRandao),
         SszByteVector.fromBytes(feeRecipient.getWrappedBytes()),
         SszUInt64.of(gasLimit),
@@ -88,40 +91,44 @@ public class ExecutionPayloadBid
     return getField2().get();
   }
 
-  public Bytes32 getPrevRandao() {
+  public Bytes32 getPayloadRoot() {
     return getField3().get();
   }
 
+  public Bytes32 getPrevRandao() {
+    return getField4().get();
+  }
+
   public Eth1Address getFeeRecipient() {
-    return Eth1Address.fromBytes(getField4().getBytes());
+    return Eth1Address.fromBytes(getField5().getBytes());
   }
 
   public UInt64 getGasLimit() {
-    return getField5().get();
-  }
-
-  public UInt64 getBuilderIndex() {
     return getField6().get();
   }
 
-  public UInt64 getSlot() {
+  public UInt64 getBuilderIndex() {
     return getField7().get();
   }
 
-  public UInt64 getValue() {
+  public UInt64 getSlot() {
     return getField8().get();
   }
 
-  public UInt64 getExecutionPayment() {
+  public UInt64 getValue() {
     return getField9().get();
   }
 
+  public UInt64 getExecutionPayment() {
+    return getField10().get();
+  }
+
   public SszList<SszKZGCommitment> getBlobKzgCommitments() {
-    return getField10();
+    return getField11();
   }
 
   public Bytes32 getExecutionRequestsRoot() {
-    return getField11().get();
+    return getField12().get();
   }
 
   @Override

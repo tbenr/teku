@@ -41,7 +41,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
@@ -69,7 +69,7 @@ public class CombinedChainDataClient {
       completedFuture(Optional.empty());
   private static final SafeFuture<Optional<SignedBeaconBlock>> BLOCK_NOT_AVAILABLE =
       completedFuture(Optional.empty());
-  private static final SafeFuture<Optional<SignedExecutionPayloadEnvelope>>
+  private static final SafeFuture<Optional<ExecutionPayloadEnvelope>>
       EXECUTION_PAYLOAD_NOT_AVAILABLE = completedFuture(Optional.empty());
 
   private final RecentChainData recentChainData;
@@ -151,7 +151,7 @@ public class CombinedChainDataClient {
    * @return the execution payload at the requested slot or empty if the slot was empty or the
    *     payload was absent
    */
-  public SafeFuture<Optional<SignedExecutionPayloadEnvelope>> getExecutionPayloadAtSlotExact(
+  public SafeFuture<Optional<ExecutionPayloadEnvelope>> getExecutionPayloadAtSlotExact(
       final UInt64 slot, final Bytes32 headBlockRoot) {
     if (!isStoreAvailable()) {
       return EXECUTION_PAYLOAD_NOT_AVAILABLE;
@@ -667,7 +667,7 @@ public class CombinedChainDataClient {
    * are resolved by the fallback, which reads the retained blinded envelope from the database and
    * unblinds it via the execution layer.
    */
-  public SafeFuture<Optional<SignedExecutionPayloadEnvelope>> getExecutionPayloadByBlockRoot(
+  public SafeFuture<Optional<ExecutionPayloadEnvelope>> getExecutionPayloadByBlockRoot(
       final Bytes32 blockRoot) {
     return recentChainData
         .retrieveSignedExecutionPayloadByBlockRoot(blockRoot)

@@ -38,7 +38,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.apache.logging.log4j.LogManager;
@@ -79,7 +78,6 @@ import tech.pegasys.teku.spec.SpecMilestone;
 import tech.pegasys.teku.spec.SpecVersion;
 import tech.pegasys.teku.spec.datastructures.attestation.ValidatableAttestation;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
-import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockContainer;
@@ -87,12 +85,10 @@ import tech.pegasys.teku.spec.datastructures.builder.SignedValidatorRegistration
 import tech.pegasys.teku.spec.datastructures.builder.versions.gloas.BuilderConfig;
 import tech.pegasys.teku.spec.datastructures.builder.versions.gloas.BuilderPreferencesEntry;
 import tech.pegasys.teku.spec.datastructures.builder.versions.gloas.BuilderPreferencesRequest;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelopeContents;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationData;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationMessage;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelopeContents;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
@@ -179,7 +175,6 @@ public class ValidatorApiHandler implements ValidatorApiChannel, SlotEventsChann
   private final PayloadAttestationPool payloadAttestationPool;
   private final DataAvailabilitySampler dataAvailabilitySampler;
   private final ExecutionPayloadManager executionPayloadManager;
-  private final ExecutionPayloadFactory executionPayloadFactory;
   private final ExecutionPayloadPublisher executionPayloadPublisher;
   private final ExecutionPayloadBidManager executionPayloadBidManager;
   private final ProposerPreferencesManager proposerPreferencesManager;
@@ -213,7 +208,6 @@ public class ValidatorApiHandler implements ValidatorApiChannel, SlotEventsChann
       final PayloadAttestationPool payloadAttestationPool,
       final DataAvailabilitySampler dataAvailabilitySampler,
       final ExecutionPayloadManager executionPayloadManager,
-      final ExecutionPayloadFactory executionPayloadFactory,
       final ExecutionPayloadPublisher executionPayloadPublisher,
       final ExecutionPayloadBidManager executionPayloadBidManager,
       final ProposerPreferencesManager proposerPreferencesManager,
@@ -243,7 +237,6 @@ public class ValidatorApiHandler implements ValidatorApiChannel, SlotEventsChann
     this.payloadAttestationPool = payloadAttestationPool;
     this.dataAvailabilitySampler = dataAvailabilitySampler;
     this.executionPayloadManager = executionPayloadManager;
-    this.executionPayloadFactory = executionPayloadFactory;
     this.executionPayloadPublisher = executionPayloadPublisher;
     this.executionPayloadBidManager = executionPayloadBidManager;
     this.proposerPreferencesManager = proposerPreferencesManager;
@@ -1106,70 +1099,16 @@ public class ValidatorApiHandler implements ValidatorApiChannel, SlotEventsChann
   }
 
   @Override
-  public SafeFuture<Optional<ExecutionPayloadEnvelope>> createUnsignedExecutionPayload(
-      final UInt64 slot, final Bytes32 beaconBlockRoot) {
-    if (isSyncActive()) {
-      return NodeSyncingException.failedFuture();
-    }
-    return combinedChainDataClient
-        .getBlockAndStateInEffectAtSlot(slot)
-        .thenCompose(
-            maybeBlockAndState -> {
-              if (maybeBlockAndState.isEmpty()) {
-                return CompletableFuture.completedFuture(Optional.empty());
-              }
-              final BeaconBlockAndState blockAndState = maybeBlockAndState.get();
-              if (!blockAndState.getRoot().equals(beaconBlockRoot)) {
-                LOG.warn(
-                    "Unable to produce execution payload for slot {} and block {} because the block for this slot according to the BN is {}",
-                    slot,
-                    beaconBlockRoot,
-                    blockAndState.getRoot());
-                return CompletableFuture.completedFuture(Optional.empty());
-              }
-              LOG.info(
-                  "Producing unsigned execution payload for slot {} and block {}",
-                  slot,
-                  beaconBlockRoot);
-              if (combinedChainDataClient.isOptimisticBlock(blockAndState.getParentRoot())) {
-                LOG.warn(
-                    "Unable to produce execution payload for slot {} and block {} because parent has optimistically validated payload",
-                    slot,
-                    blockAndState.getRoot().toUnprefixedHexString());
-                return NodeSyncingException.failedFuture();
-              }
-              return executionPayloadFactory
-                  .createUnsignedExecutionPayload(blockAndState)
-                  .thenApply(Optional::of);
-            });
-  }
-
-  @Override
   public SafeFuture<PublishSignedExecutionPayloadResult> publishSignedExecutionPayload(
-      final SignedExecutionPayloadEnvelope signedExecutionPayload,
+      final ExecutionPayloadEnvelopeContents executionPayloadEnvelopeContents,
       final Optional<BroadcastValidationLevel> broadcastValidationLevel) {
     return executionPayloadPublisher
-        .publishSignedExecutionPayload(signedExecutionPayload, broadcastValidationLevel)
+        .publishSignedExecutionPayload(executionPayloadEnvelopeContents, broadcastValidationLevel)
         .exceptionally(
             ex -> {
               final String reason = getRootCauseMessage(ex);
               return PublishSignedExecutionPayloadResult.rejected(
-                  signedExecutionPayload.getBeaconBlockRoot(), reason);
-            });
-  }
-
-  @Override
-  public SafeFuture<PublishSignedExecutionPayloadResult> publishSignedExecutionPayload(
-      final SignedExecutionPayloadEnvelopeContents signedExecutionPayloadEnvelopeContents,
-      final Optional<BroadcastValidationLevel> broadcastValidationLevel) {
-    return executionPayloadPublisher
-        .publishSignedExecutionPayload(
-            signedExecutionPayloadEnvelopeContents, broadcastValidationLevel)
-        .exceptionally(
-            ex -> {
-              final String reason = getRootCauseMessage(ex);
-              return PublishSignedExecutionPayloadResult.rejected(
-                  signedExecutionPayloadEnvelopeContents.getBeaconBlockRoot(), reason);
+                  executionPayloadEnvelopeContents.getBeaconBlockRoot(), reason);
             });
   }
 

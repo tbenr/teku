@@ -28,7 +28,7 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.gloas.BeaconStateGloas;
 import tech.pegasys.teku.spec.datastructures.type.SszKZGCommitment;
@@ -77,10 +77,10 @@ public class StubDataColumnSidecarManager implements AvailabilityCheckerFactory<
 
   @Override
   public AvailabilityChecker<UInt64> createAvailabilityChecker(
-      final BeaconState state, final SignedExecutionPayloadEnvelope signedEnvelope) {
+      final BeaconState state, final ExecutionPayloadEnvelope envelope) {
     final SszList<SszKZGCommitment> commitments =
         BeaconStateGloas.required(state).getLatestExecutionPayloadBid().getBlobKzgCommitments();
-    return createAvailabilityChecker(signedEnvelope.getSlot(), Optional.of(commitments));
+    return createAvailabilityChecker(envelope.getSlot(), Optional.of(commitments));
   }
 
   private AvailabilityChecker<UInt64> createAvailabilityChecker(

@@ -32,8 +32,8 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.SlotAndExecutionPayloadSummary;
 import tech.pegasys.teku.spec.datastructures.state.AnchorPoint;
@@ -59,7 +59,7 @@ public class TestStoreImpl implements MutableStore, VoteUpdater {
   protected Optional<Bytes32> latestCanonicalBlockRoot;
   protected Optional<UInt64> custodyGroupCount;
   protected Optional<Bytes32> fastConfirmedRootBeforeRestart = Optional.empty();
-  protected Map<Bytes32, SignedExecutionPayloadEnvelope> executionPayloads;
+  protected Map<Bytes32, ExecutionPayloadEnvelope> executionPayloads;
   protected Optional<Bytes32> proposerBoostRoot = Optional.empty();
 
   protected final TestReadOnlyForkChoiceStrategy forkChoiceStrategy =
@@ -82,7 +82,7 @@ public class TestStoreImpl implements MutableStore, VoteUpdater {
       final Optional<UInt64> maybeEarliestBlobSidecarSlot,
       final Optional<Bytes32> maybeLatestCanonicalBlockRoot,
       final Optional<UInt64> maybeCustodyGroupCount,
-      final Map<Bytes32, SignedExecutionPayloadEnvelope> executionPayloads) {
+      final Map<Bytes32, ExecutionPayloadEnvelope> executionPayloads) {
     this.spec = spec;
     this.timeMillis = secondsToMillis(time);
     this.genesisTime = genesisTime;
@@ -183,7 +183,7 @@ public class TestStoreImpl implements MutableStore, VoteUpdater {
     return Optional.of(new SignedBlockAndState(block, state));
   }
 
-  private SignedExecutionPayloadEnvelope getSignedExecutionPayload(final Bytes32 blockRoot) {
+  private ExecutionPayloadEnvelope getSignedExecutionPayload(final Bytes32 blockRoot) {
     return executionPayloads.get(blockRoot);
   }
 
@@ -225,7 +225,7 @@ public class TestStoreImpl implements MutableStore, VoteUpdater {
   }
 
   @Override
-  public Optional<SignedExecutionPayloadEnvelope> getExecutionPayloadIfAvailable(
+  public Optional<ExecutionPayloadEnvelope> getExecutionPayloadIfAvailable(
       final Bytes32 blockRoot) {
     return Optional.ofNullable(getSignedExecutionPayload(blockRoot));
   }
@@ -258,13 +258,13 @@ public class TestStoreImpl implements MutableStore, VoteUpdater {
   }
 
   @Override
-  public SafeFuture<Optional<SignedExecutionPayloadEnvelope>> retrieveSignedExecutionPayload(
+  public SafeFuture<Optional<ExecutionPayloadEnvelope>> retrieveSignedExecutionPayload(
       final Bytes32 blockRoot) {
     return SafeFuture.completedFuture(getExecutionPayloadIfAvailable(blockRoot));
   }
 
   @Override
-  public SafeFuture<Optional<SignedBlindedExecutionPayloadEnvelope>>
+  public SafeFuture<Optional<BlindedExecutionPayloadEnvelope>>
       retrieveSignedBlindedExecutionPayload(final Bytes32 blockRoot) {
     return SafeFuture.completedFuture(
         getExecutionPayloadIfAvailable(blockRoot)
@@ -352,7 +352,7 @@ public class TestStoreImpl implements MutableStore, VoteUpdater {
 
   @Override
   public void putExecutionPayload(
-      final SignedExecutionPayloadEnvelope executionPayload, final boolean executionOptimistic) {
+      final ExecutionPayloadEnvelope executionPayload, final boolean executionOptimistic) {
     executionPayloads.put(executionPayload.getBeaconBlockRoot(), executionPayload);
   }
 

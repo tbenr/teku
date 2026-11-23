@@ -53,7 +53,6 @@ import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.builder.ValidatorRegistration;
 import tech.pegasys.teku.spec.datastructures.builder.versions.gloas.BuilderRequestAuth;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationData;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.operations.AggregateAndProof;
@@ -293,20 +292,6 @@ public class ExternalSigner implements Signer {
             FORK_INFO,
             forkInfo),
         slashableGenericMessage("execution payload bid"));
-  }
-
-  @Override
-  public SafeFuture<BLSSignature> signExecutionPayloadEnvelope(
-      final ExecutionPayloadEnvelope envelope, final ForkInfo forkInfo) {
-    return sign(
-        signingRootUtil.signingRootForSignExecutionPayloadEnvelope(envelope, forkInfo),
-        SignType.EXECUTION_PAYLOAD_ENVELOPE,
-        Map.of(
-            SignType.EXECUTION_PAYLOAD_ENVELOPE.getName(),
-            versioned(envelope, forkInfo),
-            FORK_INFO,
-            forkInfo),
-        slashableGenericMessage("execution payload envelope"));
   }
 
   @Override

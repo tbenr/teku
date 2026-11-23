@@ -21,7 +21,7 @@ import java.util.Optional;
 import java.util.Set;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
 
 public interface BlindedExecutionPayloadProvider {
 
@@ -37,7 +37,7 @@ public interface BlindedExecutionPayloadProvider {
       final BlindedExecutionPayloadProvider primaryProvider,
       final BlindedExecutionPayloadProvider... secondaryProviders) {
     return (final Set<Bytes32> blockRoots) -> {
-      SafeFuture<Map<Bytes32, SignedBlindedExecutionPayloadEnvelope>> result =
+      SafeFuture<Map<Bytes32, BlindedExecutionPayloadEnvelope>> result =
           primaryProvider.getBlindedExecutionPayloads(blockRoots).thenApply(HashMap::new);
       for (BlindedExecutionPayloadProvider nextProvider : secondaryProviders) {
         result =
@@ -61,10 +61,10 @@ public interface BlindedExecutionPayloadProvider {
     };
   }
 
-  SafeFuture<Map<Bytes32, SignedBlindedExecutionPayloadEnvelope>> getBlindedExecutionPayloads(
+  SafeFuture<Map<Bytes32, BlindedExecutionPayloadEnvelope>> getBlindedExecutionPayloads(
       Set<Bytes32> blockRoots);
 
-  default SafeFuture<Optional<SignedBlindedExecutionPayloadEnvelope>> getBlindedExecutionPayload(
+  default SafeFuture<Optional<BlindedExecutionPayloadEnvelope>> getBlindedExecutionPayload(
       final Bytes32 blockRoot) {
     return getBlindedExecutionPayloads(Set.of(blockRoot))
         .thenApply(

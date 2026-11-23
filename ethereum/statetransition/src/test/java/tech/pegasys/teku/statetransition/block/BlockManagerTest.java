@@ -92,7 +92,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.validator.BroadcastValidationLevel;
 import tech.pegasys.teku.spec.executionlayer.ExecutionLayerChannelStub;
 import tech.pegasys.teku.spec.executionlayer.PayloadStatus;
@@ -291,11 +291,11 @@ public class BlockManagerTest {
       shouldNotifyBlockEventsListenerOnBlockImportAndExecutionPayloadListenerOnPayloadImport() {
     final UInt64 slot = GENESIS_SLOT.plus(UInt64.ONE);
     final SignedBeaconBlock block = localChain.chainBuilder().generateBlockAtSlot(slot).getBlock();
-    final SignedExecutionPayloadEnvelope executionPayload =
-        mock(SignedExecutionPayloadEnvelope.class, Answers.RETURNS_DEEP_STUBS);
+    final ExecutionPayloadEnvelope executionPayload =
+        mock(ExecutionPayloadEnvelope.class, Answers.RETURNS_DEEP_STUBS);
     when(executionPayload.getSlotAndBlockRoot()).thenReturn(block.getSlotAndBlockRoot());
     when(executionPayload.getBeaconBlockRoot()).thenReturn(block.getRoot());
-    when(executionPayload.getMessage().getPayload().getBlockHash())
+    when(executionPayload.getPayload().getBlockHash())
         .thenReturn(dataStructureUtil.randomBytes32());
 
     reset(blockEventsListenerRouter);
@@ -441,7 +441,7 @@ public class BlockManagerTest {
     final SignedBlockAndState parentBlockAndState =
         localChain.chainBuilder().generateBlockAtSlot(parentSlot);
     localChain.chainUpdater().saveBlock(parentBlockAndState);
-    final SignedExecutionPayloadEnvelope parentExecutionPayload =
+    final ExecutionPayloadEnvelope parentExecutionPayload =
         localChain.chainBuilder().getExecutionPayloadAtSlot(parentSlot).orElseThrow();
 
     final UInt64 childSlot = incrementSlot();
@@ -456,8 +456,7 @@ public class BlockManagerTest {
     assertThat(requiredParentExecutionPayloads)
         .containsExactly(
             new ParentExecutionPayloadDependency(
-                parentBlockAndState.getRoot(),
-                parentExecutionPayload.getMessage().getPayload().getBlockHash()));
+                parentBlockAndState.getRoot(), parentExecutionPayload.getPayload().getBlockHash()));
 
     blockManager.onBlockImported(parentBlockAndState.getBlock(), false);
     assertThat(localRecentChainData.containsBlock(childBlock.getRoot())).isFalse();

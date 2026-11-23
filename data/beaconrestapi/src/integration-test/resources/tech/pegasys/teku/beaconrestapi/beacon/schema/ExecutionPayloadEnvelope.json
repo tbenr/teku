@@ -1,19 +1,13 @@
 {
   "title" : "ExecutionPayloadEnvelope",
   "type" : "object",
-  "required" : [ "payload", "execution_requests", "builder_index", "beacon_block_root", "parent_beacon_block_root" ],
+  "required" : [ "payload", "execution_requests", "beacon_block_root", "parent_beacon_block_root" ],
   "properties" : {
     "payload" : {
       "$ref" : "#/components/schemas/ExecutionPayloadGloas"
     },
     "execution_requests" : {
       "$ref" : "#/components/schemas/ExecutionRequestsGloas"
-    },
-    "builder_index" : {
-      "type" : "string",
-      "description" : "unsigned 64 bit integer",
-      "example" : "1",
-      "format" : "uint64"
     },
     "beacon_block_root" : {
       "type" : "string",

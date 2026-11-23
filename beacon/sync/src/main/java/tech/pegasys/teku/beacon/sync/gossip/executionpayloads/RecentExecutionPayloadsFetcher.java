@@ -21,8 +21,8 @@ import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.service.serviceutils.ServiceFacade;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.SpecMilestone;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationMessage;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.statetransition.execution.ExecutionPayloadManager;
 import tech.pegasys.teku.statetransition.execution.ReceivedExecutionPayloadEventsChannel;
 import tech.pegasys.teku.statetransition.payloadattestation.PayloadAttestationPool;
@@ -58,17 +58,14 @@ public interface RecentExecutionPayloadsFetcher
         }
 
         @Override
-        public void onExecutionPayloadValidated(
-            final SignedExecutionPayloadEnvelope executionPayload) {}
+        public void onExecutionPayloadValidated(final ExecutionPayloadEnvelope executionPayload) {}
 
         @Override
-        public void onExecutionPayloadAvailable(
-            final SignedExecutionPayloadEnvelope executionPayload) {}
+        public void onExecutionPayloadAvailable(final ExecutionPayloadEnvelope executionPayload) {}
 
         @Override
         public void onExecutionPayloadImported(
-            final SignedExecutionPayloadEnvelope executionPayload,
-            final boolean executionOptimistic) {}
+            final ExecutionPayloadEnvelope executionPayload, final boolean executionOptimistic) {}
       };
 
   static RecentExecutionPayloadsFetcher create(

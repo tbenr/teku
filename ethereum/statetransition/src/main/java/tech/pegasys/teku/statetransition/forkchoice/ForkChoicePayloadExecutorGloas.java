@@ -17,7 +17,7 @@ import java.util.Optional;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadHeader;
 import tech.pegasys.teku.spec.datastructures.execution.NewPayloadRequest;
 import tech.pegasys.teku.spec.executionlayer.ExecutionLayerChannel;
@@ -27,22 +27,20 @@ import tech.pegasys.teku.spec.logic.versions.bellatrix.block.OptimisticExecution
 class ForkChoicePayloadExecutorGloas implements OptimisticExecutionPayloadExecutor {
   private static final Logger LOG = LogManager.getLogger();
 
-  private final SignedExecutionPayloadEnvelope signedEnvelope;
+  private final ExecutionPayloadEnvelope envelope;
   private final ExecutionLayerChannel executionLayer;
 
   private Optional<SafeFuture<PayloadStatus>> result = Optional.empty();
 
   ForkChoicePayloadExecutorGloas(
-      final SignedExecutionPayloadEnvelope signedEnvelope,
-      final ExecutionLayerChannel executionLayer) {
-    this.signedEnvelope = signedEnvelope;
+      final ExecutionPayloadEnvelope envelope, final ExecutionLayerChannel executionLayer) {
+    this.envelope = envelope;
     this.executionLayer = executionLayer;
   }
 
   public static ForkChoicePayloadExecutorGloas create(
-      final SignedExecutionPayloadEnvelope signedEnvelope,
-      final ExecutionLayerChannel executionLayer) {
-    return new ForkChoicePayloadExecutorGloas(signedEnvelope, executionLayer);
+      final ExecutionPayloadEnvelope envelope, final ExecutionLayerChannel executionLayer) {
+    return new ForkChoicePayloadExecutorGloas(envelope, executionLayer);
   }
 
   public SafeFuture<PayloadStatus> getExecutionResult() {
@@ -56,7 +54,7 @@ class ForkChoicePayloadExecutorGloas implements OptimisticExecutionPayloadExecut
     result =
         Optional.of(
             executionLayer
-                .engineNewPayload(payloadToExecute, signedEnvelope.getSlot())
+                .engineNewPayload(payloadToExecute, envelope.getSlot())
                 .exceptionally(
                     error -> {
                       LOG.error("Error while validating payload", error);

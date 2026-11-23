@@ -35,7 +35,7 @@ import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.lightclient.LightClientBootstrap;
 import tech.pegasys.teku.spec.datastructures.lightclient.LightClientUpdate;
@@ -66,7 +66,7 @@ public class NoOpDatabase implements Database {
   public void storeFinalizedBlocks(
       final Collection<SignedBeaconBlock> blocks,
       final Map<SlotAndBlockRoot, List<BlobSidecar>> blobSidecarsBySlot,
-      final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
+      final Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
       final Optional<UInt64> maybeEarliestBlobSidecarSlot) {}
 
   @Override
@@ -166,13 +166,13 @@ public class NoOpDatabase implements Database {
   }
 
   @Override
-  public Optional<SignedBlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelope(
+  public Optional<BlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelope(
       final Bytes32 blockRoot) {
     return Optional.empty();
   }
 
   @Override
-  public Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelopes(
+  public Map<Bytes32, BlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelopes(
       final Set<Bytes32> blockRoots) {
     return Collections.emptyMap();
   }

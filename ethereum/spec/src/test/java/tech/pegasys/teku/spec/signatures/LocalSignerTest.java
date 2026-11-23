@@ -29,7 +29,6 @@ import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.builder.ValidatorRegistration;
 import tech.pegasys.teku.spec.datastructures.builder.versions.gloas.BuilderRequestAuth;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationData;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.operations.AggregateAndProof;
@@ -227,29 +226,9 @@ class LocalSignerTest {
     final BLSSignature expectedSignature =
         BLSSignature.fromBytesCompressed(
             Bytes.fromBase64String(
-                "tAJ39vEc3ARnbTTkYSfWWP6zewapa0PwYsADt/a7qRC7XFs5INHCCF5OcxZLyw2sDrF4manzciL1u3UwBTsUsCp/lV/VAjUc0/c2HPbVccxZYuT0jUuQQ3KaMf7axQ7b"));
+                "jcDThwP/TYWZWK+frQ05Xh72FiVPFuJ584Tt2raIzWDqhBKyDZ1S6eYbwA/MFFqFGKOprsoqEOimfUrpaHXWruSLTM9BkFPKFoSUYjFkdP4VECzahuec1eyKU2GaeDlA"));
 
     final SafeFuture<BLSSignature> result = signer.signExecutionPayloadBid(bid, fork);
-    asyncRunner.executeQueuedActions();
-
-    assertThat(result)
-        .withFailMessage(
-            "expected: %s\nbut was: %s",
-            expectedSignature.toBytesCompressed().toBase64String(),
-            result.getImmediately().toBytesCompressed().toBase64String())
-        .isCompletedWithValue(expectedSignature);
-  }
-
-  @Test
-  public void shouldSignExecutionPayloadEnvelope() {
-    final ExecutionPayloadEnvelope envelope =
-        dataStructureUtilGloas.randomExecutionPayloadEnvelope();
-    final BLSSignature expectedSignature =
-        BLSSignature.fromBytesCompressed(
-            Bytes.fromBase64String(
-                "jSyNoOS8JEsfFvyvHKYl6O+0a0rJktSUhOGllZYaMB4uU1bvQ6eZj6OdokJMwFekBWo/T++mgRhK8oHa5ZeXOIJ7yzSH4NaM3oLYcSlJh1pBSmjyQcZuWZOmY9Z/A8rD"));
-
-    final SafeFuture<BLSSignature> result = signer.signExecutionPayloadEnvelope(envelope, fork);
     asyncRunner.executeQueuedActions();
 
     assertThat(result)

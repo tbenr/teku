@@ -14,17 +14,17 @@
 package tech.pegasys.teku.statetransition.execution;
 
 import tech.pegasys.teku.infrastructure.events.VoidReturningChannelInterface;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 
 public interface ReceivedExecutionPayloadEventsChannel extends VoidReturningChannelInterface {
 
   /** Execution payload passes validation rules of the `execution_payload` topic */
-  void onExecutionPayloadValidated(SignedExecutionPayloadEnvelope executionPayload);
+  void onExecutionPayloadValidated(ExecutionPayloadEnvelope executionPayload);
 
   /** Execution payload passes the data availability checks * */
-  void onExecutionPayloadAvailable(SignedExecutionPayloadEnvelope executionPayload);
+  void onExecutionPayloadAvailable(ExecutionPayloadEnvelope executionPayload);
 
   /** Successfully imported on the fork-choice `on_execution_payload` handler */
   void onExecutionPayloadImported(
-      SignedExecutionPayloadEnvelope executionPayload, boolean executionOptimistic);
+      ExecutionPayloadEnvelope executionPayload, boolean executionOptimistic);
 }

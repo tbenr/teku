@@ -54,7 +54,7 @@ import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.lightclient.LightClientUpdate;
 import tech.pegasys.teku.spec.datastructures.state.AnchorPoint;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
@@ -412,9 +412,9 @@ class KvStoreDatabaseTest {
     final SignedBlockAndState child =
         chainBuilder.generateBlockAtSlot(
             2, chainBuilder.createBlockOptionsBuildingOnEmptyParent(UInt64.valueOf(2)));
-    final SignedBlindedExecutionPayloadEnvelope parentEnvelope =
+    final BlindedExecutionPayloadEnvelope parentEnvelope =
         chainBuilder.getExecutionPayloadAtSlot(parent.getSlot()).orElseThrow().blind(gloasSpec);
-    final SignedBlindedExecutionPayloadEnvelope childEnvelope =
+    final BlindedExecutionPayloadEnvelope childEnvelope =
         chainBuilder.getExecutionPayloadAtSlot(child.getSlot()).orElseThrow().blind(gloasSpec);
     final Checkpoint anchor = new Checkpoint(UInt64.ZERO, genesis.getRoot());
     final KvStoreCombinedDao dao = mock(KvStoreCombinedDao.class);

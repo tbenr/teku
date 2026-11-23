@@ -758,12 +758,7 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
             BlockAndCheckpoints.fromBlockAndState(fixture.spec(), fixture.child())
                 .getExecutionBlockHash())
         .contains(
-            fixture
-                .boundaryExecutionPayload()
-                .executionPayload()
-                .getMessage()
-                .getPayload()
-                .getBlockHash());
+            fixture.boundaryExecutionPayload().executionPayload().getPayload().getBlockHash());
 
     fixture
         .strategy()
@@ -1650,12 +1645,7 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
     final Bytes32 boundaryBidParentBlockHash =
         fixture.boundaryBlockAndCheckpoints().getExecutionBlockHash().orElseThrow();
     final Bytes32 boundaryPayloadBlockHash =
-        fixture
-            .boundaryExecutionPayload()
-            .executionPayload()
-            .getMessage()
-            .getPayload()
-            .getBlockHash();
+        fixture.boundaryExecutionPayload().executionPayload().getPayload().getBlockHash();
     final Checkpoint justifiedCheckpoint = fixture.finalizedCheckpoint();
     final ForkChoiceState forkChoiceState =
         fixture
@@ -1889,7 +1879,6 @@ public class ForkChoiceStrategyTest extends AbstractBlockMetadataStoreTest {
                                 .parentHash(
                                     boundaryExecutionPayload
                                         .executionPayload()
-                                        .getMessage()
                                         .getPayload()
                                         .getBlockHash())
                                 .prevRandao(childPrevRandao))));

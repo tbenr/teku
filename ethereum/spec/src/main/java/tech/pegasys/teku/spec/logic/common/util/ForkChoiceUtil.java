@@ -35,7 +35,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.BeaconBlockBody;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceReorgContext;
 import tech.pegasys.teku.spec.datastructures.forkchoice.MutableStore;
@@ -698,7 +698,7 @@ public class ForkChoiceUtil {
 
   public void applyExecutionPayloadToStore(
       final MutableStore store,
-      final SignedExecutionPayloadEnvelope signedEnvelope,
+      final ExecutionPayloadEnvelope envelope,
       final boolean executionOptimistic) {
     // No-op until the runtime wiring switches to the Gloas payload path.
   }
@@ -974,7 +974,7 @@ public class ForkChoiceUtil {
   }
 
   public AvailabilityChecker<?> createAvailabilityCheckerOnExecutionPayloadEnvelope(
-      final BeaconState state, final SignedExecutionPayloadEnvelope signedEnvelope) {
+      final BeaconState state, final ExecutionPayloadEnvelope envelope) {
     return AvailabilityChecker.NOOP;
   }
 

@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.LongStream;
@@ -315,7 +316,18 @@ public class MiscHelpersFulu extends MiscHelpersElectra {
 
   public boolean verifyDataColumnSidecarKzgProofsBatch(
       final List<DataColumnSidecar> dataColumnSidecars) {
+    return verifyDataColumnSidecarKzgProofsBatch(
+        dataColumnSidecars, sidecar -> DataColumnSidecarFulu.required(sidecar).getKzgCommitments());
+  }
 
+  /**
+   * Whether the cells and KZG proofs of all the given data column sidecars match the KZG
+   * commitments {@code kzgCommitmentsOf} gives for each sidecar, one commitment per cell.
+   */
+  protected boolean verifyDataColumnSidecarKzgProofsBatch(
+      final List<DataColumnSidecar> dataColumnSidecars,
+      final Function<DataColumnSidecar, SszList<SszKZGCommitment>> kzgCommitmentsOf) {
+    // The column index also represents the cell index
     final List<KZGCellWithColumnId> cellWithIds =
         dataColumnSidecars.stream()
             .flatMap(
@@ -331,8 +343,7 @@ public class MiscHelpersFulu extends MiscHelpersElectra {
     return getKzg()
         .verifyCellProofBatch(
             dataColumnSidecars.stream()
-                .flatMap(
-                    sidecar -> DataColumnSidecarFulu.required(sidecar).getKzgCommitments().stream())
+                .flatMap(sidecar -> kzgCommitmentsOf.apply(sidecar).stream())
                 .map(SszKZGCommitment::getKZGCommitment)
                 .toList(),
             cellWithIds,

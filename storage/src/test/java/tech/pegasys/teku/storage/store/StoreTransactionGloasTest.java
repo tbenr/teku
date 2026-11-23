@@ -37,7 +37,7 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.interop.MockStartValidatorKeyPairFactory;
 import tech.pegasys.teku.spec.datastructures.state.AnchorPoint;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
@@ -66,7 +66,7 @@ public class StoreTransactionGloasTest extends AbstractStoreTest {
   public void commit_shouldAddBlindedExecutionPayloadsToStorageUpdate() {
     final UpdatableStore store = createGenesisStore();
     final SignedBlockAndState blockAndState = chainBuilder.generateNextBlock();
-    final SignedExecutionPayloadEnvelope executionPayload =
+    final ExecutionPayloadEnvelope executionPayload =
         chainBuilder.getExecutionPayloadAtSlot(blockAndState.getSlot()).orElseThrow();
     final StorageUpdateChannel channel = mock(StorageUpdateChannel.class);
     when(channel.onStorageUpdate(any())).thenReturn(SafeFuture.completedFuture(UpdateResult.EMPTY));
@@ -87,9 +87,9 @@ public class StoreTransactionGloasTest extends AbstractStoreTest {
     final UpdatableStore store = createGenesisStore();
     final SignedBlockAndState firstBlockAndState = chainBuilder.generateNextBlock();
     final SignedBlockAndState secondBlockAndState = chainBuilder.generateNextBlock();
-    final SignedExecutionPayloadEnvelope firstExecutionPayload =
+    final ExecutionPayloadEnvelope firstExecutionPayload =
         chainBuilder.getExecutionPayloadAtSlot(firstBlockAndState.getSlot()).orElseThrow();
-    final SignedExecutionPayloadEnvelope secondExecutionPayload =
+    final ExecutionPayloadEnvelope secondExecutionPayload =
         chainBuilder.getExecutionPayloadAtSlot(secondBlockAndState.getSlot()).orElseThrow();
     final StorageUpdateChannel channel = mock(StorageUpdateChannel.class);
     when(channel.onStorageUpdate(any())).thenReturn(SafeFuture.completedFuture(UpdateResult.EMPTY));
@@ -195,7 +195,7 @@ public class StoreTransactionGloasTest extends AbstractStoreTest {
   public void retrieveSignedExecutionPayload_fromHotStore() {
     final UpdatableStore store = createGenesisStore();
     final SignedBlockAndState blockAndState = chainBuilder.generateNextBlock();
-    final SignedExecutionPayloadEnvelope executionPayload =
+    final ExecutionPayloadEnvelope executionPayload =
         chainBuilder.getExecutionPayloadAtSlot(blockAndState.getSlot()).orElseThrow();
 
     final UpdatableStore.StoreTransaction tx = store.startTransaction(storageUpdateChannel);
@@ -211,7 +211,7 @@ public class StoreTransactionGloasTest extends AbstractStoreTest {
   public void retrieveSignedExecutionPayload_fromExternalProvider() {
     final StoreBuilder storeBuilder = createStoreBuilder(defaultStoreConfig);
     final SignedBlockAndState blockAndState = chainBuilder.generateNextBlock();
-    final SignedExecutionPayloadEnvelope envelope =
+    final ExecutionPayloadEnvelope envelope =
         chainBuilder.getExecutionPayloadAtSlot(blockAndState.getSlot()).orElseThrow();
     final Bytes32 blockRoot = envelope.getBeaconBlockRoot();
 

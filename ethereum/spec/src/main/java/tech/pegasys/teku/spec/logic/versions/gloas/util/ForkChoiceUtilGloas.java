@@ -31,7 +31,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.gloas.BeaconBlockBodyGloas;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionRequests;
 import tech.pegasys.teku.spec.datastructures.execution.versions.capella.Withdrawal;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
@@ -125,7 +125,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
   @Override
   public void applyExecutionPayloadToStore(
       final MutableStore store,
-      final SignedExecutionPayloadEnvelope signedEnvelope,
+      final ExecutionPayloadEnvelope signedEnvelope,
       final boolean executionOptimistic) {
     // Add new execution payload to store
     store.putExecutionPayload(signedEnvelope, executionOptimistic);
@@ -173,7 +173,7 @@ public class ForkChoiceUtilGloas extends ForkChoiceUtilFulu {
 
   @Override
   public AvailabilityChecker<?> createAvailabilityCheckerOnExecutionPayloadEnvelope(
-      final BeaconState state, final SignedExecutionPayloadEnvelope signedEnvelope) {
+      final BeaconState state, final ExecutionPayloadEnvelope signedEnvelope) {
     final AvailabilityCheckerFactory<UInt64> factory =
         this.dataColumnSidecarAvailabilityCheckerFactory;
     if (factory == null) {

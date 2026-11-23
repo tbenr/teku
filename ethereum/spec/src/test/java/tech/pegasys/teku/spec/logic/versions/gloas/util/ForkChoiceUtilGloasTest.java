@@ -97,6 +97,7 @@ class ForkChoiceUtilGloasTest {
                 dataStructureUtil.randomBytes32(),
                 dataStructureUtil.randomBytes32(),
                 latestExecutionPayloadBlockHash,
+                Bytes32.ZERO,
                 dataStructureUtil.randomBytes32(),
                 dataStructureUtil.randomEth1Address(),
                 dataStructureUtil.randomUInt64(),
@@ -680,6 +681,7 @@ class ForkChoiceUtilGloasTest {
                 bid.getParentBlockHash(),
                 bid.getParentBlockRoot(),
                 blockHash, // Set the desired block hash
+                Bytes32.ZERO,
                 bid.getPrevRandao(),
                 bid.getFeeRecipient(),
                 bid.getGasLimit(),
@@ -742,6 +744,7 @@ class ForkChoiceUtilGloasTest {
                 parentBlockHash, // Set the desired parent block hash
                 bid.getParentBlockRoot(),
                 bid.getBlockHash(),
+                Bytes32.ZERO,
                 bid.getPrevRandao(),
                 bid.getFeeRecipient(),
                 bid.getGasLimit(),

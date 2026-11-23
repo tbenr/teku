@@ -30,7 +30,6 @@ public enum SignType {
   BEACON_BLOCK("beacon_block"),
   BLOB_SIDECAR("blob_sidecar"),
   EXECUTION_PAYLOAD_BID("execution_payload_bid"),
-  EXECUTION_PAYLOAD_ENVELOPE("execution_payload_envelope"),
   PAYLOAD_ATTESTATION_MESSAGE("payload_attestation_message"),
   PROPOSER_PREFERENCES("proposer_preferences"),
   BUILDER_REQUEST_AUTH("builder_request_auth");

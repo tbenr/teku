@@ -33,7 +33,7 @@ import tech.pegasys.teku.networking.p2p.rpc.RpcResponseListener;
 import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 
 public class ThrottlingSyncSource implements SyncSource {
   private static final Logger LOG = LogManager.getLogger();
@@ -179,13 +179,13 @@ public class ThrottlingSyncSource implements SyncSource {
   public SafeFuture<Void> requestExecutionPayloadEnvelopesByRange(
       final UInt64 startSlot,
       final UInt64 count,
-      final RpcResponseListener<SignedExecutionPayloadEnvelope> listener) {
+      final RpcResponseListener<ExecutionPayloadEnvelope> listener) {
     return executionPayloadEnvelopesRateTracker
         .generateRequestKey(count.longValue())
         .map(
             requestKey -> {
               LOG.debug("Sending request for {} execution payload envelopes", count);
-              final RpcResponseListenerWithCount<SignedExecutionPayloadEnvelope> listenerWithCount =
+              final RpcResponseListenerWithCount<ExecutionPayloadEnvelope> listenerWithCount =
                   new RpcResponseListenerWithCount<>(listener);
               return delegate
                   .requestExecutionPayloadEnvelopesByRange(startSlot, count, listenerWithCount)
@@ -208,7 +208,7 @@ public class ThrottlingSyncSource implements SyncSource {
   }
 
   @Override
-  public SafeFuture<Optional<SignedExecutionPayloadEnvelope>> requestExecutionPayloadEnvelopeByRoot(
+  public SafeFuture<Optional<ExecutionPayloadEnvelope>> requestExecutionPayloadEnvelopeByRoot(
       final Bytes32 beaconBlockRoot) {
     // Intentionally bypass throttling: this rare single lookup unblocks sync recovery when a
     // parent execution payload envelope was deferred, and delaying it would stall the batch.

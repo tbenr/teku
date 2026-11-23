@@ -34,7 +34,7 @@ import tech.pegasys.teku.spec.util.DataStructureUtil;
  * The execution request and withdrawal count limits of {@code
  * validate_execution_payload_envelope_gossip} are enforced by the progressive list schemas.
  */
-class SignedExecutionPayloadEnvelopeSchemaTest {
+class ExecutionPayloadEnvelopeSchemaTest {
 
   private final Spec spec = TestSpecFactory.createMinimalGloas();
   private final DataStructureUtil dataStructureUtil = new DataStructureUtil(spec);
@@ -43,13 +43,13 @@ class SignedExecutionPayloadEnvelopeSchemaTest {
       SpecConfigGloas.required(spec.forMilestone(SpecMilestone.GLOAS).getConfig());
   private final SchemaDefinitionsGloas schemaDefinitions =
       SchemaDefinitionsGloas.required(spec.atSlot(slot).getSchemaDefinitions());
-  private final SignedExecutionPayloadEnvelopeSchema schema =
-      schemaDefinitions.getSignedExecutionPayloadEnvelopeSchema();
+  private final ExecutionPayloadEnvelopeSchema schema =
+      schemaDefinitions.getExecutionPayloadEnvelopeSchema();
 
   @Test
   void sszDeserialize_shouldRoundTripValidEnvelope() {
-    final SignedExecutionPayloadEnvelope envelope =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(slot.longValue());
+    final ExecutionPayloadEnvelope envelope =
+        dataStructureUtil.randomExecutionPayloadEnvelope(slot.longValue());
     assertThat(schema.sszDeserialize(envelope.sszSerialize())).isEqualTo(envelope);
   }
 
@@ -62,7 +62,7 @@ class SignedExecutionPayloadEnvelopeSchemaTest {
             ExecutionPayloadFields.WITHDRAWALS,
             dataStructureUtil::randomWithdrawal,
             limit + 1);
-    final SignedExecutionPayloadEnvelope envelope =
+    final ExecutionPayloadEnvelope envelope =
         envelope(payload, dataStructureUtil.randomExecutionRequests(slot));
 
     assertThatThrownBy(() -> schema.sszDeserialize(envelope.sszSerialize()))
@@ -79,7 +79,7 @@ class SignedExecutionPayloadEnvelopeSchemaTest {
             ExecutionRequestsFields.WITHDRAWALS,
             dataStructureUtil::randomWithdrawalRequest,
             limit + 1);
-    final SignedExecutionPayloadEnvelope envelope =
+    final ExecutionPayloadEnvelope envelope =
         envelope(dataStructureUtil.randomExecutionPayload(slot), requests);
 
     assertThatThrownBy(() -> schema.sszDeserialize(envelope.sszSerialize()))
@@ -87,17 +87,9 @@ class SignedExecutionPayloadEnvelopeSchemaTest {
         .hasMessage("List length %d exceeds max length %d", limit + 1, limit);
   }
 
-  private SignedExecutionPayloadEnvelope envelope(
+  private ExecutionPayloadEnvelope envelope(
       final ExecutionPayload payload, final ExecutionRequests requests) {
     return schema.create(
-        schemaDefinitions
-            .getExecutionPayloadEnvelopeSchema()
-            .create(
-                payload,
-                requests,
-                dataStructureUtil.randomUInt64(),
-                dataStructureUtil.randomBytes32(),
-                dataStructureUtil.randomBytes32()),
-        dataStructureUtil.randomSignature());
+        payload, requests, dataStructureUtil.randomBytes32(), dataStructureUtil.randomBytes32());
   }
 }

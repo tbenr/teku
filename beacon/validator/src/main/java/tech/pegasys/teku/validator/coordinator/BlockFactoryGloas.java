@@ -90,7 +90,6 @@ public class BlockFactoryGloas extends BlockFactoryPhase0 {
                                 .create(
                                     getPayloadResponse.getExecutionPayload(),
                                     getPayloadResponse.getExecutionRequests().orElseThrow(),
-                                    bid.getMessage().getBuilderIndex(),
                                     block.hashTreeRoot(),
                                     block.getParentRoot());
                         final BlockContainer blockContents =

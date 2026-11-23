@@ -35,8 +35,8 @@ import tech.pegasys.teku.spec.datastructures.blocks.BlockAndCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.state.AnchorPoint;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
@@ -119,7 +119,7 @@ class StoreTransactionUpdatesFactory {
     final Map<Bytes32, BeaconState> finalizedStates =
         collectFinalizedStates(tx, finalizedChildToParent);
     // Collect blinded execution payloads before pruning
-    final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads =
+    final Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloads =
         createBlindedExecutionPayloads();
     final FinalizedChainData.Builder finalizedChainDataBuilder = FinalizedChainData.builder();
     createFinalizedExecutionPayloadBoundaryBlock()
@@ -270,7 +270,7 @@ class StoreTransactionUpdatesFactory {
       final Optional<FinalizedChainData> finalizedChainData,
       final boolean optimisticTransitionBlockRootSet,
       final Optional<Bytes32> optimisticTransitionBlockRoot,
-      final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads) {
+      final Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloads) {
     return new StoreTransactionUpdates(
         tx,
         finalizedChainData,
@@ -292,12 +292,11 @@ class StoreTransactionUpdatesFactory {
         blindedExecutionPayloads);
   }
 
-  private Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> createBlindedExecutionPayloads() {
+  private Map<Bytes32, BlindedExecutionPayloadEnvelope> createBlindedExecutionPayloads() {
     return hotExecutionPayloads.entrySet().stream()
         .map(
             entry -> {
-              final SignedExecutionPayloadEnvelope executionPayload =
-                  entry.getValue().executionPayload();
+              final ExecutionPayloadEnvelope executionPayload = entry.getValue().executionPayload();
               return Map.entry(entry.getKey(), executionPayload.blind(spec));
             })
         .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));

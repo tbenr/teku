@@ -23,7 +23,6 @@ import java.util.List;
 import java.util.Optional;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.bls.BLSSignature;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.logging.LogFormatter;
@@ -36,8 +35,6 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockContainer;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.BeaconBlockBody;
 import tech.pegasys.teku.spec.datastructures.builder.versions.gloas.BuilderConfig;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadSummary;
 import tech.pegasys.teku.spec.datastructures.metadata.BlockContainerAndMetaData;
 import tech.pegasys.teku.spec.datastructures.state.ForkInfo;
 import tech.pegasys.teku.spec.datastructures.validator.BroadcastValidationLevel;
@@ -45,7 +42,6 @@ import tech.pegasys.teku.validator.api.ValidatorApiChannel;
 import tech.pegasys.teku.validator.client.BuilderConfigProvider;
 import tech.pegasys.teku.validator.client.ForkProvider;
 import tech.pegasys.teku.validator.client.Validator;
-import tech.pegasys.teku.validator.client.duties.execution.ExecutionPayloadBidEventsChannel;
 import tech.pegasys.teku.validator.client.signer.BlockContainerSigner;
 
 public class BlockProductionDuty implements Duty {
@@ -59,7 +55,6 @@ public class BlockProductionDuty implements Duty {
   private final BlockContainerSigner blockContainerSigner;
   private final Spec spec;
   private final ValidatorDutyMetrics validatorDutyMetrics;
-  private final ExecutionPayloadBidEventsChannel executionPayloadBidEventsChannelPublisher;
   private final BuilderConfigProvider builderConfigProvider;
 
   public BlockProductionDuty(
@@ -70,7 +65,6 @@ public class BlockProductionDuty implements Duty {
       final BlockContainerSigner blockContainerSigner,
       final Spec spec,
       final ValidatorDutyMetrics validatorDutyMetrics,
-      final ExecutionPayloadBidEventsChannel executionPayloadBidEventsChannelPublisher,
       final BuilderConfigProvider builderConfigProvider) {
     this.validator = validator;
     this.slot = slot;
@@ -79,7 +73,6 @@ public class BlockProductionDuty implements Duty {
     this.blockContainerSigner = blockContainerSigner;
     this.spec = spec;
     this.validatorDutyMetrics = validatorDutyMetrics;
-    this.executionPayloadBidEventsChannelPublisher = executionPayloadBidEventsChannelPublisher;
     this.builderConfigProvider = builderConfigProvider;
   }
 
@@ -125,8 +118,7 @@ public class BlockProductionDuty implements Duty {
                                 () ->
                                     sendBlock(
                                         signedBlockContainer,
-                                        blockContainerAndMetaData.builderUrl(),
-                                        forkInfo),
+                                        blockContainerAndMetaData.builderUrl()),
                                 this,
                                 ValidatorDutyMetricsSteps.SEND)));
   }
@@ -192,9 +184,7 @@ public class BlockProductionDuty implements Duty {
   }
 
   private SafeFuture<DutyResult> sendBlock(
-      final SignedBlockContainer signedBlockContainer,
-      final Optional<String> builderUrl,
-      final ForkInfo forkInfo) {
+      final SignedBlockContainer signedBlockContainer, final Optional<String> builderUrl) {
     return validatorApiChannel
         .sendSignedBlock(signedBlockContainer, BroadcastValidationLevel.GOSSIP, builderUrl)
         .thenApply(
@@ -202,12 +192,6 @@ public class BlockProductionDuty implements Duty {
               if (result.isPublished()) {
                 final BeaconBlockBody blockBody =
                     signedBlockContainer.getSignedBlock().getMessage().getBody();
-                blockBody
-                    .getOptionalSignedExecutionPayloadBid()
-                    .ifPresent(
-                        signedBid ->
-                            notifyExecutionPayloadBidEventsSubscribers(
-                                signedBid, forkInfo, signedBlockContainer.getRoot()));
                 return DutyResult.success(
                     signedBlockContainer.getRoot(), getBlockSummary(blockBody));
               }
@@ -236,22 +220,12 @@ public class BlockProductionDuty implements Duty {
   private Optional<String> getExecutionSummary(final BeaconBlockBody blockBody) {
     return blockBody
         .getOptionalExecutionPayloadSummary()
-        .map(this::getExecutionSummaryFromExecutionPayloadSummary)
+        .map(summary -> summary.toDutySummary(LOG))
         .or(
             () ->
                 blockBody
                     .getOptionalSignedExecutionPayloadBid()
                     .map(signedBid -> getExecutionSummaryFromBid(signedBid.getMessage())));
-  }
-
-  private String getExecutionSummaryFromExecutionPayloadSummary(
-      final ExecutionPayloadSummary summary) {
-    return String.format(
-        "%s (%s%%) gas, EL block: %s (%s)",
-        summary.getGasUsed(),
-        summary.computeGasPercentage(LOG),
-        summary.getBlockHash().toUnprefixedHexString(),
-        summary.getBlockNumber());
   }
 
   private String getExecutionSummaryFromBid(final ExecutionPayloadBid bid) {
@@ -262,17 +236,6 @@ public class BlockProductionDuty implements Duty {
             : bid.getBuilderIndex(),
         bid.getGasLimit(),
         LogFormatter.formatAbbreviatedHashRoot(bid.getBlockHash()));
-  }
-
-  private void notifyExecutionPayloadBidEventsSubscribers(
-      final SignedExecutionPayloadBid signedBid,
-      final ForkInfo forkInfo,
-      final Bytes32 beaconBlockRoot) {
-    // BUILDER_INDEX_SELF_BUILD indicates a self-built bid
-    if (signedBid.getMessage().getBuilderIndex().equals(BUILDER_INDEX_SELF_BUILD)) {
-      executionPayloadBidEventsChannelPublisher.onSelfBuiltBidIncludedInBlock(
-          validator, forkInfo, signedBid.getMessage(), beaconBlockRoot);
-    }
   }
 
   @Override

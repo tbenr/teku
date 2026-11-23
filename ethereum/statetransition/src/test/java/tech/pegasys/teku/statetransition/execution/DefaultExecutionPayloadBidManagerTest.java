@@ -48,8 +48,8 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.builder.versions.gloas.BuilderConfig;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBidSchema;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.execution.GetPayloadResponse;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
@@ -680,8 +680,8 @@ public class DefaultExecutionPayloadBidManagerTest {
   @Test
   public void importedParentExecutionPayloadRetriesMatchingBid() {
     final SignedBeaconBlock parentBlock = dataStructureUtil.randomSignedBeaconBlock(9);
-    final SignedExecutionPayloadEnvelope executionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelopeForBlock(parentBlock);
+    final ExecutionPayloadEnvelope executionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelopeForBlock(parentBlock);
     final SignedExecutionPayloadBid signedBid =
         createBid(UInt64.valueOf(10), parentBlock.getRoot(), UInt64.valueOf(100));
     executionPayloadBidManager.onSlot(signedBid.getMessage().getSlot());
@@ -701,8 +701,8 @@ public class DefaultExecutionPayloadBidManagerTest {
   @Test
   public void overlappingDependencyEventsDoNotRetryOnePendingBidTwice() {
     final SignedBeaconBlock parentBlock = dataStructureUtil.randomSignedBeaconBlock(9);
-    final SignedExecutionPayloadEnvelope executionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelopeForBlock(parentBlock);
+    final ExecutionPayloadEnvelope executionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelopeForBlock(parentBlock);
     final SignedExecutionPayloadBid signedBid =
         createBid(UInt64.valueOf(10), parentBlock.getRoot(), UInt64.valueOf(100));
     executionPayloadBidManager.onSlot(signedBid.getMessage().getSlot());
@@ -808,6 +808,7 @@ public class DefaultExecutionPayloadBidManagerTest {
             parentBlockHash,
             parentBlockRoot,
             dataStructureUtil.randomBytes32(),
+            Bytes32.ZERO,
             dataStructureUtil.randomBytes32(),
             dataStructureUtil.randomEth1Address(),
             dataStructureUtil.randomUInt64(),

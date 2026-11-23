@@ -69,8 +69,8 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.BeaconBlockBody;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationMessage;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.PowBlock;
 import tech.pegasys.teku.spec.datastructures.forkchoice.FastConfirmationStore;
@@ -619,12 +619,12 @@ public class ForkChoiceTestExecutor implements TestExecutor {
       final Set<Bytes32> blockRootsWithInvalidExecutionPayload) {
     final String envelopeName = get(step, "execution_payload");
     final boolean valid = !step.containsKey("valid") || (boolean) step.get("valid");
-    final SignedExecutionPayloadEnvelope envelope =
+    final ExecutionPayloadEnvelope envelope =
         TestDataUtils.loadSsz(
             testDefinition,
             envelopeName + SSZ_SNAPPY_EXTENSION,
             SchemaDefinitionsGloas.required(testDefinition.getSpec().getGenesisSchemaDefinitions())
-                .getSignedExecutionPayloadEnvelopeSchema());
+                .getExecutionPayloadEnvelopeSchema());
     final SafeFuture<ExecutionPayloadImportResult> result =
         forkChoice.onExecutionPayloadEnvelope(envelope, executionLayer);
     assertThat(result).isCompleted();

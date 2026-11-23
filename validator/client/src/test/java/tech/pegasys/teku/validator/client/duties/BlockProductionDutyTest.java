@@ -74,7 +74,6 @@ import tech.pegasys.teku.validator.api.ValidatorApiChannel;
 import tech.pegasys.teku.validator.client.BuilderConfigProvider;
 import tech.pegasys.teku.validator.client.ForkProvider;
 import tech.pegasys.teku.validator.client.Validator;
-import tech.pegasys.teku.validator.client.duties.execution.ExecutionPayloadBidEventsChannel;
 import tech.pegasys.teku.validator.client.signer.BlockContainerSigner;
 import tech.pegasys.teku.validator.client.signer.MilestoneBasedBlockContainerSigner;
 
@@ -100,8 +99,6 @@ class BlockProductionDutyTest {
       new MilestoneBasedBlockContainerSigner(spec);
   private final ValidatorDutyMetrics validatorDutyMetrics =
       spy(ValidatorDutyMetrics.create(new StubMetricsSystem()));
-  private final ExecutionPayloadBidEventsChannel executionPayloadBidEventsChannelPublisher =
-      mock(ExecutionPayloadBidEventsChannel.class);
   private final BuilderConfigProvider builderConfigProvider = mock(BuilderConfigProvider.class);
   private BlockProductionDuty duty;
 
@@ -116,7 +113,6 @@ class BlockProductionDutyTest {
             blockContainerSigner,
             spec,
             validatorDutyMetrics,
-            executionPayloadBidEventsChannelPublisher,
             builderConfigProvider);
     when(forkProvider.getForkInfo(any())).thenReturn(completedFuture(fork));
     when(builderConfigProvider.getBuilderConfig(any(), any()))
@@ -452,7 +448,7 @@ class BlockProductionDutyTest {
   }
 
   @Test
-  public void forGloas_shouldCreateAndPublishBlockAndNotifyBidEventsSubscribersWhenSelfBuiltBid() {
+  public void forGloas_shouldCreateAndPublishBlockWithSelfBuiltBid() {
     final UInt64 slot = UInt64.valueOf(42);
     final Spec spec = TestSpecFactory.createMinimalGloas();
     final DataStructureUtil dataStructureUtil = new DataStructureUtil(spec);
@@ -466,7 +462,6 @@ class BlockProductionDutyTest {
             blockContainerSigner,
             spec,
             validatorDutyMetrics,
-            executionPayloadBidEventsChannelPublisher,
             builderConfigProvider);
 
     final BLSSignature randaoReveal = dataStructureUtil.randomSignature();
@@ -509,8 +504,12 @@ class BlockProductionDutyTest {
 
     performAndReportDuty(slot);
 
-    verify(executionPayloadBidEventsChannelPublisher)
-        .onSelfBuiltBidIncludedInBlock(validator, fork, bid, signedBlock.getRoot());
+    // the beacon node reveals the self-built execution payload once the block is published
+    verify(validatorApiChannel)
+        .sendSignedBlock(
+            signedBlock, BroadcastValidationLevel.GOSSIP, Optional.of("https://foobar.com"));
+    verify(validatorLogger)
+        .dutyCompleted(eq(TYPE), eq(slot), eq(1), eq(Set.of(signedBlock.getRoot())), any());
   }
 
   @Test
@@ -546,7 +545,7 @@ class BlockProductionDutyTest {
     assertThat(duty.getBlockSummary(block))
         .containsExactly(
             "Blobs: 4",
-            "Builder: 1702157, Bid gas limit: 4817049881864128048, Bid EL block: d3b102..314a");
+            "Builder: 1702157, Bid gas limit: 4822007335809147728, Bid EL block: d3b102..314a");
   }
 
   public void assertDutyFails(final RuntimeException error) {
@@ -577,7 +576,6 @@ class BlockProductionDutyTest {
         blockContainerSigner,
         spec,
         validatorDutyMetrics,
-        executionPayloadBidEventsChannelPublisher,
         builderConfigProvider);
   }
 

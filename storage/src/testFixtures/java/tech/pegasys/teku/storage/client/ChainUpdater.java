@@ -28,7 +28,7 @@ import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadHeader;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
@@ -366,7 +366,7 @@ public class ChainUpdater {
     }
   }
 
-  public void saveExecutionPayload(final SignedExecutionPayloadEnvelope executionPayload) {
+  public void saveExecutionPayload(final ExecutionPayloadEnvelope executionPayload) {
     final StoreTransaction tx = recentChainData.startStoreTransaction();
     tx.putExecutionPayload(executionPayload, false);
     assertThat(tx.commit()).isCompleted();

@@ -15,15 +15,27 @@ package tech.pegasys.teku.spec.logic.versions.gloas.helpers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import it.unimi.dsi.fastutil.ints.IntList;
 import java.util.List;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
+import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.infrastructure.ssz.SszMutableList;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
+import tech.pegasys.teku.kzg.KZG;
+import tech.pegasys.teku.kzg.KZGCellWithColumnId;
+import tech.pegasys.teku.kzg.KZGCommitment;
+import tech.pegasys.teku.kzg.KZGProof;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.config.GasLimitScheduleEntry;
@@ -33,6 +45,9 @@ import tech.pegasys.teku.spec.datastructures.state.Validator;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.gloas.BeaconStateGloas;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.gloas.MutableBeaconStateGloas;
+import tech.pegasys.teku.spec.datastructures.type.SszKZGCommitment;
+import tech.pegasys.teku.spec.datastructures.type.SszKZGProof;
+import tech.pegasys.teku.spec.schemas.SchemaDefinitionsGloas;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 
 public class MiscHelpersGloasTest {
@@ -45,6 +60,54 @@ public class MiscHelpersGloasTest {
 
   private final PredicatesGloas predicates =
       PredicatesGloas.required(spec.getGenesisSpec().predicates());
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void
+      verifyDataColumnSidecarKzgProofsBatch_shouldVerifyEveryCellAgainstTheBidCommitments() {
+    final KZG kzg = mock(KZG.class);
+    final MiscHelpersGloas miscHelpers =
+        MiscHelpersGloas.required(
+            TestSpecFactory.createMinimalGloas().getGenesisSpec().miscHelpers());
+    miscHelpers.setKzg(kzg);
+    // every data column sidecar of a block has one cell per blob KZG commitment of the bid
+    final DataColumnSidecar sidecar = data.randomDataColumnSidecar();
+    final List<DataColumnSidecar> sidecars = List.of(sidecar, sidecar);
+    final int cellsPerSidecar = sidecars.getFirst().getColumn().size();
+    final SszList<SszKZGCommitment> kzgCommitments =
+        SchemaDefinitionsGloas.required(spec.getGenesisSchemaDefinitions())
+            .getBlobKzgCommitmentsSchema()
+            .createFromElements(
+                IntStream.range(0, cellsPerSidecar)
+                    .mapToObj(__ -> data.randomSszKZGCommitment())
+                    .toList());
+    when(kzg.verifyCellProofBatch(any(), any(), any())).thenReturn(true);
+
+    assertThat(miscHelpers.verifyDataColumnSidecarKzgProofsBatch(sidecars, kzgCommitments))
+        .isTrue();
+
+    final ArgumentCaptor<List<KZGCommitment>> commitmentsCaptor =
+        ArgumentCaptor.forClass(List.class);
+    final ArgumentCaptor<List<KZGCellWithColumnId>> cellsCaptor =
+        ArgumentCaptor.forClass(List.class);
+    final ArgumentCaptor<List<KZGProof>> proofsCaptor = ArgumentCaptor.forClass(List.class);
+    verify(kzg)
+        .verifyCellProofBatch(
+            commitmentsCaptor.capture(), cellsCaptor.capture(), proofsCaptor.capture());
+    // one commitment per cell: the bid commitments repeated for each sidecar
+    final List<KZGCommitment> bidCommitments =
+        kzgCommitments.stream().map(SszKZGCommitment::getKZGCommitment).toList();
+    assertThat(commitmentsCaptor.getValue())
+        .containsExactlyElementsOf(
+            Stream.concat(bidCommitments.stream(), bidCommitments.stream()).toList());
+    assertThat(cellsCaptor.getValue()).hasSize(2 * cellsPerSidecar);
+    assertThat(proofsCaptor.getValue())
+        .containsExactlyElementsOf(
+            sidecars.stream()
+                .flatMap(dataColumnSidecar -> dataColumnSidecar.getKzgProofs().stream())
+                .map(SszKZGProof::getKZGProof)
+                .toList());
+  }
 
   @Test
   public void getScheduledGasLimit_shouldBeEmptyWhenScheduleIsEmpty() {

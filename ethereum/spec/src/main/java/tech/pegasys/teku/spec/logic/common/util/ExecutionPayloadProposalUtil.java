@@ -13,9 +13,8 @@
 
 package tech.pegasys.teku.spec.logic.common.util;
 
-import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
-import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlockAndState;
+import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionRequests;
@@ -35,24 +34,14 @@ public class ExecutionPayloadProposalUtil {
       ExecutionRequests executionRequests,
       SszList<SszKZGCommitment> kzgCommitments) {}
 
-  public SafeFuture<ExecutionPayloadEnvelope> createNewUnsignedExecutionPayload(
-      final BeaconBlockAndState blockAndState,
-      final SafeFuture<ExecutionPayloadProposalData> executionPayloadProposalDataFuture) {
-    return executionPayloadProposalDataFuture.thenApply(
-        executionPayloadProposalData ->
-            schemaDefinitions
-                .getExecutionPayloadEnvelopeSchema()
-                .create(
-                    executionPayloadProposalData.executionPayload,
-                    executionPayloadProposalData.executionRequests,
-                    blockAndState
-                        .getBlock()
-                        .getBody()
-                        .getOptionalSignedExecutionPayloadBid()
-                        .orElseThrow()
-                        .getMessage()
-                        .getBuilderIndex(),
-                    blockAndState.getRoot(),
-                    blockAndState.getBlock().getParentRoot()));
+  public ExecutionPayloadEnvelope createExecutionPayloadEnvelope(
+      final BeaconBlock block, final ExecutionPayloadProposalData executionPayloadProposalData) {
+    return schemaDefinitions
+        .getExecutionPayloadEnvelopeSchema()
+        .create(
+            executionPayloadProposalData.executionPayload,
+            executionPayloadProposalData.executionRequests,
+            block.getRoot(),
+            block.getParentRoot());
   }
 }

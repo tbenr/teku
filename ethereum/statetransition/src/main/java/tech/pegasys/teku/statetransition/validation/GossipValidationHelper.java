@@ -30,8 +30,8 @@ import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
@@ -433,7 +433,7 @@ public class GossipValidationHelper {
     return maybeBlockHash.isPresent() && blockHash.equals(maybeBlockHash.get());
   }
 
-  public Optional<SignedExecutionPayloadEnvelope> getRecentlyImportedExecutionPayload(
+  public Optional<ExecutionPayloadEnvelope> getRecentlyImportedExecutionPayload(
       final Bytes32 blockRoot) {
     return recentChainData.getStore().getExecutionPayloadIfAvailable(blockRoot);
   }

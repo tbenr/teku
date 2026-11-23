@@ -40,12 +40,10 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockContainer;
 import tech.pegasys.teku.spec.datastructures.builder.SignedValidatorRegistration;
 import tech.pegasys.teku.spec.datastructures.builder.versions.gloas.BuilderConfig;
 import tech.pegasys.teku.spec.datastructures.builder.versions.gloas.BuilderPreferencesEntry;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelopeContents;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationData;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationMessage;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelopeContents;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.genesis.GenesisData;
 import tech.pegasys.teku.spec.datastructures.metadata.BlockContainerAndMetaData;
@@ -250,27 +248,12 @@ public interface ValidatorApiChannel extends BuilderApiChannel, ChannelInterface
         }
 
         @Override
-        public SafeFuture<Optional<ExecutionPayloadEnvelope>> createUnsignedExecutionPayload(
-            final UInt64 slot, final Bytes32 beaconBlockRoot) {
-          return SafeFuture.completedFuture(Optional.empty());
-        }
-
-        @Override
         public SafeFuture<PublishSignedExecutionPayloadResult> publishSignedExecutionPayload(
-            final SignedExecutionPayloadEnvelope signedExecutionPayload,
+            final ExecutionPayloadEnvelopeContents executionPayloadEnvelopeContents,
             final Optional<BroadcastValidationLevel> broadcastValidationLevel) {
           return SafeFuture.completedFuture(
               PublishSignedExecutionPayloadResult.success(
-                  signedExecutionPayload.getBeaconBlockRoot()));
-        }
-
-        @Override
-        public SafeFuture<PublishSignedExecutionPayloadResult> publishSignedExecutionPayload(
-            final SignedExecutionPayloadEnvelopeContents signedExecutionPayloadEnvelopeContents,
-            final Optional<BroadcastValidationLevel> broadcastValidationLevel) {
-          return SafeFuture.completedFuture(
-              PublishSignedExecutionPayloadResult.success(
-                  signedExecutionPayloadEnvelopeContents.getBeaconBlockRoot()));
+                  executionPayloadEnvelopeContents.getBeaconBlockRoot()));
         }
       };
 

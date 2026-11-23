@@ -23,8 +23,8 @@ import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadHeader;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
@@ -203,7 +203,7 @@ public class StoredBlockMetadata {
 
   public static Optional<GloasForkChoiceRebuildData> extractGloasForkChoiceRebuildData(
       final SignedBeaconBlock block,
-      final Optional<SignedBlindedExecutionPayloadEnvelope> maybeBlindedEnvelope) {
+      final Optional<BlindedExecutionPayloadEnvelope> maybeBlindedEnvelope) {
     return block
         .getMessage()
         .getBody()
@@ -241,27 +241,27 @@ public class StoredBlockMetadata {
   private static UInt64 getPayloadBlockNumber(
       final Bytes32 blockRoot,
       final ExecutionPayloadBid bid,
-      final SignedBlindedExecutionPayloadEnvelope envelope) {
+      final BlindedExecutionPayloadEnvelope envelope) {
     return getValidatedPayloadHeader(blockRoot, bid, envelope).getBlockNumber();
   }
 
   private static UInt64 getPayloadGasLimit(
       final Bytes32 blockRoot,
       final ExecutionPayloadBid bid,
-      final SignedBlindedExecutionPayloadEnvelope envelope) {
+      final BlindedExecutionPayloadEnvelope envelope) {
     return getValidatedPayloadHeader(blockRoot, bid, envelope).getGasLimit();
   }
 
   private static ExecutionPayloadHeader getValidatedPayloadHeader(
       final Bytes32 blockRoot,
       final ExecutionPayloadBid bid,
-      final SignedBlindedExecutionPayloadEnvelope envelope) {
+      final BlindedExecutionPayloadEnvelope envelope) {
     checkState(
         envelope.getBeaconBlockRoot().equals(blockRoot),
         "Blinded execution payload envelope block root %s does not match stored block root %s",
         envelope.getBeaconBlockRoot(),
         blockRoot);
-    final ExecutionPayloadHeader payloadHeader = envelope.getMessage().getPayloadHeader();
+    final ExecutionPayloadHeader payloadHeader = envelope.getPayloadHeader();
     checkState(
         payloadHeader.getParentHash().equals(bid.getParentBlockHash()),
         "Blinded execution payload envelope parent block hash %s does not match GLOAS block bid parent block hash %s for block root %s",

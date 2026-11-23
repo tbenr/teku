@@ -20,9 +20,9 @@ import tech.pegasys.teku.spec.datastructures.attestation.ValidatableAttestation;
 import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationMessage;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionProof;
 import tech.pegasys.teku.spec.datastructures.lightclient.LightClientFinalityUpdate;
@@ -105,7 +105,7 @@ public interface GossipForkSubscriptions {
     // since Electra
   }
 
-  default SafeFuture<Void> publishExecutionPayload(final SignedExecutionPayloadEnvelope message) {
+  default SafeFuture<Void> publishExecutionPayload(final ExecutionPayloadEnvelope message) {
     // since Gloas
     return SafeFuture.COMPLETE;
   }

@@ -44,8 +44,8 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionRequests;
 import tech.pegasys.teku.spec.executionlayer.ExecutionLayerChannel;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult;
@@ -75,7 +75,7 @@ class DefaultExecutionPayloadManagerTest {
   private final Set<Bytes32> blockRootsWithInvalidExecutionPayload = new HashSet<>();
   private final UpdatableStore store = mock(UpdatableStore.class);
 
-  private Optional<SignedExecutionPayloadEnvelope> publishedExecutionPayload = Optional.empty();
+  private Optional<ExecutionPayloadEnvelope> publishedExecutionPayload = Optional.empty();
 
   private final DefaultExecutionPayloadManager executionPayloadManager =
       new DefaultExecutionPayloadManager(
@@ -92,8 +92,8 @@ class DefaultExecutionPayloadManagerTest {
             return SafeFuture.COMPLETE;
           });
 
-  private final SignedExecutionPayloadEnvelope signedExecutionPayload =
-      dataStructureUtil.randomSignedExecutionPayloadEnvelope(42);
+  private final ExecutionPayloadEnvelope signedExecutionPayload =
+      dataStructureUtil.randomExecutionPayloadEnvelope(42);
 
   @BeforeEach
   void setUp() {
@@ -113,8 +113,8 @@ class DefaultExecutionPayloadManagerTest {
   public void getParentExecutionRequests_shouldReturnImportedRequestsForFullParent() {
     final UInt64 slot = UInt64.valueOf(42);
     final Bytes32 parentRoot = dataStructureUtil.randomBytes32();
-    final SignedBlindedExecutionPayloadEnvelope parentExecutionPayload =
-        dataStructureUtil.randomSignedBlindedExecutionPayloadEnvelope(slot.longValue());
+    final BlindedExecutionPayloadEnvelope parentExecutionPayload =
+        dataStructureUtil.randomBlindedExecutionPayloadEnvelope(slot.longValue());
     when(recentChainData.retrieveSignedBlindedExecutionPayloadByBlockRoot(parentRoot))
         .thenReturn(completedFuture(Optional.of(parentExecutionPayload)));
 
@@ -230,10 +230,8 @@ class DefaultExecutionPayloadManagerTest {
   @Test
   public void shouldPreferPendingExecutionPayloadReceivedBeforeDeadlineOverEarlierLatePayload() {
     final SignedBeaconBlock block = dataStructureUtil.randomSignedBeaconBlock(42);
-    final SignedExecutionPayloadEnvelope lateExecutionPayload =
-        signedExecutionPayloadForBlock(block);
-    final SignedExecutionPayloadEnvelope earlyExecutionPayload =
-        signedExecutionPayloadForBlock(block);
+    final ExecutionPayloadEnvelope lateExecutionPayload = signedExecutionPayloadForBlock(block);
+    final ExecutionPayloadEnvelope earlyExecutionPayload = signedExecutionPayloadForBlock(block);
     givenValidationResult(lateExecutionPayload, SAVE_FOR_FUTURE);
     givenValidationResult(earlyExecutionPayload, SAVE_FOR_FUTURE);
 
@@ -260,10 +258,8 @@ class DefaultExecutionPayloadManagerTest {
   @Test
   public void shouldNotReplacePendingExecutionPayloadReceivedBeforeDeadlineWithLatePayload() {
     final SignedBeaconBlock block = dataStructureUtil.randomSignedBeaconBlock(42);
-    final SignedExecutionPayloadEnvelope earlyExecutionPayload =
-        signedExecutionPayloadForBlock(block);
-    final SignedExecutionPayloadEnvelope lateExecutionPayload =
-        signedExecutionPayloadForBlock(block);
+    final ExecutionPayloadEnvelope earlyExecutionPayload = signedExecutionPayloadForBlock(block);
+    final ExecutionPayloadEnvelope lateExecutionPayload = signedExecutionPayloadForBlock(block);
     givenValidationResult(earlyExecutionPayload, SAVE_FOR_FUTURE);
     givenValidationResult(lateExecutionPayload, SAVE_FOR_FUTURE);
 
@@ -290,10 +286,8 @@ class DefaultExecutionPayloadManagerTest {
   @Test
   public void shouldReplacePendingExecutionPayloadReceivedBeforeDeadlineWithLaterBeforeDeadline() {
     final SignedBeaconBlock block = dataStructureUtil.randomSignedBeaconBlock(42);
-    final SignedExecutionPayloadEnvelope firstExecutionPayload =
-        signedExecutionPayloadForBlock(block);
-    final SignedExecutionPayloadEnvelope secondExecutionPayload =
-        signedExecutionPayloadForBlock(block);
+    final ExecutionPayloadEnvelope firstExecutionPayload = signedExecutionPayloadForBlock(block);
+    final ExecutionPayloadEnvelope secondExecutionPayload = signedExecutionPayloadForBlock(block);
     givenValidationResult(firstExecutionPayload, SAVE_FOR_FUTURE);
     givenValidationResult(secondExecutionPayload, SAVE_FOR_FUTURE);
 
@@ -320,8 +314,7 @@ class DefaultExecutionPayloadManagerTest {
   @Test
   public void shouldProcessExecutionPayloadWhichHasBeenReceivedBeforeTheBlock() {
     final SignedBeaconBlock block = dataStructureUtil.randomSignedBeaconBlock(42);
-    final SignedExecutionPayloadEnvelope signedExecutionPayload =
-        signedExecutionPayloadForBlock(block);
+    final ExecutionPayloadEnvelope signedExecutionPayload = signedExecutionPayloadForBlock(block);
     givenValidationResult(signedExecutionPayload, SAVE_FOR_FUTURE);
 
     validateAndImportAndJoin(signedExecutionPayload, UInt64.ZERO);
@@ -450,36 +443,36 @@ class DefaultExecutionPayloadManagerTest {
   }
 
   private void givenValidationResult(
-      final SignedExecutionPayloadEnvelope executionPayload,
+      final ExecutionPayloadEnvelope executionPayload,
       final InternalValidationResult validationResult) {
     when(executionPayloadGossipValidator.validate(executionPayload, Optional.empty()))
         .thenReturn(completedFuture(validationResult));
   }
 
-  private void givenSuccessfulImport(final SignedExecutionPayloadEnvelope executionPayload) {
+  private void givenSuccessfulImport(final ExecutionPayloadEnvelope executionPayload) {
     when(forkChoice.onExecutionPayloadEnvelope(eq(executionPayload), eq(executionLayer), any()))
         .thenReturn(completedFuture(ExecutionPayloadImportResult.successful(executionPayload)));
   }
 
   private SafeFuture<InternalValidationResult> validateAndImport(
-      final SignedExecutionPayloadEnvelope executionPayload) {
+      final ExecutionPayloadEnvelope executionPayload) {
     return executionPayloadManager.validateAndImportExecutionPayload(executionPayload);
   }
 
   private SafeFuture<InternalValidationResult> validateAndImport(
-      final SignedExecutionPayloadEnvelope executionPayload, final UInt64 arrivalTimestamp) {
+      final ExecutionPayloadEnvelope executionPayload, final UInt64 arrivalTimestamp) {
     return executionPayloadManager.validateAndImportExecutionPayload(
         executionPayload, Optional.of(arrivalTimestamp));
   }
 
   private void validateAndImportAndJoin(
-      final SignedExecutionPayloadEnvelope executionPayload, final UInt64 arrivalTimestamp) {
+      final ExecutionPayloadEnvelope executionPayload, final UInt64 arrivalTimestamp) {
     SafeFutureAssert.safeJoin(validateAndImport(executionPayload, arrivalTimestamp));
   }
 
   /** Runs the import and hands the publisher fork choice was given the availability report. */
   private void reportAvailableToForkChoicePublisher(
-      final SignedExecutionPayloadEnvelope executionPayload) {
+      final ExecutionPayloadEnvelope executionPayload) {
     reportAvailableToForkChoicePublisher(executionPayload, Optional.empty());
   }
 
@@ -489,8 +482,7 @@ class DefaultExecutionPayloadManagerTest {
    * check would.
    */
   private void reportAvailableToForkChoicePublisher(
-      final SignedExecutionPayloadEnvelope executionPayload,
-      final Optional<UInt64> timeWhenAvailable) {
+      final ExecutionPayloadEnvelope executionPayload, final Optional<UInt64> timeWhenAvailable) {
     final ArgumentCaptor<Optional<ReceivedExecutionPayloadEventsChannel>> publisherCaptor =
         ArgumentCaptor.captor();
     when(forkChoice.onExecutionPayloadEnvelope(
@@ -506,15 +498,14 @@ class DefaultExecutionPayloadManagerTest {
     publisherCaptor.getValue().orElseThrow().onExecutionPayloadAvailable(executionPayload);
   }
 
-  private UInt64 payloadDueDeadlineMillis(final SignedExecutionPayloadEnvelope executionPayload) {
+  private UInt64 payloadDueDeadlineMillis(final ExecutionPayloadEnvelope executionPayload) {
     final UInt64 slot = executionPayload.getSlot();
     return spec.computeTimeMillisAtSlot(slot, recentChainData.getGenesisTimeMillis())
         .plus(spec.getPayloadDueMillis(slot).orElseThrow());
   }
 
-  private SignedExecutionPayloadEnvelope signedExecutionPayloadForBlock(
-      final SignedBeaconBlock block) {
-    return dataStructureUtil.randomSignedExecutionPayloadEnvelopeForBlock(block);
+  private ExecutionPayloadEnvelope signedExecutionPayloadForBlock(final SignedBeaconBlock block) {
+    return dataStructureUtil.randomExecutionPayloadEnvelopeForBlock(block);
   }
 
   private ExecutionRequests defaultExecutionRequests(final UInt64 slot) {
@@ -524,7 +515,7 @@ class DefaultExecutionPayloadManagerTest {
   }
 
   private void assertExecutionPayloadSeenBeforeDeadline(
-      final SignedExecutionPayloadEnvelope executionPayload) {
+      final ExecutionPayloadEnvelope executionPayload) {
     assertThat(
             executionPayloadManager.isExecutionPayloadSeenBeforeDeadline(
                 executionPayload.getBeaconBlockRoot()))
@@ -532,7 +523,7 @@ class DefaultExecutionPayloadManagerTest {
   }
 
   private void assertExecutionPayloadNotSeenBeforeDeadline(
-      final SignedExecutionPayloadEnvelope executionPayload) {
+      final ExecutionPayloadEnvelope executionPayload) {
     assertThat(
             executionPayloadManager.isExecutionPayloadSeenBeforeDeadline(
                 executionPayload.getBeaconBlockRoot()))

@@ -23,7 +23,6 @@ import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.builder.ValidatorRegistration;
 import tech.pegasys.teku.spec.datastructures.builder.versions.gloas.BuilderRequestAuth;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationData;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.operations.AggregateAndProof;
@@ -101,12 +100,6 @@ public abstract class NoOpSigner implements Signer {
   @Override
   public SafeFuture<BLSSignature> signExecutionPayloadBid(
       final ExecutionPayloadBid bid, final ForkInfo forkInfo) {
-    return new SafeFuture<>();
-  }
-
-  @Override
-  public SafeFuture<BLSSignature> signExecutionPayloadEnvelope(
-      final ExecutionPayloadEnvelope envelope, final ForkInfo forkInfo) {
     return new SafeFuture<>();
   }
 

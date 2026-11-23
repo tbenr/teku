@@ -24,7 +24,7 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.networking.eth2.peers.SyncSource;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 
 public class EventThreadOnlyBatch implements Batch {
   private final EventThread eventThread;
@@ -78,7 +78,7 @@ public class EventThreadOnlyBatch implements Batch {
   }
 
   @Override
-  public Map<Bytes32, SignedExecutionPayloadEnvelope> getExecutionPayloadsByBlockRoot() {
+  public Map<Bytes32, ExecutionPayloadEnvelope> getExecutionPayloadsByBlockRoot() {
     eventThread.checkOnEventThread();
     return delegate.getExecutionPayloadsByBlockRoot();
   }

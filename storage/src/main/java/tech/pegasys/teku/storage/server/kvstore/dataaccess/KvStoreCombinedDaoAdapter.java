@@ -35,7 +35,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.BlockAndCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.lightclient.LightClientUpdate;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
@@ -114,7 +114,7 @@ public class KvStoreCombinedDaoAdapter implements KvStoreCombinedDao, V4Migratab
   }
 
   @Override
-  public Optional<SignedBlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelope(
+  public Optional<BlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelope(
       final Bytes32 root) {
     return finalizedDao.getBlindedExecutionPayloadEnvelope(root);
   }
@@ -713,9 +713,9 @@ public class KvStoreCombinedDaoAdapter implements KvStoreCombinedDao, V4Migratab
     @Override
     public void addBlindedExecutionPayloadEnvelope(
         final Bytes32 blockRoot,
-        final SignedBlindedExecutionPayloadEnvelope signedBlindedExecutionPayloadEnvelope) {
+        final BlindedExecutionPayloadEnvelope blindedExecutionPayloadEnvelope) {
       finalizedUpdater.addBlindedExecutionPayloadEnvelope(
-          blockRoot, signedBlindedExecutionPayloadEnvelope);
+          blockRoot, blindedExecutionPayloadEnvelope);
     }
 
     @Override

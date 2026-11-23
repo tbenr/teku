@@ -50,7 +50,5 @@ public class BeaconNodeRequestLabels {
   public static final String SEND_BUILDER_PREFERENCES_METHOD = "send_builder_preferences";
   // Builder namespace
   public static final String PUBLISH_EXECUTION_PAYLOAD_BID_METHOD = "publish_execution_payload_bid";
-  public static final String CREATE_UNSIGNED_EXECUTION_PAYLOAD_METHOD =
-      "create_unsigned_execution_payload";
   public static final String PUBLISH_EXECUTION_PAYLOAD_METHOD = "publish_execution_payload";
 }

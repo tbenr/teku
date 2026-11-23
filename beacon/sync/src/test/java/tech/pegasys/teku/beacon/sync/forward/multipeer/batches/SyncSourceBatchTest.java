@@ -57,7 +57,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.deneb.BeaconBlockBodyDeneb;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.generator.ChainBuilder;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 import tech.pegasys.teku.statetransition.blobs.BlobSidecarManager;
@@ -438,12 +438,12 @@ public class SyncSourceBatchTest {
                 .streamBlocksAndStates(gloasSlot, batch.getLastSlot().longValue())
                 .map(SignedBlockAndState::getBlock)
                 .toList());
-    final Map<Bytes32, SignedExecutionPayloadEnvelope> expectedExecutionPayloadsByBlockRoot =
+    final Map<Bytes32, ExecutionPayloadEnvelope> expectedExecutionPayloadsByBlockRoot =
         chainBuilder
             .streamExecutionPayloads(gloasSlot, batch.getLastSlot().longValue())
             .collect(
                 Collectors.toMap(
-                    SignedExecutionPayloadEnvelope::getBeaconBlockRoot, Function.identity()));
+                    ExecutionPayloadEnvelope::getBeaconBlockRoot, Function.identity()));
     assertThat(batch.getExecutionPayloadsByBlockRoot())
         .hasSize(batchCount)
         .isEqualTo(expectedExecutionPayloadsByBlockRoot);
@@ -660,7 +660,7 @@ public class SyncSourceBatchTest {
   }
 
   protected void receiveExecutionPayloads(
-      final Batch batch, final SignedExecutionPayloadEnvelope... executionPayloads) {
+      final Batch batch, final ExecutionPayloadEnvelope... executionPayloads) {
     getSyncSource(batch).receiveExecutionPayloadEnvelopes(executionPayloads);
   }
 
@@ -678,13 +678,13 @@ public class SyncSourceBatchTest {
       final Batch batch,
       final long fromSlot,
       final long toSlot,
-      final Predicate<SignedExecutionPayloadEnvelope> executionPayloadsFilter) {
+      final Predicate<ExecutionPayloadEnvelope> executionPayloadsFilter) {
     getSyncSource(batch)
         .receiveExecutionPayloadEnvelopes(
             chainBuilder
                 .streamExecutionPayloads(fromSlot, toSlot)
                 .filter(executionPayloadsFilter)
-                .toArray(SignedExecutionPayloadEnvelope[]::new));
+                .toArray(ExecutionPayloadEnvelope[]::new));
   }
 
   protected void requestError(final Batch batch, final Throwable error) {

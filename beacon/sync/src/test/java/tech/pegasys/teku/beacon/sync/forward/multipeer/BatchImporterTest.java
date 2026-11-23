@@ -45,7 +45,7 @@ import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.BlockImportResult;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
@@ -293,10 +293,10 @@ class BatchImporterTest {
     final SignedBeaconBlock block2 =
         dataStructureUtil.randomSignedBeaconBlock(gloasFirstSlot.plus(2));
 
-    final SignedExecutionPayloadEnvelope executionPayload1 =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelopeForBlock(block1);
-    final SignedExecutionPayloadEnvelope executionPayload2 =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelopeForBlock(block2);
+    final ExecutionPayloadEnvelope executionPayload1 =
+        dataStructureUtil.randomExecutionPayloadEnvelopeForBlock(block1);
+    final ExecutionPayloadEnvelope executionPayload2 =
+        dataStructureUtil.randomExecutionPayloadEnvelopeForBlock(block2);
 
     final SafeFuture<BlockImportResult> blockImportResult1 = new SafeFuture<>();
     final SafeFuture<BlockImportResult> blockImportResult2 = new SafeFuture<>();
@@ -307,7 +307,7 @@ class BatchImporterTest {
         new SafeFuture<>();
 
     final List<SignedBeaconBlock> blocks = new ArrayList<>(List.of(block1, block2));
-    final Map<Bytes32, SignedExecutionPayloadEnvelope> executionPayloads =
+    final Map<Bytes32, ExecutionPayloadEnvelope> executionPayloads =
         Map.of(block1.getRoot(), executionPayload1, block2.getRoot(), executionPayload2);
 
     when(batch.getBlocks()).thenReturn(blocks);
@@ -354,8 +354,8 @@ class BatchImporterTest {
     final SignedBeaconBlock block =
         dataStructureUtil.randomSignedBeaconBlock(gloasFirstSlot.plus(1));
     final List<BlobSidecar> blobSidecars = dataStructureUtil.randomBlobSidecarsForBlock(block);
-    final SignedExecutionPayloadEnvelope executionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelopeForBlock(block);
+    final ExecutionPayloadEnvelope executionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelopeForBlock(block);
 
     final SafeFuture<BlockImportResult> blockImportResult = new SafeFuture<>();
     final SafeFuture<ExecutionPayloadImportResult> executionPayloadImportResult =
@@ -389,13 +389,13 @@ class BatchImporterTest {
     final UInt64 gloasFirstSlot = spec.computeStartSlotAtEpoch(gloasForkEpoch);
     final SignedBeaconBlock block =
         dataStructureUtil.randomSignedBeaconBlock(gloasFirstSlot.plus(2));
-    final SignedExecutionPayloadEnvelope parentExecutionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(gloasFirstSlot.plus(1).longValue());
+    final ExecutionPayloadEnvelope parentExecutionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelope(gloasFirstSlot.plus(1).longValue());
 
     when(batch.getBlocks()).thenReturn(List.of(block));
 
     final SafeFuture<BlockImportResult> firstImport = new SafeFuture<>();
-    final SafeFuture<Optional<SignedExecutionPayloadEnvelope>> parentFetch = new SafeFuture<>();
+    final SafeFuture<Optional<ExecutionPayloadEnvelope>> parentFetch = new SafeFuture<>();
     final SafeFuture<ExecutionPayloadImportResult> parentImport = new SafeFuture<>();
     final SafeFuture<BlockImportResult> retryImport = new SafeFuture<>();
 
@@ -458,8 +458,8 @@ class BatchImporterTest {
     final UInt64 gloasFirstSlot = spec.computeStartSlotAtEpoch(gloasForkEpoch);
     final SignedBeaconBlock block =
         dataStructureUtil.randomSignedBeaconBlock(gloasFirstSlot.plus(2));
-    final SignedExecutionPayloadEnvelope parentExecutionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(gloasFirstSlot.plus(1).longValue());
+    final ExecutionPayloadEnvelope parentExecutionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelope(gloasFirstSlot.plus(1).longValue());
 
     when(batch.getBlocks()).thenReturn(List.of(block));
 
@@ -493,8 +493,8 @@ class BatchImporterTest {
     final UInt64 gloasFirstSlot = spec.computeStartSlotAtEpoch(gloasForkEpoch);
     final SignedBeaconBlock block =
         dataStructureUtil.randomSignedBeaconBlock(gloasFirstSlot.plus(2));
-    final SignedExecutionPayloadEnvelope parentExecutionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(gloasFirstSlot.plus(1).longValue());
+    final ExecutionPayloadEnvelope parentExecutionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelope(gloasFirstSlot.plus(1).longValue());
     final RuntimeException executionFailure = new RuntimeException("execution failed");
 
     when(batch.getBlocks()).thenReturn(List.of(block));
@@ -526,8 +526,8 @@ class BatchImporterTest {
     final UInt64 gloasFirstSlot = spec.computeStartSlotAtEpoch(gloasForkEpoch);
     final SignedBeaconBlock block =
         dataStructureUtil.randomSignedBeaconBlock(gloasFirstSlot.plus(2));
-    final SignedExecutionPayloadEnvelope parentExecutionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(gloasFirstSlot.plus(1).longValue());
+    final ExecutionPayloadEnvelope parentExecutionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelope(gloasFirstSlot.plus(1).longValue());
     final RuntimeException dataUnavailableFailure = new RuntimeException("data unavailable");
 
     when(batch.getBlocks()).thenReturn(List.of(block));
@@ -565,7 +565,7 @@ class BatchImporterTest {
     when(batch.getBlocks()).thenReturn(List.of(block));
 
     final SafeFuture<BlockImportResult> firstImport = new SafeFuture<>();
-    final SafeFuture<Optional<SignedExecutionPayloadEnvelope>> parentFetch = new SafeFuture<>();
+    final SafeFuture<Optional<ExecutionPayloadEnvelope>> parentFetch = new SafeFuture<>();
     when(blockImporter.importBlock(block)).thenReturn(firstImport);
     when(syncSource.requestExecutionPayloadEnvelopeByRoot(block.getParentRoot()))
         .thenReturn(parentFetch);
@@ -595,7 +595,7 @@ class BatchImporterTest {
     when(batch.getBlocks()).thenReturn(List.of(block));
 
     final SafeFuture<BlockImportResult> firstImport = new SafeFuture<>();
-    final SafeFuture<Optional<SignedExecutionPayloadEnvelope>> parentFetch = new SafeFuture<>();
+    final SafeFuture<Optional<ExecutionPayloadEnvelope>> parentFetch = new SafeFuture<>();
     when(blockImporter.importBlock(block)).thenReturn(firstImport);
     when(syncSource.requestExecutionPayloadEnvelopeByRoot(block.getParentRoot()))
         .thenReturn(parentFetch);
@@ -620,8 +620,8 @@ class BatchImporterTest {
     final UInt64 gloasFirstSlot = spec.computeStartSlotAtEpoch(gloasForkEpoch);
     final SignedBeaconBlock block =
         dataStructureUtil.randomSignedBeaconBlock(gloasFirstSlot.plus(2));
-    final SignedExecutionPayloadEnvelope parentExecutionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(gloasFirstSlot.plus(1).longValue());
+    final ExecutionPayloadEnvelope parentExecutionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelope(gloasFirstSlot.plus(1).longValue());
     final RuntimeException importError = new RuntimeException("payload import blew up");
 
     when(batch.getBlocks()).thenReturn(List.of(block));
@@ -654,8 +654,8 @@ class BatchImporterTest {
     final UInt64 gloasFirstSlot = spec.computeStartSlotAtEpoch(gloasForkEpoch);
     final SignedBeaconBlock block =
         dataStructureUtil.randomSignedBeaconBlock(gloasFirstSlot.plus(2));
-    final SignedExecutionPayloadEnvelope parentExecutionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(gloasFirstSlot.plus(1).longValue());
+    final ExecutionPayloadEnvelope parentExecutionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelope(gloasFirstSlot.plus(1).longValue());
     final RuntimeException retryError = new RuntimeException("block import blew up");
 
     when(batch.getBlocks()).thenReturn(List.of(block));
@@ -697,7 +697,7 @@ class BatchImporterTest {
   }
 
   private void executionPayloadImportedSuccessfully(
-      final SignedExecutionPayloadEnvelope executionPayload,
+      final ExecutionPayloadEnvelope executionPayload,
       final SafeFuture<ExecutionPayloadImportResult> importResult) {
     ignoreFuture(verify(executionPayloadManager).importExecutionPayload(executionPayload, false));
     verifyNoMoreInteractions(executionPayloadManager);

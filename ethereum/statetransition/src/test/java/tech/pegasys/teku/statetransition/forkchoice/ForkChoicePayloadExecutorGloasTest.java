@@ -28,7 +28,7 @@ import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecFactory;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.NewPayloadRequest;
 import tech.pegasys.teku.spec.executionlayer.ExecutionLayerChannel;
@@ -44,12 +44,12 @@ class ForkChoicePayloadExecutorGloasTest {
   private final SafeFuture<PayloadStatus> executionResult = new SafeFuture<>();
   private final ExecutionLayerChannel executionLayer = mock(ExecutionLayerChannel.class);
   private final ExecutionPayload payload = dataStructureUtil.randomExecutionPayload();
-  private final SignedExecutionPayloadEnvelope signedEnvelope =
-      dataStructureUtil.randomSignedExecutionPayloadEnvelope(0);
+  private final ExecutionPayloadEnvelope envelope =
+      dataStructureUtil.randomExecutionPayloadEnvelope(0);
   private final NewPayloadRequest payloadRequest = new NewPayloadRequest(payload);
 
   private final ForkChoicePayloadExecutorGloas payloadExecutor =
-      new ForkChoicePayloadExecutorGloas(signedEnvelope, executionLayer);
+      new ForkChoicePayloadExecutorGloas(envelope, executionLayer);
 
   @BeforeEach
   void setUp() {

@@ -65,7 +65,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadSummary;
 import tech.pegasys.teku.spec.datastructures.execution.SlotAndExecutionPayloadSummary;
@@ -310,19 +310,19 @@ public class KvStoreDatabase implements Database {
   }
 
   @Override
-  public Optional<SignedBlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelope(
+  public Optional<BlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelope(
       final Bytes32 blockRoot) {
     return dao.getBlindedExecutionPayloadEnvelope(blockRoot);
   }
 
   @Override
-  public Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelopes(
+  public Map<Bytes32, BlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelopes(
       final Set<Bytes32> blockRoots) {
     return blockRoots.stream()
         .flatMap(root -> dao.getBlindedExecutionPayloadEnvelope(root).stream())
         .collect(
             Collectors.toMap(
-                SignedBlindedExecutionPayloadEnvelope::getBeaconBlockRoot,
+                BlindedExecutionPayloadEnvelope::getBeaconBlockRoot,
                 Function.identity(),
                 (existing, duplicate) -> {
                   throw new IllegalStateException(
@@ -399,13 +399,13 @@ public class KvStoreDatabase implements Database {
   protected void storeFinalizedBlocksToDao(
       final Collection<SignedBeaconBlock> blocks,
       final Map<SlotAndBlockRoot, List<BlobSidecar>> finalizedBlobSidecarsBySlot,
-      final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
+      final Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
       final Optional<UInt64> maybeEarliestBlobSidecar) {
     try (final FinalizedUpdater updater = finalizedUpdater()) {
       blocks.forEach(
           block -> {
             updater.addFinalizedBlock(block);
-            final Optional<SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayload =
+            final Optional<BlindedExecutionPayloadEnvelope> blindedExecutionPayload =
                 Optional.ofNullable(blindedExecutionPayloads.get(block.getRoot()));
             blindedExecutionPayload.ifPresent(
                 envelope -> updater.addBlindedExecutionPayloadEnvelope(block.getRoot(), envelope));
@@ -771,7 +771,7 @@ public class KvStoreDatabase implements Database {
   public void storeFinalizedBlocks(
       final Collection<SignedBeaconBlock> blocks,
       final Map<SlotAndBlockRoot, List<BlobSidecar>> blobSidecarsBySlot,
-      final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
+      final Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
       final Optional<UInt64> maybeEarliestBlobSidecarSlot) {
     if (blocks.isEmpty()) {
       return;
@@ -1869,7 +1869,7 @@ public class KvStoreDatabase implements Database {
       // blocks were written with their blocks, and the envelope of an orphaned block arriving in
       // the same update as its finalization is not stored at all. The common update finalizes
       // nothing and passes its envelopes straight through.
-      final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads =
+      final Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloads =
           finalizedChildToParentMap.isEmpty() && orphanedExecutionPayloadRoots.isEmpty()
               ? update.getBlindedExecutionPayloads()
               : update.getBlindedExecutionPayloads().entrySet().stream()
@@ -1977,7 +1977,7 @@ public class KvStoreDatabase implements Database {
       final Map<Bytes32, UInt64> deletedHotBlocksRootsWithSlot,
       final boolean isFinalizedOptimisticBlockRootSet,
       final Optional<Bytes32> finalizedOptimisticTransitionBlockRoot,
-      final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
+      final Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
       final Set<Bytes32> orphanedExecutionPayloadRoots) {
     if (finalizedChildToParentMap.isEmpty()) {
       // Nothing to do
@@ -2128,7 +2128,7 @@ public class KvStoreDatabase implements Database {
       final Map<Bytes32, Bytes32> finalizedChildToParentMap,
       final Map<Bytes32, SignedBeaconBlock> finalizedBlocks,
       final Map<Bytes32, BeaconState> finalizedStates,
-      final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
+      final Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
       final Set<Bytes32> orphanedExecutionPayloadRoots) {
 
     final Optional<Checkpoint> initialCheckpoint = dao.getAnchor();
@@ -2184,7 +2184,7 @@ public class KvStoreDatabase implements Database {
   private void updateFinalizedDataPruneMode(
       final Map<Bytes32, Bytes32> finalizedChildToParentMap,
       final Map<Bytes32, SignedBeaconBlock> finalizedBlocks,
-      final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
+      final Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
       final Set<Bytes32> orphanedExecutionPayloadRoots) {
     final Optional<Bytes32> initialBlockRoot = dao.getAnchor().map(Checkpoint::getRoot);
 
@@ -2312,7 +2312,7 @@ public class KvStoreDatabase implements Database {
    */
   private void updateExecutionPayloadEnvelopeOfFinalizedBlock(
       final Bytes32 blockRoot,
-      final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
+      final Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
       final Set<Bytes32> orphanedExecutionPayloadRoots,
       final FinalizedUpdater updater) {
     if (orphanedExecutionPayloadRoots.contains(blockRoot)) {
@@ -2324,7 +2324,7 @@ public class KvStoreDatabase implements Database {
   }
 
   private void updateBlindedExecutionPayloads(
-      final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
+      final Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
       final Set<Bytes32> prunedBlockRoots) {
     if (blindedExecutionPayloads.isEmpty() && prunedBlockRoots.isEmpty()) {
       return;

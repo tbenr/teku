@@ -14,42 +14,22 @@
 package tech.pegasys.teku.validator.coordinator;
 
 import java.util.List;
+import java.util.Optional;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
-import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlockAndState;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelopeContents;
+import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelopeContents;
 
 public interface ExecutionPayloadFactory {
 
-  ExecutionPayloadFactory NOOP =
-      new ExecutionPayloadFactory() {
-        @Override
-        public SafeFuture<ExecutionPayloadEnvelope> createUnsignedExecutionPayload(
-            final BeaconBlockAndState blockAndState) {
-          return SafeFuture.completedFuture(null);
-        }
+  /**
+   * The envelope revealing the execution payload this node built for {@code block}, with its blobs
+   * and KZG proofs, or empty when the node holds no locally built payload committed to by the
+   * block's bid.
+   */
+  SafeFuture<Optional<ExecutionPayloadEnvelopeContents>> createSelfBuiltExecutionPayload(
+      BeaconBlock block);
 
-        @Override
-        public SafeFuture<List<DataColumnSidecar>> createDataColumnSidecars(
-            final SignedExecutionPayloadEnvelope signedExecutionPayload) {
-          return SafeFuture.completedFuture(List.of());
-        }
-
-        @Override
-        public SafeFuture<List<DataColumnSidecar>> createDataColumnSidecars(
-            final SignedExecutionPayloadEnvelopeContents signedExecutionPayloadEnvelopeContents) {
-          return SafeFuture.completedFuture(List.of());
-        }
-      };
-
-  SafeFuture<ExecutionPayloadEnvelope> createUnsignedExecutionPayload(
-      BeaconBlockAndState blockAndState);
-
-  SafeFuture<List<DataColumnSidecar>> createDataColumnSidecars(
-      SignedExecutionPayloadEnvelope signedExecutionPayload);
-
-  SafeFuture<List<DataColumnSidecar>> createDataColumnSidecars(
-      SignedExecutionPayloadEnvelopeContents signedExecutionPayloadEnvelopeContents);
+  List<DataColumnSidecar> createDataColumnSidecars(
+      ExecutionPayloadEnvelopeContents executionPayloadEnvelopeContents);
 }

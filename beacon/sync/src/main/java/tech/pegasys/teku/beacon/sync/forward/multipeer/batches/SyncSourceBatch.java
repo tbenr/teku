@@ -48,7 +48,7 @@ import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.MinimalBeaconBlockSummary;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.deneb.BeaconBlockBodyDeneb;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.statetransition.blobs.BlobSidecarManager;
 
 public class SyncSourceBatch implements Batch {
@@ -73,11 +73,11 @@ public class SyncSourceBatch implements Batch {
 
   private final List<SignedBeaconBlock> blocks = new ArrayList<>();
   private final Map<Bytes32, List<BlobSidecar>> blobSidecarsByBlockRoot = new HashMap<>();
-  private final Map<Bytes32, SignedExecutionPayloadEnvelope> executionPayloadsByBlockRoot =
+  private final Map<Bytes32, ExecutionPayloadEnvelope> executionPayloadsByBlockRoot =
       new HashMap<>();
   // Boundary envelopes the next batch did not build on, kept until the batch is reset in case the
   // next batch is re-downloaded with a first block that does build on them
-  private final Map<Bytes32, SignedExecutionPayloadEnvelope> droppedExecutionPayloadsByBlockRoot =
+  private final Map<Bytes32, ExecutionPayloadEnvelope> droppedExecutionPayloadsByBlockRoot =
       new HashMap<>();
 
   SyncSourceBatch(
@@ -137,7 +137,7 @@ public class SyncSourceBatch implements Batch {
   }
 
   @Override
-  public Map<Bytes32, SignedExecutionPayloadEnvelope> getExecutionPayloadsByBlockRoot() {
+  public Map<Bytes32, ExecutionPayloadEnvelope> getExecutionPayloadsByBlockRoot() {
     return executionPayloadsByBlockRoot;
   }
 
@@ -384,7 +384,7 @@ public class SyncSourceBatch implements Batch {
     }
 
     if (maybeExecutionPayloadRequestHandler.isPresent()) {
-      final Map<Bytes32, SignedExecutionPayloadEnvelope> newExecutionPayloadsByBlockRoot =
+      final Map<Bytes32, ExecutionPayloadEnvelope> newExecutionPayloadsByBlockRoot =
           maybeExecutionPayloadRequestHandler.get().complete();
       if (!validateAndPruneNewExecutionPayloads(
           newBlocks, newExecutionPayloadsByBlockRoot, lastBlock)) {
@@ -505,7 +505,7 @@ public class SyncSourceBatch implements Batch {
    */
   private boolean validateAndPruneNewExecutionPayloads(
       final List<SignedBeaconBlock> newBlocks,
-      final Map<Bytes32, SignedExecutionPayloadEnvelope> newExecutionPayloadsByBlockRoot,
+      final Map<Bytes32, ExecutionPayloadEnvelope> newExecutionPayloadsByBlockRoot,
       final Optional<SignedBeaconBlock> lastBlock) {
     for (int i = 0; i < newBlocks.size(); i++) {
       final SignedBeaconBlock newBlock = newBlocks.get(i);
@@ -525,7 +525,7 @@ public class SyncSourceBatch implements Batch {
   }
 
   private boolean validateAndPruneExecutionPayload(
-      final Map<Bytes32, SignedExecutionPayloadEnvelope> executionPayloadsByBlockRoot,
+      final Map<Bytes32, ExecutionPayloadEnvelope> executionPayloadsByBlockRoot,
       final SignedBeaconBlock block,
       final SignedBeaconBlock nextBlock) {
     if (isParentBlockFull(block, nextBlock)) {
@@ -554,8 +554,7 @@ public class SyncSourceBatch implements Batch {
     if (executionPayloadsByBlockRoot.containsKey(blockRoot)) {
       return true;
     }
-    final SignedExecutionPayloadEnvelope dropped =
-        droppedExecutionPayloadsByBlockRoot.remove(blockRoot);
+    final ExecutionPayloadEnvelope dropped = droppedExecutionPayloadsByBlockRoot.remove(blockRoot);
     if (dropped == null) {
       return false;
     }
@@ -567,10 +566,10 @@ public class SyncSourceBatch implements Batch {
     return true;
   }
 
-  private Optional<SignedExecutionPayloadEnvelope> dropExecutionPayload(
-      final Map<Bytes32, SignedExecutionPayloadEnvelope> executionPayloadsByBlockRoot,
+  private Optional<ExecutionPayloadEnvelope> dropExecutionPayload(
+      final Map<Bytes32, ExecutionPayloadEnvelope> executionPayloadsByBlockRoot,
       final Bytes32 blockRoot) {
-    final SignedExecutionPayloadEnvelope dropped = executionPayloadsByBlockRoot.remove(blockRoot);
+    final ExecutionPayloadEnvelope dropped = executionPayloadsByBlockRoot.remove(blockRoot);
     if (dropped != null) {
       LOG.debug(
           "Dropping execution payload envelope for slot {} and root {} because the next block did not build on it",
@@ -626,17 +625,17 @@ public class SyncSourceBatch implements Batch {
   }
 
   private static class ExecutionPayloadRequestHandler
-      implements RpcResponseListener<SignedExecutionPayloadEnvelope> {
-    private final Map<Bytes32, SignedExecutionPayloadEnvelope> executionPayloadsByBlockRoot =
+      implements RpcResponseListener<ExecutionPayloadEnvelope> {
+    private final Map<Bytes32, ExecutionPayloadEnvelope> executionPayloadsByBlockRoot =
         new HashMap<>();
 
     @Override
-    public SafeFuture<?> onResponse(final SignedExecutionPayloadEnvelope executionPayload) {
+    public SafeFuture<?> onResponse(final ExecutionPayloadEnvelope executionPayload) {
       executionPayloadsByBlockRoot.put(executionPayload.getBeaconBlockRoot(), executionPayload);
       return SafeFuture.COMPLETE;
     }
 
-    public Map<Bytes32, SignedExecutionPayloadEnvelope> complete() {
+    public Map<Bytes32, ExecutionPayloadEnvelope> complete() {
       return executionPayloadsByBlockRoot;
     }
   }

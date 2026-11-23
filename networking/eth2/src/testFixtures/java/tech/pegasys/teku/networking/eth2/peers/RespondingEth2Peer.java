@@ -55,7 +55,7 @@ import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.networking.libp2p.rpc.BlobIdentifier;
 import tech.pegasys.teku.spec.datastructures.networking.libp2p.rpc.DataColumnsByRootIdentifier;
 import tech.pegasys.teku.spec.datastructures.networking.libp2p.rpc.RpcRequest;
@@ -292,8 +292,8 @@ public class RespondingEth2Peer implements Eth2Peer {
   @Override
   public SafeFuture<Void> requestExecutionPayloadEnvelopesByRoot(
       final List<Bytes32> beaconBlockRoots,
-      final RpcResponseListener<SignedExecutionPayloadEnvelope> listener) {
-    final PendingRequestHandler<Void, SignedExecutionPayloadEnvelope> handler =
+      final RpcResponseListener<ExecutionPayloadEnvelope> listener) {
+    final PendingRequestHandler<Void, ExecutionPayloadEnvelope> handler =
         PendingRequestHandler.createForBatchExecutionPayloadEnvelopeRequest(
             listener,
             () ->
@@ -328,10 +328,10 @@ public class RespondingEth2Peer implements Eth2Peer {
   public SafeFuture<Void> requestExecutionPayloadEnvelopesByRange(
       final UInt64 startSlot,
       final UInt64 count,
-      final RpcResponseListener<SignedExecutionPayloadEnvelope> listener) {
+      final RpcResponseListener<ExecutionPayloadEnvelope> listener) {
     final long lastSlotExclusive = startSlot.longValue() + count.longValue();
 
-    final PendingRequestHandler<Void, SignedExecutionPayloadEnvelope> handler =
+    final PendingRequestHandler<Void, ExecutionPayloadEnvelope> handler =
         PendingRequestHandler.createForBatchExecutionPayloadEnvelopeRequest(
             listener,
             () ->
@@ -369,10 +369,9 @@ public class RespondingEth2Peer implements Eth2Peer {
   }
 
   @Override
-  public SafeFuture<Optional<SignedExecutionPayloadEnvelope>> requestExecutionPayloadEnvelopeByRoot(
+  public SafeFuture<Optional<ExecutionPayloadEnvelope>> requestExecutionPayloadEnvelopeByRoot(
       final Bytes32 beaconBlockRoot) {
-    final PendingRequestHandler<
-            Optional<SignedExecutionPayloadEnvelope>, SignedExecutionPayloadEnvelope>
+    final PendingRequestHandler<Optional<ExecutionPayloadEnvelope>, ExecutionPayloadEnvelope>
         handler =
             PendingRequestHandler.createForSingleExecutionPayloadRequest(
                 () -> findExecutionPayloadByRoot(beaconBlockRoot));
@@ -405,8 +404,8 @@ public class RespondingEth2Peer implements Eth2Peer {
   }
 
   private <T> SafeFuture<T> createPendingExecutionPayloadEnvelopeRequest(
-      final PendingRequestHandler<T, SignedExecutionPayloadEnvelope> handler) {
-    final PendingRequest<T, SignedExecutionPayloadEnvelope> request = new PendingRequest<>(handler);
+      final PendingRequestHandler<T, ExecutionPayloadEnvelope> handler) {
+    final PendingRequest<T, ExecutionPayloadEnvelope> request = new PendingRequest<>(handler);
     pendingRequests.add(request);
     return request.getFuture();
   }
@@ -566,7 +565,7 @@ public class RespondingEth2Peer implements Eth2Peer {
         (chainBuilder, id) -> Optional.of(chainBuilder.getDataColumnSidecars(id)));
   }
 
-  private Optional<SignedExecutionPayloadEnvelope> findExecutionPayloadByRoot(
+  private Optional<ExecutionPayloadEnvelope> findExecutionPayloadByRoot(
       final Bytes32 beaconBlockRoot) {
     return findObjectByKey(beaconBlockRoot, ChainBuilder::getExecutionPayload);
   }
@@ -654,10 +653,9 @@ public class RespondingEth2Peer implements Eth2Peer {
       return createForSingleRequest(blobSidecarSupplier);
     }
 
-    static PendingRequestHandler<
-            Optional<SignedExecutionPayloadEnvelope>, SignedExecutionPayloadEnvelope>
+    static PendingRequestHandler<Optional<ExecutionPayloadEnvelope>, ExecutionPayloadEnvelope>
         createForSingleExecutionPayloadRequest(
-            final Supplier<Optional<SignedExecutionPayloadEnvelope>> executionPayloadSupplier) {
+            final Supplier<Optional<ExecutionPayloadEnvelope>> executionPayloadSupplier) {
       return createForSingleRequest(executionPayloadSupplier);
     }
 
@@ -699,11 +697,10 @@ public class RespondingEth2Peer implements Eth2Peer {
       return createForBatchRequest(listener, dataColumnSidecarsSupplier);
     }
 
-    static PendingRequestHandler<Void, SignedExecutionPayloadEnvelope>
+    static PendingRequestHandler<Void, ExecutionPayloadEnvelope>
         createForBatchExecutionPayloadEnvelopeRequest(
-            final RpcResponseListener<SignedExecutionPayloadEnvelope> listener,
-            final Supplier<List<SignedExecutionPayloadEnvelope>>
-                executionPayloadEnvelopesSupplier) {
+            final RpcResponseListener<ExecutionPayloadEnvelope> listener,
+            final Supplier<List<ExecutionPayloadEnvelope>> executionPayloadEnvelopesSupplier) {
       return createForBatchRequest(listener, executionPayloadEnvelopesSupplier);
     }
   }

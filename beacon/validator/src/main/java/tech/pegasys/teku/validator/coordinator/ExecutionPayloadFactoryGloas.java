@@ -14,22 +14,22 @@
 package tech.pegasys.teku.validator.coordinator;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.IntStream;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
-import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.kzg.KZGProof;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.SpecVersion;
 import tech.pegasys.teku.spec.config.SpecConfigFulu;
 import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.Blob;
-import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlockAndState;
+import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelopeContents;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelopeContents;
 import tech.pegasys.teku.spec.datastructures.execution.BlobAndCellProofs;
 import tech.pegasys.teku.spec.datastructures.execution.BlobsBundle;
-import tech.pegasys.teku.spec.datastructures.execution.GetPayloadResponse;
+import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadResult;
 import tech.pegasys.teku.spec.datastructures.type.SszKZGProof;
 import tech.pegasys.teku.spec.executionlayer.ExecutionLayerBlockProductionManager;
 import tech.pegasys.teku.spec.logic.common.util.ExecutionPayloadProposalUtil.ExecutionPayloadProposalData;
@@ -49,70 +49,62 @@ public class ExecutionPayloadFactoryGloas implements ExecutionPayloadFactory {
   }
 
   @Override
-  public SafeFuture<ExecutionPayloadEnvelope> createUnsignedExecutionPayload(
-      final BeaconBlockAndState blockAndState) {
-    final UInt64 proposalSlot = blockAndState.getSlot();
+  public SafeFuture<Optional<ExecutionPayloadEnvelopeContents>> createSelfBuiltExecutionPayload(
+      final BeaconBlock block) {
+    final Optional<ExecutionPayloadBid> maybeBid = block.getBody().getOptionalExecutionPayloadBid();
+    // Only local flow for ePBS -> this result has been cached when creating the bid for the block
+    final Optional<ExecutionPayloadResult> maybeCachedPayloadResult =
+        executionLayerBlockProductionManager.getCachedPayloadResult(block.getSlot());
+    if (maybeBid.isEmpty() || maybeCachedPayloadResult.isEmpty()) {
+      return SafeFuture.completedFuture(Optional.empty());
+    }
     final SchemaDefinitionsGloas schemaDefinitions =
-        SchemaDefinitionsGloas.required(spec.atSlot(proposalSlot).getSchemaDefinitions());
-    final SafeFuture<ExecutionPayloadProposalData> executionPayloadProposalDataFuture =
-        getCachedGetPayloadResponseFuture(proposalSlot)
-            .thenApply(
-                getPayloadResponse ->
-                    new ExecutionPayloadProposalData(
-                        getPayloadResponse.getExecutionPayload(),
-                        getPayloadResponse.getExecutionRequests().orElseThrow(),
-                        schemaDefinitions
-                            .getBlobKzgCommitmentsSchema()
-                            .createFromBlobsBundle(
-                                getPayloadResponse.getBlobsBundle().orElseThrow())));
-    return spec.createNewUnsignedExecutionPayload(
-        proposalSlot, blockAndState, executionPayloadProposalDataFuture);
-  }
-
-  @Override
-  public SafeFuture<List<DataColumnSidecar>> createDataColumnSidecars(
-      final SignedExecutionPayloadEnvelope signedExecutionPayload) {
-    final UInt64 slot = signedExecutionPayload.getMessage().getSlot();
-    return SafeFuture.<GetPayloadResponse>of(
-            () ->
-                executionLayerBlockProductionManager
-                    .getCachedPayloadResult(slot)
-                    .orElseThrow(() -> DataColumnSidecarCreationException.noCachedBlobData(slot))
-                    .getPayloadResponseFutureFromLocalFlowRequired())
+        SchemaDefinitionsGloas.required(spec.atSlot(block.getSlot()).getSchemaDefinitions());
+    return maybeCachedPayloadResult
+        .get()
+        .getPayloadResponseFutureFromLocalFlowRequired()
         .thenApply(
             getPayloadResponse -> {
+              // the block may commit to a payload other than the one this node built for the slot
               if (!getPayloadResponse
                   .getExecutionPayload()
                   .hashTreeRoot()
-                  .equals(signedExecutionPayload.getMessage().getPayload().hashTreeRoot())) {
-                throw DataColumnSidecarCreationException.cachedPayloadMismatch(slot);
+                  .equals(maybeBid.get().getPayloadRoot())) {
+                return Optional.empty();
               }
-              final BlobsBundle blobsBundle =
-                  getPayloadResponse
-                      .getBlobsBundle()
-                      .orElseThrow(() -> DataColumnSidecarCreationException.noCachedBlobData(slot));
-              return createDataColumnSidecars(
-                  signedExecutionPayload, blobsBundle.getBlobs(), blobsBundle.getProofs());
+              final BlobsBundle blobsBundle = getPayloadResponse.getBlobsBundle().orElseThrow();
+              final ExecutionPayloadEnvelope executionPayload =
+                  spec.createExecutionPayloadEnvelope(
+                      block,
+                      new ExecutionPayloadProposalData(
+                          getPayloadResponse.getExecutionPayload(),
+                          getPayloadResponse.getExecutionRequests().orElseThrow(),
+                          schemaDefinitions
+                              .getBlobKzgCommitmentsSchema()
+                              .createFromBlobsBundle(blobsBundle)));
+              return Optional.of(
+                  schemaDefinitions
+                      .getExecutionPayloadEnvelopeContentsSchema()
+                      .create(executionPayload, blobsBundle.getProofs(), blobsBundle.getBlobs()));
             });
   }
 
   @Override
-  public SafeFuture<List<DataColumnSidecar>> createDataColumnSidecars(
-      final SignedExecutionPayloadEnvelopeContents signedExecutionPayloadEnvelopeContents) {
-    return SafeFuture.completedFuture(
-        createDataColumnSidecars(
-            signedExecutionPayloadEnvelopeContents.getSignedExecutionPayloadEnvelope(),
-            signedExecutionPayloadEnvelopeContents.getBlobs().stream().toList(),
-            signedExecutionPayloadEnvelopeContents.getKzgProofs().stream()
-                .map(SszKZGProof::getKZGProof)
-                .toList()));
+  public List<DataColumnSidecar> createDataColumnSidecars(
+      final ExecutionPayloadEnvelopeContents executionPayloadEnvelopeContents) {
+    return createDataColumnSidecars(
+        executionPayloadEnvelopeContents.getExecutionPayloadEnvelope(),
+        executionPayloadEnvelopeContents.getBlobs().stream().toList(),
+        executionPayloadEnvelopeContents.getKzgProofs().stream()
+            .map(SszKZGProof::getKZGProof)
+            .toList());
   }
 
   private List<DataColumnSidecar> createDataColumnSidecars(
-      final SignedExecutionPayloadEnvelope signedExecutionPayload,
+      final ExecutionPayloadEnvelope executionPayload,
       final List<Blob> blobs,
       final List<KZGProof> proofs) {
-    final SpecVersion specVersion = spec.atSlot(signedExecutionPayload.getSlot());
+    final SpecVersion specVersion = spec.atSlot(executionPayload.getSlot());
     final int numberOfColumns =
         SpecConfigFulu.required(specVersion.getConfig()).getNumberOfColumns();
     final List<BlobAndCellProofs> blobAndCellProofsList =
@@ -127,17 +119,6 @@ public class ExecutionPayloadFactoryGloas implements ExecutionPayloadFactory {
                             .toList()))
             .toList();
     return MiscHelpersGloas.required(specVersion.miscHelpers())
-        .constructDataColumnSidecars(signedExecutionPayload, blobAndCellProofsList);
-  }
-
-  // Only local flow for ePBS -> this result has been cached when creating the bid for the block
-  private SafeFuture<GetPayloadResponse> getCachedGetPayloadResponseFuture(final UInt64 slot) {
-    return executionLayerBlockProductionManager
-        .getCachedPayloadResult(slot)
-        .orElseThrow(
-            () ->
-                new IllegalStateException(
-                    "ExecutionPayloadResult hasn't been cached for slot " + slot))
-        .getPayloadResponseFutureFromLocalFlowRequired();
+        .constructDataColumnSidecars(executionPayload, blobAndCellProofsList);
   }
 }

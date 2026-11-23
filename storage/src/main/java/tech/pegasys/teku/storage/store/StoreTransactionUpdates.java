@@ -26,7 +26,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.BlockAndCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.storage.api.FinalizedChainData;
 import tech.pegasys.teku.storage.api.StorageUpdate;
@@ -53,7 +53,7 @@ class StoreTransactionUpdates {
   private final boolean dataColumnSidecarsEnabled;
   private final boolean executionPayloadEnvelopesEnabled;
   private final Map<Bytes32, ExecutionPayloadUpdate> hotExecutionPayloads;
-  private final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads;
+  private final Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloads;
 
   StoreTransactionUpdates(
       final StoreTransaction tx,
@@ -73,7 +73,7 @@ class StoreTransactionUpdates {
       final boolean dataColumnSidecarsEnabled,
       final boolean executionPayloadEnvelopesEnabled,
       final Map<Bytes32, ExecutionPayloadUpdate> hotExecutionPayloads,
-      final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads) {
+      final Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloads) {
     checkNotNull(tx, "Transaction is required");
     checkNotNull(finalizedChainData, "Finalized data is required");
     checkNotNull(hotBlocks, "Hot blocks are required");

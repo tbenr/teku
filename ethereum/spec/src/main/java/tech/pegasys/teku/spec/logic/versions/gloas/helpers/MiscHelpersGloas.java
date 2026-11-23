@@ -30,6 +30,7 @@ import java.util.Optional;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes;
@@ -45,14 +46,15 @@ import tech.pegasys.teku.spec.config.SpecConfigGloas;
 import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.fulu.MatrixEntry;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.gloas.DataColumnSidecarGloas;
+import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlockHeader;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.gloas.BeaconBlockBodyGloas;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.BlobAndCellProofs;
+import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadSummary;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionRequests;
 import tech.pegasys.teku.spec.datastructures.state.Validator;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
@@ -191,13 +193,12 @@ public class MiscHelpersGloas extends MiscHelpersFulu {
   }
 
   public List<DataColumnSidecar> constructDataColumnSidecars(
-      final SignedExecutionPayloadEnvelope signedExecutionPayload,
+      final ExecutionPayloadEnvelope executionPayload,
       final List<BlobAndCellProofs> blobAndCellProofsList) {
     final List<List<MatrixEntry>> extendedMatrix = computeExtendedMatrix(blobAndCellProofsList);
     if (extendedMatrix.isEmpty()) {
       return Collections.emptyList();
     }
-    final ExecutionPayloadEnvelope executionPayload = signedExecutionPayload.getMessage();
     return constructDataColumnSidecarsInternal(
         builder ->
             builder
@@ -299,6 +300,49 @@ public class MiscHelpersGloas extends MiscHelpersFulu {
         .getParentBlockHash()
         .equals(
             maybeParentBlockBody.get().getSignedExecutionPayloadBid().getMessage().getBlockHash());
+  }
+
+  /**
+   * Whether an execution payload envelope is the one {@code block} commits to. The envelope is not
+   * signed: it is correct for its block when its payload and execution requests are those committed
+   * to by the block's execution payload bid, the payload agrees with the bid's other claims on it
+   * and its parent beacon block root is the block's parent root.
+   *
+   * @param payload the execution payload of the envelope, or its header
+   * @param payloadRoot the hash tree root of the payload, which is also that of its header
+   * @return the first mismatch found, or empty when the envelope matches the block
+   */
+  public static Optional<String> findExecutionPayloadEnvelopeMismatch(
+      final ExecutionPayloadSummary payload,
+      final Bytes32 payloadRoot,
+      final Bytes32 executionRequestsRoot,
+      final Bytes32 parentBeaconBlockRoot,
+      final BeaconBlock block) {
+    final Optional<ExecutionPayloadBid> maybeBid = block.getBody().getOptionalExecutionPayloadBid();
+    if (maybeBid.isEmpty()) {
+      return Optional.of("the block has no execution payload bid");
+    }
+    final ExecutionPayloadBid bid = maybeBid.get();
+    return Stream.of(
+            mismatch("payload root", payloadRoot, bid.getPayloadRoot()),
+            mismatch("parent block hash", payload.getParentHash(), bid.getParentBlockHash()),
+            mismatch("block hash", payload.getBlockHash(), bid.getBlockHash()),
+            mismatch("prev randao", payload.getPrevRandao(), bid.getPrevRandao()),
+            mismatch("gas limit", payload.getGasLimit(), bid.getGasLimit()),
+            mismatch(
+                "execution requests root", executionRequestsRoot, bid.getExecutionRequestsRoot()),
+            mismatch("parent beacon block root", parentBeaconBlockRoot, block.getParentRoot()))
+        .flatMap(Optional::stream)
+        .findFirst();
+  }
+
+  private static Optional<String> mismatch(
+      final String fieldName, final Object envelopeValue, final Object expectedValue) {
+    return envelopeValue.equals(expectedValue)
+        ? Optional.empty()
+        : Optional.of(
+            String.format(
+                "%s %s does not match expected %s", fieldName, envelopeValue, expectedValue));
   }
 
   public boolean isExecutionRequestsRootMatchingLatestBid(
@@ -411,6 +455,17 @@ public class MiscHelpersGloas extends MiscHelpersFulu {
             kzgCommitments.stream().map(SszKZGCommitment::getKZGCommitment).toList(),
             cellWithIds,
             dataColumnSidecar.getKzgProofs().stream().map(SszKZGProof::getKZGProof).toList());
+  }
+
+  /**
+   * Batch variant of {@link #verifyDataColumnSidecarKzgProofs(DataColumnSidecar, SszList)}: whether
+   * the cells and KZG proofs of all the given data column sidecars match {@code kzgCommitments},
+   * the KZG commitments from the execution payload bid.
+   */
+  public boolean verifyDataColumnSidecarKzgProofsBatch(
+      final List<DataColumnSidecar> dataColumnSidecars,
+      final SszList<SszKZGCommitment> kzgCommitments) {
+    return verifyDataColumnSidecarKzgProofsBatch(dataColumnSidecars, __ -> kzgCommitments);
   }
 
   @Override

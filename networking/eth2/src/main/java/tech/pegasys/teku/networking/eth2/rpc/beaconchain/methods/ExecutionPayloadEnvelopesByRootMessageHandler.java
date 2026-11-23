@@ -30,7 +30,7 @@ import tech.pegasys.teku.networking.eth2.peers.RequestKey;
 import tech.pegasys.teku.networking.eth2.rpc.core.PeerRequiredLocalMessageHandler;
 import tech.pegasys.teku.networking.eth2.rpc.core.ResponseCallback;
 import tech.pegasys.teku.spec.Spec;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.networking.libp2p.rpc.ExecutionPayloadEnvelopesByRootRequestMessage;
 import tech.pegasys.teku.storage.client.CombinedChainDataClient;
 
@@ -43,7 +43,7 @@ import tech.pegasys.teku.storage.client.CombinedChainDataClient;
  */
 public class ExecutionPayloadEnvelopesByRootMessageHandler
     extends PeerRequiredLocalMessageHandler<
-        ExecutionPayloadEnvelopesByRootRequestMessage, SignedExecutionPayloadEnvelope> {
+        ExecutionPayloadEnvelopesByRootRequestMessage, ExecutionPayloadEnvelope> {
 
   private static final Logger LOG = LogManager.getLogger();
 
@@ -76,7 +76,7 @@ public class ExecutionPayloadEnvelopesByRootMessageHandler
       final String protocolId,
       final Eth2Peer peer,
       final ExecutionPayloadEnvelopesByRootRequestMessage message,
-      final ResponseCallback<SignedExecutionPayloadEnvelope> callback) {
+      final ResponseCallback<ExecutionPayloadEnvelope> callback) {
     LOG.trace(
         "Peer {} requested {} execution payload envelopes with roots: {}",
         peer.getId(),
@@ -136,7 +136,7 @@ public class ExecutionPayloadEnvelopesByRootMessageHandler
   private SafeFuture<Void> respondToBlockRoot(
       final Bytes32 beaconBlockRoot,
       final UInt64 minServableEpoch,
-      final ResponseCallback<SignedExecutionPayloadEnvelope> callback,
+      final ResponseCallback<ExecutionPayloadEnvelope> callback,
       final AtomicInteger sentExecutionPayloadEnvelopes) {
     return combinedChainDataClient
         .getSlotByBlockRoot(beaconBlockRoot)
@@ -153,8 +153,7 @@ public class ExecutionPayloadEnvelopesByRootMessageHandler
                           maybeExecutionPayloadEnvelope
                               .filter(
                                   envelope ->
-                                      isWithinServableRange(
-                                          envelope.getMessage().getSlot(), minServableEpoch))
+                                      isWithinServableRange(envelope.getSlot(), minServableEpoch))
                               .map(
                                   executionPayloadEnvelope ->
                                       callback

@@ -14,7 +14,7 @@
 package tech.pegasys.teku.spec.logic.common.statetransition.results;
 
 import java.util.Optional;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 
 class FailedExecutionPayloadImportResult implements ExecutionPayloadImportResult {
 
@@ -43,7 +43,7 @@ class FailedExecutionPayloadImportResult implements ExecutionPayloadImportResult
   }
 
   @Override
-  public SignedExecutionPayloadEnvelope getExecutionPayload() {
+  public ExecutionPayloadEnvelope getExecutionPayload() {
     return null;
   }
 

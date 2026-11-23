@@ -39,7 +39,7 @@ import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.BeaconBlockBody;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.gloas.MutableBeaconStateGloas;
 import tech.pegasys.teku.spec.logic.common.statetransition.availability.DataAndValidationResult;
@@ -85,7 +85,7 @@ class DataColumnSidecarAvailabilityCheckerTest {
   void shouldReadEnvelopeCommitmentsAtConstruction() {
     final DataStructureUtil data = new DataStructureUtil(TestSpecFactory.createMinimalGloas());
     final BeaconState state = spy(data.randomBeaconState(UInt64.valueOf(8)));
-    final SignedExecutionPayloadEnvelope envelope = data.randomSignedExecutionPayloadEnvelope(8);
+    final ExecutionPayloadEnvelope envelope = data.randomExecutionPayloadEnvelope(8);
     new DataColumnSidecarAvailabilityChecker(das, spec, recentChainData, state, envelope);
 
     verify(state).toVersionGloas();
@@ -117,7 +117,7 @@ class DataColumnSidecarAvailabilityCheckerTest {
   void shouldRespectNoopSamplerEligibilityForEnvelope() {
     final DataStructureUtil data = new DataStructureUtil(TestSpecFactory.createMinimalGloas());
     final BeaconState state = data.randomBeaconState(UInt64.valueOf(8));
-    final SignedExecutionPayloadEnvelope envelope = data.randomSignedExecutionPayloadEnvelope(8);
+    final ExecutionPayloadEnvelope envelope = data.randomExecutionPayloadEnvelope(8);
     when(spec.isAvailabilityOfDataColumnSidecarsRequiredAtSlot(any(), any())).thenReturn(true);
     final DataColumnSidecarAvailabilityChecker envelopeChecker =
         new DataColumnSidecarAvailabilityChecker(
@@ -133,7 +133,7 @@ class DataColumnSidecarAvailabilityCheckerTest {
   void shouldWaitForEnvelopeColumnsWhenCommittedByState() {
     final DataStructureUtil data = new DataStructureUtil(TestSpecFactory.createMinimalGloas());
     final BeaconState state = data.randomBeaconState(UInt64.valueOf(8));
-    final SignedExecutionPayloadEnvelope envelope = data.randomSignedExecutionPayloadEnvelope(8);
+    final ExecutionPayloadEnvelope envelope = data.randomExecutionPayloadEnvelope(8);
     final SafeFuture<List<UInt64>> columns = new SafeFuture<>();
     when(das.checkSamplingEligibility(envelope.getSlot(), true))
         .thenReturn(DataAvailabilitySampler.SamplingEligibilityStatus.REQUIRED);
@@ -162,7 +162,7 @@ class DataColumnSidecarAvailabilityCheckerTest {
                             data.randomSignedExecutionPayloadBidWithCommitments(
                                     data.emptyBlobKzgCommitments())
                                 .getMessage()));
-    final SignedExecutionPayloadEnvelope envelope = data.randomSignedExecutionPayloadEnvelope(8);
+    final ExecutionPayloadEnvelope envelope = data.randomExecutionPayloadEnvelope(8);
     when(das.checkSamplingEligibility(envelope.getSlot(), false))
         .thenReturn(DataAvailabilitySampler.SamplingEligibilityStatus.NOT_REQUIRED_NO_BLOBS);
     final DataColumnSidecarAvailabilityChecker envelopeChecker =
@@ -179,7 +179,7 @@ class DataColumnSidecarAvailabilityCheckerTest {
   void shouldReturnNotRequiredForEnvelopeOutsideDataAvailabilityWindow() {
     final DataStructureUtil data = new DataStructureUtil(TestSpecFactory.createMinimalGloas());
     final BeaconState state = data.randomBeaconState(UInt64.valueOf(8));
-    final SignedExecutionPayloadEnvelope envelope = data.randomSignedExecutionPayloadEnvelope(8);
+    final ExecutionPayloadEnvelope envelope = data.randomExecutionPayloadEnvelope(8);
     when(das.checkSamplingEligibility(envelope.getSlot(), true))
         .thenReturn(DataAvailabilitySampler.SamplingEligibilityStatus.NOT_REQUIRED_OLD_EPOCH);
     final DataColumnSidecarAvailabilityChecker envelopeChecker =

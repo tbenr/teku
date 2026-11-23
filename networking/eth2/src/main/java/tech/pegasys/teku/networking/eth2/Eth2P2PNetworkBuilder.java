@@ -85,9 +85,9 @@ import tech.pegasys.teku.spec.datastructures.attestation.ValidatableAttestation;
 import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationMessage;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionProof;
 import tech.pegasys.teku.spec.datastructures.lightclient.LightClientFinalityUpdate;
@@ -139,7 +139,7 @@ public class Eth2P2PNetworkBuilder {
   protected OperationProcessor<SignedVoluntaryExit> gossipedVoluntaryExitConsumer;
   protected OperationProcessor<SignedBlsToExecutionChange>
       gossipedSignedBlsToExecutionChangeProcessor;
-  protected OperationProcessor<SignedExecutionPayloadEnvelope> executionPayloadProcessor;
+  protected OperationProcessor<ExecutionPayloadEnvelope> executionPayloadProcessor;
   protected OperationProcessor<PayloadAttestationMessage> payloadAttestationMessageProcessor;
   protected OperationProcessor<SignedExecutionPayloadBid> executionPayloadBidProcessor;
   protected OperationProcessor<SignedProposerPreferences> proposerPreferencesProcessor;
@@ -830,7 +830,7 @@ public class Eth2P2PNetworkBuilder {
   }
 
   public Eth2P2PNetworkBuilder gossipedExecutionPayloadProcessor(
-      final OperationProcessor<SignedExecutionPayloadEnvelope> gossipedExecutionPayloadProcessor) {
+      final OperationProcessor<ExecutionPayloadEnvelope> gossipedExecutionPayloadProcessor) {
     checkNotNull(gossipedExecutionPayloadProcessor);
     this.executionPayloadProcessor = gossipedExecutionPayloadProcessor;
     return this;

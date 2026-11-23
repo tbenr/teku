@@ -56,7 +56,7 @@ import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.generator.ChainBuilder;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 import tech.pegasys.teku.statetransition.blobs.BlobSidecarManager;
@@ -259,7 +259,7 @@ class BatchSyncTest {
         gloasChainBuilder
             .streamExecutionPayloads(commonAncestorSlot.plus(1), parentSlot)
             .filter(executionPayload -> !executionPayload.getSlot().equals(parentSlot))
-            .toArray(SignedExecutionPayloadEnvelope[]::new));
+            .toArray(ExecutionPayloadEnvelope[]::new));
 
     gloasBatches.receiveBlocks(batch1, childBlock);
     gloasBatches.receiveExecutionPayloads(
@@ -336,7 +336,7 @@ class BatchSyncTest {
         batch0,
         gloasChainBuilder
             .streamExecutionPayloads(commonAncestorSlot.plus(1), parentSlot)
-            .toArray(SignedExecutionPayloadEnvelope[]::new));
+            .toArray(ExecutionPayloadEnvelope[]::new));
     assertThat(batch0.getExecutionPayloadsByBlockRoot()).containsKey(parentBlock.getRoot());
 
     gloasBatches.receiveBlocks(batch1, childBlock);
@@ -418,7 +418,7 @@ class BatchSyncTest {
         batch0,
         gloasChainBuilder
             .streamExecutionPayloads(commonAncestorSlot.plus(1), parentSlot)
-            .toArray(SignedExecutionPayloadEnvelope[]::new));
+            .toArray(ExecutionPayloadEnvelope[]::new));
 
     // The first download of the second batch is on the fork and does not build on the payload
     gloasBatches.receiveBlocks(batch1, emptyChildBlock);

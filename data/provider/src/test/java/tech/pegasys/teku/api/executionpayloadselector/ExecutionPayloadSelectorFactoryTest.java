@@ -29,7 +29,7 @@ import tech.pegasys.teku.spec.SpecMilestone;
 import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.metadata.ExecutionPayloadAndMetaData;
 import tech.pegasys.teku.spec.datastructures.state.AnchorPoint;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
@@ -50,8 +50,7 @@ public class ExecutionPayloadSelectorFactoryTest {
       throws ExecutionException, InterruptedException {
     final Bytes32 blockRoot = data.randomBytes32();
     final ChainHead chainHead = ChainHead.create(data.randomSignedBlockAndState(10));
-    final SignedExecutionPayloadEnvelope executionPayload =
-        data.randomSignedExecutionPayloadEnvelope(10);
+    final ExecutionPayloadEnvelope executionPayload = data.randomExecutionPayloadEnvelope(10);
     when(client.getExecutionPayloadByBlockRoot(blockRoot))
         .thenReturn(SafeFuture.completedFuture(Optional.of(executionPayload)));
     when(client.getChainHead()).thenReturn(Optional.of(chainHead));
@@ -72,8 +71,7 @@ public class ExecutionPayloadSelectorFactoryTest {
     final SignedBlockAndState head = data.randomSignedBlockAndState(100);
     final ChainHead chainHead = ChainHead.create(head);
     final UInt64 slot = UInt64.valueOf(10);
-    final SignedExecutionPayloadEnvelope executionPayload =
-        data.randomSignedExecutionPayloadEnvelope(10);
+    final ExecutionPayloadEnvelope executionPayload = data.randomExecutionPayloadEnvelope(10);
     when(client.getChainHead()).thenReturn(Optional.of(chainHead));
     when(client.getExecutionPayloadAtSlotExact(slot, chainHead.getRoot()))
         .thenReturn(SafeFuture.completedFuture(Optional.of(executionPayload)));
@@ -92,8 +90,7 @@ public class ExecutionPayloadSelectorFactoryTest {
   public void genesisSelector_shouldGetExecutionPayloadAtSlotZero()
       throws ExecutionException, InterruptedException {
     final SignedBeaconBlock genesisBlock = data.randomSignedBeaconBlock(0);
-    final SignedExecutionPayloadEnvelope executionPayload =
-        data.randomSignedExecutionPayloadEnvelope(0);
+    final ExecutionPayloadEnvelope executionPayload = data.randomExecutionPayloadEnvelope(0);
     when(client.getBlockAtSlotExact(UInt64.ZERO))
         .thenReturn(SafeFuture.completedFuture(Optional.of(genesisBlock)));
     when(client.getExecutionPayloadByBlockRoot(genesisBlock.getRoot()))
@@ -113,8 +110,8 @@ public class ExecutionPayloadSelectorFactoryTest {
   public void finalizedSelector_shouldGetFinalizedExecutionPayload()
       throws ExecutionException, InterruptedException {
     final AnchorPoint anchorPoint = data.randomAnchorPoint(UInt64.ONE);
-    final SignedExecutionPayloadEnvelope executionPayload =
-        data.randomSignedExecutionPayloadEnvelope(anchorPoint.getSlot().longValue());
+    final ExecutionPayloadEnvelope executionPayload =
+        data.randomExecutionPayloadEnvelope(anchorPoint.getSlot().longValue());
     when(client.getLatestFinalized()).thenReturn(Optional.of(anchorPoint));
     when(client.getExecutionPayloadByBlockRoot(anchorPoint.getRoot()))
         .thenReturn(SafeFuture.completedFuture(Optional.of(executionPayload)));

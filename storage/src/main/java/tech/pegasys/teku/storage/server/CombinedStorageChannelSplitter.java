@@ -30,7 +30,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.lightclient.LightClientBootstrap;
 import tech.pegasys.teku.spec.datastructures.state.AnchorPoint;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
@@ -78,7 +78,7 @@ public class CombinedStorageChannelSplitter implements CombinedStorageChannel {
   public SafeFuture<Void> onFinalizedBlocks(
       final Collection<SignedBeaconBlock> finalizedBlocks,
       final Map<SlotAndBlockRoot, List<BlobSidecar>> blobSidecarsBySlot,
-      final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
+      final Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
       final Optional<UInt64> maybeEarliestBlobSidecarSlot) {
     return updateDelegate.onFinalizedBlocks(
         finalizedBlocks,
@@ -165,7 +165,7 @@ public class CombinedStorageChannelSplitter implements CombinedStorageChannel {
   }
 
   @Override
-  public SafeFuture<Map<Bytes32, SignedBlindedExecutionPayloadEnvelope>>
+  public SafeFuture<Map<Bytes32, BlindedExecutionPayloadEnvelope>>
       getBlindedExecutionPayloadEnvelopesByBlockRoot(final Set<Bytes32> blockRoots) {
     return asyncRunner.runAsync(
         () -> queryDelegate.getBlindedExecutionPayloadEnvelopesByBlockRoot(blockRoots));

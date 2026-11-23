@@ -69,6 +69,7 @@ import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.EXECUTION_PAYL
 import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.EXECUTION_PAYLOAD_AVAILABILITY_SCHEMA;
 import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.EXECUTION_PAYLOAD_BID_SCHEMA;
 import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.EXECUTION_PAYLOAD_ENVELOPES_BY_ROOT_REQUEST_MESSAGE_SCHEMA;
+import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.EXECUTION_PAYLOAD_ENVELOPE_CONTENTS_SCHEMA;
 import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.EXECUTION_PAYLOAD_ENVELOPE_SCHEMA;
 import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.EXECUTION_PAYLOAD_HEADER_SCHEMA;
 import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.EXECUTION_PAYLOAD_SCHEMA;
@@ -98,13 +99,10 @@ import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.PTC_WINDOW_SCH
 import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.SIGNED_AGGREGATE_AND_PROOF_SCHEMA;
 import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.SIGNED_BEACON_BLOCK_SCHEMA;
 import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.SIGNED_BLINDED_BEACON_BLOCK_SCHEMA;
-import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.SIGNED_BLINDED_EXECUTION_PAYLOAD_ENVELOPE_SCHEMA;
 import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.SIGNED_BLOCK_CONTENTS_SCHEMA;
 import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.SIGNED_BLS_TO_EXECUTION_CHANGE_SCHEMA;
 import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.SIGNED_BUILDER_BID_SCHEMA;
 import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.SIGNED_EXECUTION_PAYLOAD_BID_SCHEMA;
-import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.SIGNED_EXECUTION_PAYLOAD_ENVELOPE_CONTENTS_SCHEMA;
-import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.SIGNED_EXECUTION_PAYLOAD_ENVELOPE_SCHEMA;
 import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.SIGNED_INCLUSION_LIST_SCHEMA;
 import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.SIGNED_PROPOSER_PREFERENCES_SCHEMA;
 import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.SINGLE_ATTESTATION_SCHEMA;
@@ -179,16 +177,14 @@ import tech.pegasys.teku.spec.datastructures.builder.versions.electra.BuilderBid
 import tech.pegasys.teku.spec.datastructures.builder.versions.fulu.BlobsBundleSchemaFulu;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelopeSchema;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBidSchema;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelopeContentsSchema;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelopeSchema;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.IndexedPayloadAttestationSchema;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationDataSchema;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationMessageSchema;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationSchema;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ProposerPreferencesSchema;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelopeSchema;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBidSchema;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelopeContentsSchema;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelopeSchema;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedProposerPreferencesSchema;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionProofSchema;
 import tech.pegasys.teku.spec.datastructures.execution.ProgressiveTransactionSchema;
@@ -371,9 +367,7 @@ public class SchemaRegistryBuilder {
         .addProvider(createSignedProposerPreferencesSchemaProvider())
         .addProvider(createExecutionPayloadEnvelopeSchemaProvider())
         .addProvider(createBlindedExecutionPayloadEnvelopeSchemaProvider())
-        .addProvider(createSignedExecutionPayloadEnvelopeSchemaProvider())
-        .addProvider(createSignedExecutionPayloadEnvelopeContentsSchemaProvider())
-        .addProvider(createSignedBlindedExecutionPayloadEnvelopeSchemaProvider())
+        .addProvider(createExecutionPayloadEnvelopeContentsSchemaProvider())
         .addProvider(createExecutionPayloadAvailabilitySchemaProvider())
         .addProvider(createBuilderPendingPaymentsSchemaProvider())
         .addProvider(createBuilderPendingWithdrawalsSchemaProvider())
@@ -1363,30 +1357,12 @@ public class SchemaRegistryBuilder {
         .build();
   }
 
-  private static SchemaProvider<?> createSignedExecutionPayloadEnvelopeSchemaProvider() {
-    return providerBuilder(SIGNED_EXECUTION_PAYLOAD_ENVELOPE_SCHEMA)
+  private static SchemaProvider<?> createExecutionPayloadEnvelopeContentsSchemaProvider() {
+    return providerBuilder(EXECUTION_PAYLOAD_ENVELOPE_CONTENTS_SCHEMA)
         .withCreator(
             GLOAS,
             (registry, specConfig, schemaName) ->
-                new SignedExecutionPayloadEnvelopeSchema(registry))
-        .build();
-  }
-
-  private static SchemaProvider<?> createSignedBlindedExecutionPayloadEnvelopeSchemaProvider() {
-    return providerBuilder(SIGNED_BLINDED_EXECUTION_PAYLOAD_ENVELOPE_SCHEMA)
-        .withCreator(
-            GLOAS,
-            (registry, specConfig, schemaName) ->
-                new SignedBlindedExecutionPayloadEnvelopeSchema(registry))
-        .build();
-  }
-
-  private static SchemaProvider<?> createSignedExecutionPayloadEnvelopeContentsSchemaProvider() {
-    return providerBuilder(SIGNED_EXECUTION_PAYLOAD_ENVELOPE_CONTENTS_SCHEMA)
-        .withCreator(
-            GLOAS,
-            (registry, specConfig, schemaName) ->
-                new SignedExecutionPayloadEnvelopeContentsSchema(
+                new ExecutionPayloadEnvelopeContentsSchema(
                     SpecConfigFulu.required(specConfig), registry))
         .build();
   }

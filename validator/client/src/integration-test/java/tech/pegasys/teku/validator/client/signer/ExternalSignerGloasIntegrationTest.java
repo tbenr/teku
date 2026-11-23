@@ -30,7 +30,6 @@ import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.builder.versions.gloas.BuilderRequestAuth;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationData;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ProposerPreferences;
 import tech.pegasys.teku.validator.api.signer.SignType;
@@ -66,31 +65,6 @@ public class ExternalSignerGloasIntegrationTest extends AbstractExternalSignerIn
         getSpec().getGenesisSchemaDefinitions());
     validateMetrics(metricsSystem, 1, 0, 0);
     verifyVersionedPayload("execution_payload_bid", "slot", bid.getSlot().toString());
-  }
-
-  @Test
-  void shouldSignExecutionPayloadEnvelope() throws Exception {
-    final ExecutionPayloadEnvelope envelope = dataStructureUtil.randomExecutionPayloadEnvelope();
-    final BLSSignature expectedSignature = dataStructureUtil.randomSignature();
-    client.when(request()).respond(response().withBody(expectedSignature.toString()));
-
-    final BLSSignature response =
-        externalSigner.signExecutionPayloadEnvelope(envelope, forkInfo).join();
-    assertThat(response).isEqualTo(expectedSignature);
-
-    final SigningRequestBody signingRequestBody =
-        new SigningRequestBody(
-            signingRootUtil.signingRootForSignExecutionPayloadEnvelope(envelope, forkInfo),
-            SignType.EXECUTION_PAYLOAD_ENVELOPE,
-            Map.of("fork_info", forkInfo, "execution_payload_envelope", versioned(envelope)));
-    verifySignRequest(
-        client,
-        KEYPAIR.getPublicKey().toString(),
-        signingRequestBody,
-        getSpec().getGenesisSchemaDefinitions());
-    validateMetrics(metricsSystem, 1, 0, 0);
-    verifyVersionedPayload(
-        "execution_payload_envelope", "builder_index", envelope.getBuilderIndex().toString());
   }
 
   @Test

@@ -62,8 +62,8 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.SlotAndExecutionPayloadSummary;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteSnapshot;
@@ -127,7 +127,7 @@ class Store extends CacheableStore {
   private UInt64 highestVotedValidatorIndex;
   private Optional<UInt64> custodyGroupCount = Optional.empty();
   private final Optional<Bytes32> fastConfirmedRootBeforeRestart;
-  private final Map<Bytes32, SignedExecutionPayloadEnvelope> executionPayloads;
+  private final Map<Bytes32, ExecutionPayloadEnvelope> executionPayloads;
 
   private UInt64 reorgThreshold = UInt64.ZERO;
   private UInt64 parentThreshold = UInt64.ZERO;
@@ -157,7 +157,7 @@ class Store extends CacheableStore {
       final Map<SlotAndBlockRoot, List<BlobSidecar>> blobSidecars,
       final Optional<UInt64> custodyGroupCount,
       final Optional<Bytes32> fastConfirmedRoot,
-      final Map<Bytes32, SignedExecutionPayloadEnvelope> executionPayloads) {
+      final Map<Bytes32, ExecutionPayloadEnvelope> executionPayloads) {
     checkArgument(
         time.isGreaterThanOrEqualTo(genesisTime),
         "Time must be greater than or equal to genesisTime");
@@ -243,7 +243,7 @@ class Store extends CacheableStore {
   }
 
   private ExecutionPayloadProvider createExecutionPayloadProviderFromMapWhileLocked(
-      final Map<Bytes32, SignedExecutionPayloadEnvelope> executionPayloadMap) {
+      final Map<Bytes32, ExecutionPayloadEnvelope> executionPayloadMap) {
     return (roots) -> {
       readLock.lock();
       try {
@@ -258,7 +258,7 @@ class Store extends CacheableStore {
   }
 
   private BlindedExecutionPayloadProvider createBlindedExecutionPayloadProviderFromMapWhileLocked(
-      final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloadMap) {
+      final Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloadMap) {
     return (roots) -> {
       readLock.lock();
       try {
@@ -310,7 +310,7 @@ class Store extends CacheableStore {
             : Optional.empty();
     final Map<SlotAndBlockRoot, List<BlobSidecar>> blobSidecars =
         LimitedMap.createSynchronizedNatural(config.getBlockCacheSize());
-    final Map<Bytes32, SignedExecutionPayloadEnvelope> executionPayloads =
+    final Map<Bytes32, ExecutionPayloadEnvelope> executionPayloads =
         LimitedMap.createSynchronizedNatural(config.getBlockCacheSize());
 
     return new Store(
@@ -694,7 +694,7 @@ class Store extends CacheableStore {
   }
 
   @Override
-  public Optional<SignedExecutionPayloadEnvelope> getExecutionPayloadIfAvailable(
+  public Optional<ExecutionPayloadEnvelope> getExecutionPayloadIfAvailable(
       final Bytes32 blockRoot) {
     readLock.lock();
     try {
@@ -819,19 +819,19 @@ class Store extends CacheableStore {
   }
 
   @Override
-  public SafeFuture<Optional<SignedExecutionPayloadEnvelope>> retrieveSignedExecutionPayload(
+  public SafeFuture<Optional<ExecutionPayloadEnvelope>> retrieveSignedExecutionPayload(
       final Bytes32 blockRoot) {
     if (!containsBlock(blockRoot)) {
-      return EmptyStoreResults.EMPTY_SIGNED_EXECUTION_PAYLOAD_ENVELOPE_FUTURE;
+      return EmptyStoreResults.EMPTY_EXECUTION_PAYLOAD_ENVELOPE_FUTURE;
     }
     return executionPayloadProvider.getExecutionPayload(blockRoot);
   }
 
   @Override
-  public SafeFuture<Optional<SignedBlindedExecutionPayloadEnvelope>>
+  public SafeFuture<Optional<BlindedExecutionPayloadEnvelope>>
       retrieveSignedBlindedExecutionPayload(final Bytes32 blockRoot) {
     if (!containsBlock(blockRoot)) {
-      return EmptyStoreResults.EMPTY_SIGNED_BLINDED_EXECUTION_PAYLOAD_ENVELOPE_FUTURE;
+      return EmptyStoreResults.EMPTY_BLINDED_EXECUTION_PAYLOAD_ENVELOPE_FUTURE;
     }
     return blindedExecutionPayloadProvider.getBlindedExecutionPayload(blockRoot);
   }
@@ -969,10 +969,9 @@ class Store extends CacheableStore {
   }
 
   @Override
-  void cacheExecutionPayloads(
-      final Map<Bytes32, SignedExecutionPayloadEnvelope> executionPayloads) {
+  void cacheExecutionPayloads(final Map<Bytes32, ExecutionPayloadEnvelope> executionPayloads) {
     executionPayloads.values().stream()
-        .sorted(Comparator.comparing(SignedExecutionPayloadEnvelope::getSlot))
+        .sorted(Comparator.comparing(ExecutionPayloadEnvelope::getSlot))
         .forEach(
             executionPayload ->
                 this.executionPayloads.put(

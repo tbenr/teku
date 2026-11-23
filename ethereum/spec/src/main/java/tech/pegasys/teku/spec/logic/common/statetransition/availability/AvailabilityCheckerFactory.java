@@ -16,7 +16,7 @@ package tech.pegasys.teku.spec.logic.common.statetransition.availability;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 
 @FunctionalInterface
@@ -33,7 +33,7 @@ public interface AvailabilityCheckerFactory<T> {
 
         @Override
         public AvailabilityChecker<UInt64> createAvailabilityChecker(
-            final BeaconState state, final SignedExecutionPayloadEnvelope signedEnvelope) {
+            final BeaconState state, final ExecutionPayloadEnvelope signedEnvelope) {
           return AvailabilityChecker.NOOP_DATACOLUMN_SIDECAR;
         }
       };
@@ -41,7 +41,7 @@ public interface AvailabilityCheckerFactory<T> {
   AvailabilityChecker<T> createAvailabilityChecker(SignedBeaconBlock block);
 
   default AvailabilityChecker<T> createAvailabilityChecker(
-      final BeaconState state, final SignedExecutionPayloadEnvelope signedEnvelope) {
+      final BeaconState state, final ExecutionPayloadEnvelope signedEnvelope) {
     throw new UnsupportedOperationException(
         "Execution payload envelope availability is not supported");
   }

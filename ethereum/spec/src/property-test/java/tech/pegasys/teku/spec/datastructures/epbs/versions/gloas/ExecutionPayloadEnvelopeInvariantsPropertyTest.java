@@ -21,22 +21,22 @@ import net.jqwik.api.Property;
 public class ExecutionPayloadEnvelopeInvariantsPropertyTest {
 
   @Property
-  void extractSlotFromSignedExecutionPayloadEnvelope(
-      @ForAll(supplier = SignedExecutionPayloadEnvelopeSupplier.class)
-          final SignedExecutionPayloadEnvelope signedExecutionPayloadEnvelope) {
+  void extractSlotFromExecutionPayloadEnvelope(
+      @ForAll(supplier = ExecutionPayloadEnvelopeSupplier.class)
+          final ExecutionPayloadEnvelope executionPayloadEnvelope) {
     assertThat(
-            ExecutionPayloadEnvelopeInvariants.extractSignedExecutionPayloadEnvelopeSlot(
-                signedExecutionPayloadEnvelope.sszSerialize()))
-        .isEqualTo(signedExecutionPayloadEnvelope.getSlot());
+            ExecutionPayloadEnvelopeInvariants.extractExecutionPayloadEnvelopeSlot(
+                executionPayloadEnvelope.sszSerialize()))
+        .isEqualTo(executionPayloadEnvelope.getSlot());
   }
 
   @Property
-  void extractSlotFromSignedBlindedExecutionPayloadEnvelope(
-      @ForAll(supplier = SignedBlindedExecutionPayloadEnvelopeSupplier.class)
-          final SignedBlindedExecutionPayloadEnvelope signedBlindedExecutionPayloadEnvelope) {
+  void extractSlotFromBlindedExecutionPayloadEnvelope(
+      @ForAll(supplier = BlindedExecutionPayloadEnvelopeSupplier.class)
+          final BlindedExecutionPayloadEnvelope blindedExecutionPayloadEnvelope) {
     assertThat(
-            ExecutionPayloadEnvelopeInvariants.extractSignedBlindedExecutionPayloadEnvelopeSlot(
-                signedBlindedExecutionPayloadEnvelope.sszSerialize()))
-        .isEqualTo(signedBlindedExecutionPayloadEnvelope.getSlot());
+            ExecutionPayloadEnvelopeInvariants.extractBlindedExecutionPayloadEnvelopeSlot(
+                blindedExecutionPayloadEnvelope.sszSerialize()))
+        .isEqualTo(blindedExecutionPayloadEnvelope.getSlot());
   }
 }

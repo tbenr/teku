@@ -34,7 +34,7 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 
 class DebugDataFileDumperTest {
@@ -175,16 +175,15 @@ class DebugDataFileDumperTest {
   void saveInvalidExecutionPayloadToFile_shouldSaveToFile(@TempDir final Path tempDir) {
     dataStructureUtil = new DataStructureUtil(TestSpecFactory.createMinimalGloas());
     final DebugDataFileDumper dumper = new DebugDataFileDumper(tempDir);
-    final SignedExecutionPayloadEnvelope executionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(42);
+    final ExecutionPayloadEnvelope executionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelope(42);
     dumper.saveInvalidExecutionPayload(executionPayload, "reason", Optional.of(new Throwable()));
 
     final String fileName =
         String.format(
-            "%s_%s_%s.ssz",
+            "%s_%s.ssz",
             executionPayload.getSlot(),
-            executionPayload.getBeaconBlockRoot().toUnprefixedHexString(),
-            executionPayload.getMessage().getBuilderIndex());
+            executionPayload.getBeaconBlockRoot().toUnprefixedHexString());
     final Path expectedFile = tempDir.resolve("invalid_execution_payloads").resolve(fileName);
     checkBytesSavedToFile(expectedFile, executionPayload.sszSerialize());
   }

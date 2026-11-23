@@ -14,13 +14,13 @@
 package tech.pegasys.teku.spec.logic.common.statetransition.results;
 
 import java.util.Optional;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 
 class SuccessfulExecutionPayloadImportResult implements ExecutionPayloadImportResult {
 
-  private final SignedExecutionPayloadEnvelope executionPayload;
+  private final ExecutionPayloadEnvelope executionPayload;
 
-  SuccessfulExecutionPayloadImportResult(final SignedExecutionPayloadEnvelope executionPayload) {
+  SuccessfulExecutionPayloadImportResult(final ExecutionPayloadEnvelope executionPayload) {
     this.executionPayload = executionPayload;
   }
 
@@ -30,7 +30,7 @@ class SuccessfulExecutionPayloadImportResult implements ExecutionPayloadImportRe
   }
 
   @Override
-  public SignedExecutionPayloadEnvelope getExecutionPayload() {
+  public ExecutionPayloadEnvelope getExecutionPayload() {
     return executionPayload;
   }
 

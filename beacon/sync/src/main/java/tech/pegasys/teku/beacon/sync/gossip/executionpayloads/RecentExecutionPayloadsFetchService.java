@@ -25,15 +25,15 @@ import tech.pegasys.teku.infrastructure.async.AsyncRunner;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.collections.LimitedSet;
 import tech.pegasys.teku.infrastructure.subscribers.Subscribers;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationMessage;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.statetransition.execution.ExecutionPayloadManager;
 import tech.pegasys.teku.statetransition.payloadattestation.PayloadAttestationPool;
 import tech.pegasys.teku.statetransition.util.PendingPool;
 import tech.pegasys.teku.statetransition.validation.InternalValidationResult;
 
 public class RecentExecutionPayloadsFetchService
-    extends AbstractFetchService<Bytes32, FetchExecutionPayloadTask, SignedExecutionPayloadEnvelope>
+    extends AbstractFetchService<Bytes32, FetchExecutionPayloadTask, ExecutionPayloadEnvelope>
     implements RecentExecutionPayloadsFetcher {
 
   private static final Logger LOG = LogManager.getLogger();
@@ -102,7 +102,7 @@ public class RecentExecutionPayloadsFetchService
 
   @Override
   public void processFetchedResult(
-      final FetchExecutionPayloadTask task, final SignedExecutionPayloadEnvelope executionPayload) {
+      final FetchExecutionPayloadTask task, final ExecutionPayloadEnvelope executionPayload) {
     LOG.trace("Successfully fetched execution payload: {}", executionPayload);
     executionPayloadSubscribers.forEach(s -> s.onExecutionPayload(executionPayload));
     // After retrieved execution payload has been processed, stop tracking it
@@ -142,14 +142,14 @@ public class RecentExecutionPayloadsFetchService
   }
 
   @Override
-  public void onExecutionPayloadValidated(final SignedExecutionPayloadEnvelope executionPayload) {}
+  public void onExecutionPayloadValidated(final ExecutionPayloadEnvelope executionPayload) {}
 
   @Override
-  public void onExecutionPayloadAvailable(final SignedExecutionPayloadEnvelope executionPayload) {}
+  public void onExecutionPayloadAvailable(final ExecutionPayloadEnvelope executionPayload) {}
 
   @Override
   public void onExecutionPayloadImported(
-      final SignedExecutionPayloadEnvelope executionPayload, final boolean executionOptimistic) {
+      final ExecutionPayloadEnvelope executionPayload, final boolean executionOptimistic) {
     cancelRecentExecutionPayloadRequest(executionPayload.getBeaconBlockRoot());
   }
 

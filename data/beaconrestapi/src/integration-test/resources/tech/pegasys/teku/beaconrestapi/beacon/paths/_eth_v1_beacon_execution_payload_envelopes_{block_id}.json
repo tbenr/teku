@@ -1,9 +1,9 @@
 {
   "get" : {
     "tags" : [ "Beacon" ],
-    "operationId" : "getSignedExecutionPayloadEnvelope",
-    "summary" : "Get signed execution payload envelope",
-    "description" : "Retrieves signed execution payload envelope for a given block id.",
+    "operationId" : "getExecutionPayloadEnvelope",
+    "summary" : "Get execution payload envelope",
+    "description" : "Retrieves execution payload envelope for a given block id.",
     "parameters" : [ {
       "name" : "block_id",
       "required" : true,
@@ -20,7 +20,7 @@
         "content" : {
           "application/json" : {
             "schema" : {
-              "$ref" : "#/components/schemas/GetSignedExecutionPayloadEnvelopeResponse"
+              "$ref" : "#/components/schemas/GetExecutionPayloadEnvelopeResponse"
             }
           },
           "application/octet-stream" : {

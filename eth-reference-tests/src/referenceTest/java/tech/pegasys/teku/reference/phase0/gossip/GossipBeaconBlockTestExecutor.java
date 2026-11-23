@@ -33,7 +33,7 @@ import tech.pegasys.teku.reference.BlsSetting;
 import tech.pegasys.teku.reference.TestExecutor;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
@@ -142,7 +142,7 @@ public class GossipBeaconBlockTestExecutor implements TestExecutor {
                 .isTrue();
           }
         }
-        // Some fixtures pair a setup block with a SignedExecutionPayloadEnvelope (Gloas ePBS)
+        // Some fixtures pair a setup block with a ExecutionPayloadEnvelope (Gloas ePBS)
         // via the `payload` key in meta.yaml. Deliver it to fork choice after the block itself
         // (or, for the anchor block, after the anchor is initialized — the anchor's FULL node is
         // not created automatically) so a FULL node exists for the block root, matching how a real
@@ -151,19 +151,21 @@ public class GossipBeaconBlockTestExecutor implements TestExecutor {
             .getPayload()
             .ifPresent(
                 payloadName -> {
-                  final SignedExecutionPayloadEnvelope envelope =
+                  final ExecutionPayloadEnvelope envelope =
                       loadSsz(
                           testDefinition,
                           payloadName + ".ssz_snappy",
                           SchemaDefinitionsGloas.required(spec.getGenesisSchemaDefinitions())
-                              .getSignedExecutionPayloadEnvelopeSchema());
+                              .getExecutionPayloadEnvelopeSchema());
                   final ExecutionPayloadImportResult envelopeImportResult =
                       safeJoin(
                           ctx.forkChoice.onExecutionPayloadEnvelope(envelope, ctx.executionLayer));
                   assertThat(envelopeImportResult.isSuccessful())
                       .describedAs(
-                          "Expected execution payload envelope %s to import successfully: %s",
-                          payloadName, envelopeImportResult.getFailureReason())
+                          "Expected execution payload envelope %s to import successfully: %s %s",
+                          payloadName,
+                          envelopeImportResult.getFailureReason(),
+                          envelopeImportResult.getFailureCause().map(Throwable::getMessage))
                       .isTrue();
                 });
       }
@@ -329,7 +331,7 @@ public class GossipBeaconBlockTestExecutor implements TestExecutor {
       @JsonProperty(value = "payload_status")
       private FixturePayloadStatus payloadStatus;
 
-      // Gloas (ePBS) fixtures may pair a setup block with a SignedExecutionPayloadEnvelope,
+      // Gloas (ePBS) fixtures may pair a setup block with a ExecutionPayloadEnvelope,
       // named here, which must be delivered to fork choice alongside the block.
       @JsonProperty(value = "payload")
       private String payload;

@@ -19,7 +19,8 @@ import static tech.pegasys.teku.infrastructure.json.types.CoreTypes.UINT64_TYPE;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.json.types.SerializableTypeDefinition;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 
 public class ExecutionPayloadGossipEvent
     extends Event<ExecutionPayloadGossipEvent.ExecutionPayloadData> {
@@ -31,19 +32,30 @@ public class ExecutionPayloadGossipEvent
               .withField("slot", UINT64_TYPE, ExecutionPayloadData::slot)
               .withField("builder_index", UINT64_TYPE, ExecutionPayloadData::builderIndex)
               .withField("block_hash", BYTES32_TYPE, ExecutionPayloadData::blockHash)
+              .withField("payload_root", BYTES32_TYPE, ExecutionPayloadData::payloadRoot)
               .withField("block_root", BYTES32_TYPE, ExecutionPayloadData::blockRoot)
               .build();
 
-  ExecutionPayloadGossipEvent(final SignedExecutionPayloadEnvelope executionPayload) {
+  /**
+   * @param bid the execution payload bid of the envelope's beacon block, which names the builder
+   *     and commits to the payload root
+   */
+  ExecutionPayloadGossipEvent(
+      final ExecutionPayloadEnvelope executionPayload, final ExecutionPayloadBid bid) {
     super(
         EXECUTION_PAYLOAD_GOSSIP_EVENT_TYPE,
         new ExecutionPayloadData(
             executionPayload.getSlot(),
-            executionPayload.getMessage().getBuilderIndex(),
-            executionPayload.getMessage().getPayload().getBlockHash(),
+            bid.getBuilderIndex(),
+            executionPayload.getPayload().getBlockHash(),
+            bid.getPayloadRoot(),
             executionPayload.getBeaconBlockRoot()));
   }
 
   public record ExecutionPayloadData(
-      UInt64 slot, UInt64 builderIndex, Bytes32 blockHash, Bytes32 blockRoot) {}
+      UInt64 slot,
+      UInt64 builderIndex,
+      Bytes32 blockHash,
+      Bytes32 payloadRoot,
+      Bytes32 blockRoot) {}
 }

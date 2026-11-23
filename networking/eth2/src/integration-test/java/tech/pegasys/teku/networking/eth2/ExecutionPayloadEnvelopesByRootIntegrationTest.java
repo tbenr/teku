@@ -36,7 +36,6 @@ import tech.pegasys.teku.spec.TestSpecContext;
 import tech.pegasys.teku.spec.TestSpecInvocationContextProvider;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 
 @TestSpecContext(milestone = {FULU, GLOAS})
 public class ExecutionPayloadEnvelopesByRootIntegrationTest
@@ -63,7 +62,7 @@ public class ExecutionPayloadEnvelopesByRootIntegrationTest
   public void requestExecutionPayloadEnvelopes_shouldReturnEmptyForUnknownRoots()
       throws ExecutionException, InterruptedException, TimeoutException {
     assumeThat(specMilestone).isGreaterThanOrEqualTo(GLOAS);
-    final List<SignedExecutionPayloadEnvelope> envelopes =
+    final List<ExecutionPayloadEnvelope> envelopes =
         requestExecutionPayloadEnvelopesByRoot(peer, List.of(Bytes32.ZERO));
     assertThat(envelopes).isEmpty();
   }
@@ -79,18 +78,17 @@ public class ExecutionPayloadEnvelopesByRootIntegrationTest
     peerStorage.chainUpdater().updateBestBlock(block);
 
     // grab expected execution payload envelopes from storage
-    final List<SignedExecutionPayloadEnvelope> expectedExecutionPayloadEnvelopes =
+    final List<ExecutionPayloadEnvelope> expectedExecutionPayloadEnvelopes =
         peerStorage.chainBuilder().streamExecutionPayloads(UInt64.ZERO).toList();
 
     assertThat(expectedExecutionPayloadEnvelopes).hasSize(3);
 
     final List<Bytes32> beaconBlockRoots =
         expectedExecutionPayloadEnvelopes.stream()
-            .map(SignedExecutionPayloadEnvelope::getMessage)
             .map(ExecutionPayloadEnvelope::getBeaconBlockRoot)
             .toList();
 
-    final List<SignedExecutionPayloadEnvelope> executionPayloadEnvelopes =
+    final List<ExecutionPayloadEnvelope> executionPayloadEnvelopes =
         requestExecutionPayloadEnvelopesByRoot(peer, beaconBlockRoots);
 
     assertThat(executionPayloadEnvelopes)
@@ -107,7 +105,7 @@ public class ExecutionPayloadEnvelopesByRootIntegrationTest
     peerStorage.chainUpdater().advanceChainUntil(targetSlot);
 
     // grab expected execution payload envelopes from storage
-    final List<SignedExecutionPayloadEnvelope> expectedEnvelopes =
+    final List<ExecutionPayloadEnvelope> expectedEnvelopes =
         peerStorage.chainBuilder().streamExecutionPayloads(UInt64.ZERO).toList();
     assertThat(expectedEnvelopes).hasSize(3);
 
@@ -115,22 +113,20 @@ public class ExecutionPayloadEnvelopesByRootIntegrationTest
     final List<Bytes32> requestedRoots =
         Stream.concat(
                 Stream.of(Bytes32.ZERO),
-                expectedEnvelopes.stream()
-                    .map(SignedExecutionPayloadEnvelope::getMessage)
-                    .map(ExecutionPayloadEnvelope::getBeaconBlockRoot))
+                expectedEnvelopes.stream().map(ExecutionPayloadEnvelope::getBeaconBlockRoot))
             .toList();
 
-    final List<SignedExecutionPayloadEnvelope> envelopes =
+    final List<ExecutionPayloadEnvelope> envelopes =
         requestExecutionPayloadEnvelopesByRoot(peer, requestedRoots);
 
     // unknown root (Bytes32.ZERO) should be skipped, expected envelopes should be returned
     assertThat(envelopes).containsExactlyInAnyOrderElementsOf(expectedEnvelopes);
   }
 
-  private List<SignedExecutionPayloadEnvelope> requestExecutionPayloadEnvelopesByRoot(
+  private List<ExecutionPayloadEnvelope> requestExecutionPayloadEnvelopesByRoot(
       final Eth2Peer peer, final List<Bytes32> beaconBlockRoots)
       throws InterruptedException, ExecutionException, TimeoutException {
-    final List<SignedExecutionPayloadEnvelope> executionPayloadEnvelopes = new ArrayList<>();
+    final List<ExecutionPayloadEnvelope> executionPayloadEnvelopes = new ArrayList<>();
     waitFor(
         peer.requestExecutionPayloadEnvelopesByRoot(
             beaconBlockRoots, RpcResponseListener.from(executionPayloadEnvelopes::add)));

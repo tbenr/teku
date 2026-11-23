@@ -183,6 +183,8 @@ public class GloasStateUpgrade implements StateUpgrade<BeaconStateFulu> {
                           latestExecutionPayloadHeader.getParentHash(),
                           preState.getLatestBlockHeader().getParentRoot(),
                           latestBlockHash,
+                          // the upgraded bid commits to no payload root
+                          Bytes32.ZERO,
                           latestExecutionPayloadHeader.getPrevRandao(),
                           Bytes20.ZERO,
                           latestExecutionPayloadHeader.getGasLimit(),

@@ -84,10 +84,10 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlockHeader;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.SlotAndExecutionPayloadSummary;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
@@ -717,8 +717,8 @@ public class DatabaseTest {
     setupWithSpec(TestSpecFactory.createMinimalGloas(), BLSKeyGenerator.generateKeyPairs(8));
     initialize(context);
     final SignedBlockAndState blockAndState = chainBuilder.generateNextBlock();
-    final SignedBlindedExecutionPayloadEnvelope signedBlindedExecutionPayloadEnvelope =
-        getSignedBlindedExecutionPayloadEnvelope(blockAndState);
+    final BlindedExecutionPayloadEnvelope blindedExecutionPayloadEnvelope =
+        getBlindedExecutionPayloadEnvelope(blockAndState);
 
     database.update(
         new StorageUpdate(
@@ -728,7 +728,7 @@ public class DatabaseTest {
             Optional.empty(),
             Map.of(),
             Map.of(),
-            Map.of(blockAndState.getRoot(), signedBlindedExecutionPayloadEnvelope),
+            Map.of(blockAndState.getRoot(), blindedExecutionPayloadEnvelope),
             Map.of(),
             Optional.empty(),
             Map.of(),
@@ -743,7 +743,7 @@ public class DatabaseTest {
             true));
 
     assertThat(database.getBlindedExecutionPayloadEnvelope(blockAndState.getRoot()))
-        .contains(signedBlindedExecutionPayloadEnvelope);
+        .contains(blindedExecutionPayloadEnvelope);
   }
 
   @TestTemplate
@@ -752,7 +752,7 @@ public class DatabaseTest {
     setupWithSpec(TestSpecFactory.createMinimalGloas(), BLSKeyGenerator.generateKeyPairs(8));
     initialize(context);
     final SignedBlockAndState blockAndState = chainBuilder.generateNextBlock();
-    final SignedExecutionPayloadEnvelope executionPayload =
+    final ExecutionPayloadEnvelope executionPayload =
         chainBuilder.getExecutionPayloadAtSlot(blockAndState.getSlot()).orElseThrow();
     final StoreTransaction transaction = recentChainData.startStoreTransaction();
     transaction.putBlockAndState(
@@ -767,8 +767,8 @@ public class DatabaseTest {
             new GloasForkChoiceRebuildData(
                 bid.getParentBlockHash(),
                 bid.getBlockHash(),
-                Optional.of(executionPayload.getMessage().getPayload().getBlockNumber()),
-                Optional.of(executionPayload.getMessage().getPayload().getGasLimit())));
+                Optional.of(executionPayload.getPayload().getBlockNumber()),
+                Optional.of(executionPayload.getPayload().getGasLimit())));
   }
 
   @TestTemplate
@@ -799,9 +799,9 @@ public class DatabaseTest {
     final StoreTransaction transaction = recentChainData.startStoreTransaction();
     transaction.putBlockAndState(
         blockAndState, spec.calculateBlockCheckpoints(blockAndState.getState()));
-    final SignedBlindedExecutionPayloadEnvelope mismatchedEnvelope =
+    final BlindedExecutionPayloadEnvelope mismatchedEnvelope =
         dataStructureUtil
-            .randomSignedExecutionPayloadEnvelopeForBlock(blockAndState.getBlock())
+            .randomExecutionPayloadEnvelopeForBlock(blockAndState.getBlock())
             .blind(spec);
 
     commit(transaction);
@@ -818,8 +818,8 @@ public class DatabaseTest {
     setupWithSpec(TestSpecFactory.createMinimalGloas(), BLSKeyGenerator.generateKeyPairs(8));
     initialize(context);
     final SignedBlockAndState blockAndState = chainBuilder.generateNextBlock();
-    final SignedBlindedExecutionPayloadEnvelope signedBlindedExecutionPayloadEnvelope =
-        getSignedBlindedExecutionPayloadEnvelope(blockAndState);
+    final BlindedExecutionPayloadEnvelope blindedExecutionPayloadEnvelope =
+        getBlindedExecutionPayloadEnvelope(blockAndState);
     final FinalizedChainData finalizedChainData =
         FinalizedChainData.builder()
             .latestFinalized(AnchorPoint.fromInitialBlockAndState(spec, blockAndState))
@@ -836,7 +836,7 @@ public class DatabaseTest {
             Optional.empty(),
             Map.of(),
             Map.of(),
-            Map.of(blockAndState.getRoot(), signedBlindedExecutionPayloadEnvelope),
+            Map.of(blockAndState.getRoot(), blindedExecutionPayloadEnvelope),
             Map.of(),
             Optional.empty(),
             Map.of(),
@@ -875,7 +875,7 @@ public class DatabaseTest {
 
     // Envelope should still be present — canonical finalized blocks are not pruned
     assertThat(database.getBlindedExecutionPayloadEnvelope(blockAndState.getRoot()))
-        .contains(signedBlindedExecutionPayloadEnvelope);
+        .contains(blindedExecutionPayloadEnvelope);
   }
 
   @TestTemplate
@@ -973,8 +973,8 @@ public class DatabaseTest {
     // The block at slot 1 is finalized together with its envelope, without ever being a hot block,
     // so it can only be read from finalized storage
     final SignedBlockAndState parent = chainBuilder.generateNextBlock();
-    final SignedBlindedExecutionPayloadEnvelope parentEnvelope =
-        getSignedBlindedExecutionPayloadEnvelope(parent);
+    final BlindedExecutionPayloadEnvelope parentEnvelope =
+        getBlindedExecutionPayloadEnvelope(parent);
     database.update(
         storageUpdateWithBlindedExecutionPayloads(
             Optional.of(
@@ -1026,8 +1026,7 @@ public class DatabaseTest {
     final SignedBlockAndState child =
         chainBuilder.generateBlockAtSlot(
             2, chainBuilder.createBlockOptionsBuildingOnEmptyParent(UInt64.valueOf(2)));
-    final SignedBlindedExecutionPayloadEnvelope childEnvelope =
-        getSignedBlindedExecutionPayloadEnvelope(child);
+    final BlindedExecutionPayloadEnvelope childEnvelope = getBlindedExecutionPayloadEnvelope(child);
 
     // Both envelopes arrive with the finalization of their blocks. The child built on the EMPTY
     // variant of the parent, so the parent's envelope must not survive; the child's is retained.
@@ -1043,7 +1042,7 @@ public class DatabaseTest {
                     .build()),
             Map.of(
                 parent.getRoot(),
-                getSignedBlindedExecutionPayloadEnvelope(parent),
+                getBlindedExecutionPayloadEnvelope(parent),
                 child.getRoot(),
                 childEnvelope)));
 
@@ -1055,7 +1054,7 @@ public class DatabaseTest {
 
   private StorageUpdate storageUpdateWithBlindedExecutionPayloads(
       final Optional<FinalizedChainData> finalizedChainData,
-      final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads) {
+      final Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloads) {
     return new StorageUpdate(
         Optional.empty(),
         finalizedChainData,
@@ -1141,8 +1140,8 @@ public class DatabaseTest {
     setupWithSpec(TestSpecFactory.createMinimalGloas(), BLSKeyGenerator.generateKeyPairs(8));
     initialize(context);
     final SignedBlockAndState blockAndState = chainBuilder.generateNextBlock();
-    final SignedBlindedExecutionPayloadEnvelope signedBlindedExecutionPayloadEnvelope =
-        getSignedBlindedExecutionPayloadEnvelope(blockAndState);
+    final BlindedExecutionPayloadEnvelope blindedExecutionPayloadEnvelope =
+        getBlindedExecutionPayloadEnvelope(blockAndState);
 
     // Store envelope
     database.update(
@@ -1153,7 +1152,7 @@ public class DatabaseTest {
             Optional.empty(),
             Map.of(),
             Map.of(),
-            Map.of(blockAndState.getRoot(), signedBlindedExecutionPayloadEnvelope),
+            Map.of(blockAndState.getRoot(), blindedExecutionPayloadEnvelope),
             Map.of(),
             Optional.empty(),
             Map.of(),
@@ -1169,7 +1168,7 @@ public class DatabaseTest {
 
     // Verify it's stored
     assertThat(database.getBlindedExecutionPayloadEnvelope(blockAndState.getRoot()))
-        .contains(signedBlindedExecutionPayloadEnvelope);
+        .contains(blindedExecutionPayloadEnvelope);
 
     // Delete the block (simulates non-canonical pruning)
     database.update(
@@ -1217,7 +1216,7 @@ public class DatabaseTest {
   }
 
   private void storeBlindedExecutionPayloadEnvelope(
-      final Bytes32 blockRoot, final SignedBlindedExecutionPayloadEnvelope envelope) {
+      final Bytes32 blockRoot, final BlindedExecutionPayloadEnvelope envelope) {
     database.update(
         new StorageUpdate(
             Optional.empty(),
@@ -1241,9 +1240,9 @@ public class DatabaseTest {
             true));
   }
 
-  private SignedBlindedExecutionPayloadEnvelope getSignedBlindedExecutionPayloadEnvelope(
+  private BlindedExecutionPayloadEnvelope getBlindedExecutionPayloadEnvelope(
       final SignedBlockAndState blockAndState) {
-    final SignedExecutionPayloadEnvelope executionPayload =
+    final ExecutionPayloadEnvelope executionPayload =
         chainBuilder.getExecutionPayloadAtSlot(blockAndState.getSlot()).orElseThrow();
     return executionPayload.blind(spec);
   }

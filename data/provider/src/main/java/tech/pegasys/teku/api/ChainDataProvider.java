@@ -69,6 +69,7 @@ import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.deneb.BeaconBlockBodyDeneb;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
 import tech.pegasys.teku.spec.datastructures.execution.versions.capella.Withdrawal;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
@@ -528,6 +529,15 @@ public class ChainDataProvider {
                 builderStatusFilter.isEmpty()
                     || builderStatusFilter.contains(builderData.builderStatus()))
         .toList();
+  }
+
+  public SafeFuture<Optional<ExecutionPayloadBid>> getExecutionPayloadBid(final Bytes32 blockRoot) {
+    return combinedChainDataClient
+        .getBlockByBlockRoot(blockRoot)
+        .thenApply(
+            maybeBlock ->
+                maybeBlock.flatMap(
+                    block -> block.getMessage().getBody().getOptionalExecutionPayloadBid()));
   }
 
   public Optional<Bytes32> getStateRootFromBlockRoot(final Bytes32 blockRoot) {

@@ -37,8 +37,8 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.builder.SignedValidatorRegistration;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ProposerPreferences;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionRequests;
 import tech.pegasys.teku.spec.datastructures.execution.versions.capella.Withdrawal;
@@ -400,7 +400,7 @@ public class ProposersDataManager implements SlotEventsChannel, ValidatorIsConne
         .thenApply(
             executionPayload ->
                 executionPayload
-                    .map(SignedBlindedExecutionPayloadEnvelope::getExecutionRequests)
+                    .map(BlindedExecutionPayloadEnvelope::getExecutionRequests)
                     .orElseThrow(
                         () ->
                             new IllegalStateException(

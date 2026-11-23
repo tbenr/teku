@@ -15,7 +15,7 @@ package tech.pegasys.teku.spec.logic.common.statetransition.results;
 
 import java.util.Optional;
 import tech.pegasys.teku.infrastructure.exceptions.ExceptionUtil;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 
 @SuppressWarnings("ClassInitializationDeadlock")
 public interface ExecutionPayloadImportResult {
@@ -50,13 +50,12 @@ public interface ExecutionPayloadImportResult {
     return new FailedExecutionPayloadImportResult(FailureReason.INTERNAL_ERROR, Optional.of(cause));
   }
 
-  static ExecutionPayloadImportResult successful(
-      final SignedExecutionPayloadEnvelope executionPayload) {
+  static ExecutionPayloadImportResult successful(final ExecutionPayloadEnvelope executionPayload) {
     return new SuccessfulExecutionPayloadImportResult(executionPayload);
   }
 
   static ExecutionPayloadImportResult optimisticallySuccessful(
-      final SignedExecutionPayloadEnvelope executionPayload) {
+      final ExecutionPayloadEnvelope executionPayload) {
     return new OptimisticSuccessfulExecutionPayloadImportResult(executionPayload);
   }
 
@@ -93,10 +92,9 @@ public interface ExecutionPayloadImportResult {
   }
 
   /**
-   * @return If successful, returns a {@code SignedExecutionPayloadEnvelope}, otherwise returns
-   *     null.
+   * @return If successful, returns a {@code ExecutionPayloadEnvelope}, otherwise returns null.
    */
-  SignedExecutionPayloadEnvelope getExecutionPayload();
+  ExecutionPayloadEnvelope getExecutionPayload();
 
   /**
    * @return If failed, returns a non-null failure reason, otherwise returns null.

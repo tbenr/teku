@@ -13,77 +13,48 @@
 
 package tech.pegasys.teku.validator.api;
 
-import com.google.common.base.MoreObjects;
-import java.util.Objects;
 import java.util.Optional;
 import org.apache.tuweni.bytes.Bytes32;
 
-public class PublishSignedExecutionPayloadResult {
+/**
+ * @param rejectionReason why the envelope was not published or not imported, empty when it was
+ *     published and imported
+ */
+public record PublishSignedExecutionPayloadResult(
+    Bytes32 beaconBlockRoot, Outcome outcome, Optional<String> rejectionReason) {
 
-  private final Bytes32 beaconBlockRoot;
-  private final Optional<String> rejectionReason;
-  private final boolean published;
-
-  private PublishSignedExecutionPayloadResult(
-      final Bytes32 beaconBlockRoot,
-      final Optional<String> rejectionReason,
-      final boolean published) {
-    this.beaconBlockRoot = beaconBlockRoot;
-    this.rejectionReason = rejectionReason;
-    this.published = published;
+  public enum Outcome {
+    PUBLISHED,
+    /** Broadcast, but the envelope failed to be imported */
+    PUBLISHED_NOT_IMPORTED,
+    REJECTED,
+    /** The beacon block of the envelope has not been seen, so nothing was published */
+    BLOCK_NOT_FOUND
   }
 
   public static PublishSignedExecutionPayloadResult success(final Bytes32 beaconBlockRoot) {
-    return new PublishSignedExecutionPayloadResult(beaconBlockRoot, Optional.empty(), true);
+    return new PublishSignedExecutionPayloadResult(
+        beaconBlockRoot, Outcome.PUBLISHED, Optional.empty());
   }
 
   public static PublishSignedExecutionPayloadResult notImported(
       final Bytes32 beaconBlockRoot, final String reason) {
-    return new PublishSignedExecutionPayloadResult(beaconBlockRoot, Optional.of(reason), true);
+    return new PublishSignedExecutionPayloadResult(
+        beaconBlockRoot, Outcome.PUBLISHED_NOT_IMPORTED, Optional.of(reason));
   }
 
   public static PublishSignedExecutionPayloadResult rejected(
       final Bytes32 beaconBlockRoot, final String reason) {
-    return new PublishSignedExecutionPayloadResult(beaconBlockRoot, Optional.of(reason), false);
+    return new PublishSignedExecutionPayloadResult(
+        beaconBlockRoot, Outcome.REJECTED, Optional.of(reason));
   }
 
-  public Bytes32 getBeaconBlockRoot() {
-    return beaconBlockRoot;
-  }
-
-  public Optional<String> getRejectionReason() {
-    return rejectionReason;
+  public static PublishSignedExecutionPayloadResult blockNotFound(final Bytes32 beaconBlockRoot) {
+    return new PublishSignedExecutionPayloadResult(
+        beaconBlockRoot, Outcome.BLOCK_NOT_FOUND, Optional.of("Beacon block not found"));
   }
 
   public boolean isPublished() {
-    return published;
-  }
-
-  @Override
-  public boolean equals(final Object o) {
-    if (this == o) {
-      return true;
-    }
-    if (o == null || getClass() != o.getClass()) {
-      return false;
-    }
-    final PublishSignedExecutionPayloadResult that = (PublishSignedExecutionPayloadResult) o;
-    return Objects.equals(beaconBlockRoot, that.beaconBlockRoot)
-        && Objects.equals(rejectionReason, that.rejectionReason)
-        && published == that.published;
-  }
-
-  @Override
-  public int hashCode() {
-    return Objects.hash(beaconBlockRoot, rejectionReason, published);
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("beaconBlockRoot", beaconBlockRoot)
-        .add("rejectionReason", rejectionReason)
-        .add("published", published)
-        .toString();
+    return outcome == Outcome.PUBLISHED || outcome == Outcome.PUBLISHED_NOT_IMPORTED;
   }
 }

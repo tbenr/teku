@@ -17,7 +17,7 @@ import java.util.Optional;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionRequests;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.validator.BroadcastValidationLevel;
@@ -40,7 +40,7 @@ public interface ExecutionPayloadManager {
 
         @Override
         public SafeFuture<InternalValidationResult> validateAndImportExecutionPayload(
-            final SignedExecutionPayloadEnvelope signedExecutionPayload,
+            final ExecutionPayloadEnvelope signedExecutionPayload,
             final Optional<UInt64> maybeArrivalTimestamp,
             final Optional<BroadcastValidationLevel> broadcastValidationLevel) {
           return SafeFuture.completedFuture(InternalValidationResult.ACCEPT);
@@ -48,7 +48,7 @@ public interface ExecutionPayloadManager {
 
         @Override
         public SafeFuture<ValidateAndImportResult> validateAndImportExecutionPayloadForBroadcast(
-            final SignedExecutionPayloadEnvelope signedExecutionPayload,
+            final ExecutionPayloadEnvelope signedExecutionPayload,
             final Optional<BroadcastValidationLevel> broadcastValidationLevel) {
           return SafeFuture.completedFuture(
               new ValidateAndImportResult(InternalValidationResult.ACCEPT, Optional.empty()));
@@ -56,7 +56,7 @@ public interface ExecutionPayloadManager {
 
         @Override
         public SafeFuture<ExecutionPayloadImportResult> importExecutionPayload(
-            final SignedExecutionPayloadEnvelope signedExecutionPayload,
+            final ExecutionPayloadEnvelope signedExecutionPayload,
             final boolean payloadCommitmentVerified) {
           return SafeFuture.completedFuture(
               ExecutionPayloadImportResult.successful(signedExecutionPayload));
@@ -76,14 +76,14 @@ public interface ExecutionPayloadManager {
       };
 
   /**
-   * {@link SignedExecutionPayloadEnvelope} has been recently seen referencing the block. This is
-   * used for RPC fetch de-duplication.
+   * {@link ExecutionPayloadEnvelope} has been recently seen referencing the block. This is used for
+   * RPC fetch de-duplication.
    */
   boolean isExecutionPayloadRecentlySeen(Bytes32 beaconBlockRoot);
 
   /**
-   * {@link SignedExecutionPayloadEnvelope} was seen before {@code get_payload_due_ms()}. This
-   * method is used for the `payload_present` vote.
+   * {@link ExecutionPayloadEnvelope} was seen before {@code get_payload_due_ms()}. This method is
+   * used for the `payload_present` vote.
    */
   boolean isExecutionPayloadSeenBeforeDeadline(Bytes32 beaconBlockRoot);
 
@@ -94,12 +94,12 @@ public interface ExecutionPayloadManager {
    * @return the gossip validation result
    */
   SafeFuture<InternalValidationResult> validateAndImportExecutionPayload(
-      SignedExecutionPayloadEnvelope signedExecutionPayload,
+      ExecutionPayloadEnvelope signedExecutionPayload,
       Optional<UInt64> maybeArrivalTimestamp,
       Optional<BroadcastValidationLevel> broadcastValidationLevel);
 
   SafeFuture<ValidateAndImportResult> validateAndImportExecutionPayloadForBroadcast(
-      SignedExecutionPayloadEnvelope signedExecutionPayload,
+      ExecutionPayloadEnvelope signedExecutionPayload,
       Optional<BroadcastValidationLevel> broadcastValidationLevel);
 
   /**
@@ -116,20 +116,20 @@ public interface ExecutionPayloadManager {
    * @return the execution payload import result
    */
   SafeFuture<ExecutionPayloadImportResult> importExecutionPayload(
-      SignedExecutionPayloadEnvelope signedExecutionPayload, boolean payloadCommitmentVerified);
+      ExecutionPayloadEnvelope signedExecutionPayload, boolean payloadCommitmentVerified);
 
   /** Retrieves parent execution requests (used in block production) */
   SafeFuture<ExecutionRequests> getParentExecutionRequestsForBlock(
       UInt64 slot, Bytes32 parentRoot, ForkChoicePayloadStatus parentPayloadStatus);
 
   default SafeFuture<InternalValidationResult> validateAndImportExecutionPayload(
-      final SignedExecutionPayloadEnvelope signedExecutionPayload) {
+      final ExecutionPayloadEnvelope signedExecutionPayload) {
     return validateAndImportExecutionPayload(
         signedExecutionPayload, Optional.empty(), Optional.empty());
   }
 
   default SafeFuture<InternalValidationResult> validateAndImportExecutionPayload(
-      final SignedExecutionPayloadEnvelope signedExecutionPayload,
+      final ExecutionPayloadEnvelope signedExecutionPayload,
       final Optional<UInt64> arrivalTimestamp) {
     return validateAndImportExecutionPayload(
         signedExecutionPayload, arrivalTimestamp, Optional.empty());
@@ -138,7 +138,7 @@ public interface ExecutionPayloadManager {
   void subscribeFailedPayloadExecution(final FailedPayloadExecutionSubscriber subscriber);
 
   interface FailedPayloadExecutionSubscriber {
-    void onPayloadExecutionFailed(SignedExecutionPayloadEnvelope executionPayload);
+    void onPayloadExecutionFailed(ExecutionPayloadEnvelope executionPayload);
   }
 
   record ValidateAndImportResult(

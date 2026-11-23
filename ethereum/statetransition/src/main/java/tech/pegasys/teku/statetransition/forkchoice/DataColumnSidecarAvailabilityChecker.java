@@ -26,7 +26,7 @@ import tech.pegasys.teku.infrastructure.exceptions.ExceptionUtil;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.gloas.BeaconStateGloas;
 import tech.pegasys.teku.spec.logic.common.statetransition.availability.AvailabilityChecker;
@@ -44,7 +44,7 @@ public class DataColumnSidecarAvailabilityChecker implements AvailabilityChecker
   private final UInt64 slot;
   private final Bytes32 blockRoot;
   private final boolean hasBlobs;
-  private final Optional<SignedExecutionPayloadEnvelope> signedEnvelope;
+  private final Optional<ExecutionPayloadEnvelope> signedEnvelope;
   private static final long BATCH_SYNC_TIMEOUT_BOOST = 5L;
 
   public DataColumnSidecarAvailabilityChecker(
@@ -67,7 +67,7 @@ public class DataColumnSidecarAvailabilityChecker implements AvailabilityChecker
       final Spec spec,
       final RecentChainData recentChainData,
       final BeaconState state,
-      final SignedExecutionPayloadEnvelope signedEnvelope) {
+      final ExecutionPayloadEnvelope signedEnvelope) {
     this(
         dataAvailabilitySampler,
         spec,
@@ -88,7 +88,7 @@ public class DataColumnSidecarAvailabilityChecker implements AvailabilityChecker
       final UInt64 slot,
       final Bytes32 blockRoot,
       final boolean hasBlobs,
-      final Optional<SignedExecutionPayloadEnvelope> signedEnvelope) {
+      final Optional<ExecutionPayloadEnvelope> signedEnvelope) {
     this.dataAvailabilitySampler = dataAvailabilitySampler;
     this.spec = spec;
     this.recentChainData = recentChainData;
@@ -162,9 +162,8 @@ public class DataColumnSidecarAvailabilityChecker implements AvailabilityChecker
     signedEnvelope.ifPresentOrElse(
         envelope ->
             log.debug(
-                "Data availability check for slot: {}, builder: {}, block_root: {} result: {}",
+                "Data availability check for slot: {}, block_root: {} result: {}",
                 envelope.getSlot(),
-                envelope.getMessage().getBuilderIndex(),
                 envelope.getBeaconBlockRoot(),
                 result.toLogString()),
         () ->

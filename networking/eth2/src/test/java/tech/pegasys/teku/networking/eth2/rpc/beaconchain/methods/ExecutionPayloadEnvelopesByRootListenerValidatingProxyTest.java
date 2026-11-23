@@ -30,7 +30,7 @@ import tech.pegasys.teku.networking.eth2.peers.Eth2Peer;
 import tech.pegasys.teku.networking.eth2.rpc.beaconchain.methods.ExecutionPayloadEnvelopesByRootResponseInvalidResponseException.InvalidResponseType;
 import tech.pegasys.teku.networking.p2p.rpc.RpcResponseListener;
 import tech.pegasys.teku.spec.TestSpecFactory;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 
 public class ExecutionPayloadEnvelopesByRootListenerValidatingProxyTest {
@@ -40,7 +40,7 @@ public class ExecutionPayloadEnvelopesByRootListenerValidatingProxyTest {
   private final Eth2Peer peer = mock(Eth2Peer.class);
 
   @SuppressWarnings("unchecked")
-  private final RpcResponseListener<SignedExecutionPayloadEnvelope> listener =
+  private final RpcResponseListener<ExecutionPayloadEnvelope> listener =
       mock(RpcResponseListener.class);
 
   @BeforeEach
@@ -50,10 +50,8 @@ public class ExecutionPayloadEnvelopesByRootListenerValidatingProxyTest {
 
   @Test
   void shouldAcceptRequestedBeaconBlockRoots() {
-    final SignedExecutionPayloadEnvelope envelope1 =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(1);
-    final SignedExecutionPayloadEnvelope envelope2 =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(2);
+    final ExecutionPayloadEnvelope envelope1 = dataStructureUtil.randomExecutionPayloadEnvelope(1);
+    final ExecutionPayloadEnvelope envelope2 = dataStructureUtil.randomExecutionPayloadEnvelope(2);
     final ExecutionPayloadEnvelopesByRootListenerValidatingProxy listenerWrapper =
         new ExecutionPayloadEnvelopesByRootListenerValidatingProxy(
             peer,
@@ -69,8 +67,8 @@ public class ExecutionPayloadEnvelopesByRootListenerValidatingProxyTest {
 
   @Test
   void shouldRejectUnexpectedBeaconBlockRoot() {
-    final SignedExecutionPayloadEnvelope unexpectedEnvelope =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(1);
+    final ExecutionPayloadEnvelope unexpectedEnvelope =
+        dataStructureUtil.randomExecutionPayloadEnvelope(1);
     final ExecutionPayloadEnvelopesByRootListenerValidatingProxy listenerWrapper =
         new ExecutionPayloadEnvelopesByRootListenerValidatingProxy(
             peer, listener, List.of(dataStructureUtil.randomBytes32()));
@@ -88,8 +86,7 @@ public class ExecutionPayloadEnvelopesByRootListenerValidatingProxyTest {
 
   @Test
   void shouldRejectDuplicateBeaconBlockRootResponse() {
-    final SignedExecutionPayloadEnvelope envelope =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(1);
+    final ExecutionPayloadEnvelope envelope = dataStructureUtil.randomExecutionPayloadEnvelope(1);
     final ExecutionPayloadEnvelopesByRootListenerValidatingProxy listenerWrapper =
         new ExecutionPayloadEnvelopesByRootListenerValidatingProxy(
             peer, listener, List.of(envelope.getBeaconBlockRoot()));

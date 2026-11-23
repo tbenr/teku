@@ -21,8 +21,8 @@ import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 
 public abstract class EmptyStoreResults {
@@ -48,10 +48,10 @@ public abstract class EmptyStoreResults {
   public static final SafeFuture<Optional<UInt64>> NO_EARLIEST_BLOB_SIDECAR_SLOT_FUTURE =
       SafeFuture.completedFuture(Optional.empty());
 
-  public static final SafeFuture<Optional<SignedExecutionPayloadEnvelope>>
-      EMPTY_SIGNED_EXECUTION_PAYLOAD_ENVELOPE_FUTURE = SafeFuture.completedFuture(Optional.empty());
+  public static final SafeFuture<Optional<ExecutionPayloadEnvelope>>
+      EMPTY_EXECUTION_PAYLOAD_ENVELOPE_FUTURE = SafeFuture.completedFuture(Optional.empty());
 
-  public static final SafeFuture<Optional<SignedBlindedExecutionPayloadEnvelope>>
-      EMPTY_SIGNED_BLINDED_EXECUTION_PAYLOAD_ENVELOPE_FUTURE =
+  public static final SafeFuture<Optional<BlindedExecutionPayloadEnvelope>>
+      EMPTY_BLINDED_EXECUTION_PAYLOAD_ENVELOPE_FUTURE =
           SafeFuture.completedFuture(Optional.empty());
 }

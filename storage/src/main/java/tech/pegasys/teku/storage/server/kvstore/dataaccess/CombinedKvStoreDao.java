@@ -45,7 +45,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.BlockAndCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.lightclient.LightClientUpdate;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
@@ -159,7 +159,7 @@ public class CombinedKvStoreDao<S extends SchemaCombined>
   }
 
   @Override
-  public Optional<SignedBlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelope(
+  public Optional<BlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelope(
       final Bytes32 root) {
     return db.get(schema.getColumnBlindedExecutionPayloadEnvelopesByRoot(), root);
   }
@@ -1015,11 +1015,11 @@ public class CombinedKvStoreDao<S extends SchemaCombined>
     @Override
     public void addBlindedExecutionPayloadEnvelope(
         final Bytes32 blockRoot,
-        final SignedBlindedExecutionPayloadEnvelope signedBlindedExecutionPayloadEnvelope) {
+        final BlindedExecutionPayloadEnvelope blindedExecutionPayloadEnvelope) {
       transaction.put(
           schema.getColumnBlindedExecutionPayloadEnvelopesByRoot(),
           blockRoot,
-          signedBlindedExecutionPayloadEnvelope);
+          blindedExecutionPayloadEnvelope);
     }
 
     @Override

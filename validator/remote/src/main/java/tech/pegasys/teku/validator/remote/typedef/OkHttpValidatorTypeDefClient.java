@@ -43,12 +43,10 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockContainer;
 import tech.pegasys.teku.spec.datastructures.builder.SignedValidatorRegistration;
 import tech.pegasys.teku.spec.datastructures.builder.versions.gloas.BuilderConfig;
 import tech.pegasys.teku.spec.datastructures.builder.versions.gloas.BuilderPreferencesEntry;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelopeContents;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationData;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationMessage;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelopeContents;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.metadata.BlockContainerAndMetaData;
 import tech.pegasys.teku.spec.datastructures.metadata.ObjectAndMetaData;
@@ -72,7 +70,6 @@ import tech.pegasys.teku.validator.remote.typedef.handlers.CreateAggregateAttest
 import tech.pegasys.teku.validator.remote.typedef.handlers.CreateAttestationDataRequest;
 import tech.pegasys.teku.validator.remote.typedef.handlers.CreatePayloadAttestationDataRequest;
 import tech.pegasys.teku.validator.remote.typedef.handlers.CreateSyncCommitteeContributionRequest;
-import tech.pegasys.teku.validator.remote.typedef.handlers.GetExecutionPayloadEnvelopeRequest;
 import tech.pegasys.teku.validator.remote.typedef.handlers.GetPeerCountRequest;
 import tech.pegasys.teku.validator.remote.typedef.handlers.GetProposerDutiesRequest;
 import tech.pegasys.teku.validator.remote.typedef.handlers.GetProposerDutiesV2Request;
@@ -232,12 +229,6 @@ public class OkHttpValidatorTypeDefClient extends OkHttpValidatorMinimalTypeDefC
     return createPayloadAttestationDataRequest.submit(slot);
   }
 
-  public Optional<ExecutionPayloadEnvelope> getExecutionPayloadEnvelope(
-      final UInt64 slot, final Bytes32 beaconBlockRoot) {
-    return new GetExecutionPayloadEnvelopeRequest(getBaseEndpoint(), getOkHttpClient(), spec)
-        .submit(slot, beaconBlockRoot);
-  }
-
   public Optional<List<BeaconCommitteeSelectionProof>> getBeaconCommitteeSelectionProof(
       final List<BeaconCommitteeSelectionProof> validatorsPartialProofs) {
 
@@ -371,21 +362,12 @@ public class OkHttpValidatorTypeDefClient extends OkHttpValidatorMinimalTypeDefC
   }
 
   public PublishSignedExecutionPayloadResult publishSignedExecutionPayload(
-      final SignedExecutionPayloadEnvelope signedExecutionPayload,
+      final ExecutionPayloadEnvelopeContents executionPayloadEnvelopeContents,
       final Optional<BroadcastValidationLevel> broadcastValidationLevel) {
     final PublishSignedExecutionPayloadRequest publishSignedExecutionPayloadRequest =
         new PublishSignedExecutionPayloadRequest(spec, getBaseEndpoint(), getOkHttpClient());
     return publishSignedExecutionPayloadRequest.submit(
-        signedExecutionPayload, broadcastValidationLevel);
-  }
-
-  public PublishSignedExecutionPayloadResult publishSignedExecutionPayload(
-      final SignedExecutionPayloadEnvelopeContents signedExecutionPayloadEnvelopeContents,
-      final Optional<BroadcastValidationLevel> broadcastValidationLevel) {
-    final PublishSignedExecutionPayloadRequest publishSignedExecutionPayloadRequest =
-        new PublishSignedExecutionPayloadRequest(spec, getBaseEndpoint(), getOkHttpClient());
-    return publishSignedExecutionPayloadRequest.submit(
-        signedExecutionPayloadEnvelopeContents, broadcastValidationLevel);
+        executionPayloadEnvelopeContents, broadcastValidationLevel);
   }
 
   public void publishSignedExecutionPayloadBid(

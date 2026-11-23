@@ -16,7 +16,6 @@ package tech.pegasys.teku.validator.remote.typedef.handlers;
 import static org.assertj.core.api.Assertions.assertThat;
 import static tech.pegasys.teku.infrastructure.http.HttpStatusCodes.SC_ACCEPTED;
 import static tech.pegasys.teku.infrastructure.http.HttpStatusCodes.SC_OK;
-import static tech.pegasys.teku.infrastructure.http.RestApiConstants.HEADER_BLOB_DATA_INCLUDED;
 import static tech.pegasys.teku.infrastructure.http.RestApiConstants.HEADER_CONSENSUS_VERSION;
 
 import java.util.Locale;
@@ -25,9 +24,10 @@ import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.TestTemplate;
+import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.SpecMilestone;
 import tech.pegasys.teku.spec.TestSpecContext;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelopeContents;
 import tech.pegasys.teku.spec.datastructures.validator.BroadcastValidationLevel;
 import tech.pegasys.teku.spec.networks.Eth2Network;
 import tech.pegasys.teku.validator.api.PublishSignedExecutionPayloadResult;
@@ -37,13 +37,14 @@ import tech.pegasys.teku.validator.remote.typedef.AbstractTypeDefRequestTestBase
     milestone = {SpecMilestone.GLOAS},
     network = Eth2Network.MINIMAL)
 public class PublishSignedExecutionPayloadRequestTest extends AbstractTypeDefRequestTestBase {
-  private SignedExecutionPayloadEnvelope signedExecutionPayload;
+  private ExecutionPayloadEnvelopeContents executionPayload;
   private PublishSignedExecutionPayloadRequest request;
 
   @BeforeEach
   public void setup() {
     request = new PublishSignedExecutionPayloadRequest(spec, mockWebServer.url("/"), okHttpClient);
-    this.signedExecutionPayload = dataStructureUtil.randomSignedExecutionPayloadEnvelope(100L);
+    this.executionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelopeContents(UInt64.valueOf(100));
   }
 
   @TestTemplate
@@ -51,18 +52,16 @@ public class PublishSignedExecutionPayloadRequestTest extends AbstractTypeDefReq
     mockWebServer.enqueue(new MockResponse().setResponseCode(SC_OK));
 
     final PublishSignedExecutionPayloadResult result =
-        request.submit(signedExecutionPayload, Optional.of(BroadcastValidationLevel.GOSSIP));
+        request.submit(executionPayload, Optional.of(BroadcastValidationLevel.GOSSIP));
 
     assertThat(result)
         .isEqualTo(
-            PublishSignedExecutionPayloadResult.success(
-                signedExecutionPayload.getBeaconBlockRoot()));
+            PublishSignedExecutionPayloadResult.success(executionPayload.getBeaconBlockRoot()));
 
     final RecordedRequest recordedRequest = mockWebServer.takeRequest();
     assertThat(recordedRequest.getMethod()).isEqualTo("POST");
     assertThat(recordedRequest.getHeader(HEADER_CONSENSUS_VERSION))
         .isEqualTo(specMilestone.name().toLowerCase(Locale.ROOT));
-    assertThat(recordedRequest.getHeader(HEADER_BLOB_DATA_INCLUDED)).isEqualTo("false");
   }
 
   @TestTemplate
@@ -70,11 +69,11 @@ public class PublishSignedExecutionPayloadRequestTest extends AbstractTypeDefReq
     mockWebServer.enqueue(new MockResponse().setResponseCode(SC_ACCEPTED));
 
     final PublishSignedExecutionPayloadResult result =
-        request.submit(signedExecutionPayload, Optional.of(BroadcastValidationLevel.GOSSIP));
+        request.submit(executionPayload, Optional.of(BroadcastValidationLevel.GOSSIP));
 
     assertThat(result)
         .isEqualTo(
             PublishSignedExecutionPayloadResult.notImported(
-                signedExecutionPayload.getBeaconBlockRoot(), "UNKNOWN"));
+                executionPayload.getBeaconBlockRoot(), "UNKNOWN"));
   }
 }

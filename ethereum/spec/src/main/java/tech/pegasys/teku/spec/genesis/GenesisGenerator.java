@@ -206,6 +206,7 @@ public class GenesisGenerator {
                   Bytes32.ZERO,
                   Bytes32.ZERO,
                   Bytes32.ZERO,
+                  Bytes32.ZERO,
                   Bytes20.ZERO,
                   UInt64.ZERO,
                   UInt64.ZERO,

@@ -78,6 +78,7 @@ class BlockProcessorGloasTest {
                 parentBlockHash,
                 spec.getBlockRootAtSlot(mutableState, mutableState.getSlot().minusMinZero(1)),
                 parentBlockHash,
+                Bytes32.ZERO,
                 spec.getRandaoMix(mutableState, spec.getCurrentEpoch(mutableState)),
                 dataStructureUtil.randomBytes20(),
                 UInt64.ZERO,

@@ -65,7 +65,7 @@ import tech.pegasys.teku.spec.config.SpecConfigGloas;
 import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.networking.libp2p.rpc.BeaconBlocksByRangeRequestMessage;
 import tech.pegasys.teku.spec.datastructures.networking.libp2p.rpc.BeaconBlocksByRootRequestMessage;
 import tech.pegasys.teku.spec.datastructures.networking.libp2p.rpc.BlobIdentifier;
@@ -381,7 +381,7 @@ class DefaultEth2Peer extends DelegatingPeer implements Eth2Peer {
   @Override
   public SafeFuture<Void> requestExecutionPayloadEnvelopesByRoot(
       final List<Bytes32> beaconBlockRoots,
-      final RpcResponseListener<SignedExecutionPayloadEnvelope> listener) {
+      final RpcResponseListener<ExecutionPayloadEnvelope> listener) {
     final List<Bytes32> uniqueBeaconBlockRoots = beaconBlockRoots.stream().distinct().toList();
     return rpcMethods
         .executionPayloadEnvelopesByRoot()
@@ -445,7 +445,7 @@ class DefaultEth2Peer extends DelegatingPeer implements Eth2Peer {
   }
 
   @Override
-  public SafeFuture<Optional<SignedExecutionPayloadEnvelope>> requestExecutionPayloadEnvelopeByRoot(
+  public SafeFuture<Optional<ExecutionPayloadEnvelope>> requestExecutionPayloadEnvelopeByRoot(
       final Bytes32 beaconBlockRoot) {
     return rpcMethods
         .executionPayloadEnvelopesByRoot()
@@ -575,7 +575,7 @@ class DefaultEth2Peer extends DelegatingPeer implements Eth2Peer {
   public SafeFuture<Void> requestExecutionPayloadEnvelopesByRange(
       final UInt64 startSlot,
       final UInt64 count,
-      final RpcResponseListener<SignedExecutionPayloadEnvelope> listener) {
+      final RpcResponseListener<ExecutionPayloadEnvelope> listener) {
     return rpcMethods
         .executionPayloadEnvelopesByRange()
         .map(

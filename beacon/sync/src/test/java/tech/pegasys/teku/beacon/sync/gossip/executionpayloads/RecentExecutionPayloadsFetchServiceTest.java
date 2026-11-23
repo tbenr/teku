@@ -38,9 +38,9 @@ import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.async.StubAsyncRunner;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecFactory;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationData;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationMessage;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 import tech.pegasys.teku.statetransition.OperationAddedSubscriber;
 import tech.pegasys.teku.statetransition.execution.ExecutionPayloadManager;
@@ -73,9 +73,9 @@ class RecentExecutionPayloadsFetchServiceTest {
   private final StubAsyncRunner asyncRunner = new StubAsyncRunner();
 
   private final List<FetchExecutionPayloadTask> tasks = new ArrayList<>();
-  private final List<SafeFuture<FetchResult<SignedExecutionPayloadEnvelope>>> taskFutures =
+  private final List<SafeFuture<FetchResult<ExecutionPayloadEnvelope>>> taskFutures =
       new ArrayList<>();
-  private final List<SignedExecutionPayloadEnvelope> importedExecutionPayloads = new ArrayList<>();
+  private final List<ExecutionPayloadEnvelope> importedExecutionPayloads = new ArrayList<>();
 
   private RecentExecutionPayloadsFetchService recentExecutionPayloadsFetchService;
 
@@ -106,9 +106,9 @@ class RecentExecutionPayloadsFetchServiceTest {
     assertTaskCounts(1, 1, 0);
     assertThat(importedExecutionPayloads).isEmpty();
 
-    final SafeFuture<FetchResult<SignedExecutionPayloadEnvelope>> future = taskFutures.get(0);
-    final SignedExecutionPayloadEnvelope executionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(1);
+    final SafeFuture<FetchResult<ExecutionPayloadEnvelope>> future = taskFutures.get(0);
+    final ExecutionPayloadEnvelope executionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelope(1);
     future.complete(FetchResult.createSuccessful(executionPayload));
 
     assertThat(importedExecutionPayloads).containsExactly(executionPayload);
@@ -124,9 +124,9 @@ class RecentExecutionPayloadsFetchServiceTest {
     assertTaskCounts(1, 1, 0);
     assertThat(importedExecutionPayloads).isEmpty();
 
-    final SafeFuture<FetchResult<SignedExecutionPayloadEnvelope>> future = taskFutures.get(0);
-    final SignedExecutionPayloadEnvelope executionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(1);
+    final SafeFuture<FetchResult<ExecutionPayloadEnvelope>> future = taskFutures.get(0);
+    final ExecutionPayloadEnvelope executionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelope(1);
     future.complete(FetchResult.createSuccessful(executionPayload));
 
     assertThat(importedExecutionPayloads).containsExactly(executionPayload);
@@ -166,7 +166,7 @@ class RecentExecutionPayloadsFetchServiceTest {
     assertTaskCounts(1, 1, 0);
     assertThat(importedExecutionPayloads).isEmpty();
 
-    final SafeFuture<FetchResult<SignedExecutionPayloadEnvelope>> future = taskFutures.get(0);
+    final SafeFuture<FetchResult<ExecutionPayloadEnvelope>> future = taskFutures.get(0);
     future.complete(FetchResult.createFailed(Status.FETCH_FAILED));
 
     // Task should be queued for a retry via the scheduled executor
@@ -188,7 +188,7 @@ class RecentExecutionPayloadsFetchServiceTest {
     assertTaskCounts(1, 1, 0);
     assertThat(importedExecutionPayloads).isEmpty();
 
-    final SafeFuture<FetchResult<SignedExecutionPayloadEnvelope>> future = taskFutures.getFirst();
+    final SafeFuture<FetchResult<ExecutionPayloadEnvelope>> future = taskFutures.getFirst();
     future.complete(FetchResult.createFailed(Status.FETCH_FAILED));
 
     // Task should be queued for a retry via the scheduled executor
@@ -215,7 +215,7 @@ class RecentExecutionPayloadsFetchServiceTest {
     assertTaskCounts(1, 1, 0);
     assertThat(importedExecutionPayloads).isEmpty();
 
-    final SafeFuture<FetchResult<SignedExecutionPayloadEnvelope>> future = taskFutures.getFirst();
+    final SafeFuture<FetchResult<ExecutionPayloadEnvelope>> future = taskFutures.getFirst();
     future.complete(FetchResult.createFailed(Status.NO_AVAILABLE_PEERS));
 
     // Task should be queued for a retry via the scheduled executor
@@ -240,9 +240,9 @@ class RecentExecutionPayloadsFetchServiceTest {
     assertTaskCounts(taskCount, taskCount - 1, 1);
 
     // Complete first task
-    final SafeFuture<FetchResult<SignedExecutionPayloadEnvelope>> future = taskFutures.getFirst();
-    final SignedExecutionPayloadEnvelope executionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(1);
+    final SafeFuture<FetchResult<ExecutionPayloadEnvelope>> future = taskFutures.getFirst();
+    final ExecutionPayloadEnvelope executionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelope(1);
     future.complete(FetchResult.createSuccessful(executionPayload));
 
     // After first task completes, remaining pending count should become active
@@ -361,7 +361,7 @@ class RecentExecutionPayloadsFetchServiceTest {
 
     lenient().when(task.getKey()).thenReturn(beaconBlockRoot);
     lenient().when(task.getNumberOfRetries()).thenReturn(0);
-    final SafeFuture<FetchResult<SignedExecutionPayloadEnvelope>> future = new SafeFuture<>();
+    final SafeFuture<FetchResult<ExecutionPayloadEnvelope>> future = new SafeFuture<>();
     lenient().when(task.run()).thenReturn(future);
     taskFutures.add(future);
     tasks.add(task);

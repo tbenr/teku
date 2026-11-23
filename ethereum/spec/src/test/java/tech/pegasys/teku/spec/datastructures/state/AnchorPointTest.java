@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.util.Optional;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import tech.pegasys.teku.bls.BLSSignature;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
@@ -84,6 +85,10 @@ public class AnchorPointTest {
   }
 
   @Test
+  @Disabled(
+      "The fixture predates consensus-specs PR 5820, which adds payload_root to the execution"
+          + " payload bid held in the Gloas BeaconState; regenerate it with a genesis generator"
+          + " implementing that change")
   public void fromGenesisState_shouldAcceptGloasGenesisFromEthpandaopsGenesisGenerator()
       throws IOException {
     // genesis.ssz and config.yaml produced by ethpandaops/ethereum-genesis-generator:6.2.1 for a

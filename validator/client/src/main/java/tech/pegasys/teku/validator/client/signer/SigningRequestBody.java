@@ -26,7 +26,6 @@ import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.builder.ValidatorRegistration;
 import tech.pegasys.teku.spec.datastructures.builder.versions.gloas.BuilderRequestAuth;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationData;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.operations.AggregateAndProof;
@@ -108,10 +107,6 @@ public record SigningRequestBody(Bytes signingRoot, SignType type, Map<String, O
             getExecutionPayloadBid().map(VersionedWrapper::getJsonTypeDefinition).orElse(null),
             SigningRequestBody::getExecutionPayloadBid)
         .withOptionalField(
-            SignType.EXECUTION_PAYLOAD_ENVELOPE.getName(),
-            getExecutionPayloadEnvelope().map(VersionedWrapper::getJsonTypeDefinition).orElse(null),
-            SigningRequestBody::getExecutionPayloadEnvelope)
-        .withOptionalField(
             SignType.PAYLOAD_ATTESTATION_MESSAGE.getName(),
             getPayloadAttestationData().map(VersionedWrapper::getJsonTypeDefinition).orElse(null),
             SigningRequestBody::getPayloadAttestationData)
@@ -187,13 +182,6 @@ public record SigningRequestBody(Bytes signingRoot, SignType type, Map<String, O
     return Optional.ofNullable(
         (VersionedWrapper<ExecutionPayloadBid>)
             metadata.get(SignType.EXECUTION_PAYLOAD_BID.getName()));
-  }
-
-  @SuppressWarnings("unchecked")
-  private Optional<VersionedWrapper<ExecutionPayloadEnvelope>> getExecutionPayloadEnvelope() {
-    return Optional.ofNullable(
-        (VersionedWrapper<ExecutionPayloadEnvelope>)
-            metadata.get(SignType.EXECUTION_PAYLOAD_ENVELOPE.getName()));
   }
 
   @SuppressWarnings("unchecked")

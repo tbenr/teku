@@ -21,7 +21,7 @@ import java.util.Optional;
 import java.util.Set;
 import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 
 @FunctionalInterface
 public interface ExecutionPayloadProvider {
@@ -37,7 +37,7 @@ public interface ExecutionPayloadProvider {
       final ExecutionPayloadProvider primaryProvider,
       final ExecutionPayloadProvider... secondaryProviders) {
     return (final Set<Bytes32> blockRoots) -> {
-      SafeFuture<Map<Bytes32, SignedExecutionPayloadEnvelope>> result =
+      SafeFuture<Map<Bytes32, ExecutionPayloadEnvelope>> result =
           primaryProvider.getExecutionPayloads(blockRoots).thenApply(HashMap::new);
       for (ExecutionPayloadProvider nextProvider : secondaryProviders) {
         result =
@@ -61,10 +61,9 @@ public interface ExecutionPayloadProvider {
     };
   }
 
-  SafeFuture<Map<Bytes32, SignedExecutionPayloadEnvelope>> getExecutionPayloads(
-      Set<Bytes32> blockRoots);
+  SafeFuture<Map<Bytes32, ExecutionPayloadEnvelope>> getExecutionPayloads(Set<Bytes32> blockRoots);
 
-  default SafeFuture<Optional<SignedExecutionPayloadEnvelope>> getExecutionPayload(
+  default SafeFuture<Optional<ExecutionPayloadEnvelope>> getExecutionPayload(
       final Bytes32 blockRoot) {
     return getExecutionPayloads(Set.of(blockRoot))
         .thenApply(executionPayloads -> Optional.ofNullable(executionPayloads.get(blockRoot)));

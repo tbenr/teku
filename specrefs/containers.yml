@@ -2911,9 +2911,7 @@
     </spec>
 
 - name: SignedExecutionPayloadEnvelope#gloas
-  sources:
-    - file: ethereum/spec/src/main/java/tech/pegasys/teku/spec/datastructures/epbs/versions/gloas/SignedExecutionPayloadEnvelope.java
-    - file: ethereum/spec/src/main/java/tech/pegasys/teku/spec/datastructures/epbs/versions/gloas/SignedExecutionPayloadEnvelopeSchema.java
+  sources: []
   spec: |
     <spec container="SignedExecutionPayloadEnvelope" fork="gloas" hash="ab8f3404">
     class SignedExecutionPayloadEnvelope(Container):

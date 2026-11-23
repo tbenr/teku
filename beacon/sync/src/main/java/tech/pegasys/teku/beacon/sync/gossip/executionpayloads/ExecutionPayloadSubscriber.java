@@ -13,9 +13,9 @@
 
 package tech.pegasys.teku.beacon.sync.gossip.executionpayloads;
 
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 
 public interface ExecutionPayloadSubscriber {
 
-  void onExecutionPayload(SignedExecutionPayloadEnvelope executionPayload);
+  void onExecutionPayload(ExecutionPayloadEnvelope executionPayload);
 }

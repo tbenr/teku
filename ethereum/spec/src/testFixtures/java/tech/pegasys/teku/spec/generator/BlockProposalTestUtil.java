@@ -46,16 +46,12 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.altair.SyncAggregate;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.capella.BeaconBlockBodySchemaCapella;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestation;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
-import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadBlockHashCalculator;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadHeader;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadSchema;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionRequests;
-import tech.pegasys.teku.spec.datastructures.execution.Transaction;
-import tech.pegasys.teku.spec.datastructures.execution.versions.gloas.ExecutionPayloadGloas;
 import tech.pegasys.teku.spec.datastructures.operations.Attestation;
 import tech.pegasys.teku.spec.datastructures.operations.AttesterSlashing;
 import tech.pegasys.teku.spec.datastructures.operations.Deposit;
@@ -338,8 +334,6 @@ public class BlockProposalTestUtil {
                                 blockSlotState,
                                 transactions,
                                 terminalBlock,
-                                Optional.of(executionRequests),
-                                parentBlockSigningRoot,
                                 buildOnEmptyParent));
                 final ExecutionPayloadProposalData executionPayloadProposalData =
                     new ExecutionPayloadProposalData(
@@ -454,8 +448,6 @@ public class BlockProposalTestUtil {
                                 blockSlotState,
                                 transactions,
                                 terminalBlock,
-                                Optional.of(executionRequests),
-                                parentBlockSigningRoot,
                                 buildOnEmptyParent));
                 final ExecutionPayloadProposalData executionPayloadProposalData =
                     new ExecutionPayloadProposalData(
@@ -511,32 +503,7 @@ public class BlockProposalTestUtil {
       final BeaconState state,
       final Optional<List<Bytes>> transactions,
       final Optional<Bytes32> terminalBlock) {
-    return createExecutionPayload(
-        newSlot,
-        state,
-        transactions,
-        terminalBlock,
-        spec.isExecutionPayloadEnvelopeAvailableAtSlot(newSlot)
-            ? Optional.of(createExecutionRequests(newSlot))
-            : Optional.empty(),
-        Bytes32.ZERO);
-  }
-
-  private ExecutionPayload createExecutionPayload(
-      final UInt64 newSlot,
-      final BeaconState state,
-      final Optional<List<Bytes>> transactions,
-      final Optional<Bytes32> terminalBlock,
-      final Optional<ExecutionRequests> maybeExecutionRequests,
-      final Bytes32 parentBeaconBlockRoot) {
-    return createExecutionPayload(
-        newSlot,
-        state,
-        transactions,
-        terminalBlock,
-        maybeExecutionRequests,
-        parentBeaconBlockRoot,
-        false);
+    return createExecutionPayload(newSlot, state, transactions, terminalBlock, false);
   }
 
   /**
@@ -548,8 +515,6 @@ public class BlockProposalTestUtil {
       final BeaconState state,
       final Optional<List<Bytes>> transactions,
       final Optional<Bytes32> terminalBlock,
-      final Optional<ExecutionRequests> maybeExecutionRequests,
-      final Bytes32 parentBeaconBlockRoot,
       final boolean buildOnEmptyParent) {
     final SpecVersion specVersion = spec.atSlot(newSlot);
     final ExecutionPayloadSchema<?> schema =
@@ -608,61 +573,7 @@ public class BlockProposalTestUtil {
                     .excessBlobGas(() -> UInt64.ZERO)
                     .blockAccessList(() -> emptyBlockAccessList)
                     .slotNumber(() -> newSlot));
-    if (!spec.isExecutionPayloadEnvelopeAvailableAtSlot(newSlot)) {
-      return payload;
-    }
-    return withComputedBlockHash(
-        newSlot,
-        payload,
-        maybeExecutionRequests.orElseGet(() -> createExecutionRequests(newSlot)),
-        parentBeaconBlockRoot);
-  }
-
-  private ExecutionPayload withComputedBlockHash(
-      final UInt64 slot,
-      final ExecutionPayload payload,
-      final ExecutionRequests executionRequests,
-      final Bytes32 parentBeaconBlockRoot) {
-    final SchemaDefinitionsGloas schemaDefinitions =
-        SchemaDefinitionsGloas.required(spec.atSlot(slot).getSchemaDefinitions());
-    final ExecutionPayloadEnvelope envelope =
-        schemaDefinitions
-            .getExecutionPayloadEnvelopeSchema()
-            .create(
-                payload,
-                executionRequests,
-                BUILDER_INDEX_SELF_BUILD,
-                Bytes32.ZERO,
-                parentBeaconBlockRoot);
-    final Bytes32 blockHash =
-        ExecutionPayloadBlockHashCalculator.computeGloasBlockHash(
-            envelope, spec.getExecutionRequestsDataCodec(slot));
-    final ExecutionPayloadGloas payloadGloas = ExecutionPayloadGloas.required(payload);
-    return schemaDefinitions
-        .getExecutionPayloadSchema()
-        .createExecutionPayload(
-            builder ->
-                builder
-                    .parentHash(payloadGloas.getParentHash())
-                    .feeRecipient(payloadGloas.getFeeRecipient())
-                    .stateRoot(payloadGloas.getStateRoot())
-                    .receiptsRoot(payloadGloas.getReceiptsRoot())
-                    .logsBloom(payloadGloas.getLogsBloom())
-                    .prevRandao(payloadGloas.getPrevRandao())
-                    .blockNumber(payloadGloas.getBlockNumber())
-                    .gasLimit(payloadGloas.getGasLimit())
-                    .gasUsed(payloadGloas.getGasUsed())
-                    .timestamp(payloadGloas.getTimestamp())
-                    .extraData(payloadGloas.getExtraData())
-                    .baseFeePerGas(payloadGloas.getBaseFeePerGas())
-                    .blockHash(blockHash)
-                    .transactions(
-                        payloadGloas.getTransactions().stream().map(Transaction::getBytes).toList())
-                    .withdrawals(payloadGloas.getWithdrawals()::asList)
-                    .blobGasUsed(payloadGloas::getBlobGasUsed)
-                    .excessBlobGas(payloadGloas::getExcessBlobGas)
-                    .blockAccessList(() -> payloadGloas.getBlockAccessList().getBytes())
-                    .slotNumber(payloadGloas::getSlotNumber));
+    return payload;
   }
 
   private Bytes createEmptyBlockAccessList() {
@@ -710,6 +621,7 @@ public class BlockProposalTestUtil {
                 executionPayload.getParentHash(),
                 state.getLatestBlockHeader().getRoot(),
                 executionPayload.getBlockHash(),
+                executionPayload.hashTreeRoot(),
                 executionPayload.getPrevRandao(),
                 executionPayload.getFeeRecipient(),
                 executionPayload.getGasLimit(),

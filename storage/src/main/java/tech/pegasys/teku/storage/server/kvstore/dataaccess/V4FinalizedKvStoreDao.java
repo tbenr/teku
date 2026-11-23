@@ -35,7 +35,7 @@ import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.util.DataColumnSlotAndIdentifier;
 import tech.pegasys.teku.spec.datastructures.util.SlotAndBlockRootAndBlobIndex;
@@ -285,7 +285,7 @@ public class V4FinalizedKvStoreDao {
         .flatMap(this::getFinalizedBlockAtSlot);
   }
 
-  public Optional<SignedBlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelope(
+  public Optional<BlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelope(
       final Bytes32 root) {
     return db.get(schema.getColumnBlindedExecutionPayloadEnvelopesByRoot(), root);
   }
@@ -402,11 +402,11 @@ public class V4FinalizedKvStoreDao {
     @Override
     public void addBlindedExecutionPayloadEnvelope(
         final Bytes32 blockRoot,
-        final SignedBlindedExecutionPayloadEnvelope signedBlindedExecutionPayloadEnvelope) {
+        final BlindedExecutionPayloadEnvelope blindedExecutionPayloadEnvelope) {
       transaction.put(
           schema.getColumnBlindedExecutionPayloadEnvelopesByRoot(),
           blockRoot,
-          signedBlindedExecutionPayloadEnvelope);
+          blindedExecutionPayloadEnvelope);
     }
 
     @Override

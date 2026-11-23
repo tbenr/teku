@@ -33,7 +33,6 @@ import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.builder.ValidatorRegistration;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationData;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.operations.AggregateAndProof;
@@ -280,26 +279,6 @@ public class DeletableSignerTest {
         .isCompletedExceptionallyWith(SignerNotActiveException.class);
 
     verify(delegate, never()).signExecutionPayloadBid(bid, forkInfo);
-  }
-
-  @Test
-  void signExecutionPayloadEnvelope_shouldSignWhenActive() {
-    final ExecutionPayloadEnvelope envelope = dataStructureUtil.randomExecutionPayloadEnvelope();
-    when(delegate.signExecutionPayloadEnvelope(envelope, forkInfo)).thenReturn(signatureFuture);
-
-    assertThatSafeFuture(signer.signExecutionPayloadEnvelope(envelope, forkInfo))
-        .isCompletedWithValue(signature);
-  }
-
-  @Test
-  void signExecutionPayloadEnvelope_shouldNotSignWhenDisabled() {
-    final ExecutionPayloadEnvelope envelope = dataStructureUtil.randomExecutionPayloadEnvelope();
-    signer.delete();
-
-    assertThatSafeFuture(signer.signExecutionPayloadEnvelope(envelope, forkInfo))
-        .isCompletedExceptionallyWith(SignerNotActiveException.class);
-
-    verify(delegate, never()).signExecutionPayloadEnvelope(envelope, forkInfo);
   }
 
   @Test

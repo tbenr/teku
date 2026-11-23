@@ -42,6 +42,7 @@ public enum ExecutionPayloadFields implements SszFieldName {
   SLOT_NUMBER,
   PARENT_BLOCK_HASH,
   PARENT_BLOCK_ROOT,
+  PAYLOAD_ROOT,
   BUILDER_INDEX,
   SLOT,
   VALUE,

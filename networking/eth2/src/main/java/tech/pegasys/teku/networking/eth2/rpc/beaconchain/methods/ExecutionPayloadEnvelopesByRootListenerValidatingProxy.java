@@ -21,18 +21,18 @@ import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.networking.eth2.rpc.beaconchain.methods.ExecutionPayloadEnvelopesByRootResponseInvalidResponseException.InvalidResponseType;
 import tech.pegasys.teku.networking.p2p.peer.Peer;
 import tech.pegasys.teku.networking.p2p.rpc.RpcResponseListener;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 
 public class ExecutionPayloadEnvelopesByRootListenerValidatingProxy
-    implements RpcResponseListener<SignedExecutionPayloadEnvelope> {
+    implements RpcResponseListener<ExecutionPayloadEnvelope> {
 
   private final Peer peer;
-  private final RpcResponseListener<SignedExecutionPayloadEnvelope> listener;
+  private final RpcResponseListener<ExecutionPayloadEnvelope> listener;
   private final Set<Bytes32> expectedBeaconBlockRoots;
 
   public ExecutionPayloadEnvelopesByRootListenerValidatingProxy(
       final Peer peer,
-      final RpcResponseListener<SignedExecutionPayloadEnvelope> listener,
+      final RpcResponseListener<ExecutionPayloadEnvelope> listener,
       final List<Bytes32> expectedBeaconBlockRoots) {
     this.peer = peer;
     this.listener = listener;
@@ -41,7 +41,7 @@ public class ExecutionPayloadEnvelopesByRootListenerValidatingProxy
   }
 
   @Override
-  public SafeFuture<?> onResponse(final SignedExecutionPayloadEnvelope envelope) {
+  public SafeFuture<?> onResponse(final ExecutionPayloadEnvelope envelope) {
     return SafeFuture.of(
         () -> {
           if (!expectedBeaconBlockRoots.remove(envelope.getBeaconBlockRoot())) {

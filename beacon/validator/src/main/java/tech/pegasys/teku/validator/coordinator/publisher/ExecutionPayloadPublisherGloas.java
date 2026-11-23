@@ -13,31 +13,54 @@
 
 package tech.pegasys.teku.validator.coordinator.publisher;
 
+import static tech.pegasys.teku.infrastructure.logging.ValidatorLogger.VALIDATOR_LOGGER;
+import static tech.pegasys.teku.spec.config.SpecConfigGloas.BUILDER_INDEX_SELF_BUILD;
+
+import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes32;
+import tech.pegasys.teku.infrastructure.async.AsyncRunner;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
-import tech.pegasys.teku.infrastructure.exceptions.ExceptionUtil;
+import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.networking.eth2.gossip.DataColumnSidecarGossipChannel;
 import tech.pegasys.teku.networking.eth2.gossip.ExecutionPayloadGossipChannel;
+import tech.pegasys.teku.spec.Spec;
+import tech.pegasys.teku.spec.config.SpecConfigFulu;
 import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelopeContents;
+import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
+import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelopeContents;
 import tech.pegasys.teku.spec.datastructures.validator.BroadcastValidationLevel;
+import tech.pegasys.teku.spec.logic.versions.gloas.helpers.MiscHelpersGloas;
 import tech.pegasys.teku.statetransition.blobs.RemoteOrigin;
+import tech.pegasys.teku.statetransition.block.ReceivedBlockEventsChannel;
 import tech.pegasys.teku.statetransition.execution.ExecutionPayloadManager;
 import tech.pegasys.teku.statetransition.validation.InternalValidationResult;
 import tech.pegasys.teku.storage.client.RecentChainData;
 import tech.pegasys.teku.validator.api.PublishSignedExecutionPayloadResult;
-import tech.pegasys.teku.validator.coordinator.DataColumnSidecarCreationException;
 import tech.pegasys.teku.validator.coordinator.ExecutionPayloadFactory;
 
-public class ExecutionPayloadPublisherGloas implements ExecutionPayloadPublisher {
+/**
+ * Publishes execution payload envelopes with their data column sidecars: the ones submitted through
+ * the API, and the one this node built itself once the block committing to it is imported.
+ */
+public class ExecutionPayloadPublisherGloas
+    implements ExecutionPayloadPublisher, ReceivedBlockEventsChannel {
 
   private static final Logger LOG = LogManager.getLogger();
 
+  // API requests waiting for the beacon block of their envelope, by block root
+  private final Map<Bytes32, SafeFuture<Void>> pendingBlockArrivals = new ConcurrentHashMap<>();
+
+  private final Spec spec;
+  private final AsyncRunner asyncRunner;
   private final ExecutionPayloadFactory executionPayloadFactory;
   private final ExecutionPayloadGossipChannel executionPayloadGossipChannel;
   private final DataColumnSidecarGossipChannel dataColumnSidecarGossipChannel;
@@ -45,11 +68,15 @@ public class ExecutionPayloadPublisherGloas implements ExecutionPayloadPublisher
   private final RecentChainData recentChainData;
 
   public ExecutionPayloadPublisherGloas(
+      final Spec spec,
+      final AsyncRunner asyncRunner,
       final ExecutionPayloadFactory executionPayloadFactory,
       final ExecutionPayloadGossipChannel executionPayloadGossipChannel,
       final DataColumnSidecarGossipChannel dataColumnSidecarGossipChannel,
       final ExecutionPayloadManager executionPayloadManager,
       final RecentChainData recentChainData) {
+    this.spec = spec;
+    this.asyncRunner = asyncRunner;
     this.executionPayloadFactory = executionPayloadFactory;
     this.executionPayloadGossipChannel = executionPayloadGossipChannel;
     this.dataColumnSidecarGossipChannel = dataColumnSidecarGossipChannel;
@@ -57,48 +84,143 @@ public class ExecutionPayloadPublisherGloas implements ExecutionPayloadPublisher
     this.recentChainData = recentChainData;
   }
 
+  /**
+   * The envelope is not signed, so nothing from the request is broadcast or stored before the
+   * envelope has been checked against its beacon block and the blobs and KZG proofs against the
+   * blob KZG commitments of the block's execution payload bid.
+   *
+   * <p>A block which has not been seen is awaited until the end of the envelope's slot, as it may
+   * have been published through another beacon node. An envelope the node already knows, for
+   * example because it built and revealed the payload itself, is not broadcast again, but the blob
+   * data of the request still is.
+   */
   @Override
   public SafeFuture<PublishSignedExecutionPayloadResult> publishSignedExecutionPayload(
-      final SignedExecutionPayloadEnvelope signedExecutionPayload,
+      final ExecutionPayloadEnvelopeContents contents,
       final Optional<BroadcastValidationLevel> broadcastValidationLevel) {
-    return publishSignedExecutionPayload(
-        signedExecutionPayload,
-        SafeFuture.of(
-            () -> executionPayloadFactory.createDataColumnSidecars(signedExecutionPayload)),
-        broadcastValidationLevel);
+    final ExecutionPayloadEnvelope executionPayload = contents.getExecutionPayloadEnvelope();
+    final Bytes32 beaconBlockRoot = executionPayload.getBeaconBlockRoot();
+    return awaitBlock(executionPayload)
+        .thenCompose(
+            maybeBlock -> {
+              if (maybeBlock.isEmpty()) {
+                return SafeFuture.completedFuture(
+                    PublishSignedExecutionPayloadResult.blockNotFound(beaconBlockRoot));
+              }
+              final Optional<String> maybeMismatch = findMismatch(contents, maybeBlock.get());
+              if (maybeMismatch.isPresent()) {
+                return SafeFuture.completedFuture(
+                    PublishSignedExecutionPayloadResult.rejected(
+                        beaconBlockRoot, maybeMismatch.get()));
+              }
+              final ExecutionPayloadBid bid =
+                  maybeBlock.get().getBody().getOptionalExecutionPayloadBid().orElseThrow();
+              // computing the cells and verifying their KZG proofs is CPU heavy
+              return asyncRunner
+                  .runAsync(() -> createVerifiedDataColumnSidecars(contents, bid))
+                  .thenCompose(
+                      maybeDataColumnSidecars -> {
+                        if (maybeDataColumnSidecars.isEmpty()) {
+                          return SafeFuture.completedFuture(
+                              PublishSignedExecutionPayloadResult.rejected(
+                                  beaconBlockRoot,
+                                  "Blobs and KZG proofs do not match the blob KZG commitments of"
+                                      + " the execution payload bid"));
+                        }
+                        if (executionPayloadManager.isExecutionPayloadRecentlySeen(
+                            beaconBlockRoot)) {
+                          dataColumnSidecarGossipChannel.publishDataColumnSidecars(
+                              maybeDataColumnSidecars.get(), RemoteOrigin.LOCAL_PROPOSAL);
+                          return SafeFuture.completedFuture(
+                              PublishSignedExecutionPayloadResult.success(beaconBlockRoot));
+                        }
+                        return validateAndPublish(
+                            executionPayload,
+                            maybeDataColumnSidecars.get(),
+                            broadcastValidationLevel);
+                      });
+            });
   }
 
   @Override
-  public SafeFuture<PublishSignedExecutionPayloadResult> publishSignedExecutionPayload(
-      final SignedExecutionPayloadEnvelopeContents signedExecutionPayloadEnvelopeContents,
-      final Optional<BroadcastValidationLevel> broadcastValidationLevel) {
-    return publishSignedExecutionPayload(
-        signedExecutionPayloadEnvelopeContents.getSignedExecutionPayloadEnvelope(),
-        SafeFuture.of(
-            () ->
-                executionPayloadFactory.createDataColumnSidecars(
-                    signedExecutionPayloadEnvelopeContents)),
-        broadcastValidationLevel);
+  public void onBlockValidated(final SignedBeaconBlock block) {}
+
+  @Override
+  public void onBlockImported(final SignedBeaconBlock block, final boolean executionOptimistic) {
+    Optional.ofNullable(pendingBlockArrivals.get(block.getRoot()))
+        .ifPresent(blockArrival -> blockArrival.complete(null));
+    publishSelfBuiltExecutionPayload(block.getMessage());
   }
 
   /**
-   * The data column sidecars are built concurrently with the broadcast validation, but both must
-   * have completed before anything is published: a failure to build the sidecars (for example when
-   * the blobs are not cached for a stateful submission) must prevent the execution payload from
-   * being broadcast. Gossiping an envelope whose columns cannot be made available is pointless, as
-   * no honest node adds such a payload to its store.
+   * The execution payload envelope is not signed, so once the block of a self-built bid has been
+   * imported, however it reached this node, the node reveals the payload it built for that bid.
+   * Nothing is revealed when the payload was built elsewhere.
    */
-  private SafeFuture<PublishSignedExecutionPayloadResult> publishSignedExecutionPayload(
-      final SignedExecutionPayloadEnvelope signedExecutionPayload,
-      final SafeFuture<List<DataColumnSidecar>> dataColumnSidecarsFuture,
+  private void publishSelfBuiltExecutionPayload(final BeaconBlock block) {
+    final boolean isSelfBuilt =
+        block
+            .getBody()
+            .getOptionalExecutionPayloadBid()
+            .map(bid -> bid.getBuilderIndex().equals(BUILDER_INDEX_SELF_BUILD))
+            .orElse(false);
+    if (!isSelfBuilt || executionPayloadManager.isExecutionPayloadRecentlySeen(block.getRoot())) {
+      return;
+    }
+    final UInt64 slot = block.getSlot();
+    SafeFuture.of(() -> executionPayloadFactory.createSelfBuiltExecutionPayload(block))
+        .thenCompose(
+            maybeContents -> {
+              if (maybeContents.isEmpty()) {
+                LOG.debug(
+                    "Not publishing an execution payload for the self-built bid of block {} at slot {}: this node holds no locally built payload matching the bid",
+                    block.getRoot(),
+                    slot);
+                return SafeFuture.COMPLETE;
+              }
+              final ExecutionPayloadEnvelope executionPayload =
+                  maybeContents.get().getExecutionPayloadEnvelope();
+              return asyncRunner
+                  .runAsync(
+                      () -> executionPayloadFactory.createDataColumnSidecars(maybeContents.get()))
+                  .thenCompose(
+                      dataColumnSidecars ->
+                          validateAndPublish(
+                              executionPayload,
+                              dataColumnSidecars,
+                              Optional.of(BroadcastValidationLevel.GOSSIP)))
+                  .thenAccept(
+                      result -> {
+                        if (result.isPublished()) {
+                          VALIDATOR_LOGGER.logExecutionPayloadDuty(
+                              slot,
+                              block.getRoot(),
+                              executionPayload.getPayload().toDutySummary(LOG));
+                        } else {
+                          VALIDATOR_LOGGER.executionPayloadDutyFailed(
+                              slot,
+                              new IllegalArgumentException(
+                                  "Execution payload was rejected: "
+                                      + result.rejectionReason().orElse("<reason unknown>")));
+                        }
+                      });
+            })
+        .finish(error -> VALIDATOR_LOGGER.executionPayloadDutyFailed(slot, error));
+  }
+
+  /**
+   * The data column sidecars are only published once the envelope has passed broadcast validation:
+   * no honest node adds a payload to its store without them, and they are useless without it.
+   */
+  private SafeFuture<PublishSignedExecutionPayloadResult> validateAndPublish(
+      final ExecutionPayloadEnvelope executionPayload,
+      final List<DataColumnSidecar> dataColumnSidecars,
       final Optional<BroadcastValidationLevel> broadcastValidationLevel) {
-    final Bytes32 beaconBlockRoot = signedExecutionPayload.getBeaconBlockRoot();
+    final Bytes32 beaconBlockRoot = executionPayload.getBeaconBlockRoot();
     return executionPayloadManager
-        .validateAndImportExecutionPayloadForBroadcast(
-            signedExecutionPayload, broadcastValidationLevel)
-        .thenComposeCombined(
-            recoverDataColumnSidecarCreationFailure(dataColumnSidecarsFuture, beaconBlockRoot),
-            (validateAndImportResult, dataColumnSidecarsResult) -> {
+        .validateAndImportExecutionPayloadForBroadcast(executionPayload, broadcastValidationLevel)
+        .thenCompose(
+            validateAndImportResult -> {
               final InternalValidationResult validationResult =
                   validateAndImportResult.validationResult();
               if (!validationResult.isAccept()) {
@@ -111,16 +233,11 @@ public class ExecutionPayloadPublisherGloas implements ExecutionPayloadPublisher
                                 .map(description -> ": " + description)
                                 .orElse("")));
               }
-              if (dataColumnSidecarsResult.rejectionReason().isPresent()) {
-                // the payload is valid but we cannot make its columns available, so the caller is
-                // told it was not published while the import is left to complete on its own
-                validateAndImportResult.importResult().ifPresent(future -> future.finishError(LOG));
-                return SafeFuture.completedFuture(
-                    PublishSignedExecutionPayloadResult.rejected(
-                        beaconBlockRoot, dataColumnSidecarsResult.rejectionReason().get()));
-              }
-              publishExecutionPayloadAndDataColumnSidecars(
-                  signedExecutionPayload, dataColumnSidecarsResult.dataColumnSidecars());
+              executionPayloadGossipChannel
+                  .publishExecutionPayload(executionPayload)
+                  .finishError(LOG);
+              dataColumnSidecarGossipChannel.publishDataColumnSidecars(
+                  dataColumnSidecars, RemoteOrigin.LOCAL_PROPOSAL);
               return validateAndImportResult
                   .importResult()
                   .orElseThrow(() -> new IllegalStateException("ACCEPT without import future"))
@@ -134,89 +251,108 @@ public class ExecutionPayloadPublisherGloas implements ExecutionPayloadPublisher
   }
 
   /**
-   * A {@link DataColumnSidecarCreationException} is caused by the submission itself rather than by
-   * an internal failure, so it is turned into a rejection reason the caller can act on instead of
-   * being propagated as an error. Any other failure is left to propagate.
+   * The beacon block of the envelope, waiting for it until the end of the envelope's slot when it
+   * has not been seen yet. Empty when the block did not arrive, or when it is unknown and the
+   * envelope is not for the current slot.
    */
-  private SafeFuture<DataColumnSidecarsResult> recoverDataColumnSidecarCreationFailure(
-      final SafeFuture<List<DataColumnSidecar>> dataColumnSidecarsFuture,
-      final Bytes32 beaconBlockRoot) {
-    return dataColumnSidecarsFuture
-        .thenApply(DataColumnSidecarsResult::created)
-        .exceptionallyCompose(
-            error ->
-                ExceptionUtil.getCause(error, DataColumnSidecarCreationException.class)
-                    .map(
-                        creationException ->
-                            onDataColumnSidecarCreationFailure(creationException, beaconBlockRoot))
-                    .orElseGet(() -> SafeFuture.failedFuture(error)));
-  }
-
-  /**
-   * Every {@link DataColumnSidecarCreationException} means the cached blob data cannot be used for
-   * this envelope, either because it is absent or because it belongs to a different payload. That
-   * only prevents publication when the block actually commits to blobs: a block with no blob KZG
-   * commitments needs no sidecars, so the envelope is published with an empty list rather than
-   * rejected. When the block cannot be found we assume blobs are needed and reject.
-   *
-   * <p>An envelope that is invalid in its own right is still rejected, because the broadcast
-   * validation result is checked before these sidecars are used.
-   */
-  private SafeFuture<DataColumnSidecarsResult> onDataColumnSidecarCreationFailure(
-      final DataColumnSidecarCreationException creationException, final Bytes32 beaconBlockRoot) {
+  private SafeFuture<Optional<BeaconBlock>> awaitBlock(
+      final ExecutionPayloadEnvelope executionPayload) {
+    final Bytes32 beaconBlockRoot = executionPayload.getBeaconBlockRoot();
     return recentChainData
         .retrieveBlockByRoot(beaconBlockRoot)
-        .thenApply(
+        .thenCompose(
             maybeBlock -> {
-              final boolean commitsToBlobs =
-                  maybeBlock
-                      .flatMap(block -> block.getBody().getOptionalSignedExecutionPayloadBid())
-                      .map(bid -> !bid.getMessage().getBlobKzgCommitments().isEmpty())
-                      .orElse(true);
-              if (commitsToBlobs) {
-                return rejectDataColumnSidecars(creationException, beaconBlockRoot);
+              final Optional<Duration> maybeTimeLeftInSlot =
+                  getTimeLeftInCurrentSlot(executionPayload.getSlot());
+              if (maybeBlock.isPresent() || maybeTimeLeftInSlot.isEmpty()) {
+                return SafeFuture.completedFuture(maybeBlock);
               }
-              LOG.debug(
-                  "Could not use the cached blob data for the execution payload envelope with"
-                      + " beacon block root {} ({}), but the block commits to no blobs so no data"
-                      + " column sidecars are needed",
-                  beaconBlockRoot,
-                  creationException.getMessage());
-              return DataColumnSidecarsResult.created(List.of());
+              final SafeFuture<Void> blockArrival =
+                  pendingBlockArrivals.computeIfAbsent(
+                      beaconBlockRoot,
+                      __ -> newBlockArrival(beaconBlockRoot, maybeTimeLeftInSlot.get()));
+              // the block may have been imported after the lookup and before the registration
+              if (recentChainData.containsBlock(beaconBlockRoot)) {
+                blockArrival.complete(null);
+              }
+              return blockArrival
+                  .handle((__, timeout) -> null)
+                  .thenCompose(__ -> recentChainData.retrieveBlockByRoot(beaconBlockRoot));
             });
   }
 
-  private static DataColumnSidecarsResult rejectDataColumnSidecars(
-      final DataColumnSidecarCreationException creationException, final Bytes32 beaconBlockRoot) {
-    LOG.warn(
-        "Unable to build the data column sidecars for the execution payload envelope with beacon"
-            + " block root {}: {}",
-        beaconBlockRoot,
-        creationException.getMessage());
-    return DataColumnSidecarsResult.rejected(creationException.getMessage());
+  /** Completes when the block is imported, and fails when {@code timeout} elapses first. */
+  private SafeFuture<Void> newBlockArrival(final Bytes32 beaconBlockRoot, final Duration timeout) {
+    final SafeFuture<Void> blockArrival = new SafeFuture<>();
+    blockArrival
+        .orTimeout(asyncRunner, timeout)
+        .alwaysRun(() -> pendingBlockArrivals.remove(beaconBlockRoot, blockArrival))
+        .finish(__ -> LOG.debug("Block {} did not arrive by the end of its slot", beaconBlockRoot));
+    return blockArrival;
+  }
+
+  private Optional<Duration> getTimeLeftInCurrentSlot(final UInt64 slot) {
+    if (!recentChainData.getCurrentSlot().map(slot::equals).orElse(false)) {
+      return Optional.empty();
+    }
+    final UInt64 endOfSlotMillis =
+        spec.computeTimeMillisAtSlot(slot.plus(1), recentChainData.getGenesisTimeMillis());
+    final UInt64 nowMillis = recentChainData.getStore().getTimeInMillis();
+    return endOfSlotMillis.isGreaterThan(nowMillis)
+        ? Optional.of(Duration.ofMillis(endOfSlotMillis.minus(nowMillis).longValue()))
+        : Optional.empty();
   }
 
   /**
-   * Either the data column sidecars to publish, or the reason why the execution payload envelope
-   * must be rejected because they could not be built.
+   * Whether the envelope and the amount of blob data are those the block commits to: the first
+   * mismatch, or empty when they are.
    */
-  private record DataColumnSidecarsResult(
-      List<DataColumnSidecar> dataColumnSidecars, Optional<String> rejectionReason) {
-
-    static DataColumnSidecarsResult created(final List<DataColumnSidecar> dataColumnSidecars) {
-      return new DataColumnSidecarsResult(dataColumnSidecars, Optional.empty());
-    }
-
-    static DataColumnSidecarsResult rejected(final String rejectionReason) {
-      return new DataColumnSidecarsResult(List.of(), Optional.of(rejectionReason));
-    }
+  private Optional<String> findMismatch(
+      final ExecutionPayloadEnvelopeContents contents, final BeaconBlock block) {
+    final ExecutionPayloadEnvelope executionPayload = contents.getExecutionPayloadEnvelope();
+    return MiscHelpersGloas.findExecutionPayloadEnvelopeMismatch(
+            executionPayload.getPayload(),
+            executionPayload.getPayload().hashTreeRoot(),
+            executionPayload.getExecutionRequests().hashTreeRoot(),
+            executionPayload.getParentBeaconBlockRoot(),
+            block)
+        .or(
+            () -> {
+              final int blobCount =
+                  block
+                      .getBody()
+                      .getOptionalExecutionPayloadBid()
+                      .orElseThrow()
+                      .getBlobKzgCommitments()
+                      .size();
+              final int numberOfColumns =
+                  SpecConfigFulu.required(spec.atSlot(block.getSlot()).getConfig())
+                      .getNumberOfColumns();
+              return contents.getBlobs().size() == blobCount
+                      && contents.getKzgProofs().size() == blobCount * numberOfColumns
+                  ? Optional.empty()
+                  : Optional.of(
+                      "number of blobs and KZG proofs does not match the blob KZG commitments of"
+                          + " the bid");
+            });
   }
 
-  private void publishExecutionPayloadAndDataColumnSidecars(
-      final SignedExecutionPayloadEnvelope signedExecutionPayload,
-      final List<DataColumnSidecar> dataColumnSidecars) {
-    executionPayloadGossipChannel.publishExecutionPayload(signedExecutionPayload).finishError(LOG);
-    dataColumnSidecarGossipChannel.publishDataColumnSidecars(
-        dataColumnSidecars, RemoteOrigin.LOCAL_PROPOSAL);
+  /** The data column sidecars of the request, or empty when its blob data does not match the bid */
+  private Optional<List<DataColumnSidecar>> createVerifiedDataColumnSidecars(
+      final ExecutionPayloadEnvelopeContents contents, final ExecutionPayloadBid bid) {
+    try {
+      final List<DataColumnSidecar> dataColumnSidecars =
+          executionPayloadFactory.createDataColumnSidecars(contents);
+      final boolean matchesBid =
+          bid.getBlobKzgCommitments().isEmpty()
+              ? dataColumnSidecars.isEmpty()
+              : MiscHelpersGloas.required(spec.atSlot(bid.getSlot()).miscHelpers())
+                  .verifyDataColumnSidecarKzgProofsBatch(
+                      dataColumnSidecars, bid.getBlobKzgCommitments());
+      return matchesBid ? Optional.of(dataColumnSidecars) : Optional.empty();
+    } catch (final RuntimeException e) {
+      LOG.debug("Unable to verify the submitted blob data against the bid", e);
+      return Optional.empty();
+    }
   }
 }

@@ -102,15 +102,13 @@ import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.TestSpecInvocationContextProvider.SpecContext;
 import tech.pegasys.teku.spec.config.SpecConfigAltair;
 import tech.pegasys.teku.spec.datastructures.attestation.ValidatableAttestation;
-import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.builder.SignedValidatorRegistration;
 import tech.pegasys.teku.spec.datastructures.builder.ValidatorRegistration;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelopeContents;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationData;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationMessage;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ProtoNodeData;
@@ -185,8 +183,6 @@ class ValidatorApiHandlerTest {
       mock(DataAvailabilitySampler.class);
   private final ExecutionPayloadManager executionPayloadManager =
       mock(ExecutionPayloadManager.class);
-  private final ExecutionPayloadFactory executionPayloadFactory =
-      mock(ExecutionPayloadFactory.class);
   private final ExecutionPayloadPublisher executionPayloadPublisher =
       mock(ExecutionPayloadPublisher.class);
   private final ExecutionPayloadBidManager executionPayloadBidManager =
@@ -259,7 +255,6 @@ class ValidatorApiHandlerTest {
             payloadAttestationPool,
             dataAvailabilitySampler,
             executionPayloadManager,
-            executionPayloadFactory,
             executionPayloadPublisher,
             executionPayloadBidManager,
             proposerPreferencesManager,
@@ -556,7 +551,6 @@ class ValidatorApiHandlerTest {
             payloadAttestationPool,
             dataAvailabilitySampler,
             executionPayloadManager,
-            executionPayloadFactory,
             executionPayloadPublisher,
             executionPayloadBidManager,
             proposerPreferencesManager,
@@ -984,7 +978,7 @@ class ValidatorApiHandlerTest {
       if (specContext.getSpecMilestone().isGreaterThanOrEqualTo(SpecMilestone.GLOAS)) {
         // The payload has been received and verified locally...
         when(store.getExecutionPayloadIfAvailable(blockAndState.getRoot()))
-            .thenReturn(Optional.of(dataStructureUtil.randomSignedExecutionPayloadEnvelope(5)));
+            .thenReturn(Optional.of(dataStructureUtil.randomExecutionPayloadEnvelope(5)));
       }
       // ...but fork choice selected the EMPTY variant (e.g. PTC voted it not timely)
       when(chainDataClient.getForkChoiceNodeInEffectAtSlot(slot))
@@ -1584,68 +1578,9 @@ class ValidatorApiHandlerTest {
   }
 
   @Test
-  public void createUnsignedExecutionPayload_shouldFailWhenNodeIsSyncing() {
-    nodeIsSyncing();
-    final SafeFuture<Optional<ExecutionPayloadEnvelope>> result =
-        validatorApiHandler.createUnsignedExecutionPayload(ONE, dataStructureUtil.randomBytes32());
-
-    assertThat(result).isCompletedExceptionally();
-    assertThatThrownBy(result::get).hasRootCauseInstanceOf(NodeSyncingException.class);
-  }
-
-  @Test
-  public void createUnsignedExecutionPayload_shouldFailWhenParentBlockIsOptimistic() {
-    final UInt64 newSlot = UInt64.valueOf(25);
-    final BeaconBlockAndState blockAndState = dataStructureUtil.randomBlockAndState(newSlot);
-    when(chainDataClient.getBlockAndStateInEffectAtSlot(eq(newSlot)))
-        .thenReturn(SafeFuture.completedFuture(Optional.of(blockAndState)));
-    when(chainDataClient.isOptimisticBlock(blockAndState.getParentRoot())).thenReturn(true);
-
-    final SafeFuture<Optional<ExecutionPayloadEnvelope>> result =
-        validatorApiHandler.createUnsignedExecutionPayload(newSlot, blockAndState.getRoot());
-
-    assertThat(result).isCompletedExceptionally();
-    assertThatThrownBy(result::get).hasRootCauseInstanceOf(NodeSyncingException.class);
-    verifyNoInteractions(blockFactory);
-  }
-
-  @Test
-  public void createUnsignedExecutionPayload_shouldReturnEmptyWhenThereIsBeaconBlockRootMismatch() {
-    final UInt64 newSlot = UInt64.valueOf(25);
-    final BeaconBlockAndState blockAndState = dataStructureUtil.randomBlockAndState(newSlot);
-    when(chainDataClient.getBlockAndStateInEffectAtSlot(eq(newSlot)))
-        .thenReturn(SafeFuture.completedFuture(Optional.of(blockAndState)));
-
-    final SafeFuture<Optional<ExecutionPayloadEnvelope>> result =
-        validatorApiHandler.createUnsignedExecutionPayload(
-            newSlot, dataStructureUtil.randomBytes32());
-
-    assertThat(result).isCompletedWithValue(Optional.empty());
-    verifyNoInteractions(blockFactory);
-  }
-
-  @Test
-  public void createUnsignedExecutionPayload_shouldCreateExecutionPayload() {
-    final UInt64 newSlot = UInt64.valueOf(25);
-    final BeaconBlockAndState blockAndState = dataStructureUtil.randomBlockAndState(newSlot);
-    final ExecutionPayloadEnvelope executionPayload =
-        dataStructureUtil.randomExecutionPayloadEnvelope(newSlot);
-
-    when(chainDataClient.getBlockAndStateInEffectAtSlot(eq(newSlot)))
-        .thenReturn(SafeFuture.completedFuture(Optional.of(blockAndState)));
-    when(executionPayloadFactory.createUnsignedExecutionPayload(blockAndState))
-        .thenReturn(SafeFuture.completedFuture(executionPayload));
-
-    SafeFuture<Optional<ExecutionPayloadEnvelope>> result =
-        validatorApiHandler.createUnsignedExecutionPayload(newSlot, blockAndState.getRoot());
-
-    assertThat(result).isCompletedWithValue(Optional.of(executionPayload));
-  }
-
-  @Test
   public void publishSignedExecutionPayload_shouldPublish() {
-    final SignedExecutionPayloadEnvelope signedExecutionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(5);
+    final ExecutionPayloadEnvelopeContents signedExecutionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelopeContents(UInt64.valueOf(5));
     final PublishSignedExecutionPayloadResult publishResult =
         PublishSignedExecutionPayloadResult.success(signedExecutionPayload.getBeaconBlockRoot());
     when(executionPayloadPublisher.publishSignedExecutionPayload(
@@ -1663,8 +1598,8 @@ class ValidatorApiHandlerTest {
 
   @Test
   public void publishSignedExecutionPayload_shouldPublishWithBroadcastValidationLevel() {
-    final SignedExecutionPayloadEnvelope signedExecutionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(5);
+    final ExecutionPayloadEnvelopeContents signedExecutionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelopeContents(UInt64.valueOf(5));
     final PublishSignedExecutionPayloadResult publishResult =
         PublishSignedExecutionPayloadResult.success(signedExecutionPayload.getBeaconBlockRoot());
     final Optional<BroadcastValidationLevel> broadcastValidationLevel = Optional.of(GOSSIP);
@@ -1684,8 +1619,8 @@ class ValidatorApiHandlerTest {
 
   @Test
   public void publishSignedExecutionPayload_shouldHandleExceptions() {
-    final SignedExecutionPayloadEnvelope signedExecutionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(5);
+    final ExecutionPayloadEnvelopeContents signedExecutionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelopeContents(UInt64.valueOf(5));
     final PublishSignedExecutionPayloadResult failedResult =
         PublishSignedExecutionPayloadResult.rejected(
             signedExecutionPayload.getBeaconBlockRoot(), "oopsy");

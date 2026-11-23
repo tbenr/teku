@@ -29,7 +29,7 @@ import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockAndCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 
@@ -42,7 +42,7 @@ public class StorageUpdate {
   private final Map<Bytes32, SlotAndBlockRoot> stateRoots;
   private final Map<Bytes32, BlockAndCheckpoints> hotBlocks;
   private final Map<Bytes32, BeaconState> hotStates;
-  private final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads;
+  private final Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloads;
   private final Map<Bytes32, UInt64> deletedHotBlocks;
   private final Map<SlotAndBlockRoot, List<BlobSidecar>> blobSidecars;
   private final Optional<UInt64> maybeEarliestBlobSidecarSlot;
@@ -63,7 +63,7 @@ public class StorageUpdate {
       final Optional<Checkpoint> bestJustifiedCheckpoint,
       final Map<Bytes32, BlockAndCheckpoints> hotBlocks,
       final Map<Bytes32, BeaconState> hotStates,
-      final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
+      final Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloads,
       final Map<SlotAndBlockRoot, List<BlobSidecar>> blobSidecars,
       final Optional<UInt64> maybeEarliestBlobSidecarSlot,
       final Map<Bytes32, UInt64> deletedHotBlocks,
@@ -153,7 +153,7 @@ public class StorageUpdate {
     return hotStates;
   }
 
-  public Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> getBlindedExecutionPayloads() {
+  public Map<Bytes32, BlindedExecutionPayloadEnvelope> getBlindedExecutionPayloads() {
     return blindedExecutionPayloads;
   }
 

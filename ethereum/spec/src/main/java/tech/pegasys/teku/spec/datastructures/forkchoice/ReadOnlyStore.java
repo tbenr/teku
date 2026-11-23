@@ -29,8 +29,8 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.SlotAndExecutionPayloadSummary;
 import tech.pegasys.teku.spec.datastructures.state.AnchorPoint;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
@@ -124,7 +124,7 @@ public interface ReadOnlyStore extends TimeProvider {
    * @param blockRoot The block root of the execution payload to retrieve
    * @return The execution payload if available.
    */
-  Optional<SignedExecutionPayloadEnvelope> getExecutionPayloadIfAvailable(Bytes32 blockRoot);
+  Optional<ExecutionPayloadEnvelope> getExecutionPayloadIfAvailable(Bytes32 blockRoot);
 
   Optional<List<BlobSidecar>> getBlobSidecarsIfAvailable(SlotAndBlockRoot slotAndBlockRoot);
 
@@ -142,10 +142,9 @@ public interface ReadOnlyStore extends TimeProvider {
 
   SafeFuture<Optional<BeaconState>> retrieveBlockState(SlotAndBlockRoot slotAndBlockRoot);
 
-  SafeFuture<Optional<SignedExecutionPayloadEnvelope>> retrieveSignedExecutionPayload(
-      Bytes32 blockRoot);
+  SafeFuture<Optional<ExecutionPayloadEnvelope>> retrieveSignedExecutionPayload(Bytes32 blockRoot);
 
-  SafeFuture<Optional<SignedBlindedExecutionPayloadEnvelope>> retrieveSignedBlindedExecutionPayload(
+  SafeFuture<Optional<BlindedExecutionPayloadEnvelope>> retrieveSignedBlindedExecutionPayload(
       Bytes32 blockRoot);
 
   SafeFuture<Optional<BeaconState>> retrieveCheckpointState(Checkpoint checkpoint);

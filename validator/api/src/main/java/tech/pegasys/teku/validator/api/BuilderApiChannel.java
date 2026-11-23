@@ -14,13 +14,9 @@
 package tech.pegasys.teku.validator.api;
 
 import java.util.Optional;
-import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
-import tech.pegasys.teku.infrastructure.unsigned.UInt64;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelopeContents;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelopeContents;
 import tech.pegasys.teku.spec.datastructures.validator.BroadcastValidationLevel;
 
 /**
@@ -33,14 +29,7 @@ public interface BuilderApiChannel {
   SafeFuture<Void> publishSignedExecutionPayloadBid(
       SignedExecutionPayloadBid signedExecutionPayloadBid);
 
-  SafeFuture<Optional<ExecutionPayloadEnvelope>> createUnsignedExecutionPayload(
-      UInt64 slot, Bytes32 beaconBlockRoot);
-
   SafeFuture<PublishSignedExecutionPayloadResult> publishSignedExecutionPayload(
-      SignedExecutionPayloadEnvelope signedExecutionPayload,
-      Optional<BroadcastValidationLevel> broadcastValidationLevel);
-
-  SafeFuture<PublishSignedExecutionPayloadResult> publishSignedExecutionPayload(
-      SignedExecutionPayloadEnvelopeContents signedExecutionPayloadEnvelopeContents,
+      ExecutionPayloadEnvelopeContents executionPayloadEnvelopeContents,
       Optional<BroadcastValidationLevel> broadcastValidationLevel);
 }

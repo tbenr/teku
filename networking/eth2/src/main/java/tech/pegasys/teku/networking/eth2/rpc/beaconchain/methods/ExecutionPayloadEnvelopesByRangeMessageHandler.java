@@ -39,7 +39,7 @@ import tech.pegasys.teku.networking.eth2.rpc.core.RpcException;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.config.SpecConfigGloas;
 import tech.pegasys.teku.spec.datastructures.blocks.MinimalBeaconBlockSummary;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.networking.libp2p.rpc.ExecutionPayloadEnvelopesByRangeRequestMessage;
 import tech.pegasys.teku.storage.client.CombinedChainDataClient;
@@ -50,7 +50,7 @@ import tech.pegasys.teku.storage.client.CombinedChainDataClient;
  */
 public class ExecutionPayloadEnvelopesByRangeMessageHandler
     extends PeerRequiredLocalMessageHandler<
-        ExecutionPayloadEnvelopesByRangeRequestMessage, SignedExecutionPayloadEnvelope> {
+        ExecutionPayloadEnvelopesByRangeRequestMessage, ExecutionPayloadEnvelope> {
 
   private static final Logger LOG = LogManager.getLogger();
 
@@ -108,7 +108,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandler
       final String protocolId,
       final Eth2Peer peer,
       final ExecutionPayloadEnvelopesByRangeRequestMessage message,
-      final ResponseCallback<SignedExecutionPayloadEnvelope> callback) {
+      final ResponseCallback<ExecutionPayloadEnvelope> callback) {
     final UInt64 startSlot = message.getStartSlot();
     final UInt64 count = message.getCount();
     LOG.trace(
@@ -230,7 +230,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandler
   /** Sends the execution payload and returns true if the request is now complete. */
   private SafeFuture<Boolean> handleLoadedExecutionPayloadEnvelope(
       final RequestState requestState,
-      final Optional<SignedExecutionPayloadEnvelope> executionPayloadEnvelope) {
+      final Optional<ExecutionPayloadEnvelope> executionPayloadEnvelope) {
     return executionPayloadEnvelope
         .map(requestState::sendExecutionPayloadEnvelope)
         .orElse(SafeFuture.COMPLETE)
@@ -248,7 +248,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandler
   @VisibleForTesting
   class RequestState {
 
-    private final ResponseCallback<SignedExecutionPayloadEnvelope> callback;
+    private final ResponseCallback<ExecutionPayloadEnvelope> callback;
     private UInt64 currentSlot;
     private UInt64 remainingExecutionPayloadEnvelopes;
     private final UInt64 headSlot;
@@ -257,7 +257,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandler
     private final AtomicInteger sentExecutionPayloadEnvelopes = new AtomicInteger(0);
 
     RequestState(
-        final ResponseCallback<SignedExecutionPayloadEnvelope> callback,
+        final ResponseCallback<ExecutionPayloadEnvelope> callback,
         final UInt64 startSlot,
         final UInt64 count,
         final UInt64 headSlot,
@@ -282,7 +282,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandler
     }
 
     SafeFuture<Void> sendExecutionPayloadEnvelope(
-        final SignedExecutionPayloadEnvelope executionPayloadEnvelope) {
+        final ExecutionPayloadEnvelope executionPayloadEnvelope) {
       return callback
           .respond(executionPayloadEnvelope)
           .thenRun(sentExecutionPayloadEnvelopes::incrementAndGet);
@@ -296,7 +296,7 @@ public class ExecutionPayloadEnvelopesByRangeMessageHandler
       currentSlot = currentSlot.increment();
     }
 
-    SafeFuture<Optional<SignedExecutionPayloadEnvelope>> loadNextExecutionPayloadEnvelope() {
+    SafeFuture<Optional<ExecutionPayloadEnvelope>> loadNextExecutionPayloadEnvelope() {
       final UInt64 slot = this.currentSlot;
       final ForkChoiceNode knownNode = knownNodes.get(slot);
       if (knownNode != null) {

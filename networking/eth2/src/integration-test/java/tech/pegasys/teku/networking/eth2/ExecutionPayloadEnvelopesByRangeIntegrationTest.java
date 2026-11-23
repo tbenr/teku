@@ -33,7 +33,7 @@ import tech.pegasys.teku.spec.SpecMilestone;
 import tech.pegasys.teku.spec.TestSpecContext;
 import tech.pegasys.teku.spec.TestSpecInvocationContextProvider;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.generator.ChainBuilder;
 
@@ -63,7 +63,7 @@ public class ExecutionPayloadEnvelopesByRangeIntegrationTest
   public void requestExecutionPayloadEnvelopes_shouldReturnEmptyWhenNoBlocksInRange()
       throws ExecutionException, InterruptedException, TimeoutException {
     assumeThat(specMilestone).isGreaterThanOrEqualTo(GLOAS);
-    final List<SignedExecutionPayloadEnvelope> envelopes =
+    final List<ExecutionPayloadEnvelope> envelopes =
         requestExecutionPayloadEnvelopesByRange(peer, UInt64.ONE, UInt64.valueOf(10));
     assertThat(envelopes).isEmpty();
   }
@@ -77,7 +77,7 @@ public class ExecutionPayloadEnvelopesByRangeIntegrationTest
     final SignedBlockAndState block = peerStorage.chainUpdater().advanceChainUntil(targetSlot);
     peerStorage.chainUpdater().updateBestBlock(block);
 
-    final List<SignedExecutionPayloadEnvelope> envelopes =
+    final List<ExecutionPayloadEnvelope> envelopes =
         requestExecutionPayloadEnvelopesByRange(peer, UInt64.ONE, UInt64.ZERO);
     assertThat(envelopes).isEmpty();
   }
@@ -97,12 +97,12 @@ public class ExecutionPayloadEnvelopesByRangeIntegrationTest
         .updateHead(ForkChoiceNode.createFull(block.getRoot()), block.getSlot());
 
     // grab expected execution payload envelopes from storage
-    final List<SignedExecutionPayloadEnvelope> expectedExecutionPayloadEnvelopes =
+    final List<ExecutionPayloadEnvelope> expectedExecutionPayloadEnvelopes =
         peerStorage.chainBuilder().streamExecutionPayloads(UInt64.ZERO).toList();
 
     assertThat(expectedExecutionPayloadEnvelopes).hasSize(3);
 
-    final List<SignedExecutionPayloadEnvelope> executionPayloadEnvelopes =
+    final List<ExecutionPayloadEnvelope> executionPayloadEnvelopes =
         requestExecutionPayloadEnvelopesByRange(peer, UInt64.ONE, UInt64.valueOf(3));
 
     assertThat(executionPayloadEnvelopes)
@@ -131,7 +131,7 @@ public class ExecutionPayloadEnvelopesByRangeIntegrationTest
         fork.generateBlocksUpToSlot(targetSlot.intValue(), peerStorage.chainUpdater().blockOptions);
 
     // save non-canonical blocks and their execution payloads to storage
-    final List<SignedExecutionPayloadEnvelope> nonCanonicalEnvelopes = new ArrayList<>();
+    final List<ExecutionPayloadEnvelope> nonCanonicalEnvelopes = new ArrayList<>();
     nonCanonicalBlocks.forEach(
         blockAndState -> {
           peerStorage.chainUpdater().saveBlock(blockAndState);
@@ -153,13 +153,13 @@ public class ExecutionPayloadEnvelopesByRangeIntegrationTest
     assertThat(nonCanonicalEnvelopes).hasSize(3);
 
     // grab expected canonical execution payloads (slots 1-6)
-    final List<SignedExecutionPayloadEnvelope> expectedEnvelopes =
+    final List<ExecutionPayloadEnvelope> expectedEnvelopes =
         peerStorage.chainBuilder().streamExecutionPayloads(UInt64.ONE).toList();
     assertThat(expectedEnvelopes).hasSize(6);
     assertThat(expectedEnvelopes).doesNotContainAnyElementsOf(nonCanonicalEnvelopes);
 
     // request all slots 1-6
-    final List<SignedExecutionPayloadEnvelope> envelopes =
+    final List<ExecutionPayloadEnvelope> envelopes =
         requestExecutionPayloadEnvelopesByRange(peer, UInt64.ONE, UInt64.valueOf(6));
 
     // only canonical envelopes should be returned, not the non-canonical fork ones
@@ -192,13 +192,13 @@ public class ExecutionPayloadEnvelopesByRangeIntegrationTest
         .recentChainData()
         .updateHead(ForkChoiceNode.createEmpty(head.getRoot()), head.getSlot());
 
-    final SignedExecutionPayloadEnvelope emptyPayloadEnvelope =
+    final ExecutionPayloadEnvelope emptyPayloadEnvelope =
         peerStorage.chainBuilder().getExecutionPayloadAtSlot(emptyPayloadSlot).orElseThrow();
-    final SignedExecutionPayloadEnvelope headEnvelope =
+    final ExecutionPayloadEnvelope headEnvelope =
         peerStorage.chainBuilder().getExecutionPayloadAtSlot(headSlot).orElseThrow();
     assertThat(peerStorage.recentChainData().containsExecutionPayload(head.getRoot())).isTrue();
 
-    final List<SignedExecutionPayloadEnvelope> envelopes =
+    final List<ExecutionPayloadEnvelope> envelopes =
         requestExecutionPayloadEnvelopesByRange(peer, UInt64.ONE, UInt64.valueOf(4));
 
     assertThat(envelopes)
@@ -214,7 +214,7 @@ public class ExecutionPayloadEnvelopesByRangeIntegrationTest
         .recentChainData()
         .updateHead(ForkChoiceNode.createFull(head.getRoot()), head.getSlot());
 
-    final List<SignedExecutionPayloadEnvelope> envelopesWithFullHead =
+    final List<ExecutionPayloadEnvelope> envelopesWithFullHead =
         requestExecutionPayloadEnvelopesByRange(peer, UInt64.ONE, UInt64.valueOf(4));
 
     assertThat(envelopesWithFullHead)
@@ -223,10 +223,10 @@ public class ExecutionPayloadEnvelopesByRangeIntegrationTest
         .doesNotContain(emptyPayloadEnvelope);
   }
 
-  private List<SignedExecutionPayloadEnvelope> requestExecutionPayloadEnvelopesByRange(
+  private List<ExecutionPayloadEnvelope> requestExecutionPayloadEnvelopesByRange(
       final Eth2Peer peer, final UInt64 startSlot, final UInt64 count)
       throws InterruptedException, ExecutionException, TimeoutException {
-    final List<SignedExecutionPayloadEnvelope> executionPayloadEnvelopes = new ArrayList<>();
+    final List<ExecutionPayloadEnvelope> executionPayloadEnvelopes = new ArrayList<>();
     waitFor(
         peer.requestExecutionPayloadEnvelopesByRange(
             startSlot, count, RpcResponseListener.from(executionPayloadEnvelopes::add)));

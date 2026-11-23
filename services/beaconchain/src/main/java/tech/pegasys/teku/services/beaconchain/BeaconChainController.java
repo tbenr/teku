@@ -1989,23 +1989,26 @@ public class BeaconChainController extends Service implements BeaconChainControl
             beaconConfig.p2pConfig().isGossipBlobsAfterBlockEnabled(),
             stakedBuilderClientProvider);
 
-    final ExecutionPayloadFactory executionPayloadFactory;
     final ExecutionPayloadPublisher executionPayloadPublisher;
 
     if (spec.isMilestoneSupported(SpecMilestone.GLOAS)) {
       final ExecutionPayloadGossipChannel executionPayloadGossipChannel =
           eventChannels.getPublisher(ExecutionPayloadGossipChannel.class, beaconAsyncRunner);
-      executionPayloadFactory =
+      final ExecutionPayloadFactory executionPayloadFactory =
           new ExecutionPayloadFactoryGloas(spec, executionLayerBlockProductionManager);
-      executionPayloadPublisher =
+      final ExecutionPayloadPublisherGloas executionPayloadPublisherGloas =
           new ExecutionPayloadPublisherGloas(
+              spec,
+              beaconAsyncRunner,
               executionPayloadFactory,
               executionPayloadGossipChannel,
               dataColumnSidecarGossipChannel,
               executionPayloadManager,
               recentChainData);
+      // reveals self-built execution payloads once their block is imported
+      eventChannels.subscribe(ReceivedBlockEventsChannel.class, executionPayloadPublisherGloas);
+      executionPayloadPublisher = executionPayloadPublisherGloas;
     } else {
-      executionPayloadFactory = ExecutionPayloadFactory.NOOP;
       executionPayloadPublisher = ExecutionPayloadPublisher.NOOP;
     }
     this.validatorApiHandler =
@@ -2033,7 +2036,6 @@ public class BeaconChainController extends Service implements BeaconChainControl
             payloadAttestationPool,
             dataAvailabilitySampler,
             executionPayloadManager,
-            executionPayloadFactory,
             executionPayloadPublisher,
             executionPayloadBidManager,
             proposerPreferencesManager,

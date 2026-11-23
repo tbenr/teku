@@ -35,7 +35,7 @@ import tech.pegasys.teku.networking.p2p.peer.DisconnectReason;
 import tech.pegasys.teku.networking.p2p.rpc.RpcResponseListener;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 
 @SuppressWarnings("unchecked")
 class ThrottlingSyncSourceTest {
@@ -55,8 +55,8 @@ class ThrottlingSyncSourceTest {
   private final RpcResponseListener<BlobSidecar> blobSidecarsListener =
       mock(RpcResponseListener.class);
 
-  private final RpcResponseListener<SignedExecutionPayloadEnvelope>
-      executionPayloadEnvelopesListener = mock(RpcResponseListener.class);
+  private final RpcResponseListener<ExecutionPayloadEnvelope> executionPayloadEnvelopesListener =
+      mock(RpcResponseListener.class);
 
   private final ThrottlingSyncSource source =
       new ThrottlingSyncSource(
@@ -96,13 +96,12 @@ class ThrottlingSyncSourceTest {
         .thenAnswer(
             invocationOnMock -> {
               final UInt64 count = invocationOnMock.getArgument(1);
-              final RpcResponseListenerWithCount<SignedExecutionPayloadEnvelope> listener =
+              final RpcResponseListenerWithCount<ExecutionPayloadEnvelope> listener =
                   invocationOnMock.getArgument(2);
               UInt64.range(UInt64.ZERO, count)
                   .forEach(
                       __ ->
-                          ignoreFuture(
-                              listener.onResponse(mock(SignedExecutionPayloadEnvelope.class))));
+                          ignoreFuture(listener.onResponse(mock(ExecutionPayloadEnvelope.class))));
               return SafeFuture.COMPLETE;
             });
   }

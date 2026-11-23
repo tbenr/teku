@@ -21,7 +21,7 @@ import tech.pegasys.teku.api.AbstractSelectorFactory;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.metadata.ExecutionPayloadAndMetaData;
 import tech.pegasys.teku.spec.datastructures.state.AnchorPoint;
 import tech.pegasys.teku.storage.client.ChainHead;
@@ -102,7 +102,7 @@ public class ExecutionPayloadSelectorFactory
   }
 
   private Optional<ExecutionPayloadAndMetaData> addMetaData(
-      final Optional<SignedExecutionPayloadEnvelope> maybeExecutionPayload) {
+      final Optional<ExecutionPayloadEnvelope> maybeExecutionPayload) {
     // Ensure we use the same chain head when calculating metadata to ensure a consistent view.
     return client
         .getChainHead()
@@ -110,12 +110,11 @@ public class ExecutionPayloadSelectorFactory
   }
 
   private Optional<ExecutionPayloadAndMetaData> addMetaData(
-      final Optional<SignedExecutionPayloadEnvelope> maybeExecutionPayload,
-      final ChainHead chainHead) {
+      final Optional<ExecutionPayloadEnvelope> maybeExecutionPayload, final ChainHead chainHead) {
     if (maybeExecutionPayload.isEmpty()) {
       return Optional.empty();
     }
-    final SignedExecutionPayloadEnvelope executionPayload = maybeExecutionPayload.get();
+    final ExecutionPayloadEnvelope executionPayload = maybeExecutionPayload.get();
     return Optional.of(
         new ExecutionPayloadAndMetaData(
             executionPayload,
@@ -126,12 +125,12 @@ public class ExecutionPayloadSelectorFactory
   }
 
   private Optional<ExecutionPayloadAndMetaData> addMetaDataForFinalized(
-      final Optional<SignedExecutionPayloadEnvelope> maybeExecutionPayload,
+      final Optional<ExecutionPayloadEnvelope> maybeExecutionPayload,
       final AnchorPoint anchorPoint) {
     if (maybeExecutionPayload.isEmpty()) {
       return Optional.empty();
     }
-    final SignedExecutionPayloadEnvelope executionPayload = maybeExecutionPayload.get();
+    final ExecutionPayloadEnvelope executionPayload = maybeExecutionPayload.get();
     return Optional.of(
         new ExecutionPayloadAndMetaData(
             executionPayload,
@@ -141,7 +140,7 @@ public class ExecutionPayloadSelectorFactory
   }
 
   private Optional<ExecutionPayloadAndMetaData> addMetaDataForGenesis(
-      final Optional<SignedExecutionPayloadEnvelope> maybeExecutionPayload) {
+      final Optional<ExecutionPayloadEnvelope> maybeExecutionPayload) {
     return maybeExecutionPayload.map(
         executionPayloadEnvelope ->
             new ExecutionPayloadAndMetaData(

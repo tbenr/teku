@@ -29,8 +29,8 @@ import tech.pegasys.teku.infrastructure.ssz.collections.impl.SszByteListImpl;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecFactory;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadBody;
 import tech.pegasys.teku.spec.datastructures.execution.versions.capella.ExecutionPayloadCapella;
@@ -45,15 +45,14 @@ class UnblindingExecutionPayloadProviderTest {
 
   @Test
   void shouldUnblindExecutionPayloadEnvelope() {
-    final SignedExecutionPayloadEnvelope originalExecutionPayloadEnvelope =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(1);
+    final ExecutionPayloadEnvelope originalExecutionPayloadEnvelope =
+        dataStructureUtil.randomExecutionPayloadEnvelope(1);
     final Bytes32 blockRoot = originalExecutionPayloadEnvelope.getBeaconBlockRoot();
 
-    final SignedBlindedExecutionPayloadEnvelope blindedExecutionPayloadEnvelope =
+    final BlindedExecutionPayloadEnvelope blindedExecutionPayloadEnvelope =
         originalExecutionPayloadEnvelope.blind(spec);
 
-    final ExecutionPayload fullExecutionPayload =
-        originalExecutionPayloadEnvelope.getMessage().getPayload();
+    final ExecutionPayload fullExecutionPayload = originalExecutionPayloadEnvelope.getPayload();
     final ExecutionPayloadBody executionPayloadBody = toExecutionPayloadBody(fullExecutionPayload);
 
     final Bytes32 blockHash = fullExecutionPayload.getBlockHash();
@@ -93,11 +92,11 @@ class UnblindingExecutionPayloadProviderTest {
 
   @Test
   void shouldSkipWhenElReturnsNullBody() {
-    final SignedExecutionPayloadEnvelope originalEnvelope =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(1);
+    final ExecutionPayloadEnvelope originalEnvelope =
+        dataStructureUtil.randomExecutionPayloadEnvelope(1);
     final Bytes32 blockRoot = originalEnvelope.getBeaconBlockRoot();
 
-    final SignedBlindedExecutionPayloadEnvelope blindedEnvelope = originalEnvelope.blind(spec);
+    final BlindedExecutionPayloadEnvelope blindedEnvelope = originalEnvelope.blind(spec);
 
     final UnblindingExecutionPayloadProvider provider =
         new UnblindingExecutionPayloadProvider(
@@ -120,21 +119,16 @@ class UnblindingExecutionPayloadProviderTest {
             slot, builder -> builder.blockAccessList(() -> Bytes.EMPTY));
     final SchemaDefinitionsGloas schemaDefinitions =
         SchemaDefinitionsGloas.required(spec.atSlot(slot).getSchemaDefinitions());
-    final SignedExecutionPayloadEnvelope originalEnvelope =
+    final ExecutionPayloadEnvelope originalEnvelope =
         schemaDefinitions
-            .getSignedExecutionPayloadEnvelopeSchema()
+            .getExecutionPayloadEnvelopeSchema()
             .create(
-                schemaDefinitions
-                    .getExecutionPayloadEnvelopeSchema()
-                    .create(
-                        executionPayload,
-                        dataStructureUtil.randomExecutionRequests(slot),
-                        dataStructureUtil.randomBuilderIndex(),
-                        dataStructureUtil.randomBytes32(),
-                        dataStructureUtil.randomBytes32()),
-                dataStructureUtil.randomSignature());
+                executionPayload,
+                dataStructureUtil.randomExecutionRequests(slot),
+                dataStructureUtil.randomBytes32(),
+                dataStructureUtil.randomBytes32());
     final Bytes32 blockRoot = originalEnvelope.getBeaconBlockRoot();
-    final SignedBlindedExecutionPayloadEnvelope blindedEnvelope = originalEnvelope.blind(spec);
+    final BlindedExecutionPayloadEnvelope blindedEnvelope = originalEnvelope.blind(spec);
     final ExecutionPayloadBody completeBody = toExecutionPayloadBody(executionPayload);
     final ExecutionPayloadBody bodyWithNullBlockAccessList =
         new ExecutionPayloadBody(completeBody.transactions(), completeBody.withdrawals(), null);
@@ -150,17 +144,16 @@ class UnblindingExecutionPayloadProviderTest {
 
   @Test
   void shouldUnblindEquivocatingEnvelopes() {
-    final SignedExecutionPayloadEnvelope originalEnvelope =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(1);
+    final ExecutionPayloadEnvelope originalEnvelope =
+        dataStructureUtil.randomExecutionPayloadEnvelope(1);
 
-    final SignedBlindedExecutionPayloadEnvelope blindedEnvelope = originalEnvelope.blind(spec);
+    final BlindedExecutionPayloadEnvelope blindedEnvelope = originalEnvelope.blind(spec);
 
     // Two different beacon block roots referencing the same execution payload (equivocation)
     final Bytes32 blockRootA = dataStructureUtil.randomBytes32();
     final Bytes32 blockRootB = dataStructureUtil.randomBytes32();
 
-    final ExecutionPayloadBody body =
-        toExecutionPayloadBody(originalEnvelope.getMessage().getPayload());
+    final ExecutionPayloadBody body = toExecutionPayloadBody(originalEnvelope.getPayload());
 
     final UnblindingExecutionPayloadProvider provider =
         new UnblindingExecutionPayloadProvider(
@@ -184,19 +177,19 @@ class UnblindingExecutionPayloadProviderTest {
 
   @Test
   void shouldCacheUnblindedEnvelopesAndOnlyFetchMisses() {
-    final SignedExecutionPayloadEnvelope executionPayloadEnvelopeA =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(1);
-    final SignedExecutionPayloadEnvelope executionPayloadEnvelopeB =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(2);
+    final ExecutionPayloadEnvelope executionPayloadEnvelopeA =
+        dataStructureUtil.randomExecutionPayloadEnvelope(1);
+    final ExecutionPayloadEnvelope executionPayloadEnvelopeB =
+        dataStructureUtil.randomExecutionPayloadEnvelope(2);
     final Bytes32 blockRootA = executionPayloadEnvelopeA.getBeaconBlockRoot();
     final Bytes32 blockRootB = executionPayloadEnvelopeB.getBeaconBlockRoot();
 
-    final SignedBlindedExecutionPayloadEnvelope blindedExecutionPayloadEnvelopeA =
+    final BlindedExecutionPayloadEnvelope blindedExecutionPayloadEnvelopeA =
         executionPayloadEnvelopeA.blind(spec);
-    final SignedBlindedExecutionPayloadEnvelope blindedExecutionPayloadEnvelopeB =
+    final BlindedExecutionPayloadEnvelope blindedExecutionPayloadEnvelopeB =
         executionPayloadEnvelopeB.blind(spec);
 
-    final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> allBlinded =
+    final Map<Bytes32, BlindedExecutionPayloadEnvelope> allBlinded =
         Map.of(
             blockRootA,
             blindedExecutionPayloadEnvelopeA,
@@ -204,10 +197,10 @@ class UnblindingExecutionPayloadProviderTest {
             blindedExecutionPayloadEnvelopeB);
     final Map<Bytes32, ExecutionPayloadBody> allBodies =
         Map.of(
-            executionPayloadEnvelopeA.getMessage().getPayload().getBlockHash(),
-            toExecutionPayloadBody(executionPayloadEnvelopeA.getMessage().getPayload()),
-            executionPayloadEnvelopeB.getMessage().getPayload().getBlockHash(),
-            toExecutionPayloadBody(executionPayloadEnvelopeB.getMessage().getPayload()));
+            executionPayloadEnvelopeA.getPayload().getBlockHash(),
+            toExecutionPayloadBody(executionPayloadEnvelopeA.getPayload()),
+            executionPayloadEnvelopeB.getPayload().getBlockHash(),
+            toExecutionPayloadBody(executionPayloadEnvelopeB.getPayload()));
 
     final AtomicInteger blindedProviderCallCount = new AtomicInteger(0);
     final AtomicInteger elCallCount = new AtomicInteger(0);
@@ -217,7 +210,7 @@ class UnblindingExecutionPayloadProviderTest {
             spec,
             roots -> {
               blindedProviderCallCount.incrementAndGet();
-              final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> result = new HashMap<>();
+              final Map<Bytes32, BlindedExecutionPayloadEnvelope> result = new HashMap<>();
               for (final Bytes32 root : roots) {
                 if (allBlinded.containsKey(root)) {
                   result.put(root, allBlinded.get(root));

@@ -26,7 +26,6 @@ import static tech.pegasys.teku.infrastructure.http.RestApiConstants.COUNT;
 import static tech.pegasys.teku.infrastructure.http.RestApiConstants.EPOCH;
 import static tech.pegasys.teku.infrastructure.http.RestApiConstants.EPOCH_QUERY_DESCRIPTION;
 import static tech.pegasys.teku.infrastructure.http.RestApiConstants.GRAFFITI;
-import static tech.pegasys.teku.infrastructure.http.RestApiConstants.HEADER_BLOB_DATA_INCLUDED;
 import static tech.pegasys.teku.infrastructure.http.RestApiConstants.HEADER_BUILDER_URL;
 import static tech.pegasys.teku.infrastructure.http.RestApiConstants.HEADER_CONSENSUS_VERSION;
 import static tech.pegasys.teku.infrastructure.http.RestApiConstants.INCLUDE_PAYLOAD;
@@ -283,9 +282,6 @@ public class BeaconRestApiTypes {
 
   public static final ParameterMetadata<SpecMilestone> ETH_CONSENSUS_VERSION_TYPE =
       new ParameterMetadata<>(HEADER_CONSENSUS_VERSION, MILESTONE_TYPE);
-
-  public static final ParameterMetadata<Boolean> ETH_BLOB_DATA_INCLUDED_TYPE =
-      new ParameterMetadata<>(HEADER_BLOB_DATA_INCLUDED, BOOLEAN_TYPE);
 
   public static final ParameterMetadata<String> ETH_BUILDER_URL_TYPE =
       new ParameterMetadata<>(

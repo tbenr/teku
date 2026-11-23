@@ -56,7 +56,6 @@ import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloa
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedProposerPreferencesSchema;
 import tech.pegasys.teku.spec.datastructures.execution.versions.gloas.BuilderExitRequest;
@@ -117,6 +116,7 @@ public class ExecutionPayloadBidGossipValidatorTest {
                 randomBid.getParentBlockHash(),
                 randomBid.getParentBlockRoot(),
                 randomBid.getBlockHash(),
+                Bytes32.ZERO,
                 randomBid.getPrevRandao(),
                 randomBid.getFeeRecipient(),
                 DEFAULT_GAS_LIMIT,
@@ -459,7 +459,7 @@ public class ExecutionPayloadBidGossipValidatorTest {
 
     when(gossipValidationHelper.getGasLimitForExecutionPayload(parentBlockRoot, parentBlockHash))
         .thenReturn(Optional.of(bid.getGasLimit()));
-    final SignedExecutionPayloadEnvelope payload = mock(SignedExecutionPayloadEnvelope.class);
+    final ExecutionPayloadEnvelope payload = mock(ExecutionPayloadEnvelope.class);
     when(payload.getBeaconBlockRoot()).thenReturn(parentBlockRoot);
     manager.onExecutionPayloadImported(payload, false);
     assertThat(pool.size()).isZero();
@@ -1282,6 +1282,7 @@ public class ExecutionPayloadBidGossipValidatorTest {
                 bid.getParentBlockHash(),
                 bid.getParentBlockRoot(),
                 bid.getBlockHash(),
+                Bytes32.ZERO,
                 bid.getPrevRandao(),
                 bid.getFeeRecipient(),
                 gasLimit,
@@ -1301,6 +1302,7 @@ public class ExecutionPayloadBidGossipValidatorTest {
                 bid.getParentBlockHash(),
                 bid.getParentBlockRoot(),
                 blockHash,
+                Bytes32.ZERO,
                 bid.getPrevRandao(),
                 bid.getFeeRecipient(),
                 bid.getGasLimit(),
@@ -1327,6 +1329,7 @@ public class ExecutionPayloadBidGossipValidatorTest {
                 bid.getParentBlockHash(),
                 bid.getParentBlockRoot(),
                 bid.getBlockHash(),
+                Bytes32.ZERO,
                 bid.getPrevRandao(),
                 bid.getFeeRecipient(),
                 bid.getGasLimit(),
@@ -1359,6 +1362,7 @@ public class ExecutionPayloadBidGossipValidatorTest {
                 parentHash,
                 parentRoot,
                 bid.getBlockHash(),
+                Bytes32.ZERO,
                 bid.getPrevRandao(),
                 bid.getFeeRecipient(),
                 bid.getGasLimit(),
@@ -1406,28 +1410,22 @@ public class ExecutionPayloadBidGossipValidatorTest {
     return BeaconStateGloas.required(postState).getBuilders().get(index.intValue());
   }
 
-  private SignedExecutionPayloadEnvelope parentEnvelopeWithExits(
+  private ExecutionPayloadEnvelope parentEnvelopeWithExits(
       final BuilderExitRequest... builderExits) {
-    final SignedExecutionPayloadEnvelope randomEnvelope =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(slot.longValue());
-    final ExecutionPayloadEnvelope message = randomEnvelope.getMessage();
+    final ExecutionPayloadEnvelope message =
+        dataStructureUtil.randomExecutionPayloadEnvelope(slot.longValue());
     final ExecutionRequestsGloas executionRequests =
         ExecutionRequestsGloas.required(
             dataStructureUtil
                 .randomExecutionRequestsBuilder(slot)
                 .builderExits(() -> List.of(builderExits))
                 .build());
-    final ExecutionPayloadEnvelope parentEnvelope =
-        schemaDefinitions
-            .getExecutionPayloadEnvelopeSchema()
-            .create(
-                message.getPayload(),
-                executionRequests,
-                message.getBuilderIndex(),
-                parentBlockRoot,
-                message.getParentBeaconBlockRoot());
     return schemaDefinitions
-        .getSignedExecutionPayloadEnvelopeSchema()
-        .create(parentEnvelope, randomEnvelope.getSignature());
+        .getExecutionPayloadEnvelopeSchema()
+        .create(
+            message.getPayload(),
+            executionRequests,
+            parentBlockRoot,
+            message.getParentBeaconBlockRoot());
   }
 }

@@ -29,7 +29,7 @@ import tech.pegasys.teku.beacon.sync.gossip.executionpayloads.ExecutionPayloadSu
 import tech.pegasys.teku.beacon.sync.gossip.executionpayloads.RecentExecutionPayloadsFetcher;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.networking.libp2p.rpc.BlobIdentifier;
 import tech.pegasys.teku.statetransition.forkchoice.ForkChoice.OptimisticHeadSubscriber;
 
@@ -185,18 +185,18 @@ public class NoopSyncService
   }
 
   @Override
-  public void onExecutionPayloadValidated(final SignedExecutionPayloadEnvelope executionPayload) {
+  public void onExecutionPayloadValidated(final ExecutionPayloadEnvelope executionPayload) {
     // No-op
   }
 
   @Override
-  public void onExecutionPayloadAvailable(final SignedExecutionPayloadEnvelope executionPayload) {
+  public void onExecutionPayloadAvailable(final ExecutionPayloadEnvelope executionPayload) {
     // No-op
   }
 
   @Override
   public void onExecutionPayloadImported(
-      final SignedExecutionPayloadEnvelope executionPayload, final boolean executionOptimistic) {
+      final ExecutionPayloadEnvelope executionPayload, final boolean executionOptimistic) {
     // No-op
   }
 }

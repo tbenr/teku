@@ -336,28 +336,21 @@ public class ValidatorLogger {
     log.warn(ColorConsolePrinter.print(infoString, Color.YELLOW));
   }
 
+  /** The beacon node revealed the execution payload it built for its proposer's block. */
   public void logExecutionPayloadDuty(
-      final UInt64 slot, final UInt64 builderIndex, final Bytes32 blockRoot, final String suffix) {
+      final UInt64 slot, final Bytes32 blockRoot, final String suffix) {
     final String paddedType = Strings.padEnd("execution_payload", LONGEST_TYPE_LENGTH, ' ');
     log.info(
         ColorConsolePrinter.print(
             String.format(
-                "%sPublished %s  Slot: %s, Builder: %s, Block Root: %s, %s",
-                BUILDER_PREFIX,
-                paddedType,
-                slot,
-                builderIndex,
-                LogFormatter.formatHashRoot(blockRoot),
-                suffix),
+                "%sPublished %s  Slot: %s, Block Root: %s, %s",
+                BUILDER_PREFIX, paddedType, slot, LogFormatter.formatHashRoot(blockRoot), suffix),
             ColorConsolePrinter.Color.PURPLE));
   }
 
-  public void executionPayloadDutyFailed(
-      final UInt64 slot, final UInt64 builderIndex, final Throwable error) {
+  public void executionPayloadDutyFailed(final UInt64 slot, final Throwable error) {
     final String errorString =
-        String.format(
-            "%sFailed to produce execution_payload  Slot: %s Builder: %s",
-            BUILDER_PREFIX, slot, builderIndex);
+        String.format("%sFailed to produce execution_payload  Slot: %s", BUILDER_PREFIX, slot);
     log.error(ColorConsolePrinter.print(errorString, ColorConsolePrinter.Color.RED), error);
   }
 }

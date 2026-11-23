@@ -26,7 +26,7 @@ import tech.pegasys.teku.dataproviders.lookup.ExecutionPayloadProvider;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecFactory;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 import tech.pegasys.teku.storage.api.StorageQueryChannel;
 
@@ -41,8 +41,8 @@ class CombinedChainDataClientGloasTest {
   private final RecentChainData recentChainData = mock(RecentChainData.class);
   private final StorageQueryChannel historicalChainData = mock(StorageQueryChannel.class);
 
-  private final SignedExecutionPayloadEnvelope historicalEnvelope =
-      dataStructureUtil.randomSignedExecutionPayloadEnvelope(1);
+  private final ExecutionPayloadEnvelope historicalEnvelope =
+      dataStructureUtil.randomExecutionPayloadEnvelope(1);
   private final Bytes32 historicalBlockRoot = historicalEnvelope.getBeaconBlockRoot();
   private final AtomicInteger historicalLookups = new AtomicInteger(0);
 
@@ -65,8 +65,8 @@ class CombinedChainDataClientGloasTest {
 
   @Test
   public void getExecutionPayloadByBlockRoot_returnsHotEnvelopeWithoutConsultingHistorical() {
-    final SignedExecutionPayloadEnvelope hotEnvelope =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(2);
+    final ExecutionPayloadEnvelope hotEnvelope =
+        dataStructureUtil.randomExecutionPayloadEnvelope(2);
     final Bytes32 blockRoot = hotEnvelope.getBeaconBlockRoot();
     when(recentChainData.retrieveSignedExecutionPayloadByBlockRoot(blockRoot))
         .thenReturn(SafeFuture.completedFuture(Optional.of(hotEnvelope)));

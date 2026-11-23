@@ -30,7 +30,7 @@ import tech.pegasys.teku.networking.p2p.rpc.RpcResponseListener;
 import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 
 public class StubSyncSource implements SyncSource {
 
@@ -51,7 +51,7 @@ public class StubSyncSource implements SyncSource {
       Optional.empty();
 
   private Optional<SafeFuture<Void>> currentExecutionPayloadEnvelopesRequest = Optional.empty();
-  private Optional<RpcResponseListener<SignedExecutionPayloadEnvelope>>
+  private Optional<RpcResponseListener<ExecutionPayloadEnvelope>>
       currentExecutionPayloadEnvelopesListener = Optional.empty();
 
   public void receiveBlocks(final SignedBeaconBlock... blocks) {
@@ -76,8 +76,8 @@ public class StubSyncSource implements SyncSource {
   }
 
   public void receiveExecutionPayloadEnvelopes(
-      final SignedExecutionPayloadEnvelope... executionPayloadEnvelopes) {
-    final RpcResponseListener<SignedExecutionPayloadEnvelope> listener =
+      final ExecutionPayloadEnvelope... executionPayloadEnvelopes) {
+    final RpcResponseListener<ExecutionPayloadEnvelope> listener =
         currentExecutionPayloadEnvelopesListener.orElseThrow();
     Stream.of(executionPayloadEnvelopes)
         .forEach(response -> assertThat(listener.onResponse(response)).isCompleted());
@@ -130,7 +130,7 @@ public class StubSyncSource implements SyncSource {
   public SafeFuture<Void> requestExecutionPayloadEnvelopesByRange(
       final UInt64 startSlot,
       final UInt64 count,
-      final RpcResponseListener<SignedExecutionPayloadEnvelope> listener) {
+      final RpcResponseListener<ExecutionPayloadEnvelope> listener) {
     checkArgument(count.isGreaterThan(UInt64.ZERO), "Count must be greater than zero");
     executionPayloadEnvelopesByRangeRequests.add(new Request(startSlot, count));
     final SafeFuture<Void> request = new SafeFuture<>();
@@ -140,7 +140,7 @@ public class StubSyncSource implements SyncSource {
   }
 
   @Override
-  public SafeFuture<Optional<SignedExecutionPayloadEnvelope>> requestExecutionPayloadEnvelopeByRoot(
+  public SafeFuture<Optional<ExecutionPayloadEnvelope>> requestExecutionPayloadEnvelopeByRoot(
       final Bytes32 beaconBlockRoot) {
     executionPayloadEnvelopeByRootRequests.add(beaconBlockRoot);
     return SafeFuture.completedFuture(Optional.empty());

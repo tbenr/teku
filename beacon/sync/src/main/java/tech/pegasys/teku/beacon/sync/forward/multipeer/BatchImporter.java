@@ -32,7 +32,7 @@ import tech.pegasys.teku.networking.eth2.peers.SyncSource;
 import tech.pegasys.teku.networking.p2p.peer.DisconnectReason;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.BlockImportResult;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult;
 import tech.pegasys.teku.statetransition.blobs.BlockBlobSidecarsTrackersPool;
@@ -147,7 +147,7 @@ public class BatchImporter {
         block.getSlot(),
         block.getRoot());
     final Bytes32 blockRoot = block.getRoot();
-    final Optional<SignedExecutionPayloadEnvelope> executionPayload =
+    final Optional<ExecutionPayloadEnvelope> executionPayload =
         Optional.ofNullable(context.executionPayloadsByBlockRoot().get(blockRoot));
     if (context.blobSidecarsByBlockRoot().containsKey(blockRoot)) {
       final List<BlobSidecar> blobSidecars = context.blobSidecarsByBlockRoot().get(blockRoot);
@@ -174,7 +174,7 @@ public class BatchImporter {
 
   private SafeFuture<SingleImportResult> handleBlockImportResult(
       final SignedBeaconBlock block,
-      final Optional<SignedExecutionPayloadEnvelope> executionPayload,
+      final Optional<ExecutionPayloadEnvelope> executionPayload,
       final SyncSource source,
       final CancellableBatchImportFuture batchImportFuture,
       final BlockImportResult blockImportResult) {
@@ -281,7 +281,7 @@ public class BatchImporter {
       final SignedBeaconBlock block,
       final BlockImportResult result,
       final CancellableBatchImportFuture batchImportFuture,
-      final Optional<SignedExecutionPayloadEnvelope> maybeExecutionPayload) {
+      final Optional<ExecutionPayloadEnvelope> maybeExecutionPayload) {
     if (maybeExecutionPayload.isPresent()) {
       return importRecoveredParentExecutionPayload(
           block, maybeExecutionPayload.get(), result, batchImportFuture);
@@ -295,9 +295,8 @@ public class BatchImporter {
     return SafeFuture.completedFuture(result);
   }
 
-  private SafeFuture<Optional<SignedExecutionPayloadEnvelope>>
-      handleParentExecutionPayloadRequestError(
-          final SignedBeaconBlock block, final Throwable error) {
+  private SafeFuture<Optional<ExecutionPayloadEnvelope>> handleParentExecutionPayloadRequestError(
+      final SignedBeaconBlock block, final Throwable error) {
     if (ExceptionUtil.hasCause(error, CancellationException.class)) {
       // the batch import was cancelled, propagate it rather than reporting an import failure
       return SafeFuture.failedFuture(error);
@@ -312,11 +311,11 @@ public class BatchImporter {
 
   private SafeFuture<BlockImportResult> importRecoveredParentExecutionPayload(
       final SignedBeaconBlock block,
-      final SignedExecutionPayloadEnvelope signedExecutionPayloadEnvelope,
+      final ExecutionPayloadEnvelope executionPayloadEnvelope,
       final BlockImportResult originalResult,
       final CancellableBatchImportFuture batchImportFuture) {
     return trackActiveTask(
-            executionPayloadManager.importExecutionPayload(signedExecutionPayloadEnvelope, false),
+            executionPayloadManager.importExecutionPayload(executionPayloadEnvelope, false),
             batchImportFuture)
         .thenCompose(
             executionPayloadImportResult ->
@@ -367,7 +366,7 @@ public class BatchImporter {
       Batch batch,
       List<SignedBeaconBlock> blocks,
       Map<Bytes32, List<BlobSidecar>> blobSidecarsByBlockRoot,
-      Map<Bytes32, SignedExecutionPayloadEnvelope> executionPayloadsByBlockRoot,
+      Map<Bytes32, ExecutionPayloadEnvelope> executionPayloadsByBlockRoot,
       Optional<SyncSource> source,
       CancellableBatchImportFuture result) {}
 

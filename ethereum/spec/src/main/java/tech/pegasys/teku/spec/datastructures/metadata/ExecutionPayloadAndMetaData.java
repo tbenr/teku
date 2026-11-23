@@ -14,10 +14,10 @@
 package tech.pegasys.teku.spec.datastructures.metadata;
 
 import tech.pegasys.teku.spec.SpecMilestone;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 
 public record ExecutionPayloadAndMetaData(
-    SignedExecutionPayloadEnvelope data,
+    ExecutionPayloadEnvelope data,
     SpecMilestone milestone,
     boolean executionOptimistic,
     boolean finalized) {}

@@ -21,7 +21,6 @@ import org.apache.tuweni.bytes.Bytes;
 import tech.pegasys.teku.infrastructure.bytes.Bytes20;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszType;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
-import tech.pegasys.teku.spec.datastructures.type.SszSignatureSchema;
 
 /** Utility functions to extract data from the ssz bytes of execution payload envelopes. */
 public class ExecutionPayloadEnvelopeInvariants {
@@ -29,16 +28,12 @@ public class ExecutionPayloadEnvelopeInvariants {
   private static final int BYTES_PER_LENGTH_OFFSET = 4;
   private static final int BYTES_PER_LOGS_BLOOM = 256;
 
-  private static final int EXECUTION_PAYLOAD_ENVELOPE_OFFSET_IN_SIGNED_ENVELOPE =
-      BYTES_PER_LENGTH_OFFSET + SszSignatureSchema.INSTANCE.getSszFixedPartSize();
-
   // Fixed part of ExecutionPayloadEnvelope:
-  // payload_offset(4) + execution_requests_offset(4) + builder_index(8) +
-  // beacon_block_root(32) + parent_beacon_block_root(32)
+  // payload_offset(4) + execution_requests_offset(4) + beacon_block_root(32) +
+  // parent_beacon_block_root(32)
   private static final int EXECUTION_PAYLOAD_ENVELOPE_FIXED_PART_SIZE =
       BYTES_PER_LENGTH_OFFSET
           + BYTES_PER_LENGTH_OFFSET
-          + UINT64_SCHEMA.getSszFixedPartSize()
           + BYTES32_SCHEMA.getSszFixedPartSize()
           + BYTES32_SCHEMA.getSszFixedPartSize();
 
@@ -87,31 +82,22 @@ public class ExecutionPayloadEnvelopeInvariants {
 
   private ExecutionPayloadEnvelopeInvariants() {}
 
-  public static UInt64 extractSignedExecutionPayloadEnvelopeSlot(final Bytes bytes) {
-    return extractSlotFromSignedPayloadEnvelope(bytes, SLOT_NUMBER_OFFSET_IN_EXECUTION_PAYLOAD);
+  public static UInt64 extractExecutionPayloadEnvelopeSlot(final Bytes bytes) {
+    return extractSlotFromPayloadEnvelope(bytes, SLOT_NUMBER_OFFSET_IN_EXECUTION_PAYLOAD);
   }
 
-  public static UInt64 extractSignedBlindedExecutionPayloadEnvelopeSlot(final Bytes bytes) {
-    return extractSlotFromSignedPayloadEnvelope(
-        bytes, SLOT_NUMBER_OFFSET_IN_EXECUTION_PAYLOAD_HEADER);
+  public static UInt64 extractBlindedExecutionPayloadEnvelopeSlot(final Bytes bytes) {
+    return extractSlotFromPayloadEnvelope(bytes, SLOT_NUMBER_OFFSET_IN_EXECUTION_PAYLOAD_HEADER);
   }
 
-  private static UInt64 extractSlotFromSignedPayloadEnvelope(
+  private static UInt64 extractSlotFromPayloadEnvelope(
       final Bytes bytes, final int slotOffsetInPayload) {
-    final int envelopeDataOffset =
-        SszType.sszBytesToLength(bytes.slice(0, BYTES_PER_LENGTH_OFFSET));
-    if (envelopeDataOffset != EXECUTION_PAYLOAD_ENVELOPE_OFFSET_IN_SIGNED_ENVELOPE) {
-      throw new IllegalArgumentException("Unexpected signed execution payload envelope format");
-    }
-    final int payloadDataOffset =
-        SszType.sszBytesToLength(bytes.slice(envelopeDataOffset, BYTES_PER_LENGTH_OFFSET));
+    final int payloadDataOffset = SszType.sszBytesToLength(bytes.slice(0, BYTES_PER_LENGTH_OFFSET));
     if (payloadDataOffset != EXECUTION_PAYLOAD_ENVELOPE_FIXED_PART_SIZE) {
       throw new IllegalArgumentException("Unexpected execution payload envelope format");
     }
     final Bytes slotData =
-        bytes.slice(
-            envelopeDataOffset + payloadDataOffset + slotOffsetInPayload,
-            UINT64_SCHEMA.getSszFixedPartSize());
+        bytes.slice(payloadDataOffset + slotOffsetInPayload, UINT64_SCHEMA.getSszFixedPartSize());
     return UINT64_SCHEMA.sszDeserialize(slotData).get();
   }
 }

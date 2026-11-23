@@ -25,7 +25,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import tech.pegasys.teku.infrastructure.async.AsyncRunner;
 import tech.pegasys.teku.infrastructure.exceptions.ExceptionUtil;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult;
 import tech.pegasys.teku.storage.server.ShuttingDownException;
 
@@ -42,9 +42,9 @@ public class FailedExecutionPayloadPool {
   private static final List<Class<? extends Throwable>> TIMEOUT_EXCEPTIONS =
       List.of(InterruptedException.class, SocketTimeoutException.class, TimeoutException.class);
 
-  private final Queue<SignedExecutionPayloadEnvelope> awaitingExecutionQueue =
+  private final Queue<ExecutionPayloadEnvelope> awaitingExecutionQueue =
       new ArrayBlockingQueue<>(10);
-  private Optional<SignedExecutionPayloadEnvelope> retryingExecutionPayload = Optional.empty();
+  private Optional<ExecutionPayloadEnvelope> retryingExecutionPayload = Optional.empty();
 
   private Duration currentDelay = SHORT_DELAY;
 
@@ -58,7 +58,7 @@ public class FailedExecutionPayloadPool {
   }
 
   public synchronized void addFailedExecutionPayload(
-      final SignedExecutionPayloadEnvelope executionPayload) {
+      final ExecutionPayloadEnvelope executionPayload) {
     if (retryingExecutionPayload.isEmpty()) {
       retryingExecutionPayload = Optional.of(executionPayload);
       scheduleNextRetry();
@@ -77,7 +77,7 @@ public class FailedExecutionPayloadPool {
   }
 
   private synchronized void handleExecutionResult(
-      final SignedExecutionPayloadEnvelope executionPayload,
+      final ExecutionPayloadEnvelope executionPayload,
       final ExecutionPayloadImportResult importResult) {
     if (importResult.hasFailedExecution()) {
       currentDelay = currentDelay.multipliedBy(2);
@@ -88,7 +88,7 @@ public class FailedExecutionPayloadPool {
         scheduleNextRetry();
       } else {
         // Try a different execution payload
-        final SignedExecutionPayloadEnvelope nextExecutionPayload = awaitingExecutionQueue.remove();
+        final ExecutionPayloadEnvelope nextExecutionPayload = awaitingExecutionQueue.remove();
         awaitingExecutionQueue.add(executionPayload);
         retryingExecutionPayload = Optional.of(nextExecutionPayload);
         scheduleNextRetry();
@@ -117,7 +117,7 @@ public class FailedExecutionPayloadPool {
                 .finishStackTrace());
   }
 
-  private synchronized void retryExecution(final SignedExecutionPayloadEnvelope executionPayload) {
+  private synchronized void retryExecution(final ExecutionPayloadEnvelope executionPayload) {
     LOG.debug("Retrying execution of execution payload {}", executionPayload.toLogString());
     // Retried payloads may have originated from either gossip-validated or sync/RPC imports and the
     // pool does not track their provenance, so we deliberately import them as commitment-unverified

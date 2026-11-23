@@ -653,6 +653,7 @@ public abstract class AbstractBlockFactoryTest {
                           executionPayload.getParentHash(),
                           parentRoot,
                           executionPayload.getBlockHash(),
+                          Bytes32.ZERO,
                           executionPayload.getPrevRandao(),
                           executionPayload.getFeeRecipient(),
                           executionPayload.getGasLimit(),

@@ -27,17 +27,17 @@ import okhttp3.Response;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import tech.pegasys.teku.beaconrestapi.AbstractDataBackedRestAPIIntegrationTest;
-import tech.pegasys.teku.beaconrestapi.handlers.v1.beacon.GetSignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.beaconrestapi.handlers.v1.beacon.GetExecutionPayloadEnvelope;
 import tech.pegasys.teku.ethereum.json.types.EthereumTypes;
 import tech.pegasys.teku.infrastructure.json.JsonUtil;
 import tech.pegasys.teku.spec.SpecMilestone;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.metadata.ExecutionPayloadAndMetaData;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitionsGloas;
 
-public class GetSignedExecutionPayloadEnvelopeIntegrationTest
+public class GetExecutionPayloadEnvelopeIntegrationTest
     extends AbstractDataBackedRestAPIIntegrationTest {
 
   @BeforeEach
@@ -57,8 +57,7 @@ public class GetSignedExecutionPayloadEnvelopeIntegrationTest
     assertThat(body.get("finalized").asBoolean()).isFalse();
     assertThat(response.header(HEADER_CONSENSUS_VERSION)).isEqualTo("gloas");
 
-    final SignedExecutionPayloadEnvelope executionPayloadEnvelope =
-        getSignedExecutionPayloadEnvelope(body);
+    final ExecutionPayloadEnvelope executionPayloadEnvelope = getExecutionPayloadEnvelope(body);
 
     assertThat(executionPayloadEnvelope)
         .isEqualTo(
@@ -74,8 +73,7 @@ public class GetSignedExecutionPayloadEnvelopeIntegrationTest
     final Response response = get(block.getRoot().toHexString());
     final JsonNode body = OBJECT_MAPPER.readTree(response.body().string());
 
-    final SignedExecutionPayloadEnvelope executionPayloadEnvelope =
-        getSignedExecutionPayloadEnvelope(body);
+    final ExecutionPayloadEnvelope executionPayloadEnvelope = getExecutionPayloadEnvelope(body);
 
     assertThat(executionPayloadEnvelope)
         .isEqualTo(chainBuilder.getExecutionPayload(block.getRoot()).orElseThrow());
@@ -91,8 +89,7 @@ public class GetSignedExecutionPayloadEnvelopeIntegrationTest
 
     final JsonNode body = OBJECT_MAPPER.readTree(response.body().string());
 
-    final SignedExecutionPayloadEnvelope executionPayloadEnvelope =
-        getSignedExecutionPayloadEnvelope(body);
+    final ExecutionPayloadEnvelope executionPayloadEnvelope = getExecutionPayloadEnvelope(body);
 
     assertThat(executionPayloadEnvelope)
         .isEqualTo(chainBuilder.getExecutionPayload(block.getRoot()).orElseThrow());
@@ -103,8 +100,7 @@ public class GetSignedExecutionPayloadEnvelopeIntegrationTest
     final List<SignedBlockAndState> created = createBlocksAtSlots(1, 2, 3);
 
     final Response response =
-        getResponse(
-            GetSignedExecutionPayloadEnvelope.ROUTE.replace("{block_id}", "head"), OCTET_STREAM);
+        getResponse(GetExecutionPayloadEnvelope.ROUTE.replace("{block_id}", "head"), OCTET_STREAM);
 
     assertThat(response.code()).isEqualTo(SC_OK);
     assertThat(response.header(HEADER_CONSENSUS_VERSION)).isEqualTo("gloas");
@@ -119,22 +115,21 @@ public class GetSignedExecutionPayloadEnvelopeIntegrationTest
                     .orElseThrow()));
   }
 
-  private SignedExecutionPayloadEnvelope getSignedExecutionPayloadEnvelope(final JsonNode body)
+  private ExecutionPayloadEnvelope getExecutionPayloadEnvelope(final JsonNode body)
       throws JsonProcessingException {
     return JsonUtil.parse(
         body.get("data").toString(),
         SchemaDefinitionsGloas.required(
                 spec.forMilestone(SpecMilestone.GLOAS).getSchemaDefinitions())
-            .getSignedExecutionPayloadEnvelopeSchema()
+            .getExecutionPayloadEnvelopeSchema()
             .getJsonTypeDefinition());
   }
 
   private Response get(final String blockIdString) throws IOException {
-    return getResponse(
-        GetSignedExecutionPayloadEnvelope.ROUTE.replace("{block_id}", blockIdString));
+    return getResponse(GetExecutionPayloadEnvelope.ROUTE.replace("{block_id}", blockIdString));
   }
 
-  private byte[] getExpectedSsz(final SignedExecutionPayloadEnvelope data) throws IOException {
+  private byte[] getExpectedSsz(final ExecutionPayloadEnvelope data) throws IOException {
     final ExecutionPayloadAndMetaData value =
         new ExecutionPayloadAndMetaData(data, SpecMilestone.GLOAS, false, false);
     try (final ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {

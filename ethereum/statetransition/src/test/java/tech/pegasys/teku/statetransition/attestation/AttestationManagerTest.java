@@ -50,7 +50,7 @@ import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.datastructures.attestation.ProcessedAttestationListener;
 import tech.pegasys.teku.spec.datastructures.attestation.ValidatableAttestation;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.operations.Attestation;
 import tech.pegasys.teku.spec.datastructures.operations.AttestationData;
 import tech.pegasys.teku.spec.datastructures.operations.AttestationSchema;
@@ -318,8 +318,7 @@ class AttestationManagerTest {
   public void shouldParkAttestationsThatAreMissingFullPayloadDependencies() {
     final ProcessedAttestationListener subscriber = mock(ProcessedAttestationListener.class);
     attestationManager.subscribeToAttestationsToSend(subscriber);
-    final SignedExecutionPayloadEnvelope executionPayload =
-        mock(SignedExecutionPayloadEnvelope.class);
+    final ExecutionPayloadEnvelope executionPayload = mock(ExecutionPayloadEnvelope.class);
     final Bytes32 blockRoot = dataStructureUtil.randomBytes32();
     final ValidatableAttestation attestation =
         ValidatableAttestation.fromValidator(spec, fullPayloadAttestationFromSlot(12, blockRoot));

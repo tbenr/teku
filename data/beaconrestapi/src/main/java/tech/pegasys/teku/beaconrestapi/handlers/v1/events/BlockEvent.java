@@ -35,6 +35,7 @@ public class BlockEvent extends Event<BlockEvent.BlockData> {
           .withField(EXECUTION_OPTIMISTIC, BOOLEAN_TYPE, BlockData::isExecutionOptimistic)
           .withOptionalField("builder_index", UINT64_TYPE, BlockData::getBuilderIndex)
           .withOptionalField("block_hash", BYTES32_TYPE, BlockData::getBlockHash)
+          .withOptionalField("payload_root", BYTES32_TYPE, BlockData::getPayloadRoot)
           .build();
 
   BlockEvent(final SignedBeaconBlock block, final boolean executionOptimistic) {
@@ -55,7 +56,8 @@ public class BlockEvent extends Event<BlockEvent.BlockData> {
         block.getRoot(),
         executionOptimistic,
         maybeBid.map(ExecutionPayloadBid::getBuilderIndex),
-        maybeBid.map(ExecutionPayloadBid::getBlockHash));
+        maybeBid.map(ExecutionPayloadBid::getBlockHash),
+        maybeBid.map(ExecutionPayloadBid::getPayloadRoot));
   }
 
   public static class BlockData {
@@ -64,18 +66,21 @@ public class BlockEvent extends Event<BlockEvent.BlockData> {
     private final boolean executionOptimistic;
     private final Optional<UInt64> builderIndex;
     private final Optional<Bytes32> blockHash;
+    private final Optional<Bytes32> payloadRoot;
 
     BlockData(
         final UInt64 slot,
         final Bytes32 block,
         final boolean executionOptimistic,
         final Optional<UInt64> builderIndex,
-        final Optional<Bytes32> blockHash) {
+        final Optional<Bytes32> blockHash,
+        final Optional<Bytes32> payloadRoot) {
       this.slot = slot;
       this.block = block;
       this.executionOptimistic = executionOptimistic;
       this.builderIndex = builderIndex;
       this.blockHash = blockHash;
+      this.payloadRoot = payloadRoot;
     }
 
     private UInt64 getSlot() {
@@ -96,6 +101,10 @@ public class BlockEvent extends Event<BlockEvent.BlockData> {
 
     private Optional<Bytes32> getBlockHash() {
       return blockHash;
+    }
+
+    private Optional<Bytes32> getPayloadRoot() {
+      return payloadRoot;
     }
   }
 }

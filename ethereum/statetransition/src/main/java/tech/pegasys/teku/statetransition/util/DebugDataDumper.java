@@ -19,7 +19,7 @@ import java.util.function.Supplier;
 import org.apache.tuweni.bytes.Bytes;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 
 public interface DebugDataDumper {
 
@@ -50,7 +50,7 @@ public interface DebugDataDumper {
 
         @Override
         public void saveInvalidExecutionPayload(
-            final SignedExecutionPayloadEnvelope signedEnvelope,
+            final ExecutionPayloadEnvelope envelope,
             final String failureReason,
             final Optional<Throwable> failureCause) {}
       };
@@ -73,7 +73,5 @@ public interface DebugDataDumper {
   void saveInvalidSidecars(List<?> sidecars, SignedBeaconBlock block);
 
   void saveInvalidExecutionPayload(
-      SignedExecutionPayloadEnvelope signedEnvelope,
-      String failureReason,
-      Optional<Throwable> failureCause);
+      ExecutionPayloadEnvelope envelope, String failureReason, Optional<Throwable> failureCause);
 }

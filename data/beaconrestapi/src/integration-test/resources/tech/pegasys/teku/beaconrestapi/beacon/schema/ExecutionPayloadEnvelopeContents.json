@@ -1,10 +1,10 @@
 {
-  "title" : "SignedExecutionPayloadEnvelopeContents",
+  "title" : "ExecutionPayloadEnvelopeContents",
   "type" : "object",
-  "required" : [ "signed_execution_payload_envelope", "kzg_proofs", "blobs" ],
+  "required" : [ "execution_payload_envelope", "kzg_proofs", "blobs" ],
   "properties" : {
-    "signed_execution_payload_envelope" : {
-      "$ref" : "#/components/schemas/SignedExecutionPayloadEnvelope"
+    "execution_payload_envelope" : {
+      "$ref" : "#/components/schemas/ExecutionPayloadEnvelope"
     },
     "kzg_proofs" : {
       "type" : "array",

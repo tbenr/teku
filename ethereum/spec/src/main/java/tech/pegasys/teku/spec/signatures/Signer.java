@@ -23,7 +23,6 @@ import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.builder.ValidatorRegistration;
 import tech.pegasys.teku.spec.datastructures.builder.versions.gloas.BuilderRequestAuth;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationData;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.operations.AggregateAndProof;
@@ -62,9 +61,6 @@ public interface Signer {
   SafeFuture<BLSSignature> signValidatorRegistration(ValidatorRegistration validatorRegistration);
 
   SafeFuture<BLSSignature> signExecutionPayloadBid(ExecutionPayloadBid bid, ForkInfo forkInfo);
-
-  SafeFuture<BLSSignature> signExecutionPayloadEnvelope(
-      ExecutionPayloadEnvelope envelope, ForkInfo forkInfo);
 
   SafeFuture<BLSSignature> signPayloadAttestationData(
       PayloadAttestationData payloadAttestationData, ForkInfo forkInfo);

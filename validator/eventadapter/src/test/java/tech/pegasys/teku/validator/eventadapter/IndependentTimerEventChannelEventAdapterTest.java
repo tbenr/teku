@@ -28,7 +28,7 @@ import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.events.EventChannels;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecFactory;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 import tech.pegasys.teku.statetransition.execution.ReceivedExecutionPayloadEventsChannel;
 import tech.pegasys.teku.storage.api.ChainHeadChannel;
@@ -59,8 +59,8 @@ class IndependentTimerEventChannelEventAdapterTest {
 
   @Test
   void shouldRequestPayloadAttestationWhenTheHeadPayloadBecomesAvailable() {
-    final SignedExecutionPayloadEnvelope executionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(10);
+    final ExecutionPayloadEnvelope executionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelope(10);
     headUpdatedTo(executionPayload.getBeaconBlockRoot());
 
     adapter.onExecutionPayloadAvailable(executionPayload);
@@ -70,8 +70,8 @@ class IndependentTimerEventChannelEventAdapterTest {
 
   @Test
   void shouldNotRequestPayloadAttestationForAPayloadOfAnotherBlock() {
-    final SignedExecutionPayloadEnvelope executionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(10);
+    final ExecutionPayloadEnvelope executionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelope(10);
     // the payload belongs to a block which is not the head, so it says nothing about the block the
     // payload timeliness attestation will be about
     headUpdatedTo(dataStructureUtil.randomBytes32());
@@ -84,15 +84,15 @@ class IndependentTimerEventChannelEventAdapterTest {
 
   @Test
   void shouldNotRequestPayloadAttestationBeforeAnyHeadIsKnown() {
-    adapter.onExecutionPayloadAvailable(dataStructureUtil.randomSignedExecutionPayloadEnvelope(10));
+    adapter.onExecutionPayloadAvailable(dataStructureUtil.randomExecutionPayloadEnvelope(10));
 
     verifyNoInteractions(validatorTimingChannel);
   }
 
   @Test
   void shouldNotRequestPayloadAttestationBeforeTheDataIsAvailable() {
-    final SignedExecutionPayloadEnvelope executionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(10);
+    final ExecutionPayloadEnvelope executionPayload =
+        dataStructureUtil.randomExecutionPayloadEnvelope(10);
     // the payload is for the head, so only the availability of its data is left to decide whether
     // the duty is brought forward
     headUpdatedTo(executionPayload.getBeaconBlockRoot());

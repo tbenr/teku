@@ -16,41 +16,30 @@ package tech.pegasys.teku.validator.coordinator;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
-import static tech.pegasys.teku.infrastructure.async.SafeFutureAssert.assertThatSafeFuture;
 import static tech.pegasys.teku.infrastructure.async.SafeFutureAssert.safeJoin;
+import static tech.pegasys.teku.spec.config.SpecConfigGloas.BUILDER_INDEX_SELF_BUILD;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
-import java.util.function.Consumer;
+import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.Test;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
-import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
-import tech.pegasys.teku.spec.SpecVersion;
 import tech.pegasys.teku.spec.TestSpecFactory;
 import tech.pegasys.teku.spec.config.SpecConfigFulu;
 import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
-import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlockAndState;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelopeContents;
 import tech.pegasys.teku.spec.datastructures.execution.BlobsBundle;
-import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadResult;
 import tech.pegasys.teku.spec.datastructures.execution.GetPayloadResponse;
-import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
-import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.gloas.BeaconStateGloas;
-import tech.pegasys.teku.spec.datastructures.type.SszKZGCommitment;
+import tech.pegasys.teku.spec.datastructures.type.SszKZGProof;
 import tech.pegasys.teku.spec.executionlayer.ExecutionLayerBlockProductionManager;
-import tech.pegasys.teku.spec.generator.ChainBuilder;
-import tech.pegasys.teku.spec.logic.common.helpers.MiscHelpers;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitionsGloas;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
-import tech.pegasys.teku.storage.storageSystem.InMemoryStorageSystemBuilder;
-import tech.pegasys.teku.storage.storageSystem.StorageSystem;
 
 class ExecutionPayloadFactoryGloasTest {
 
@@ -68,40 +57,65 @@ class ExecutionPayloadFactoryGloasTest {
       new ExecutionPayloadFactoryGloas(spec, executionLayerBlockProductionManager);
 
   @Test
-  public void createsUnsignedExecutionPayload() {
-    assertExecutionPayloadCreated(UInt64.ONE, 3, this::prepareValidGetPayloadResponse);
+  public void createsSelfBuiltExecutionPayload() {
+    final UInt64 slot = UInt64.ONE;
+    prepareGetPayloadResponse(slot);
+    final BeaconBlock block =
+        blockCommittingTo(slot, getPayloadResponse.getExecutionPayload().hashTreeRoot());
+    setupCachingOfThePayloadResult(slot, getPayloadResponse);
+
+    final Optional<ExecutionPayloadEnvelopeContents> maybeContents =
+        safeJoin(executionPayloadFactory.createSelfBuiltExecutionPayload(block));
+
+    assertThat(maybeContents).isPresent();
+    // the envelope comes with the blob data cached alongside the payload
+    assertThat(maybeContents.get().getBlobs().asList()).isEqualTo(blobsBundle.getBlobs());
+    assertThat(maybeContents.get().getKzgProofs().stream().map(SszKZGProof::getKZGProof).toList())
+        .isEqualTo(blobsBundle.getProofs());
+    final ExecutionPayloadEnvelope executionPayload =
+        maybeContents.get().getExecutionPayloadEnvelope();
+    assertThat(executionPayload.getPayload()).isEqualTo(getPayloadResponse.getExecutionPayload());
+    assertThat(executionPayload.getExecutionRequests())
+        .isEqualTo(getPayloadResponse.getExecutionRequests().orElseThrow());
+    assertThat(executionPayload.getBeaconBlockRoot()).isEqualTo(block.getRoot());
+    assertThat(executionPayload.getParentBeaconBlockRoot()).isEqualTo(block.getParentRoot());
+    assertThat(executionPayload.getSlot()).isEqualTo(slot);
+  }
+
+  @Test
+  public void doesNotCreateSelfBuiltExecutionPayloadWhenPayloadResultIsNotCached() {
+    final UInt64 slot = UInt64.ONE;
+    final BeaconBlock block = blockCommittingTo(slot, dataStructureUtil.randomBytes32());
+    when(executionLayerBlockProductionManager.getCachedPayloadResult(slot))
+        .thenReturn(Optional.empty());
+
+    assertThat(safeJoin(executionPayloadFactory.createSelfBuiltExecutionPayload(block))).isEmpty();
+  }
+
+  @Test
+  public void doesNotCreateSelfBuiltExecutionPayloadWhenBlockCommitsToAnotherPayload() {
+    final UInt64 slot = UInt64.ONE;
+    prepareGetPayloadResponse(slot);
+    final BeaconBlock block = blockCommittingTo(slot, dataStructureUtil.randomBytes32());
+    setupCachingOfThePayloadResult(slot, getPayloadResponse);
+
+    assertThat(safeJoin(executionPayloadFactory.createSelfBuiltExecutionPayload(block))).isEmpty();
   }
 
   @Test
   public void createsDataColumnSidecars() {
     final UInt64 slot = UInt64.ONE;
-
-    final SchemaDefinitionsGloas schemaDefinitions =
-        SchemaDefinitionsGloas.required(spec.atSlot(slot).getSchemaDefinitions());
     final SpecConfigFulu specConfig = SpecConfigFulu.required(spec.atSlot(slot).getConfig());
-
     blobsBundle = dataStructureUtil.randomBlobsBundle(3);
-
     final ExecutionPayloadEnvelope executionPayload =
         dataStructureUtil.randomExecutionPayloadEnvelope(slot);
-
-    getPayloadResponse =
-        new GetPayloadResponse(
-            executionPayload.getPayload(),
-            dataStructureUtil.randomUInt256(),
-            blobsBundle,
-            false,
-            dataStructureUtil.randomExecutionRequests(slot));
-
-    setupCachingOfThePayloadResult(slot, getPayloadResponse);
-
-    final SignedExecutionPayloadEnvelope signedExecutionPayload =
-        schemaDefinitions
-            .getSignedExecutionPayloadEnvelopeSchema()
-            .create(executionPayload, dataStructureUtil.randomSignature());
+    final ExecutionPayloadEnvelopeContents contents =
+        SchemaDefinitionsGloas.required(spec.atSlot(slot).getSchemaDefinitions())
+            .getExecutionPayloadEnvelopeContentsSchema()
+            .create(executionPayload, blobsBundle.getProofs(), blobsBundle.getBlobs());
 
     final List<DataColumnSidecar> dataColumnSidecars =
-        safeJoin(executionPayloadFactory.createDataColumnSidecars(signedExecutionPayload));
+        executionPayloadFactory.createDataColumnSidecars(contents);
 
     assertThat(dataColumnSidecars.size()).isEqualTo(specConfig.getNumberOfColumns());
     dataColumnSidecars.forEach(
@@ -110,103 +124,32 @@ class ExecutionPayloadFactoryGloasTest {
                 .isEqualTo(executionPayload.getBeaconBlockRoot()));
   }
 
-  @Test
-  public void failsToCreateDataColumnSidecarsWhenPayloadResultIsNotCached() {
-    final UInt64 slot = UInt64.ONE;
-    final SignedExecutionPayloadEnvelope signedExecutionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(slot.longValue());
-
-    when(executionLayerBlockProductionManager.getCachedPayloadResult(slot))
-        .thenReturn(Optional.empty());
-
-    assertThatSafeFuture(executionPayloadFactory.createDataColumnSidecars(signedExecutionPayload))
-        .isCompletedExceptionallyWith(DataColumnSidecarCreationException.class)
-        .hasMessage(DataColumnSidecarCreationException.noCachedBlobData(slot).getMessage());
-  }
-
-  @Test
-  public void failsToCreateDataColumnSidecarsWhenCachedPayloadDoesNotMatchEnvelope() {
-    final UInt64 slot = UInt64.ONE;
-    final SignedExecutionPayloadEnvelope signedExecutionPayload =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(slot.longValue());
-    final GetPayloadResponse mismatchedGetPayloadResponse =
+  private void prepareGetPayloadResponse(final UInt64 slot) {
+    blobsBundle = dataStructureUtil.randomBlobsBundle(3);
+    getPayloadResponse =
         new GetPayloadResponse(
             dataStructureUtil.randomExecutionPayload(slot),
             dataStructureUtil.randomUInt256(),
-            dataStructureUtil.randomBlobsBundle(1),
-            false,
-            dataStructureUtil.randomExecutionRequests(slot));
-
-    setupCachingOfThePayloadResult(slot, mismatchedGetPayloadResponse);
-
-    assertThatSafeFuture(executionPayloadFactory.createDataColumnSidecars(signedExecutionPayload))
-        .isCompletedExceptionallyWith(DataColumnSidecarCreationException.class)
-        .hasMessage(DataColumnSidecarCreationException.cachedPayloadMismatch(slot).getMessage());
-  }
-
-  private void assertExecutionPayloadCreated(
-      final UInt64 slot,
-      final int blobsCount,
-      final Consumer<BeaconBlockAndState> getPayloadResponseBuilder) {
-    final StorageSystem localChain = InMemoryStorageSystemBuilder.buildDefault(spec);
-
-    localChain.chainUpdater().initializeGenesis(true);
-
-    blobsBundle = dataStructureUtil.randomBlobsBundle(blobsCount);
-
-    final SszList<SszKZGCommitment> kzgCommitments =
-        dataStructureUtil.getBlobKzgCommitmentsSchema().createFromBlobsBundle(blobsBundle);
-    final ChainBuilder.BlockOptions blockOptions =
-        ChainBuilder.BlockOptions.create().setKzgCommitments(kzgCommitments);
-
-    final BeaconBlockAndState blockAndState =
-        localChain.chainUpdater().advanceChain(slot, blockOptions).toUnsigned();
-
-    getPayloadResponseBuilder.accept(blockAndState);
-
-    setupCachingOfThePayloadResult(slot, getPayloadResponse);
-
-    final ExecutionPayloadEnvelope executionPayload =
-        safeJoin(executionPayloadFactory.createUnsignedExecutionPayload(blockAndState));
-
-    // result assertions
-    assertThat(executionPayload.getPayload()).isEqualTo(getPayloadResponse.getExecutionPayload());
-    assertThat(executionPayload.getExecutionRequests())
-        .isEqualTo(getPayloadResponse.getExecutionRequests().orElseThrow());
-    assertThat(executionPayload.getBuilderIndex())
-        .isEqualTo(getBidFromBlock(blockAndState.getBlock()).getBuilderIndex());
-    assertThat(executionPayload.getBeaconBlockRoot()).isEqualTo(blockAndState.getRoot());
-    assertThat(executionPayload.getSlot()).isEqualTo(slot);
-  }
-
-  private void prepareValidGetPayloadResponse(final BeaconBlockAndState blockAndState) {
-    final BeaconState state = blockAndState.getState();
-    final SpecVersion specVersion = spec.atSlot(state.getSlot());
-    final MiscHelpers miscHelpers = specVersion.miscHelpers();
-    final ExecutionPayloadBid bid = getBidFromBlock(blockAndState.getBlock());
-    final ExecutionPayload executionPayload =
-        dataStructureUtil.randomExecutionPayload(
-            state.getSlot(),
-            builder ->
-                builder
-                    .parentHash(BeaconStateGloas.required(state).getLatestBlockHash())
-                    .gasLimit(bid.getGasLimit())
-                    .blockHash(bid.getBlockHash())
-                    .prevRandao(bid.getPrevRandao())
-                    .timestamp(
-                        miscHelpers.computeTimeAtSlot(state.getGenesisTime(), state.getSlot()))
-                    .withdrawals(Collections::emptyList));
-    getPayloadResponse =
-        new GetPayloadResponse(
-            executionPayload,
-            dataStructureUtil.randomUInt256(),
             blobsBundle,
             false,
-            dataStructureUtil.randomExecutionRequests(state.getSlot()));
+            dataStructureUtil.randomExecutionRequests(slot));
   }
 
-  private ExecutionPayloadBid getBidFromBlock(final BeaconBlock block) {
-    return block.getBody().getOptionalSignedExecutionPayloadBid().orElseThrow().getMessage();
+  private BeaconBlock blockCommittingTo(final UInt64 slot, final Bytes32 payloadRoot) {
+    final ExecutionPayloadBid bid =
+        dataStructureUtil.randomExecutionPayloadBid(
+            slot,
+            BUILDER_INDEX_SELF_BUILD,
+            dataStructureUtil.randomBytes32(),
+            payloadRoot,
+            dataStructureUtil.randomBytes32());
+    return dataStructureUtil.randomBeaconBlock(
+        slot,
+        dataStructureUtil.randomBeaconBlockBody(
+            slot,
+            builder ->
+                builder.signedExecutionPayloadBid(
+                    dataStructureUtil.randomSignedExecutionPayloadBid(bid))));
   }
 
   private void setupCachingOfThePayloadResult(

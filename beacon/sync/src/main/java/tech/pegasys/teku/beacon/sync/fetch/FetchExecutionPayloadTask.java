@@ -20,10 +20,10 @@ import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.networking.eth2.peers.Eth2Peer;
 import tech.pegasys.teku.networking.p2p.network.P2PNetwork;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 
 public class FetchExecutionPayloadTask
-    extends AbstractFetchTask<Bytes32, SignedExecutionPayloadEnvelope> {
+    extends AbstractFetchTask<Bytes32, ExecutionPayloadEnvelope> {
 
   private static final Logger LOG = LogManager.getLogger();
 
@@ -49,7 +49,7 @@ public class FetchExecutionPayloadTask
   }
 
   @Override
-  SafeFuture<FetchResult<SignedExecutionPayloadEnvelope>> fetch(final Eth2Peer peer) {
+  SafeFuture<FetchResult<ExecutionPayloadEnvelope>> fetch(final Eth2Peer peer) {
     return peer.requestExecutionPayloadEnvelopeByRoot(beaconBlockRoot)
         .thenApply(maybeExecutionPayload -> createFetchResult(peer, maybeExecutionPayload))
         .exceptionally(
@@ -63,13 +63,13 @@ public class FetchExecutionPayloadTask
             });
   }
 
-  private FetchResult<SignedExecutionPayloadEnvelope> createFetchResult(
-      final Eth2Peer peer, final Optional<SignedExecutionPayloadEnvelope> maybeExecutionPayload) {
+  private FetchResult<ExecutionPayloadEnvelope> createFetchResult(
+      final Eth2Peer peer, final Optional<ExecutionPayloadEnvelope> maybeExecutionPayload) {
     if (maybeExecutionPayload.isEmpty()) {
       return FetchResult.createFailed(peer, FetchResult.Status.FETCH_FAILED);
     }
 
-    final SignedExecutionPayloadEnvelope executionPayload = maybeExecutionPayload.get();
+    final ExecutionPayloadEnvelope executionPayload = maybeExecutionPayload.get();
     if (!executionPayload.getBeaconBlockRoot().equals(beaconBlockRoot)) {
       LOG.debug(
           "Failed to fetch execution payload by beacon block root {} from peer {}: returned execution payload for beacon block root {}",

@@ -43,10 +43,7 @@ import tech.pegasys.teku.spec.TestSpecInvocationContextProvider.SpecContext;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadHeader;
 import tech.pegasys.teku.spec.datastructures.execution.Transaction;
@@ -74,7 +71,7 @@ public class HistoricalBatchFetcherGloasTest {
       ArgumentCaptor.forClass(Collection.class);
 
   @SuppressWarnings("unchecked")
-  private final ArgumentCaptor<Map<Bytes32, SignedBlindedExecutionPayloadEnvelope>>
+  private final ArgumentCaptor<Map<Bytes32, BlindedExecutionPayloadEnvelope>>
       blindedExecutionPayloadsCaptor = ArgumentCaptor.forClass(Map.class);
 
   private final int maxRequests = 5;
@@ -84,7 +81,7 @@ public class HistoricalBatchFetcherGloasTest {
   private StorageSystem storageSystem;
   private CombinedChainDataClient chainDataClient;
   private List<SignedBeaconBlock> blockBatch;
-  private Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> expectedBlindedPayloads;
+  private Map<Bytes32, BlindedExecutionPayloadEnvelope> expectedBlindedPayloads;
   private SignedBeaconBlock firstBlockInBatch;
   private SignedBeaconBlock lastBlockInBatch;
   private HistoricalBatchFetcher fetcher;
@@ -120,7 +117,7 @@ public class HistoricalBatchFetcherGloasTest {
             .streamExecutionPayloads(10, 20)
             .collect(
                 Collectors.toMap(
-                    SignedExecutionPayloadEnvelope::getBeaconBlockRoot,
+                    ExecutionPayloadEnvelope::getBeaconBlockRoot,
                     envelope -> envelope.blind(schemaDefinitionsGloas)));
 
     chainDataClient =
@@ -161,16 +158,17 @@ public class HistoricalBatchFetcherGloasTest {
             blockCaptor.capture(), any(), blindedExecutionPayloadsCaptor.capture(), any());
     assertThat(blockCaptor.getValue()).containsExactlyElementsOf(blockBatch);
     assertThat(blindedExecutionPayloadsCaptor.getValue()).isEqualTo(expectedBlindedPayloads);
-    // Envelope signatures are intentionally not verified (builder indices are reusable in Gloas),
-    // so the signature verifier is called only once (for block signatures)
+    // Envelopes are not signed, so the signature verifier is called only once (for block
+    // signatures)
     verify(signatureVerifier, times(1)).verify(any(), any(), anyList());
   }
 
   @TestTemplate
-  public void processExecutionPayload_throwsWhenPayloadBlockHashDoesNotMatchComputedHash() {
-    final SignedExecutionPayloadEnvelope original =
-        chainBuilder.getExecutionPayloadAtSlot(UInt64.valueOf(15)).orElseThrow();
-    final ExecutionPayloadEnvelope originalEnvelope = original.getMessage();
+  public void validateExecutionPayloadEnvelope_throwsWhenPayloadRootDoesNotMatchBid() {
+    // Same block hash, another payload: only the payload root tells them apart
+    final SignedBeaconBlock block = chainBuilder.getBlockAtSlot(15);
+    final ExecutionPayloadEnvelope originalEnvelope =
+        chainBuilder.getExecutionPayload(block.getRoot()).orElseThrow();
     final ExecutionPayload tamperedPayload =
         copyPayloadWithStateRoot(
             originalEnvelope.getPayload(), originalEnvelope.getPayload().getStateRoot().not());
@@ -183,18 +181,42 @@ public class HistoricalBatchFetcherGloasTest {
             .create(
                 tamperedPayload,
                 originalEnvelope.getExecutionRequests(),
-                originalEnvelope.getBuilderIndex(),
                 originalEnvelope.getBeaconBlockRoot(),
                 originalEnvelope.getParentBeaconBlockRoot());
-    final SignedExecutionPayloadEnvelope signedTamperedEnvelope =
-        schemaDefinitions
-            .getSignedExecutionPayloadEnvelopeSchema()
-            .create(tamperedEnvelope, original.getSignature());
 
-    assertThatThrownBy(() -> fetcher.processExecutionPayload(signedTamperedEnvelope))
+    assertThatThrownBy(
+            () ->
+                fetcher.validateExecutionPayloadEnvelope(
+                    tamperedEnvelope.blind(schemaDefinitions), block))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("Execution payload block hash mismatch")
-        .hasMessageContaining(originalEnvelope.getBeaconBlockRoot().toHexString());
+        .hasMessageContaining("payload root")
+        .hasMessageContaining(block.getRoot().toHexString());
+  }
+
+  @TestTemplate
+  public void validateExecutionPayloadEnvelope_throwsWhenParentBeaconBlockRootDoesNotMatchBlock() {
+    final SignedBeaconBlock block = chainBuilder.getBlockAtSlot(15);
+    final ExecutionPayloadEnvelope originalEnvelope =
+        chainBuilder.getExecutionPayload(block.getRoot()).orElseThrow();
+    final SchemaDefinitionsGloas schemaDefinitions =
+        SchemaDefinitionsGloas.required(
+            spec.atSlot(originalEnvelope.getSlot()).getSchemaDefinitions());
+    final ExecutionPayloadEnvelope tamperedEnvelope =
+        schemaDefinitions
+            .getExecutionPayloadEnvelopeSchema()
+            .create(
+                originalEnvelope.getPayload(),
+                originalEnvelope.getExecutionRequests(),
+                originalEnvelope.getBeaconBlockRoot(),
+                originalEnvelope.getParentBeaconBlockRoot().not());
+
+    assertThatThrownBy(
+            () ->
+                fetcher.validateExecutionPayloadEnvelope(
+                    tamperedEnvelope.blind(schemaDefinitions), block))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("parent beacon block root")
+        .hasMessageContaining(block.getRoot().toHexString());
   }
 
   @TestTemplate
@@ -269,7 +291,7 @@ public class HistoricalBatchFetcherGloasTest {
     final SignedBeaconBlock block = chainBuilder.getBlockAtSlot(15);
     final SchemaDefinitionsGloas schemaDefinitions =
         SchemaDefinitionsGloas.required(spec.atSlot(block.getSlot()).getSchemaDefinitions());
-    final SignedBlindedExecutionPayloadEnvelope blindedEnvelope =
+    final BlindedExecutionPayloadEnvelope blindedEnvelope =
         chainBuilder.getExecutionPayload(block.getRoot()).orElseThrow().blind(schemaDefinitions);
 
     fetcher.validateExecutionPayloadEnvelope(blindedEnvelope, block);
@@ -281,45 +303,27 @@ public class HistoricalBatchFetcherGloasTest {
     final SignedBeaconBlock otherBlock = chainBuilder.getBlockAtSlot(15);
     final SchemaDefinitionsGloas schemaDefinitions =
         SchemaDefinitionsGloas.required(spec.atSlot(block.getSlot()).getSchemaDefinitions());
-    final SignedBlindedExecutionPayloadEnvelope originalBlindedEnvelope =
+    final BlindedExecutionPayloadEnvelope originalBlindedEnvelope =
         chainBuilder
             .getExecutionPayload(otherBlock.getRoot())
             .orElseThrow()
             .blind(schemaDefinitions);
     final ExecutionPayloadHeader targetSlotPayloadHeader =
         copyPayloadHeaderWithSlot(
-            schemaDefinitions,
-            originalBlindedEnvelope.getMessage().getPayloadHeader(),
-            block.getSlot());
-    final ExecutionPayloadBid blockBid = getExecutionPayloadBid(block);
+            schemaDefinitions, originalBlindedEnvelope.getPayloadHeader(), block.getSlot());
     final BlindedExecutionPayloadEnvelope tamperedEnvelope =
         schemaDefinitions
             .getBlindedExecutionPayloadEnvelopeSchema()
             .create(
                 targetSlotPayloadHeader,
-                originalBlindedEnvelope.getMessage().getExecutionRequests(),
-                blockBid.getBuilderIndex(),
+                originalBlindedEnvelope.getExecutionRequests(),
                 block.getRoot(),
                 block.getParentRoot());
-    final SignedBlindedExecutionPayloadEnvelope signedTampered =
-        schemaDefinitions
-            .getSignedBlindedExecutionPayloadEnvelopeSchema()
-            .create(tamperedEnvelope, originalBlindedEnvelope.getSignature());
 
-    assertThatThrownBy(() -> fetcher.validateExecutionPayloadEnvelope(signedTampered, block))
+    assertThatThrownBy(() -> fetcher.validateExecutionPayloadEnvelope(tamperedEnvelope, block))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("parent block hash")
+        .hasMessageContaining("payload root")
         .hasMessageContaining(block.getRoot().toHexString());
-  }
-
-  private ExecutionPayloadBid getExecutionPayloadBid(final SignedBeaconBlock block) {
-    return block
-        .getMessage()
-        .getBody()
-        .toVersionGloas()
-        .orElseThrow()
-        .getSignedExecutionPayloadBid()
-        .getMessage();
   }
 
   private ExecutionPayload copyPayloadWithStateRoot(

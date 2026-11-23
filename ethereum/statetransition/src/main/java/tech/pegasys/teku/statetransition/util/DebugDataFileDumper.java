@@ -37,7 +37,7 @@ import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.type.SszKZGCommitment;
 
 public class DebugDataFileDumper implements DebugDataDumper {
@@ -175,28 +175,25 @@ public class DebugDataFileDumper implements DebugDataDumper {
 
   @Override
   public void saveInvalidExecutionPayload(
-      final SignedExecutionPayloadEnvelope signedEnvelope,
+      final ExecutionPayloadEnvelope envelope,
       final String failureReason,
       final Optional<Throwable> failureCause) {
     if (!enabled) {
       return;
     }
-    final UInt64 slot = signedEnvelope.getSlot();
-    final Bytes32 blockRoot = signedEnvelope.getBeaconBlockRoot();
-    final UInt64 builderIndex = signedEnvelope.getMessage().getBuilderIndex();
-    final String fileName =
-        String.format("%s_%s_%s.ssz", slot, blockRoot.toUnprefixedHexString(), builderIndex);
+    final UInt64 slot = envelope.getSlot();
+    final Bytes32 blockRoot = envelope.getBeaconBlockRoot();
+    final String fileName = String.format("%s_%s.ssz", slot, blockRoot.toUnprefixedHexString());
     final boolean success =
         saveBytesToFile(
             "invalid execution payload",
             Path.of(INVALID_EXECUTION_PAYLOAD_DIR).resolve(fileName),
-            signedEnvelope.sszSerialize());
+            envelope.sszSerialize());
     if (success) {
       LOG.warn(
-          "Rejecting invalid execution payload at slot {} with block root {} and builder index {}, reason: {}, cause: {}",
+          "Rejecting invalid execution payload at slot {} with block root {}, reason: {}, cause: {}",
           slot,
           blockRoot,
-          builderIndex,
           failureReason,
           failureCause.orElse(null));
     }

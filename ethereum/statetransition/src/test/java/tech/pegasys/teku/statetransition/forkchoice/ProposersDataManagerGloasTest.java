@@ -37,8 +37,8 @@ import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.TestSpecContext;
 import tech.pegasys.teku.spec.TestSpecInvocationContextProvider.SpecContext;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionRequests;
 import tech.pegasys.teku.spec.datastructures.execution.versions.capella.Withdrawal;
@@ -103,7 +103,7 @@ class ProposersDataManagerGloasTest {
         schemaDefinitions.getExecutionRequestsSchema().getDefault();
     final BeaconState state =
         createStateWithFullParentBid(blockSlot, schemaDefinitions, parentExecutionRequests);
-    final SignedBlindedExecutionPayloadEnvelope parentEnvelope =
+    final BlindedExecutionPayloadEnvelope parentEnvelope =
         createParentEnvelope(blockSlot, parentRoot, schemaDefinitions, parentExecutionRequests);
     final Optional<List<Withdrawal>> expectedWithdrawals =
         spec.getPayloadAttributeWithdrawals(
@@ -138,6 +138,7 @@ class ProposersDataManagerGloasTest {
                 data.randomBytes32(),
                 data.randomBytes32(),
                 latestExecutionPayloadBlockHash,
+                Bytes32.ZERO,
                 data.randomBytes32(),
                 data.randomEth1Address(),
                 data.randomUInt64(),
@@ -173,23 +174,18 @@ class ProposersDataManagerGloasTest {
             });
   }
 
-  private SignedBlindedExecutionPayloadEnvelope createParentEnvelope(
+  private BlindedExecutionPayloadEnvelope createParentEnvelope(
       final UInt64 blockSlot,
       final Bytes32 parentRoot,
       final SchemaDefinitionsGloas schemaDefinitions,
       final ExecutionRequests parentExecutionRequests) {
     return schemaDefinitions
-        .getSignedBlindedExecutionPayloadEnvelopeSchema()
+        .getBlindedExecutionPayloadEnvelopeSchema()
         .create(
-            schemaDefinitions
-                .getBlindedExecutionPayloadEnvelopeSchema()
-                .create(
-                    data.randomExecutionPayloadHeader(spec.atSlot(blockSlot)),
-                    parentExecutionRequests,
-                    UInt64.ZERO,
-                    data.randomBytes32(),
-                    parentRoot),
-            data.randomSignature());
+            data.randomExecutionPayloadHeader(spec.atSlot(blockSlot)),
+            parentExecutionRequests,
+            data.randomBytes32(),
+            parentRoot);
   }
 
   @TestTemplate

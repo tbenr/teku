@@ -78,9 +78,9 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlockUnblinder;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockContainer;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.BeaconBlockBodyBuilder;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelopeInvariants;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadHeader;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionRequests;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionRequestsDataCodec;
@@ -484,14 +484,14 @@ public class Spec {
         .sszDeserialize(serializedSignedBlock);
   }
 
-  public SignedBlindedExecutionPayloadEnvelope deserializeSignedBlindedExecutionPayloadEnvelope(
-      final Bytes serializedSignedBlindedExecutionPayloadEnvelope) {
+  public BlindedExecutionPayloadEnvelope deserializeBlindedExecutionPayloadEnvelope(
+      final Bytes serializedBlindedExecutionPayloadEnvelope) {
     final UInt64 slot =
-        ExecutionPayloadEnvelopeInvariants.extractSignedBlindedExecutionPayloadEnvelopeSlot(
-            serializedSignedBlindedExecutionPayloadEnvelope);
+        ExecutionPayloadEnvelopeInvariants.extractBlindedExecutionPayloadEnvelopeSlot(
+            serializedBlindedExecutionPayloadEnvelope);
     return SchemaDefinitionsGloas.required(atSlot(slot).getSchemaDefinitions())
-        .getSignedBlindedExecutionPayloadEnvelopeSchema()
-        .sszDeserialize(serializedSignedBlindedExecutionPayloadEnvelope);
+        .getBlindedExecutionPayloadEnvelopeSchema()
+        .sszDeserialize(serializedBlindedExecutionPayloadEnvelope);
   }
 
   public SignedBlockContainer deserializeSignedBlockContainer(
@@ -659,13 +659,6 @@ public class Spec {
     return atSlot(proof.getAggregate().getData().getSlot())
         .miscHelpers()
         .computeSigningRoot(proof, domain);
-  }
-
-  public Bytes computeSigningRoot(
-      final ExecutionPayloadEnvelope executionPayloadEnvelope, final Bytes32 domain) {
-    return atSlot(executionPayloadEnvelope.getSlot())
-        .miscHelpers()
-        .computeSigningRoot(executionPayloadEnvelope, domain);
   }
 
   public Bytes computeSigningRoot(final UInt64 slot, final Bytes32 domain) {
@@ -1054,17 +1047,15 @@ public class Spec {
   }
 
   // Execution Payload Proposal
-  public SafeFuture<ExecutionPayloadEnvelope> createNewUnsignedExecutionPayload(
-      final UInt64 proposalSlot,
-      final BeaconBlockAndState blockAndState,
-      final SafeFuture<ExecutionPayloadProposalData> executionPayloadProposalDataFuture) {
-    return atSlot(proposalSlot)
+  public ExecutionPayloadEnvelope createExecutionPayloadEnvelope(
+      final BeaconBlock block, final ExecutionPayloadProposalData executionPayloadProposalData) {
+    return atSlot(block.getSlot())
         .getExecutionPayloadProposalUtil()
         .orElseThrow(
             () ->
                 new IllegalStateException(
                     "Attempting to use execution payload proposal util when spec does not have execution payload proposal util"))
-        .createNewUnsignedExecutionPayload(blockAndState, executionPayloadProposalDataFuture);
+        .createExecutionPayloadEnvelope(block, executionPayloadProposalData);
   }
 
   // Blind Block Utils

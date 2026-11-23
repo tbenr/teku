@@ -53,9 +53,9 @@ import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationMessage;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
@@ -179,8 +179,8 @@ public class EventSubscriptionManagerTest {
           Optional.of(samplePayloadAttributes),
           false,
           new SafeFuture<>());
-  private final SignedExecutionPayloadEnvelope sampleExecutionPayload =
-      data.randomSignedExecutionPayloadEnvelope(0);
+  private final ExecutionPayloadEnvelope sampleExecutionPayload =
+      data.randomExecutionPayloadEnvelope(0);
   private final SignedExecutionPayloadBid sampleExecutionPayloadBid =
       data.randomSignedExecutionPayloadBid();
   private final PayloadAttestationMessage samplePayloadAttestationMessage =
@@ -711,7 +711,10 @@ public class EventSubscriptionManagerTest {
     manager.registerClient(client1);
 
     triggerExecutionPayloadEvent();
-    checkEvent("execution_payload", new ExecutionPayloadEvent(sampleExecutionPayload, false));
+    checkEvent(
+        "execution_payload",
+        new ExecutionPayloadEvent(
+            sampleExecutionPayload, sampleExecutionPayloadBid.getMessage(), false));
   }
 
   @Test
@@ -720,7 +723,10 @@ public class EventSubscriptionManagerTest {
     manager.registerClient(client1);
 
     triggerExecutionPayloadGossipEvent();
-    checkEvent("execution_payload_gossip", new ExecutionPayloadGossipEvent(sampleExecutionPayload));
+    checkEvent(
+        "execution_payload_gossip",
+        new ExecutionPayloadGossipEvent(
+            sampleExecutionPayload, sampleExecutionPayloadBid.getMessage()));
   }
 
   @Test
@@ -914,13 +920,22 @@ public class EventSubscriptionManagerTest {
   }
 
   private void triggerExecutionPayloadEvent() {
+    mockBidOfSampleExecutionPayload();
     manager.onExecutionPayloadImported(sampleExecutionPayload, false);
     asyncRunner.executeQueuedActions();
   }
 
   private void triggerExecutionPayloadGossipEvent() {
+    mockBidOfSampleExecutionPayload();
     manager.onExecutionPayloadValidated(sampleExecutionPayload);
     asyncRunner.executeQueuedActions();
+  }
+
+  // the execution payload events take the builder index and payload root from the block's bid
+  private void mockBidOfSampleExecutionPayload() {
+    when(chainDataProvider.getExecutionPayloadBid(sampleExecutionPayload.getBeaconBlockRoot()))
+        .thenReturn(
+            SafeFuture.completedFuture(Optional.of(sampleExecutionPayloadBid.getMessage())));
   }
 
   private void triggerExecutionPayloadAvailableEvent() {

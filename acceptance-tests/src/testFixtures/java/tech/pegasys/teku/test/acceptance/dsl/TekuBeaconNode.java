@@ -72,7 +72,6 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlockHeader;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.BeaconBlockBody;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadHeader;
 import tech.pegasys.teku.spec.datastructures.networking.libp2p.rpc.metadata.MetadataMessage;
@@ -549,9 +548,7 @@ public class TekuBeaconNode extends TekuNode {
     if (blockBody.getOptionalSignedExecutionPayloadBid().isPresent()) {
       maybeExecutionPayload =
           // we can directly query the execution payload at the head in Gloas
-          fetchExecutionPayload("head")
-              .map(SignedExecutionPayloadEnvelope::getMessage)
-              .map(ExecutionPayloadEnvelope::getPayload);
+          fetchExecutionPayload("head").map(ExecutionPayloadEnvelope::getPayload);
     } else {
       maybeExecutionPayload = blockBody.getOptionalExecutionPayload();
     }
@@ -736,7 +733,7 @@ public class TekuBeaconNode extends TekuNode {
     }
   }
 
-  private Optional<SignedExecutionPayloadEnvelope> fetchExecutionPayload(final String blockId)
+  private Optional<ExecutionPayloadEnvelope> fetchExecutionPayload(final String blockId)
       throws IOException {
     final String result =
         httpClient.get(getRestApiUrl(), "/eth/v1/beacon/execution_payload_envelopes/" + blockId);
@@ -747,11 +744,11 @@ public class TekuBeaconNode extends TekuNode {
       final UInt64 slot =
           UInt64.valueOf(
               jsonNode.get("data").get("message").get("payload").get("slot_number").asText());
-      final DeserializableTypeDefinition<SignedExecutionPayloadEnvelope> jsonTypeDefinition =
+      final DeserializableTypeDefinition<ExecutionPayloadEnvelope> jsonTypeDefinition =
           SharedApiTypes.withDataWrapper(
               "execution_payload_envelope",
               SchemaDefinitionsGloas.required(spec.atSlot(slot).getSchemaDefinitions())
-                  .getSignedExecutionPayloadEnvelopeSchema()
+                  .getExecutionPayloadEnvelopeSchema()
                   .getJsonTypeDefinition());
       return Optional.of(JsonUtil.parse(result, jsonTypeDefinition));
     }

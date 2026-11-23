@@ -329,12 +329,6 @@ public class SszTestExecutor<T extends SszData> implements TestExecutor {
                   schemas ->
                       SchemaDefinitionsGloas.required(schemas).getExecutionPayloadEnvelopeSchema()))
           .put(
-              "ssz_static/SignedExecutionPayloadEnvelope",
-              new SszTestExecutor<>(
-                  schemas ->
-                      SchemaDefinitionsGloas.required(schemas)
-                          .getSignedExecutionPayloadEnvelopeSchema()))
-          .put(
               "ssz_static/ProposerPreferences",
               new SszTestExecutor<>(
                   schemas ->

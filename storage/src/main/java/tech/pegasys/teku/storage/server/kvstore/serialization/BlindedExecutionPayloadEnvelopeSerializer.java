@@ -16,24 +16,24 @@ package tech.pegasys.teku.storage.server.kvstore.serialization;
 import java.util.Objects;
 import org.apache.tuweni.bytes.Bytes;
 import tech.pegasys.teku.spec.Spec;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
 
-class SignedBlindedExecutionPayloadEnvelopeSerializer
-    implements KvStoreSerializer<SignedBlindedExecutionPayloadEnvelope> {
+class BlindedExecutionPayloadEnvelopeSerializer
+    implements KvStoreSerializer<BlindedExecutionPayloadEnvelope> {
 
   private final Spec spec;
 
-  SignedBlindedExecutionPayloadEnvelopeSerializer(final Spec spec) {
+  BlindedExecutionPayloadEnvelopeSerializer(final Spec spec) {
     this.spec = spec;
   }
 
   @Override
-  public SignedBlindedExecutionPayloadEnvelope deserialize(final byte[] data) {
-    return spec.deserializeSignedBlindedExecutionPayloadEnvelope(Bytes.wrap(data));
+  public BlindedExecutionPayloadEnvelope deserialize(final byte[] data) {
+    return spec.deserializeBlindedExecutionPayloadEnvelope(Bytes.wrap(data));
   }
 
   @Override
-  public byte[] serialize(final SignedBlindedExecutionPayloadEnvelope value) {
+  public byte[] serialize(final BlindedExecutionPayloadEnvelope value) {
     return value.sszSerialize().toArrayUnsafe();
   }
 
@@ -45,8 +45,8 @@ class SignedBlindedExecutionPayloadEnvelopeSerializer
     if (o == null || getClass() != o.getClass()) {
       return false;
     }
-    final SignedBlindedExecutionPayloadEnvelopeSerializer that =
-        (SignedBlindedExecutionPayloadEnvelopeSerializer) o;
+    final BlindedExecutionPayloadEnvelopeSerializer that =
+        (BlindedExecutionPayloadEnvelopeSerializer) o;
     return Objects.equals(spec, that.spec);
   }
 

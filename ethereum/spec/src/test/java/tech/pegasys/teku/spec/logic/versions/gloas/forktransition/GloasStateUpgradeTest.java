@@ -91,6 +91,26 @@ class GloasStateUpgradeTest {
   }
 
   @Test
+  void shouldSeedLatestBidWithPreForkBlockHashAndNoPayloadRoot() {
+    final BeaconStateFulu preState =
+        BeaconStateFulu.required(
+            dataStructureUtil
+                .stateBuilder(SpecMilestone.FULU, 64, 0)
+                .setSlotToStartOfEpoch(GLOAS_EPOCH)
+                .build()
+                .updated(this::activateAllValidators));
+
+    final BeaconStateGloas postState =
+        BeaconStateGloas.required(createStateUpgrade().upgrade(preState));
+
+    final Bytes32 preForkBlockHash =
+        preState.getLatestExecutionPayloadHeaderRequired().getBlockHash();
+    assertThat(postState.getLatestBlockHash()).isEqualTo(preForkBlockHash);
+    assertThat(postState.getLatestExecutionPayloadBid().getBlockHash()).isEqualTo(preForkBlockHash);
+    assertThat(postState.getLatestExecutionPayloadBid().getPayloadRoot()).isEqualTo(Bytes32.ZERO);
+  }
+
+  @Test
   void shouldRematerializeEpochParticipationWithUInt8Schemas() {
     final BeaconStateFulu preState =
         BeaconStateFulu.required(

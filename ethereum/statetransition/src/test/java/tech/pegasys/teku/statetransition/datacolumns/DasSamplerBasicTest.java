@@ -53,7 +53,7 @@ import tech.pegasys.teku.spec.datastructures.blobs.DataColumnSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlockHeader;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.state.AnchorPoint;
 import tech.pegasys.teku.spec.datastructures.util.DataColumnSlotAndIdentifier;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.BlockImportResult;
@@ -693,7 +693,7 @@ public class DasSamplerBasicTest {
     final UInt64 finalizedEpoch = UInt64.ONE;
     final UInt64 anchorBlockSlot = SPEC.computeStartSlotAtEpoch(finalizedEpoch).decrement();
     final Bytes32 anchorRoot = dataStructureUtil.randomBytes32();
-    mockLatestFinalizedAnchor(anchorRoot, Optional.of(mock(SignedExecutionPayloadEnvelope.class)));
+    mockLatestFinalizedAnchor(anchorRoot, Optional.of(mock(ExecutionPayloadEnvelope.class)));
     when(recentChainData.getFinalizedEpoch()).thenReturn(finalizedEpoch);
     when(recentChainData.containsBlock(any())).thenReturn(false);
 
@@ -791,14 +791,14 @@ public class DasSamplerBasicTest {
   }
 
   private void mockLatestFinalizedAnchor(
-      final Bytes32 anchorRoot, final Optional<SignedExecutionPayloadEnvelope> executionPayload) {
+      final Bytes32 anchorRoot, final Optional<ExecutionPayloadEnvelope> executionPayload) {
     mockLatestFinalizedAnchor(anchorRoot, Optional.empty(), executionPayload);
   }
 
   private void mockLatestFinalizedAnchor(
       final Bytes32 anchorRoot,
       final Optional<SignedBeaconBlock> anchorBlock,
-      final Optional<SignedExecutionPayloadEnvelope> executionPayload) {
+      final Optional<ExecutionPayloadEnvelope> executionPayload) {
     final AnchorPoint anchor = mock(AnchorPoint.class);
     when(anchor.getRoot()).thenReturn(anchorRoot);
     when(anchor.getSignedBeaconBlock()).thenReturn(anchorBlock);
@@ -1104,7 +1104,7 @@ public class DasSamplerBasicTest {
     when(recentChainData.containsBlock(columnId.blockRoot())).thenReturn(true);
     when(recentChainData.getStore()).thenReturn(store);
     when(store.getExecutionPayloadIfAvailable(columnId.blockRoot()))
-        .thenReturn(Optional.of(mock(SignedExecutionPayloadEnvelope.class)));
+        .thenReturn(Optional.of(mock(ExecutionPayloadEnvelope.class)));
 
     gloasSampler.onNewValidatedDataColumnSidecar(columnId, RemoteOrigin.GOSSIP);
 

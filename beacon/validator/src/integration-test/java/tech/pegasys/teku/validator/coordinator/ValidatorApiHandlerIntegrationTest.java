@@ -130,8 +130,6 @@ public class ValidatorApiHandlerIntegrationTest {
   private final ProposersDataManager proposersDataManager = mock(ProposersDataManager.class);
   private final ExecutionPayloadManager executionPayloadManager =
       mock(ExecutionPayloadManager.class);
-  private final ExecutionPayloadFactory executionPayloadFactory =
-      mock(ExecutionPayloadFactory.class);
   private final ExecutionPayloadPublisher executionPayloadPublisher =
       mock(ExecutionPayloadPublisher.class);
   private final ExecutionPayloadBidManager executionPayloadBidManager =
@@ -248,7 +246,6 @@ public class ValidatorApiHandlerIntegrationTest {
             payloadAttestationPool,
             DataAvailabilitySampler.NOOP,
             executionPayloadManager,
-            executionPayloadFactory,
             executionPayloadPublisher,
             executionPayloadBidManager,
             proposerPreferencesManager,

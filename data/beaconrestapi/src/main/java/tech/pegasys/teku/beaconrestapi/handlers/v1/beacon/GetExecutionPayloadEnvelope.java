@@ -36,30 +36,30 @@ import tech.pegasys.teku.infrastructure.restapi.endpoints.EndpointMetadata;
 import tech.pegasys.teku.infrastructure.restapi.endpoints.RestApiEndpoint;
 import tech.pegasys.teku.infrastructure.restapi.endpoints.RestApiRequest;
 import tech.pegasys.teku.spec.SpecMilestone;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.metadata.ExecutionPayloadAndMetaData;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitionCache;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitionsGloas;
 
-public class GetSignedExecutionPayloadEnvelope extends RestApiEndpoint {
+public class GetExecutionPayloadEnvelope extends RestApiEndpoint {
 
   public static final String ROUTE = "/eth/v1/beacon/execution_payload_envelopes/{block_id}";
 
   private final ChainDataProvider chainDataProvider;
 
-  public GetSignedExecutionPayloadEnvelope(
+  public GetExecutionPayloadEnvelope(
       final DataProvider dataProvider, final SchemaDefinitionCache schemaDefinitionCache) {
     this(dataProvider.getChainDataProvider(), schemaDefinitionCache);
   }
 
-  public GetSignedExecutionPayloadEnvelope(
+  public GetExecutionPayloadEnvelope(
       final ChainDataProvider chainDataProvider,
       final SchemaDefinitionCache schemaDefinitionCache) {
     super(
         EndpointMetadata.get(ROUTE)
-            .operationId("getSignedExecutionPayloadEnvelope")
-            .summary("Get signed execution payload envelope")
-            .description("Retrieves signed execution payload envelope for a given block id.")
+            .operationId("getExecutionPayloadEnvelope")
+            .summary("Get execution payload envelope")
+            .description("Retrieves execution payload envelope for a given block id.")
             .tags(TAG_BEACON)
             .pathParam(PARAMETER_BLOCK_ID)
             .response(
@@ -94,23 +94,23 @@ public class GetSignedExecutionPayloadEnvelope extends RestApiEndpoint {
 
   private static SerializableTypeDefinition<ExecutionPayloadAndMetaData> getResponseType(
       final SchemaDefinitionCache schemaDefinitionCache) {
-    final SerializableTypeDefinition<SignedExecutionPayloadEnvelope> signedEnvelopeType =
+    final SerializableTypeDefinition<ExecutionPayloadEnvelope> signedEnvelopeType =
         getMultipleSchemaDefinitionFromMilestone(
             schemaDefinitionCache,
-            "SignedExecutionPayloadEnvelope",
+            "ExecutionPayloadEnvelope",
             List.of(
                 new MilestoneDependentTypesUtil.ConditionalSchemaGetter<>(
-                    (signedExecutionPayloadEnvelope, milestone) ->
+                    (executionPayloadEnvelope, milestone) ->
                         schemaDefinitionCache
-                            .milestoneAtSlot(signedExecutionPayloadEnvelope.getSlot())
+                            .milestoneAtSlot(executionPayloadEnvelope.getSlot())
                             .equals(milestone),
                     SpecMilestone.GLOAS,
                     schemaDefinitions ->
                         SchemaDefinitionsGloas.required(schemaDefinitions)
-                            .getSignedExecutionPayloadEnvelopeSchema())));
+                            .getExecutionPayloadEnvelopeSchema())));
 
     return SerializableTypeDefinition.<ExecutionPayloadAndMetaData>object()
-        .name("GetSignedExecutionPayloadEnvelopeResponse")
+        .name("GetExecutionPayloadEnvelopeResponse")
         .withField("version", MILESTONE_TYPE, ExecutionPayloadAndMetaData::milestone)
         .withField(
             EXECUTION_OPTIMISTIC, BOOLEAN_TYPE, ExecutionPayloadAndMetaData::executionOptimistic)

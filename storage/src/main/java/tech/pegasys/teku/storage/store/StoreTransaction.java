@@ -41,8 +41,8 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.SlotAndExecutionPayloadSummary;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ReadOnlyForkChoiceStrategy;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteSnapshot;
@@ -116,7 +116,7 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
 
   @Override
   public void putExecutionPayload(
-      final SignedExecutionPayloadEnvelope executionPayload, final boolean executionOptimistic) {
+      final ExecutionPayloadEnvelope executionPayload, final boolean executionOptimistic) {
     executionPayloadData.put(
         executionPayload.getBeaconBlockRoot(),
         new ExecutionPayloadUpdate(executionPayload, executionOptimistic));
@@ -457,7 +457,7 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
   }
 
   @Override
-  public SafeFuture<Optional<SignedExecutionPayloadEnvelope>> retrieveSignedExecutionPayload(
+  public SafeFuture<Optional<ExecutionPayloadEnvelope>> retrieveSignedExecutionPayload(
       final Bytes32 blockRoot) {
     if (executionPayloadData.containsKey(blockRoot)) {
       return SafeFuture.completedFuture(
@@ -468,7 +468,7 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
   }
 
   @Override
-  public SafeFuture<Optional<SignedBlindedExecutionPayloadEnvelope>>
+  public SafeFuture<Optional<BlindedExecutionPayloadEnvelope>>
       retrieveSignedBlindedExecutionPayload(final Bytes32 blockRoot) {
     if (executionPayloadData.containsKey(blockRoot)) {
       return SafeFuture.completedFuture(
@@ -567,7 +567,7 @@ class StoreTransaction implements UpdatableStore.StoreTransaction {
   }
 
   @Override
-  public Optional<SignedExecutionPayloadEnvelope> getExecutionPayloadIfAvailable(
+  public Optional<ExecutionPayloadEnvelope> getExecutionPayloadIfAvailable(
       final Bytes32 blockRoot) {
     return Optional.ofNullable(executionPayloadData.get(blockRoot))
         .map(ExecutionPayloadUpdate::executionPayload)

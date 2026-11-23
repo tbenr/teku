@@ -60,6 +60,16 @@ public interface ExecutionPayloadSummary {
     return LogFormatter.formatBlock(getBlockNumber(), getBlockHash());
   }
 
+  /** One-line summary of the payload for duty logs. */
+  default String toDutySummary(final Logger logger) {
+    return String.format(
+        "%s (%s%%) gas, EL block: %s (%s)",
+        getGasUsed(),
+        computeGasPercentage(logger),
+        getBlockHash().toUnprefixedHexString(),
+        getBlockNumber());
+  }
+
   default UInt64 computeGasPercentage(final Logger logger) {
     try {
       return getGasLimit().isGreaterThan(0L)

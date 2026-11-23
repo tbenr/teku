@@ -54,9 +54,9 @@ import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestation;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationMessage;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.FastConfirmationStore;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
@@ -260,14 +260,13 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
   }
 
   public SafeFuture<ExecutionPayloadImportResult> onExecutionPayloadEnvelope(
-      final SignedExecutionPayloadEnvelope signedEnvelope,
-      final ExecutionLayerChannel executionLayer) {
+      final ExecutionPayloadEnvelope signedEnvelope, final ExecutionLayerChannel executionLayer) {
     return onExecutionPayloadEnvelope(signedEnvelope, executionLayer, Optional.empty());
   }
 
   /** on_execution_payload_envelope */
   public SafeFuture<ExecutionPayloadImportResult> onExecutionPayloadEnvelope(
-      final SignedExecutionPayloadEnvelope signedEnvelope,
+      final ExecutionPayloadEnvelope signedEnvelope,
       final ExecutionLayerChannel executionLayer,
       final Optional<ReceivedExecutionPayloadEventsChannel>
           receivedExecutionPayloadEventsChannelPublisher) {
@@ -677,7 +676,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
   }
 
   private SafeFuture<ExecutionPayloadImportResult> verifyAndImportExecutionPayloadEnvelope(
-      final SignedExecutionPayloadEnvelope signedEnvelope,
+      final ExecutionPayloadEnvelope signedEnvelope,
       final BeaconState state,
       final Optional<AnchorPoint> stateOnlyAnchor,
       final ExecutionLayerChannel executionLayer,
@@ -690,24 +689,17 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
     final ForkChoicePayloadExecutorGloas payloadExecutor =
         ForkChoicePayloadExecutorGloas.create(signedEnvelope, executionLayer);
 
-    // Verify the execution payload envelope. Use the spec-configured verifier (SIMPLE in
-    // production) rather than hardcoding it, so reference tests with bls_setting: 2 can disable
-    // signature verification the same way every other verification path does.
-    final BLSSignatureVerifier envelopeSignatureVerifier =
-        spec.atSlot(signedEnvelope.getSlot()).getConfig().getBLSSignatureVerifier();
+    // Verify the execution payload envelope
     final ExecutionPayloadVerifier verifier =
         spec.getExecutionPayloadVerifier(signedEnvelope.getSlot());
     try {
       if (stateOnlyAnchor.isPresent()) {
         // The anchor state may be advanced past its block; verify at the block's slot.
         verifier.verifyCheckpointAnchorExecutionPayloadEnvelope(
-            signedEnvelope,
-            stateOnlyAnchor.get(),
-            envelopeSignatureVerifier,
-            Optional.of(payloadExecutor));
+            signedEnvelope, stateOnlyAnchor.get(), Optional.of(payloadExecutor));
       } else {
         verifier.verifyExecutionPayloadEnvelope(
-            signedEnvelope, state, envelopeSignatureVerifier, Optional.of(payloadExecutor));
+            signedEnvelope, state, Optional.of(payloadExecutor));
       }
     } catch (final ExecutionPayloadVerificationException ex) {
       final ExecutionPayloadImportResult result =
@@ -877,7 +869,7 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
   }
 
   private ExecutionPayloadImportResult importExecutionPayload(
-      final SignedExecutionPayloadEnvelope signedEnvelope,
+      final ExecutionPayloadEnvelope signedEnvelope,
       final ForkChoiceUtil forkChoiceUtil,
       final PayloadStatus payloadStatus,
       final DataAndValidationResult<?> dataAndValidationResult) {
@@ -1172,13 +1164,11 @@ public class ForkChoice implements ForkChoiceUpdatedResultSubscriber {
   }
 
   private void reportInvalidExecutionPayload(
-      final SignedExecutionPayloadEnvelope signedEnvelope,
-      final ExecutionPayloadImportResult result) {
+      final ExecutionPayloadEnvelope signedEnvelope, final ExecutionPayloadImportResult result) {
     debugDataDumper.saveInvalidExecutionPayload(
         signedEnvelope, result.getFailureReason().name(), result.getFailureCause());
     P2P_LOG.onInvalidExecutionPayload(
         signedEnvelope.getSlot(),
-        signedEnvelope.getMessage().getBuilderIndex(),
         signedEnvelope.getBeaconBlockRoot(),
         signedEnvelope.sszSerialize(),
         result.getFailureReason().name(),

@@ -55,8 +55,8 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
 import tech.pegasys.teku.spec.datastructures.blocks.StateAndBlockSummary;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.altair.SyncAggregate;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestation;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.BlobAndCellProofs;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadHeader;
@@ -116,10 +116,8 @@ public class ChainBuilder {
       new TreeMap<>();
   private final Map<Bytes32, List<DataColumnSidecar>> dataColumnSidecarsByHash = new HashMap<>();
   // Gloas
-  private final NavigableMap<UInt64, SignedExecutionPayloadEnvelope> executionPayloads =
-      new TreeMap<>();
-  private final Map<Bytes32, SignedExecutionPayloadEnvelope> executionPayloadsByHash =
-      new HashMap<>();
+  private final NavigableMap<UInt64, ExecutionPayloadEnvelope> executionPayloads = new TreeMap<>();
+  private final Map<Bytes32, ExecutionPayloadEnvelope> executionPayloadsByHash = new HashMap<>();
   private final BlockProposalTestUtil blockProposalTestUtil;
   private final ExecutionPayloadProposalTestUtil executionPayloadProposalTestUtil;
   private final BlobsUtil blobsUtil;
@@ -133,7 +131,7 @@ public class ChainBuilder {
       final Map<SlotAndBlockRoot, List<BlobSidecar>> existingBlobSidecars,
       final Optional<UInt64> maybeEarliestBlobSidecarSlot,
       final Map<SlotAndBlockRoot, List<DataColumnSidecar>> existingDataColumnSidecars,
-      final Map<UInt64, SignedExecutionPayloadEnvelope> existingExecutionPayloads) {
+      final Map<UInt64, ExecutionPayloadEnvelope> existingExecutionPayloads) {
     this.spec = spec;
     this.validatorKeys = validatorKeys;
     this.blobsUtil = new BlobsUtil(spec);
@@ -194,7 +192,7 @@ public class ChainBuilder {
     return Optional.ofNullable(blocksByHash.get(blockRoot));
   }
 
-  public Optional<SignedExecutionPayloadEnvelope> getExecutionPayload(final Bytes32 blockRoot) {
+  public Optional<ExecutionPayloadEnvelope> getExecutionPayload(final Bytes32 blockRoot) {
     return Optional.ofNullable(executionPayloadsByHash.get(blockRoot));
   }
 
@@ -305,16 +303,16 @@ public class ChainBuilder {
     return streamDataColumnSidecars(UInt64.valueOf(fromSlot), UInt64.valueOf(toSlot), columns);
   }
 
-  public Stream<SignedExecutionPayloadEnvelope> streamExecutionPayloads(final UInt64 fromSlot) {
+  public Stream<ExecutionPayloadEnvelope> streamExecutionPayloads(final UInt64 fromSlot) {
     return streamExecutionPayloads(fromSlot, getLatestSlot());
   }
 
-  public Stream<SignedExecutionPayloadEnvelope> streamExecutionPayloads(
+  public Stream<ExecutionPayloadEnvelope> streamExecutionPayloads(
       final long fromSlot, final long toSlot) {
     return streamExecutionPayloads(UInt64.valueOf(fromSlot), UInt64.valueOf(toSlot));
   }
 
-  public Stream<SignedExecutionPayloadEnvelope> streamExecutionPayloads(
+  public Stream<ExecutionPayloadEnvelope> streamExecutionPayloads(
       final UInt64 fromSlot, final UInt64 toSlot) {
     return executionPayloads.values().stream()
         .filter(e -> e.getSlot().isGreaterThanOrEqualTo(fromSlot))
@@ -369,7 +367,7 @@ public class ChainBuilder {
     return resultToState(getBlockAndStateAtSlot(slot));
   }
 
-  public Optional<SignedExecutionPayloadEnvelope> getExecutionPayloadAtSlot(final UInt64 slot) {
+  public Optional<ExecutionPayloadEnvelope> getExecutionPayloadAtSlot(final UInt64 slot) {
     return Optional.ofNullable(executionPayloads.get(slot));
   }
 
@@ -700,8 +698,8 @@ public class ChainBuilder {
     dataColumnSidecarsByHash.put(slotAndBlockRoot.getBlockRoot(), dataColumnSidecars);
   }
 
-  private void trackExecutionPayload(final SignedExecutionPayloadEnvelope executionPayload) {
-    executionPayloads.put(executionPayload.getMessage().getSlot(), executionPayload);
+  private void trackExecutionPayload(final ExecutionPayloadEnvelope executionPayload) {
+    executionPayloads.put(executionPayload.getSlot(), executionPayload);
     executionPayloadsByHash.put(executionPayload.getBeaconBlockRoot(), executionPayload);
   }
 
@@ -770,13 +768,9 @@ public class ChainBuilder {
           blockProposalTestUtil.getExecutionPayloadProposalData(slot);
       if (!options.isWithholdExecutionPayloadEnabled()
           && executionPayloadProposalData.isPresent()) {
-        final SignedExecutionPayloadEnvelope nextExecutionPayload =
-            safeJoin(
-                executionPayloadProposalTestUtil.createExecutionPayload(
-                    signer,
-                    slot,
-                    nextBlockAndState.toUnsigned(),
-                    executionPayloadProposalData.get()));
+        final ExecutionPayloadEnvelope nextExecutionPayload =
+            executionPayloadProposalTestUtil.createExecutionPayload(
+                slot, nextBlockAndState.toUnsigned(), executionPayloadProposalData.get());
         trackExecutionPayload(nextExecutionPayload);
       }
 

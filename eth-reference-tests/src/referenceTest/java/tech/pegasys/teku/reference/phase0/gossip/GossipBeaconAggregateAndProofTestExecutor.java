@@ -39,7 +39,7 @@ import tech.pegasys.teku.reference.TestExecutor;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.attestation.ValidatableAttestation;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.operations.SignedAggregateAndProof;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
@@ -134,25 +134,25 @@ public class GossipBeaconAggregateAndProofTestExecutor implements TestExecutor {
             .describedAs("Expected setup block %s to import successfully", blockEntry.getBlock())
             .isTrue();
       }
-      // Some fixtures pair a setup block with a SignedExecutionPayloadEnvelope (Gloas ePBS) via
+      // Some fixtures pair a setup block with a ExecutionPayloadEnvelope (Gloas ePBS) via
       // the `payload` key in meta.yaml. Deliver it to fork choice after the block itself so a
       // FULL node exists for the block root, matching how a real node would observe it.
       blockEntry
           .getPayload()
           .ifPresent(
               payloadName -> {
-                final SignedExecutionPayloadEnvelope envelope =
+                final ExecutionPayloadEnvelope envelope =
                     loadSsz(
                         testDefinition,
                         payloadName + ".ssz_snappy",
                         SchemaDefinitionsGloas.required(spec.getGenesisSchemaDefinitions())
-                            .getSignedExecutionPayloadEnvelopeSchema());
+                            .getExecutionPayloadEnvelopeSchema());
                 blockEntry
                     .getPayloadStatus()
                     .ifPresent(
                         payloadStatus ->
                             ctx.executionLayer.addPosBlock(
-                                envelope.getMessage().getPayload().getBlockHash(),
+                                envelope.getPayload().getBlockHash(),
                                 payloadStatus.toPayloadStatus()));
                 final ExecutionPayloadImportResult envelopeImportResult =
                     safeJoin(
@@ -310,7 +310,7 @@ public class GossipBeaconAggregateAndProofTestExecutor implements TestExecutor {
       @JsonProperty(value = "payload_status", required = false)
       private FixturePayloadStatus payloadStatus;
 
-      // Gloas (ePBS) fixtures may pair a setup block with a SignedExecutionPayloadEnvelope,
+      // Gloas (ePBS) fixtures may pair a setup block with a ExecutionPayloadEnvelope,
       // named here, which must be delivered to fork choice alongside the block.
       @JsonProperty(value = "payload", required = false)
       private String payload;

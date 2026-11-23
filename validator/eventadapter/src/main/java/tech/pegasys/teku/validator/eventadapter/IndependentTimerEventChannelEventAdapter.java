@@ -18,7 +18,7 @@ import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.events.EventChannels;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.statetransition.execution.ReceivedExecutionPayloadEventsChannel;
 import tech.pegasys.teku.storage.api.ChainHeadChannel;
@@ -88,7 +88,7 @@ public class IndependentTimerEventChannelEventAdapter
   }
 
   @Override
-  public void onExecutionPayloadValidated(final SignedExecutionPayloadEnvelope executionPayload) {}
+  public void onExecutionPayloadValidated(final ExecutionPayloadEnvelope executionPayload) {}
 
   /**
    * Payload timeliness attestations should be sent as soon as the execution payload and its data
@@ -97,7 +97,7 @@ public class IndependentTimerEventChannelEventAdapter
    * against a block which is not the one being attested to.
    */
   @Override
-  public void onExecutionPayloadAvailable(final SignedExecutionPayloadEnvelope executionPayload) {
+  public void onExecutionPayloadAvailable(final ExecutionPayloadEnvelope executionPayload) {
     if (lastReportedHead.map(executionPayload.getBeaconBlockRoot()::equals).orElse(false)) {
       validatorTimingChannel.onPayloadAttestationCreationDue(executionPayload.getSlot());
     }
@@ -105,5 +105,5 @@ public class IndependentTimerEventChannelEventAdapter
 
   @Override
   public void onExecutionPayloadImported(
-      final SignedExecutionPayloadEnvelope executionPayload, final boolean executionOptimistic) {}
+      final ExecutionPayloadEnvelope executionPayload, final boolean executionOptimistic) {}
 }

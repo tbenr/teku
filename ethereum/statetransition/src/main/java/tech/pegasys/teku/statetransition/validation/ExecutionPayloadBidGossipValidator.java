@@ -39,9 +39,9 @@ import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.versions.gloas.ExecutionRequestsGloas;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.gloas.BeaconStateGloas;
@@ -347,7 +347,7 @@ public class ExecutionPayloadBidGossipValidator {
                           .getLatestExecutionPayloadBid()
                           .getBlockHash())) {
                 if (spec.isExecutionPayloadEnvelopeAvailableAtSlot(parentBlockSlot)) {
-                  final Optional<SignedExecutionPayloadEnvelope> maybeParentPayload =
+                  final Optional<ExecutionPayloadEnvelope> maybeParentPayload =
                       gossipValidationHelper.getRecentlyImportedExecutionPayload(
                           bid.getParentBlockRoot());
                   if (maybeParentPayload.isEmpty()) {
@@ -357,7 +357,7 @@ public class ExecutionPayloadBidGossipValidator {
                   }
                   final boolean parentPayloadMayExitBuilder =
                       ExecutionRequestsGloas.required(
-                              maybeParentPayload.get().getMessage().getExecutionRequests())
+                              maybeParentPayload.get().getExecutionRequests())
                           .getBuilderExits()
                           .stream()
                           .anyMatch(

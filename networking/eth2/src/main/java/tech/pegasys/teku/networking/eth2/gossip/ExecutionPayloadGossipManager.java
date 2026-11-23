@@ -23,14 +23,13 @@ import tech.pegasys.teku.networking.eth2.gossip.topics.OperationProcessor;
 import tech.pegasys.teku.networking.p2p.gossip.GossipNetwork;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.config.NetworkingSpecConfig;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.state.ForkInfo;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitionsGloas;
 import tech.pegasys.teku.statetransition.util.DebugDataDumper;
 import tech.pegasys.teku.storage.client.RecentChainData;
 
-public class ExecutionPayloadGossipManager
-    extends AbstractGossipManager<SignedExecutionPayloadEnvelope> {
+public class ExecutionPayloadGossipManager extends AbstractGossipManager<ExecutionPayloadEnvelope> {
 
   public ExecutionPayloadGossipManager(
       final Spec spec,
@@ -40,7 +39,7 @@ public class ExecutionPayloadGossipManager
       final GossipEncoding gossipEncoding,
       final ForkInfo forkInfo,
       final Bytes4 forkDigest,
-      final OperationProcessor<SignedExecutionPayloadEnvelope> processor,
+      final OperationProcessor<ExecutionPayloadEnvelope> processor,
       final NetworkingSpecConfig networkingConfig,
       final DebugDataDumper debugDataDumper) {
     super(
@@ -54,15 +53,15 @@ public class ExecutionPayloadGossipManager
         processor,
         SchemaDefinitionsGloas.required(
                 spec.atEpoch(forkInfo.getFork().getEpoch()).getSchemaDefinitions())
-            .getSignedExecutionPayloadEnvelopeSchema(),
-        message -> Optional.of(message.getMessage().getSlot()),
-        message -> recentChainData.getSpec().computeEpochAtSlot(message.getMessage().getSlot()),
+            .getExecutionPayloadEnvelopeSchema(),
+        message -> Optional.of(message.getSlot()),
+        message -> recentChainData.getSpec().computeEpochAtSlot(message.getSlot()),
         networkingConfig,
         GossipFailureLogger.createSuppressing(GossipTopicName.EXECUTION_PAYLOAD.toString()),
         debugDataDumper);
   }
 
-  public SafeFuture<Void> publish(final SignedExecutionPayloadEnvelope message) {
+  public SafeFuture<Void> publish(final ExecutionPayloadEnvelope message) {
     return publishMessageWithFeedback(message);
   }
 }

@@ -33,10 +33,10 @@ import org.junit.jupiter.api.Test;
 import tech.pegasys.teku.beaconrestapi.AbstractMigratedBeaconHandlerWithChainDataProviderTest;
 import tech.pegasys.teku.infrastructure.json.JsonTestUtil;
 import tech.pegasys.teku.spec.SpecMilestone;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.metadata.ExecutionPayloadAndMetaData;
 
-class GetSignedExecutionPayloadEnvelopeTest
+class GetExecutionPayloadEnvelopeTest
     extends AbstractMigratedBeaconHandlerWithChainDataProviderTest {
 
   @BeforeEach
@@ -44,7 +44,7 @@ class GetSignedExecutionPayloadEnvelopeTest
     initialise(SpecMilestone.GLOAS);
     genesis();
 
-    setHandler(new GetSignedExecutionPayloadEnvelope(chainDataProvider, schemaDefinitionCache));
+    setHandler(new GetExecutionPayloadEnvelope(chainDataProvider, schemaDefinitionCache));
     request.setPathParameter("block_id", "head");
   }
 
@@ -71,8 +71,8 @@ class GetSignedExecutionPayloadEnvelopeTest
 
   @Test
   void metadata_shouldHandle200() throws Exception {
-    final SignedExecutionPayloadEnvelope executionPayloadEnvelope =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(1);
+    final ExecutionPayloadEnvelope executionPayloadEnvelope =
+        dataStructureUtil.randomExecutionPayloadEnvelope(1);
     final ExecutionPayloadAndMetaData responseData =
         new ExecutionPayloadAndMetaData(
             executionPayloadEnvelope, spec.getGenesisSpec().getMilestone(), false, false);
@@ -81,7 +81,7 @@ class GetSignedExecutionPayloadEnvelopeTest
     final String expected =
         Resources.toString(
             Resources.getResource(
-                GetSignedExecutionPayloadEnvelopeTest.class, "getExecutionPayload.json"),
+                GetExecutionPayloadEnvelopeTest.class, "getExecutionPayload.json"),
             UTF_8);
     final JsonNode expectedAsJsonNode = JsonTestUtil.parseAsJsonNode(expected);
     assertThat(responseDataAsJsonNode).isEqualTo(expectedAsJsonNode);

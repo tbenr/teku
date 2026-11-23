@@ -33,7 +33,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.BlockAndCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SlotAndBlockRoot;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.VoteTracker;
 import tech.pegasys.teku.spec.datastructures.lightclient.LightClientUpdate;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
@@ -115,7 +115,7 @@ public interface KvStoreCombinedDao extends AutoCloseable {
 
   Optional<BeaconState> getHotState(Bytes32 root);
 
-  Optional<SignedBlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelope(Bytes32 root);
+  Optional<BlindedExecutionPayloadEnvelope> getBlindedExecutionPayloadEnvelope(Bytes32 root);
 
   List<Bytes32> getStateRootsBeforeSlot(UInt64 slot);
 
@@ -308,8 +308,7 @@ public interface KvStoreCombinedDao extends AutoCloseable {
     void addFinalizedBlockRaw(UInt64 slot, Bytes32 blockRoot, Bytes blockBytes);
 
     void addBlindedExecutionPayloadEnvelope(
-        Bytes32 blockRoot,
-        SignedBlindedExecutionPayloadEnvelope signedBlindedExecutionPayloadEnvelope);
+        Bytes32 blockRoot, BlindedExecutionPayloadEnvelope blindedExecutionPayloadEnvelope);
 
     void addNonCanonicalBlock(final SignedBeaconBlock block);
 

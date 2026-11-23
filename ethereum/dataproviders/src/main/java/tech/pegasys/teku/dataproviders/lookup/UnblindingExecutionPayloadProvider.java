@@ -30,8 +30,7 @@ import tech.pegasys.teku.infrastructure.collections.LimitedMap;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadBody;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadHeader;
@@ -55,7 +54,7 @@ public class UnblindingExecutionPayloadProvider implements ExecutionPayloadProvi
   private final Spec spec;
   private final BlindedExecutionPayloadProvider blindedExecutionPayloadProvider;
   private final ExecutionPayloadBodiesByHashProvider executionPayloadBodiesByHashProvider;
-  private final Map<Bytes32, SignedExecutionPayloadEnvelope> recentlyUnblindedEnvelopes;
+  private final Map<Bytes32, ExecutionPayloadEnvelope> recentlyUnblindedEnvelopes;
 
   public UnblindingExecutionPayloadProvider(
       final Spec spec,
@@ -86,12 +85,12 @@ public class UnblindingExecutionPayloadProvider implements ExecutionPayloadProvi
   }
 
   @Override
-  public SafeFuture<Map<Bytes32, SignedExecutionPayloadEnvelope>> getExecutionPayloads(
+  public SafeFuture<Map<Bytes32, ExecutionPayloadEnvelope>> getExecutionPayloads(
       final Set<Bytes32> blockRoots) {
     // Serve recently unblinded envelopes from cache
-    final Map<Bytes32, SignedExecutionPayloadEnvelope> result = new HashMap<>();
+    final Map<Bytes32, ExecutionPayloadEnvelope> result = new HashMap<>();
     for (final Bytes32 root : blockRoots) {
-      final SignedExecutionPayloadEnvelope envelope = recentlyUnblindedEnvelopes.get(root);
+      final ExecutionPayloadEnvelope envelope = recentlyUnblindedEnvelopes.get(root);
       if (envelope != null) {
         result.put(root, envelope);
       }
@@ -114,8 +113,8 @@ public class UnblindingExecutionPayloadProvider implements ExecutionPayloadProvi
             });
   }
 
-  private SafeFuture<Map<Bytes32, SignedExecutionPayloadEnvelope>> unblindExecutionPayloadEnvelopes(
-      final Map<Bytes32, SignedBlindedExecutionPayloadEnvelope> blindedExecutionPayloadEnvelopes) {
+  private SafeFuture<Map<Bytes32, ExecutionPayloadEnvelope>> unblindExecutionPayloadEnvelopes(
+      final Map<Bytes32, BlindedExecutionPayloadEnvelope> blindedExecutionPayloadEnvelopes) {
     if (blindedExecutionPayloadEnvelopes.isEmpty()) {
       return SafeFuture.completedFuture(Map.of());
     }
@@ -123,7 +122,7 @@ public class UnblindingExecutionPayloadProvider implements ExecutionPayloadProvi
     // Collect unique block hashes to fetch from the EL
     final List<Bytes32> blockHashes =
         blindedExecutionPayloadEnvelopes.values().stream()
-            .map(env -> env.getMessage().getPayloadHeader().getBlockHash())
+            .map(env -> env.getPayloadHeader().getBlockHash())
             .distinct()
             .toList();
 
@@ -139,13 +138,12 @@ public class UnblindingExecutionPayloadProvider implements ExecutionPayloadProvi
                 }
               }
 
-              final Map<Bytes32, SignedExecutionPayloadEnvelope> result = new HashMap<>();
-              for (final Map.Entry<Bytes32, SignedBlindedExecutionPayloadEnvelope> entry :
+              final Map<Bytes32, ExecutionPayloadEnvelope> result = new HashMap<>();
+              for (final Map.Entry<Bytes32, BlindedExecutionPayloadEnvelope> entry :
                   blindedExecutionPayloadEnvelopes.entrySet()) {
                 final Bytes32 blockRoot = entry.getKey();
-                final SignedBlindedExecutionPayloadEnvelope blindedEnvelope = entry.getValue();
-                final Bytes32 blockHash =
-                    blindedEnvelope.getMessage().getPayloadHeader().getBlockHash();
+                final BlindedExecutionPayloadEnvelope blindedEnvelope = entry.getValue();
+                final Bytes32 blockHash = blindedEnvelope.getPayloadHeader().getBlockHash();
                 final ExecutionPayloadBody executionPayloadBody = bodiesByHash.get(blockHash);
                 if (executionPayloadBody == null) {
                   LOG.debug(
@@ -173,18 +171,16 @@ public class UnblindingExecutionPayloadProvider implements ExecutionPayloadProvi
             });
   }
 
-  private SignedExecutionPayloadEnvelope unblindExecutionPayloadEnvelope(
-      final SignedBlindedExecutionPayloadEnvelope signedBlindedExecutionPayloadEnvelope,
+  private ExecutionPayloadEnvelope unblindExecutionPayloadEnvelope(
+      final BlindedExecutionPayloadEnvelope blindedExecutionPayloadEnvelope,
       final ExecutionPayloadBody executionPayloadBody) {
-    final BlindedExecutionPayloadEnvelope blindedExecutionPayloadEnvelope =
-        signedBlindedExecutionPayloadEnvelope.getMessage();
     final UInt64 slot = blindedExecutionPayloadEnvelope.getSlot();
     final SchemaDefinitionsGloas schemaDefinitions =
         SchemaDefinitionsGloas.required(spec.atSlot(slot).getSchemaDefinitions());
     final ExecutionPayload fullExecutionPayload =
         buildExecutionPayload(
             blindedExecutionPayloadEnvelope.getPayloadHeader(), executionPayloadBody, slot);
-    return signedBlindedExecutionPayloadEnvelope.unblind(schemaDefinitions, fullExecutionPayload);
+    return blindedExecutionPayloadEnvelope.unblind(schemaDefinitions, fullExecutionPayload);
   }
 
   private ExecutionPayload buildExecutionPayload(

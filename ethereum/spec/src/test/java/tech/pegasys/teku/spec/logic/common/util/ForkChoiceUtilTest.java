@@ -44,7 +44,7 @@ import tech.pegasys.teku.spec.datastructures.blobs.versions.deneb.BlobSidecar;
 import tech.pegasys.teku.spec.datastructures.blocks.BlockCheckpoints;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceNode;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoiceReorgContext;
 import tech.pegasys.teku.spec.datastructures.forkchoice.MutableStore;
@@ -436,8 +436,7 @@ class ForkChoiceUtilTest {
     final AvailabilityCheckerFactory<UInt64> dataColumnSidecarAvailabilityCheckerFactory =
         mock(AvailabilityCheckerFactory.class);
 
-    final SignedExecutionPayloadEnvelope signedEnvelope =
-        mock(SignedExecutionPayloadEnvelope.class);
+    final ExecutionPayloadEnvelope envelope = mock(ExecutionPayloadEnvelope.class);
     final BeaconState state = mock(BeaconState.class);
 
     spec.reinitializeForTesting(
@@ -446,14 +445,14 @@ class ForkChoiceUtilTest {
         KZG.DISABLED);
 
     final AvailabilityChecker<?> availabilityChecker =
-        util.createAvailabilityCheckerOnExecutionPayloadEnvelope(state, signedEnvelope);
+        util.createAvailabilityCheckerOnExecutionPayloadEnvelope(state, envelope);
 
     switch (milestone) {
       case PHASE0, ALTAIR, BELLATRIX, CAPELLA, DENEB, ELECTRA, FULU ->
           assertThat(availabilityChecker).isSameAs(AvailabilityChecker.NOOP);
       case GLOAS, HEZE ->
           verify(dataColumnSidecarAvailabilityCheckerFactory)
-              .createAvailabilityChecker(state, signedEnvelope);
+              .createAvailabilityChecker(state, envelope);
       default -> throw new IllegalStateException("Unexpected milestone " + milestone);
     }
   }

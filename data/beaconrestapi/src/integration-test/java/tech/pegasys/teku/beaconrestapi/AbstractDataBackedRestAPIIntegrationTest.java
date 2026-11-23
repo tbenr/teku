@@ -112,7 +112,6 @@ import tech.pegasys.teku.validator.coordinator.ActiveValidatorTracker;
 import tech.pegasys.teku.validator.coordinator.BlockFactory;
 import tech.pegasys.teku.validator.coordinator.DutyMetrics;
 import tech.pegasys.teku.validator.coordinator.Eth1DataProvider;
-import tech.pegasys.teku.validator.coordinator.ExecutionPayloadFactory;
 import tech.pegasys.teku.validator.coordinator.ValidatorApiHandler;
 import tech.pegasys.teku.validator.coordinator.performance.PerformanceTracker;
 import tech.pegasys.teku.validator.coordinator.publisher.BlockPublisher;
@@ -181,8 +180,6 @@ public abstract class AbstractDataBackedRestAPIIntegrationTest {
       mock(PayloadAttestationPool.class);
   protected final ExecutionPayloadManager executionPayloadManager =
       mock(ExecutionPayloadManager.class);
-  protected final ExecutionPayloadFactory executionPayloadFactory =
-      mock(ExecutionPayloadFactory.class);
   protected final ExecutionPayloadPublisher executionPayloadPublisher =
       mock(ExecutionPayloadPublisher.class);
   protected final ExecutionPayloadBidManager executionPayloadBidManager =
@@ -367,7 +364,6 @@ public abstract class AbstractDataBackedRestAPIIntegrationTest {
             payloadAttestationPool,
             DataAvailabilitySampler.NOOP,
             executionPayloadManager,
-            executionPayloadFactory,
             executionPayloadPublisher,
             executionPayloadBidManager,
             proposerPreferencesManager,

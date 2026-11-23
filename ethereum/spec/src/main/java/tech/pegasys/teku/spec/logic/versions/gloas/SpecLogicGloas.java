@@ -223,8 +223,7 @@ public class SpecLogicGloas extends AbstractSpecLogic {
             executionRequestsDataCodec,
             executionRequestsProcessor);
     final ExecutionPayloadVerifierGloas executionPayloadVerifier =
-        new ExecutionPayloadVerifierGloas(
-            miscHelpers, beaconStateAccessors, executionRequestsDataCodec);
+        new ExecutionPayloadVerifierGloas(miscHelpers, executionRequestsDataCodec);
     final ForkChoiceUtil forkChoiceUtil =
         new ForkChoiceUtilGloas(
             config,

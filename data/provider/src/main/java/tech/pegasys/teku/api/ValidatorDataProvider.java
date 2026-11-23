@@ -35,12 +35,10 @@ import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockContainer;
 import tech.pegasys.teku.spec.datastructures.builder.SignedValidatorRegistration;
 import tech.pegasys.teku.spec.datastructures.builder.versions.gloas.BuilderConfig;
 import tech.pegasys.teku.spec.datastructures.builder.versions.gloas.BuilderPreferencesEntry;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelopeContents;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationData;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationMessage;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelopeContents;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.metadata.BlockContainerAndMetaData;
 import tech.pegasys.teku.spec.datastructures.metadata.ObjectAndMetaData;
@@ -176,14 +174,6 @@ public class ValidatorDataProvider {
     return validatorApiChannel.createPayloadAttestationData(slot);
   }
 
-  public SafeFuture<Optional<ExecutionPayloadEnvelope>> createUnsignedExecutionPayload(
-      final UInt64 slot, final Bytes32 beaconBlockRoot) {
-    if (!isStoreAvailable()) {
-      return SafeFuture.failedFuture(new ChainDataUnavailableException());
-    }
-    return validatorApiChannel.createUnsignedExecutionPayload(slot, beaconBlockRoot);
-  }
-
   public SafeFuture<SendSignedBlockResult> submitSignedBlock(
       final SignedBlockContainer signedBlockContainer,
       final BroadcastValidationLevel broadcastValidationLevel,
@@ -295,13 +285,7 @@ public class ValidatorDataProvider {
   }
 
   public SafeFuture<PublishSignedExecutionPayloadResult> publishSignedExecutionPayload(
-      final SignedExecutionPayloadEnvelope envelope,
-      final Optional<BroadcastValidationLevel> broadcastValidationLevel) {
-    return validatorApiChannel.publishSignedExecutionPayload(envelope, broadcastValidationLevel);
-  }
-
-  public SafeFuture<PublishSignedExecutionPayloadResult> publishSignedExecutionPayload(
-      final SignedExecutionPayloadEnvelopeContents envelopeContents,
+      final ExecutionPayloadEnvelopeContents envelopeContents,
       final Optional<BroadcastValidationLevel> broadcastValidationLevel) {
     return validatorApiChannel.publishSignedExecutionPayload(
         envelopeContents, broadcastValidationLevel);

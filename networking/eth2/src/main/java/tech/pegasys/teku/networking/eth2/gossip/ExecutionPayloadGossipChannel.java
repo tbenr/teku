@@ -15,8 +15,8 @@ package tech.pegasys.teku.networking.eth2.gossip;
 
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.events.ChannelInterface;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 
 public interface ExecutionPayloadGossipChannel extends ChannelInterface {
-  SafeFuture<Void> publishExecutionPayload(SignedExecutionPayloadEnvelope executionPayload);
+  SafeFuture<Void> publishExecutionPayload(ExecutionPayloadEnvelope executionPayload);
 }

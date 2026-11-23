@@ -199,10 +199,10 @@ public class RestApiConstants {
               where the validator client can use multiple beacon nodes (multi-BN setups, distributed validators, failover).
 
               When `false`, only the beacon block is returned and the beacon node caches the execution
-              payload envelope and blobs internally. The validator client must then fetch them separately
-              via `GET /eth/v1/validator/execution_payload_envelopes/{slot}/{beacon_block_root}`. This saves
-              bandwidth but requires the validator client to publish via the same beacon node that
-              produced the block (stateful operation).
+              payload envelope and blobs internally, and broadcasts them itself once it has imported the
+              signed block. This saves bandwidth, but the execution payload is lost if the beacon node
+              that produced the block becomes unavailable before it has seen the signed block
+              (stateful operation).
 
               This parameter affects the self-built case only. When a builder bid wins, the beacon node
               does not hold that payload, so it returns only the beacon block regardless of this
@@ -243,7 +243,6 @@ public class RestApiConstants {
 
   public static final String HEADER_CONSENSUS_VERSION = "Eth-Consensus-Version";
   public static final String HEADER_EXECUTION_PAYLOAD_BLINDED = "Eth-Execution-Payload-Blinded";
-  public static final String HEADER_BLOB_DATA_INCLUDED = "Eth-Blob-Data-Included";
   public static final String HEADER_EXECUTION_PAYLOAD_VALUE = "Eth-Execution-Payload-Value";
   public static final String HEADER_CONSENSUS_BLOCK_VALUE = "Eth-Consensus-Block-Value";
   public static final String HEADER_CONTENT_DISPOSITION = "Content-Disposition";

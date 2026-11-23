@@ -17,7 +17,7 @@ import java.util.function.Supplier;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.logic.common.statetransition.availability.AvailabilityCheckerFactory;
 import tech.pegasys.teku.statetransition.forkchoice.DataColumnSidecarAvailabilityChecker;
@@ -47,8 +47,8 @@ public class DasSamplerManager implements AvailabilityCheckerFactory<UInt64> {
 
   @Override
   public DataColumnSidecarAvailabilityChecker createAvailabilityChecker(
-      final BeaconState state, final SignedExecutionPayloadEnvelope signedEnvelope) {
+      final BeaconState state, final ExecutionPayloadEnvelope envelope) {
     return new DataColumnSidecarAvailabilityChecker(
-        dataAvailabilitySamplerSupplier.get(), spec, recentChainData, state, signedEnvelope);
+        dataAvailabilitySamplerSupplier.get(), spec, recentChainData, state, envelope);
   }
 }

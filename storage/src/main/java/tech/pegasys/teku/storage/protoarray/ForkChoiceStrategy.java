@@ -982,9 +982,9 @@ public class ForkChoiceStrategy implements BlockMetadataStore, ReadOnlyForkChoic
     processExecutionPayload(
         envelope.getBeaconBlockRoot(),
         envelope.getSlot(),
-        envelope.getMessage().getPayload().getBlockNumber(),
-        envelope.getMessage().getPayload().getBlockHash(),
-        envelope.getMessage().getPayload().getGasLimit(),
+        envelope.getPayload().getBlockNumber(),
+        envelope.getPayload().getBlockHash(),
+        envelope.getPayload().getGasLimit(),
         executionPayloadUpdate.isOptimistic());
   }
 

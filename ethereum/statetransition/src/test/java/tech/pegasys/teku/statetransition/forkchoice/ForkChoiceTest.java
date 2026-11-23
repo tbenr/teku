@@ -83,9 +83,9 @@ import tech.pegasys.teku.spec.datastructures.blocks.MinimalBeaconBlockSummary;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBlockAndState;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.gloas.BeaconBlockBodyGloas;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.gloas.BeaconBlockBodySchemaGloas;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestation;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationData;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.PowBlock;
 import tech.pegasys.teku.spec.datastructures.forkchoice.FastConfirmationStore;
@@ -1840,8 +1840,7 @@ class ForkChoiceTest {
   @Test
   void onExecutionPayloadEnvelope_shouldReturnUnknownRootBeforeStoreInitialization() {
     setupWithSpec(TestSpecFactory.createMinimalGloas(), false);
-    final SignedExecutionPayloadEnvelope envelope =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelope(1);
+    final ExecutionPayloadEnvelope envelope = dataStructureUtil.randomExecutionPayloadEnvelope(1);
 
     assertThat(forkChoice.onExecutionPayloadEnvelope(envelope, executionLayer))
         .isCompletedWithValue(ExecutionPayloadImportResult.FAILED_UNKNOWN_BEACON_BLOCK_ROOT);
@@ -1865,7 +1864,7 @@ class ForkChoiceTest {
     final AnchorPoint anchor = AnchorPoint.fromInitialState(spec, checkpointState);
     recentChainData.initializeFromAnchorPoint(anchor, ZERO);
     final UInt64 childSlot = checkpointSlot.plus(1);
-    final SignedExecutionPayloadEnvelope envelope =
+    final ExecutionPayloadEnvelope envelope =
         chainBuilder.getExecutionPayloadAtSlot(anchorBlock.getSlot()).orElseThrow();
     final SignedBlockAndState child =
         chainBuilder.generateBlockAtSlot(
@@ -1876,7 +1875,7 @@ class ForkChoiceTest {
                         childSlot,
                         builder ->
                             builder
-                                .parentHash(envelope.getMessage().getPayload().getBlockHash())
+                                .parentHash(envelope.getPayload().getBlockHash())
                                 .prevRandao(
                                     spec.atSlot(childSlot)
                                         .beaconStateAccessors()
@@ -1892,8 +1891,8 @@ class ForkChoiceTest {
         .isCompletedWithValue(BlockImportResult.FAILED_UNKNOWN_PARENT_EXECUTION_PAYLOAD);
     assertThat(recentChainData.getStore().containsBlock(child.getRoot())).isFalse();
 
-    final SignedExecutionPayloadEnvelope invalidEnvelope =
-        dataStructureUtil.randomSignedExecutionPayloadEnvelopeForBlock(anchorBlock.getBlock());
+    final ExecutionPayloadEnvelope invalidEnvelope =
+        dataStructureUtil.randomExecutionPayloadEnvelopeForBlock(anchorBlock.getBlock());
     assertThat(forkChoice.onExecutionPayloadEnvelope(invalidEnvelope, executionLayer))
         .isCompletedWithValueMatching(result -> !result.isSuccessful());
     assertThat(recentChainData.getStore().getExecutionPayloadIfAvailable(anchor.getRoot()))
@@ -1910,7 +1909,7 @@ class ForkChoiceTest {
     assertThat(strategy.getBlockData(anchor.getRoot(), ForkChoicePayloadStatus.PAYLOAD_STATUS_FULL))
         .isPresent();
     assertThat(strategy.getBlockData(child.getRoot()).orElseThrow().getExecutionBlockHash())
-        .isEqualTo(envelope.getMessage().getPayload().getBlockHash());
+        .isEqualTo(envelope.getPayload().getBlockHash());
     assertThat(strategy.getParentBeaconBlockNode(ForkChoiceNode.createBase(child.getRoot())))
         .contains(ForkChoiceNode.createFull(anchor.getRoot()));
   }
@@ -2056,12 +2055,7 @@ class ForkChoiceTest {
     final SignedBlockAndState child = chainBuilder.generateBlockAtSlot(2);
     assertThat(getExecutionPayloadBidParentBlockHash(child))
         .isEqualTo(
-            chainBuilder
-                .getExecutionPayloadAtSlot(ONE)
-                .orElseThrow()
-                .getMessage()
-                .getPayload()
-                .getBlockHash());
+            chainBuilder.getExecutionPayloadAtSlot(ONE).orElseThrow().getPayload().getBlockHash());
 
     importBlockAndAssertFailure(child, FailureReason.UNKNOWN_PARENT_EXECUTION_PAYLOAD);
     assertThat(recentChainData.containsBlock(child.getRoot())).isFalse();
@@ -2079,11 +2073,11 @@ class ForkChoiceTest {
 
     final SignedBlockAndState parent = chainBuilder.generateBlockAtSlot(ONE);
     importBlock(parent);
-    final SignedExecutionPayloadEnvelope parentPayload = importPayloadOptimistically(parent);
+    final ExecutionPayloadEnvelope parentPayload = importPayloadOptimistically(parent);
     // The child builds on FULL(parent)
     final SignedBlockAndState child = chainBuilder.generateBlockAtSlot(2);
     assertThat(getExecutionPayloadBidParentBlockHash(child))
-        .isEqualTo(parentPayload.getMessage().getPayload().getBlockHash());
+        .isEqualTo(parentPayload.getPayload().getBlockHash());
 
     invalidateExecutionPayload(parent, parentPayload);
     assertThat(
@@ -2118,7 +2112,7 @@ class ForkChoiceTest {
 
     final SignedBlockAndState parent = chainBuilder.generateBlockAtSlot(ONE);
     importBlock(parent);
-    final SignedExecutionPayloadEnvelope parentPayload = importPayloadOptimistically(parent);
+    final ExecutionPayloadEnvelope parentPayload = importPayloadOptimistically(parent);
     final ChainBuilder siblingChain = chainBuilder.fork();
     final SignedBlockAndState child = chainBuilder.generateBlockAtSlot(3);
     // importing another child of the parent evicts the parent from the single-entry block cache
@@ -2143,12 +2137,12 @@ class ForkChoiceTest {
 
     final SignedBlockAndState parent = chainBuilder.generateBlockAtSlot(ONE);
     importBlock(parent);
-    final SignedExecutionPayloadEnvelope parentPayload = importPayloadOptimistically(parent);
+    final ExecutionPayloadEnvelope parentPayload = importPayloadOptimistically(parent);
     final SignedBlockAndState child =
         chainBuilder.generateBlockAtSlot(
             UInt64.valueOf(2), BlockOptions.create().setBuildOnEmptyParent(true));
     assertThat(getExecutionPayloadBidParentBlockHash(child))
-        .isNotEqualTo(parentPayload.getMessage().getPayload().getBlockHash());
+        .isNotEqualTo(parentPayload.getPayload().getBlockHash());
 
     invalidateExecutionPayload(parent, parentPayload);
     executionLayer.setPayloadStatus(PayloadStatus.VALID);
@@ -2214,7 +2208,7 @@ class ForkChoiceTest {
 
     final SignedBlockAndState parent = chainBuilder.generateBlockAtSlot(ONE);
     importBlock(parent);
-    final SignedExecutionPayloadEnvelope parentPayload = importPayloadOptimistically(parent);
+    final ExecutionPayloadEnvelope parentPayload = importPayloadOptimistically(parent);
     final ChainBuilder emptySiblingChain = chainBuilder.fork();
     final SignedBlockAndState child = chainBuilder.generateBlockAtSlot(3);
     invalidateExecutionPayload(parent, parentPayload);
@@ -2249,8 +2243,7 @@ class ForkChoiceTest {
 
     final SignedBlockAndState grandparent = chainBuilder.generateBlockAtSlot(ONE);
     importBlock(grandparent);
-    final SignedExecutionPayloadEnvelope grandparentPayload =
-        importPayloadOptimistically(grandparent);
+    final ExecutionPayloadEnvelope grandparentPayload = importPayloadOptimistically(grandparent);
     final SignedBlockAndState parent = chainBuilder.generateBlockAtSlot(2);
     importBlock(parent);
     final SignedBlockAndState child = chainBuilder.generateBlockAtSlot(3);
@@ -2299,7 +2292,7 @@ class ForkChoiceTest {
 
     final SignedBlockAndState parent = chainBuilder.generateBlockAtSlot(ONE);
     importBlock(parent);
-    final SignedExecutionPayloadEnvelope parentPayload = importPayloadOptimistically(parent);
+    final ExecutionPayloadEnvelope parentPayload = importPayloadOptimistically(parent);
     final SignedBlockAndState child = chainBuilder.generateBlockAtSlot(2);
 
     // Hold the child import after its preconditions have passed
@@ -2442,7 +2435,6 @@ class ForkChoiceTest {
         chainBuilder
             .getExecutionPayloadAtSlot(block.getSlot())
             .orElseThrow()
-            .getMessage()
             .getPayload()
             .getBlockHash();
     return PayloadStatus.invalid(Optional.of(latestValidHash), Optional.of("bad payload"));
@@ -2460,9 +2452,8 @@ class ForkChoiceTest {
   }
 
   /** Imports the block's execution payload while the execution layer is still syncing. */
-  private SignedExecutionPayloadEnvelope importPayloadOptimistically(
-      final SignedBlockAndState block) {
-    final SignedExecutionPayloadEnvelope payload =
+  private ExecutionPayloadEnvelope importPayloadOptimistically(final SignedBlockAndState block) {
+    final ExecutionPayloadEnvelope payload =
         chainBuilder.getExecutionPayloadAtSlot(block.getSlot()).orElseThrow();
     executionLayer.setPayloadStatus(PayloadStatus.SYNCING);
     // the execution layer also answers SYNCING to the following forkchoiceUpdated
@@ -2486,8 +2477,8 @@ class ForkChoiceTest {
 
   /** Delivers an INVALID forkchoiceUpdated verdict for FULL(block). */
   private void invalidateExecutionPayload(
-      final SignedBlockAndState block, final SignedExecutionPayloadEnvelope payload) {
-    final ExecutionPayload executionPayload = payload.getMessage().getPayload();
+      final SignedBlockAndState block, final ExecutionPayloadEnvelope payload) {
+    final ExecutionPayload executionPayload = payload.getPayload();
     forkChoice.onForkChoiceUpdatedResult(
         new ForkChoiceUpdatedResultNotification(
             new ForkChoiceState(
@@ -2579,7 +2570,7 @@ class ForkChoiceTest {
   private void importPayload(final SignedBlockAndState targetBlock) {
     final ReceivedExecutionPayloadEventsChannel receivedExecutionPayloadEventsChannelPublisher =
         mock(ReceivedExecutionPayloadEventsChannel.class);
-    final SignedExecutionPayloadEnvelope payload =
+    final ExecutionPayloadEnvelope payload =
         chainBuilder.getExecutionPayloadAtSlot(targetBlock.getSlot()).orElseThrow();
     final SafeFuture<ExecutionPayloadImportResult> payloadImportResult =
         forkChoice.onExecutionPayloadEnvelope(

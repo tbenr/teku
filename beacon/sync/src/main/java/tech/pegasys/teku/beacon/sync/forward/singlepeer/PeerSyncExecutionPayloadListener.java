@@ -19,13 +19,12 @@ import java.util.Optional;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.networking.p2p.rpc.RpcResponseListener;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
 
 public class PeerSyncExecutionPayloadListener
-    implements RpcResponseListener<SignedExecutionPayloadEnvelope> {
+    implements RpcResponseListener<ExecutionPayloadEnvelope> {
 
-  private final Map<UInt64, SignedExecutionPayloadEnvelope> executionPayloadsBySlot =
-      new HashMap<>();
+  private final Map<UInt64, ExecutionPayloadEnvelope> executionPayloadsBySlot = new HashMap<>();
 
   private final UInt64 startSlot;
   private final UInt64 endSlot;
@@ -36,7 +35,7 @@ public class PeerSyncExecutionPayloadListener
   }
 
   @Override
-  public SafeFuture<?> onResponse(final SignedExecutionPayloadEnvelope executionPayload) {
+  public SafeFuture<?> onResponse(final ExecutionPayloadEnvelope executionPayload) {
     final UInt64 slot = executionPayload.getSlot();
     if (slot.isLessThan(startSlot) || slot.isGreaterThan(endSlot)) {
       final String exceptionMessage =
@@ -49,7 +48,7 @@ public class PeerSyncExecutionPayloadListener
     return SafeFuture.COMPLETE;
   }
 
-  public Optional<SignedExecutionPayloadEnvelope> getReceivedExecutionPayload(final UInt64 slot) {
+  public Optional<ExecutionPayloadEnvelope> getReceivedExecutionPayload(final UInt64 slot) {
     return Optional.ofNullable(executionPayloadsBySlot.get(slot));
   }
 

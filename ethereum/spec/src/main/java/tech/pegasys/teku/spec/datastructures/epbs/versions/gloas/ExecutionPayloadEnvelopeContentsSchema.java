@@ -15,7 +15,7 @@ package tech.pegasys.teku.spec.datastructures.epbs.versions.gloas;
 
 import static tech.pegasys.teku.kzg.KZG.FIELD_ELEMENTS_PER_EXT_BLOB;
 import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.BLOB_SCHEMA;
-import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.SIGNED_EXECUTION_PAYLOAD_ENVELOPE_SCHEMA;
+import static tech.pegasys.teku.spec.schemas.registry.SchemaTypes.EXECUTION_PAYLOAD_ENVELOPE_SCHEMA;
 
 import java.util.List;
 import tech.pegasys.teku.infrastructure.ssz.SszList;
@@ -30,23 +30,22 @@ import tech.pegasys.teku.spec.datastructures.type.SszKZGProof;
 import tech.pegasys.teku.spec.datastructures.type.SszKZGProofSchema;
 import tech.pegasys.teku.spec.schemas.registry.SchemaRegistry;
 
-public class SignedExecutionPayloadEnvelopeContentsSchema
+public class ExecutionPayloadEnvelopeContentsSchema
     extends ContainerSchema3<
-        SignedExecutionPayloadEnvelopeContents,
-        SignedExecutionPayloadEnvelope,
+        ExecutionPayloadEnvelopeContents,
+        ExecutionPayloadEnvelope,
         SszList<SszKZGProof>,
         SszList<Blob>> {
 
   private static final SszFieldName FIELD_KZG_PROOFS = () -> "kzg_proofs";
   private static final SszFieldName FIELD_BLOBS = () -> "blobs";
 
-  public SignedExecutionPayloadEnvelopeContentsSchema(
+  public ExecutionPayloadEnvelopeContentsSchema(
       final SpecConfigFulu specConfig, final SchemaRegistry schemaRegistry) {
     super(
-        "SignedExecutionPayloadEnvelopeContents",
+        "ExecutionPayloadEnvelopeContents",
         namedSchema(
-            "signed_execution_payload_envelope",
-            schemaRegistry.get(SIGNED_EXECUTION_PAYLOAD_ENVELOPE_SCHEMA)),
+            "execution_payload_envelope", schemaRegistry.get(EXECUTION_PAYLOAD_ENVELOPE_SCHEMA)),
         namedSchema(
             FIELD_KZG_PROOFS,
             SszListSchema.create(
@@ -58,17 +57,16 @@ public class SignedExecutionPayloadEnvelopeContentsSchema
                 schemaRegistry.get(BLOB_SCHEMA), specConfig.getMaxBlobCommitmentsPerBlock())));
   }
 
-  public SignedExecutionPayloadEnvelopeContents create(
-      final SignedExecutionPayloadEnvelope signedExecutionPayloadEnvelope,
+  public ExecutionPayloadEnvelopeContents create(
+      final ExecutionPayloadEnvelope executionPayloadEnvelope,
       final List<KZGProof> kzgProofs,
       final List<Blob> blobs) {
-    return new SignedExecutionPayloadEnvelopeContents(
-        this, signedExecutionPayloadEnvelope, kzgProofs, blobs);
+    return new ExecutionPayloadEnvelopeContents(this, executionPayloadEnvelope, kzgProofs, blobs);
   }
 
   @Override
-  public SignedExecutionPayloadEnvelopeContents createFromBackingNode(final TreeNode node) {
-    return new SignedExecutionPayloadEnvelopeContents(this, node);
+  public ExecutionPayloadEnvelopeContents createFromBackingNode(final TreeNode node) {
+    return new ExecutionPayloadEnvelopeContents(this, node);
   }
 
   @SuppressWarnings("unchecked")

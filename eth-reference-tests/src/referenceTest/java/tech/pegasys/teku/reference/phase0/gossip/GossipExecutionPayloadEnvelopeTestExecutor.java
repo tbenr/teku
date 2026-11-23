@@ -32,8 +32,8 @@ import tech.pegasys.teku.reference.BlsSetting;
 import tech.pegasys.teku.reference.TestExecutor;
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelopeSchema;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelopeSchema;
 import tech.pegasys.teku.spec.datastructures.state.Checkpoint;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.BlockImportResult;
@@ -130,15 +130,15 @@ public class GossipExecutionPayloadEnvelopeTestExecutor implements TestExecutor 
               public void onBlockImported(
                   final SignedBeaconBlock block, final boolean executionOptimistic) {}
             });
-    final SignedExecutionPayloadEnvelopeSchema schema =
+    final ExecutionPayloadEnvelopeSchema schema =
         SchemaDefinitionsGloas.required(spec.atSlot(state.getSlot()).getSchemaDefinitions())
-            .getSignedExecutionPayloadEnvelopeSchema();
+            .getExecutionPayloadEnvelopeSchema();
     final ExecutionPayloadGossipValidator validator =
         new ExecutionPayloadGossipValidator(
             spec, gossipValidationHelper, blockGossipValidator, invalidBlockRoots);
 
     for (final GossipExecutionPayloadEnvelopeMetaData.Message message : metaData.getMessages()) {
-      final SignedExecutionPayloadEnvelope signedEnvelope =
+      final ExecutionPayloadEnvelope signedEnvelope =
           loadSsz(testDefinition, message.getMessage() + ".ssz_snappy", schema::sszDeserialize);
       final InternalValidationResult result = safeJoin(validator.validate(signedEnvelope));
 

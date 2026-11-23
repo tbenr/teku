@@ -141,7 +141,6 @@ import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.capella.B
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.capella.BlindedBeaconBlockBodySchemaCapella;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.deneb.BeaconBlockBodyDeneb;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.deneb.BeaconBlockBodySchemaDeneb;
-import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.gloas.BeaconBlockBodyGloas;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.gloas.BeaconBlockBodySchemaGloas;
 import tech.pegasys.teku.spec.datastructures.builder.BlobsBundleSchema;
 import tech.pegasys.teku.spec.datastructures.builder.BuilderBid;
@@ -162,15 +161,14 @@ import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutio
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBidSchema;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelopeContents;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.IndexedPayloadAttestation;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.IndexedPayloadAttestationSchema;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestation;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationData;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationMessage;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ProposerPreferences;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadBid;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedProposerPreferences;
 import tech.pegasys.teku.spec.datastructures.execution.BlobsBundle;
 import tech.pegasys.teku.spec.datastructures.execution.ClientVersion;
@@ -3664,12 +3662,23 @@ public final class DataStructureUtil {
       final UInt64 builderIndex,
       final Bytes32 blockHash,
       final Bytes32 executionRequestsRoot) {
+    return randomExecutionPayloadBid(
+        slot, builderIndex, blockHash, randomBytes32(), executionRequestsRoot);
+  }
+
+  public ExecutionPayloadBid randomExecutionPayloadBid(
+      final UInt64 slot,
+      final UInt64 builderIndex,
+      final Bytes32 blockHash,
+      final Bytes32 payloadRoot,
+      final Bytes32 executionRequestsRoot) {
     final ExecutionPayloadBidSchema schema =
         getGloasSchemaDefinitions(slot).getExecutionPayloadBidSchema();
     return schema.create(
         randomBytes32(),
         randomBytes32(),
         blockHash,
+        payloadRoot,
         randomBytes32(),
         randomEth1Address(),
         randomUInt64(),
@@ -3697,6 +3706,7 @@ public final class DataStructureUtil {
         getGloasSchemaDefinitions(slot).getExecutionPayloadBidSchema();
     return schema.create(
         parentBlockHash,
+        randomBytes32(),
         randomBytes32(),
         randomBytes32(),
         randomBytes32(),
@@ -3745,6 +3755,7 @@ public final class DataStructureUtil {
                     randomBytes32(),
                     randomBytes32(),
                     randomBytes32(),
+                    randomBytes32(),
                     randomEth1Address(),
                     randomUInt64(),
                     randomBuilderIndex(),
@@ -3773,6 +3784,10 @@ public final class DataStructureUtil {
     return randomExecutionPayloadEnvelope(randomSlot());
   }
 
+  public ExecutionPayloadEnvelope randomExecutionPayloadEnvelope(final long slot) {
+    return randomExecutionPayloadEnvelope(UInt64.valueOf(slot));
+  }
+
   public ExecutionPayloadEnvelope randomExecutionPayloadEnvelopeForBlock(
       final SignedBeaconBlock block) {
     return randomExecutionPayloadEnvelopeForBlock(block.getMessage());
@@ -3784,12 +3799,21 @@ public final class DataStructureUtil {
         .create(
             randomExecutionPayload(block.getSlot()),
             randomExecutionRequests(block.getSlot()),
-            BeaconBlockBodyGloas.required(block.getBody())
-                .getSignedExecutionPayloadBid()
-                .getMessage()
-                .getBuilderIndex(),
             block.getRoot(),
             block.getParentRoot());
+  }
+
+  public ExecutionPayloadEnvelopeContents randomExecutionPayloadEnvelopeContents(
+      final UInt64 slot) {
+    return executionPayloadEnvelopeContents(randomExecutionPayloadEnvelope(slot));
+  }
+
+  /** The envelope bundled with no blob data. */
+  public ExecutionPayloadEnvelopeContents executionPayloadEnvelopeContents(
+      final ExecutionPayloadEnvelope executionPayloadEnvelope) {
+    return getGloasSchemaDefinitions(executionPayloadEnvelope.getSlot())
+        .getExecutionPayloadEnvelopeContentsSchema()
+        .create(executionPayloadEnvelope, List.of(), List.of());
   }
 
   public ExecutionPayloadEnvelope randomExecutionPayloadEnvelope(final UInt64 slot) {
@@ -3798,36 +3822,17 @@ public final class DataStructureUtil {
         .create(
             randomExecutionPayload(slot),
             randomExecutionRequests(slot),
-            randomBuilderIndex(),
             randomBytes32(),
             randomBytes32());
   }
 
-  public SignedExecutionPayloadEnvelope randomSignedExecutionPayloadEnvelope(final long slot) {
-    return getGloasSchemaDefinitions(UInt64.valueOf(slot))
-        .getSignedExecutionPayloadEnvelopeSchema()
-        .create(randomExecutionPayloadEnvelope(UInt64.valueOf(slot)), randomSignature());
-  }
-
   public BlindedExecutionPayloadEnvelope randomBlindedExecutionPayloadEnvelope() {
-    return randomExecutionPayloadEnvelope().blind(getGloasSchemaDefinitions(randomSlot()));
+    return randomBlindedExecutionPayloadEnvelope(randomSlot().longValue());
   }
 
-  public SignedBlindedExecutionPayloadEnvelope randomSignedBlindedExecutionPayloadEnvelope() {
-    return randomSignedBlindedExecutionPayloadEnvelope(randomSlot().longValue());
-  }
-
-  public SignedBlindedExecutionPayloadEnvelope randomSignedBlindedExecutionPayloadEnvelope(
-      final long slot) {
-    return randomSignedExecutionPayloadEnvelope(slot)
+  public BlindedExecutionPayloadEnvelope randomBlindedExecutionPayloadEnvelope(final long slot) {
+    return randomExecutionPayloadEnvelope(slot)
         .blind(getGloasSchemaDefinitions(UInt64.valueOf(slot)));
-  }
-
-  public SignedExecutionPayloadEnvelope randomSignedExecutionPayloadEnvelopeForBlock(
-      final SignedBeaconBlock block) {
-    return getGloasSchemaDefinitions(block.getSlot())
-        .getSignedExecutionPayloadEnvelopeSchema()
-        .create(randomExecutionPayloadEnvelopeForBlock(block), randomSignature());
   }
 
   public ExecutionProof randomExecutionProof() {

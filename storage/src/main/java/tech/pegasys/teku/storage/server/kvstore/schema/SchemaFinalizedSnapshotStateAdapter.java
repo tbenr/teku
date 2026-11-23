@@ -23,7 +23,7 @@ import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.kzg.KZGProof;
 import tech.pegasys.teku.spec.datastructures.blocks.SignedBeaconBlock;
-import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.SignedBlindedExecutionPayloadEnvelope;
+import tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.BlindedExecutionPayloadEnvelope;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconState;
 import tech.pegasys.teku.spec.datastructures.util.DataColumnSlotAndIdentifier;
 import tech.pegasys.teku.spec.datastructures.util.SlotAndBlockRootAndBlobIndex;
@@ -116,7 +116,7 @@ public class SchemaFinalizedSnapshotStateAdapter implements SchemaFinalizedSnaps
     return delegate.getColumnFinalizedBlocksBySlot();
   }
 
-  public KvStoreColumn<Bytes32, SignedBlindedExecutionPayloadEnvelope>
+  public KvStoreColumn<Bytes32, BlindedExecutionPayloadEnvelope>
       getColumnBlindedExecutionPayloadEnvelopesByRoot() {
     return delegate.getColumnBlindedExecutionPayloadEnvelopesByRoot();
   }
