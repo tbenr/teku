@@ -215,24 +215,15 @@ public class ExecutionPayloadPublisherGloas
   private SafeFuture<PublishSignedExecutionPayloadResult> getResultOfKnownExecutionPayload(
       final Bytes32 beaconBlockRoot) {
     return executionPayloadManager
-        .getRecentExecutionPayloadImportFailure(beaconBlockRoot)
-        .map(
-            importFailure ->
-                importFailure.thenApply(
-                    maybeFailureReason ->
-                        maybeFailureReason
-                            .map(
-                                failureReason ->
-                                    PublishSignedExecutionPayloadResult.notImported(
-                                        beaconBlockRoot, failureReason.name()))
-                            .orElseGet(
-                                () ->
-                                    PublishSignedExecutionPayloadResult.success(beaconBlockRoot))))
-        // nothing is known about the import of an envelope which was seen long enough ago
-        .orElseGet(
-            () ->
-                SafeFuture.completedFuture(
-                    PublishSignedExecutionPayloadResult.success(beaconBlockRoot)));
+        .getExecutionPayloadImportFailure(beaconBlockRoot)
+        .thenApply(
+            maybeImportFailure ->
+                maybeImportFailure
+                    .map(
+                        importFailure ->
+                            PublishSignedExecutionPayloadResult.notImported(
+                                beaconBlockRoot, importFailure))
+                    .orElseGet(() -> PublishSignedExecutionPayloadResult.success(beaconBlockRoot)));
   }
 
   /**

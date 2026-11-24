@@ -22,10 +22,12 @@ import tech.pegasys.teku.spec.datastructures.execution.ExecutionRequests;
 import tech.pegasys.teku.spec.datastructures.forkchoice.ForkChoicePayloadStatus;
 import tech.pegasys.teku.spec.datastructures.validator.BroadcastValidationLevel;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult;
-import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult.FailureReason;
 import tech.pegasys.teku.statetransition.validation.InternalValidationResult;
 
 public interface ExecutionPayloadManager {
+
+  /** Why an envelope has not been imported, when all that is known is that it has not been. */
+  String IMPORT_NOT_CONFIRMED = "NOT_IMPORTED";
 
   ExecutionPayloadManager NOOP =
       new ExecutionPayloadManager() {
@@ -40,9 +42,9 @@ public interface ExecutionPayloadManager {
         }
 
         @Override
-        public Optional<SafeFuture<Optional<FailureReason>>> getRecentExecutionPayloadImportFailure(
+        public SafeFuture<Optional<String>> getExecutionPayloadImportFailure(
             final Bytes32 beaconBlockRoot) {
-          return Optional.empty();
+          return SafeFuture.completedFuture(Optional.of(IMPORT_NOT_CONFIRMED));
         }
 
         @Override
@@ -95,15 +97,15 @@ public interface ExecutionPayloadManager {
   boolean isExecutionPayloadSeenBeforeDeadline(Bytes32 beaconBlockRoot);
 
   /**
-   * How the import of the {@link ExecutionPayloadEnvelope} referencing the block went. An envelope
-   * is {@link #isExecutionPayloadRecentlySeen(Bytes32) seen} before it is imported, so this is what
-   * tells whether it made it.
+   * Resolves whether the {@link ExecutionPayloadEnvelope} referencing the block has been imported.
+   * An envelope is {@link #isExecutionPayloadRecentlySeen(Bytes32) seen} before it is imported, so
+   * this is what tells whether it made it. It waits for the attempts to import the envelope which
+   * are in progress, and an envelope counts as imported only when that is confirmed.
    *
-   * @return a future which completes, once the import has, with the reason the import failed, or
-   *     with empty if it succeeded. Empty when no recent import of the envelope is known.
+   * @return empty if the envelope has been imported, otherwise why it has not, which is {@link
+   *     #IMPORT_NOT_CONFIRMED} when nothing more is known
    */
-  Optional<SafeFuture<Optional<FailureReason>>> getRecentExecutionPayloadImportFailure(
-      Bytes32 beaconBlockRoot);
+  SafeFuture<Optional<String>> getExecutionPayloadImportFailure(Bytes32 beaconBlockRoot);
 
   /**
    * Performs gossip validation on the {@code signedExecutionPayload} and imports it async if

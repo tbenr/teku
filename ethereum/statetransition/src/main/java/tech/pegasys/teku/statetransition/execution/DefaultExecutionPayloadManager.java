@@ -16,7 +16,6 @@ package tech.pegasys.teku.statetransition.execution;
 import static tech.pegasys.teku.spec.config.Constants.VALID_EXECUTION_PAYLOAD_SET_SIZE;
 
 import java.time.Duration;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
@@ -26,7 +25,6 @@ import org.apache.tuweni.bytes.Bytes32;
 import tech.pegasys.teku.ethereum.events.SlotEventsChannel;
 import tech.pegasys.teku.infrastructure.async.AsyncRunner;
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
-import tech.pegasys.teku.infrastructure.collections.LimitedMap;
 import tech.pegasys.teku.infrastructure.collections.LimitedSet;
 import tech.pegasys.teku.infrastructure.subscribers.Subscribers;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
@@ -64,9 +62,7 @@ public class DefaultExecutionPayloadManager
 
   private final PendingExecutionPayloadPool pendingExecutionPayloads;
 
-  // how the import of the envelope of a block went, for as long as the envelope counts as seen
-  private final Map<Bytes32, SafeFuture<Optional<FailureReason>>> recentImportFailures =
-      LimitedMap.createSynchronizedLRU(VALID_EXECUTION_PAYLOAD_SET_SIZE);
+  private final ExecutionPayloadImportTracker importTracker = new ExecutionPayloadImportTracker();
 
   private final Subscribers<FailedPayloadExecutionSubscriber> failedPayloadExecutionSubscribers =
       Subscribers.create(true);
@@ -121,9 +117,30 @@ public class DefaultExecutionPayloadManager
   }
 
   @Override
-  public Optional<SafeFuture<Optional<FailureReason>>> getRecentExecutionPayloadImportFailure(
+  public SafeFuture<Optional<String>> getExecutionPayloadImportFailure(
       final Bytes32 beaconBlockRoot) {
-    return Optional.ofNullable(recentImportFailures.get(beaconBlockRoot));
+    return importTracker
+        .getOutcome(beaconBlockRoot)
+        .thenCompose(
+            outcome -> {
+              if (outcome.imported()) {
+                return SafeFuture.completedFuture(Optional.empty());
+              }
+              // The chain data tells about imports which are over, and has the last word anyway
+              // as an envelope can also be imported without it being tracked here, as sync does.
+              // An import has been committed to the chain data by the time it reports success.
+              return recentChainData
+                  .retrieveSignedBlindedExecutionPayloadByBlockRoot(beaconBlockRoot)
+                  .thenApply(
+                      maybeImportedExecutionPayload ->
+                          maybeImportedExecutionPayload.isPresent()
+                              ? Optional.empty()
+                              : Optional.of(
+                                  outcome
+                                      .failureReason()
+                                      .map(FailureReason::name)
+                                      .orElse(IMPORT_NOT_CONFIRMED)));
+            });
   }
 
   @Override
@@ -140,25 +157,12 @@ public class DefaultExecutionPayloadManager
       final Optional<BroadcastValidationLevel> broadcastValidationLevel) {
     final UInt64 arrivalTimestamp =
         maybeArrivalTimestamp.orElseGet(() -> recentChainData.getStore().getTimeInMillis());
-    return executionPayloadGossipValidator
-        .validate(signedExecutionPayload, broadcastValidationLevel)
+    return validateAndImport(signedExecutionPayload, arrivalTimestamp, broadcastValidationLevel)
         .thenApply(
             result -> {
-              switch (result.code()) {
-                case ACCEPT -> {
-                  receivedExecutionPayloadEventsChannelPublisher.onExecutionPayloadValidated(
-                      signedExecutionPayload);
-                  recordIfExecutionPayloadIsSeenBeforeDeadline(
-                      signedExecutionPayload, arrivalTimestamp);
-                  importExecutionPayload(signedExecutionPayload, true).finishError(LOG);
-                }
-                case SAVE_FOR_FUTURE -> {
-                  return saveForFuture(
-                      signedExecutionPayload, arrivalTimestamp, broadcastValidationLevel);
-                }
-                case IGNORE, REJECT -> {}
-              }
-              return result;
+              // the validation result is not held back until the import has completed
+              result.importResult().ifPresent(importResult -> importResult.finishError(LOG));
+              return result.validationResult();
             });
   }
 
@@ -166,30 +170,48 @@ public class DefaultExecutionPayloadManager
   public SafeFuture<ValidateAndImportResult> validateAndImportExecutionPayloadForBroadcast(
       final ExecutionPayloadEnvelope signedExecutionPayload,
       final Optional<BroadcastValidationLevel> broadcastValidationLevel) {
-    final UInt64 arrivalTimestamp = recentChainData.getStore().getTimeInMillis();
-    return executionPayloadGossipValidator
-        .validate(signedExecutionPayload, broadcastValidationLevel)
+    return validateAndImport(
+        signedExecutionPayload,
+        recentChainData.getStore().getTimeInMillis(),
+        broadcastValidationLevel);
+  }
+
+  /**
+   * Validates the envelope and starts its import if it is accepted.
+   *
+   * <p>Validating an envelope marks it as seen when it is accepted, which is before its import is
+   * started. The attempt to import it is therefore tracked from before the validation, so that
+   * anyone asking how the import of a seen envelope went waits for the import which follows.
+   */
+  private SafeFuture<ValidateAndImportResult> validateAndImport(
+      final ExecutionPayloadEnvelope executionPayload,
+      final UInt64 arrivalTimestamp,
+      final Optional<BroadcastValidationLevel> broadcastValidationLevel) {
+    final ExecutionPayloadImportTracker.Attempt importAttempt =
+        importTracker.begin(executionPayload.getBeaconBlockRoot());
+    return SafeFuture.of(
+            () ->
+                executionPayloadGossipValidator.validate(
+                    executionPayload, broadcastValidationLevel))
         .thenApply(
             result -> {
-              switch (result.code()) {
-                case ACCEPT -> {
-                  receivedExecutionPayloadEventsChannelPublisher.onExecutionPayloadValidated(
-                      signedExecutionPayload);
-                  recordIfExecutionPayloadIsSeenBeforeDeadline(
-                      signedExecutionPayload, arrivalTimestamp);
-                  return new ValidateAndImportResult(
-                      result, Optional.of(importExecutionPayload(signedExecutionPayload, true)));
-                }
-                case SAVE_FOR_FUTURE -> {
-                  return new ValidateAndImportResult(
-                      saveForFuture(
-                          signedExecutionPayload, arrivalTimestamp, broadcastValidationLevel),
-                      Optional.empty());
-                }
-                case IGNORE, REJECT -> {}
+              if (result.isAccept()) {
+                receivedExecutionPayloadEventsChannelPublisher.onExecutionPayloadValidated(
+                    executionPayload);
+                recordIfExecutionPayloadIsSeenBeforeDeadline(executionPayload, arrivalTimestamp);
+                return new ValidateAndImportResult(
+                    result,
+                    Optional.of(importExecutionPayload(executionPayload, true, importAttempt)));
               }
-              return new ValidateAndImportResult(result, Optional.empty());
-            });
+              final InternalValidationResult finalResult =
+                  result.isSaveForFuture()
+                      ? saveForFuture(executionPayload, arrivalTimestamp, broadcastValidationLevel)
+                      : result;
+              importAttempt.endedWithoutImport();
+              return new ValidateAndImportResult(finalResult, Optional.empty());
+            })
+        // has no effect on an attempt which an import has taken over
+        .whenException(__ -> importAttempt.endedWithoutImport());
   }
 
   /**
@@ -230,25 +252,30 @@ public class DefaultExecutionPayloadManager
   public SafeFuture<ExecutionPayloadImportResult> importExecutionPayload(
       final ExecutionPayloadEnvelope signedExecutionPayload,
       final boolean payloadCommitmentVerified) {
-    final SafeFuture<ExecutionPayloadImportResult> importResult =
-        doImportExecutionPayload(signedExecutionPayload, payloadCommitmentVerified);
-    // only the outcome is kept, as a successful result holds on to the whole envelope
-    final SafeFuture<Optional<FailureReason>> importFailure =
-        importResult.thenApply(
-            result ->
-                result.isSuccessful() ? Optional.empty() : Optional.of(result.getFailureReason()));
-    // an import which is in progress or has succeeded is what the envelope of the block came to,
-    // whereas a failed one may be retried
-    recentImportFailures.merge(
-        signedExecutionPayload.getBeaconBlockRoot(),
-        importFailure,
-        (existing, added) -> hasFailed(existing) ? added : existing);
-    return importResult;
+    return importExecutionPayload(
+        signedExecutionPayload,
+        payloadCommitmentVerified,
+        importTracker.begin(signedExecutionPayload.getBeaconBlockRoot()));
   }
 
-  private static boolean hasFailed(final SafeFuture<Optional<FailureReason>> importFailure) {
-    return importFailure.isCompletedExceptionally()
-        || (importFailure.isCompletedNormally() && importFailure.getImmediately().isPresent());
+  /** Imports the envelope, which ends the attempt whatever comes of it. */
+  private SafeFuture<ExecutionPayloadImportResult> importExecutionPayload(
+      final ExecutionPayloadEnvelope signedExecutionPayload,
+      final boolean payloadCommitmentVerified,
+      final ExecutionPayloadImportTracker.Attempt importAttempt) {
+    final SafeFuture<ExecutionPayloadImportResult> importResult =
+        SafeFuture.of(
+            () -> doImportExecutionPayload(signedExecutionPayload, payloadCommitmentVerified));
+    importResult.finish(
+        result -> {
+          if (result.isSuccessful()) {
+            importAttempt.succeeded();
+          } else {
+            importAttempt.failed(result.getFailureReason());
+          }
+        },
+        error -> importAttempt.failed(FailureReason.INTERNAL_ERROR));
+    return importResult;
   }
 
   private SafeFuture<ExecutionPayloadImportResult> doImportExecutionPayload(

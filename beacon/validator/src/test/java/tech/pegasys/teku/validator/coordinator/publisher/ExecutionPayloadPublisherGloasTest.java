@@ -43,7 +43,6 @@ import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayload;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionRequests;
 import tech.pegasys.teku.spec.datastructures.validator.BroadcastValidationLevel;
 import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult;
-import tech.pegasys.teku.spec.logic.common.statetransition.results.ExecutionPayloadImportResult.FailureReason;
 import tech.pegasys.teku.spec.schemas.SchemaDefinitionsGloas;
 import tech.pegasys.teku.spec.util.DataStructureUtil;
 import tech.pegasys.teku.statetransition.blobs.RemoteOrigin;
@@ -165,6 +164,8 @@ class ExecutionPayloadPublisherGloasTest {
     final ExecutionPayloadEnvelopeContents contents = contentsFor(block);
     prepareKnownBlock(block);
     when(executionPayloadManager.isExecutionPayloadRecentlySeen(block.getRoot())).thenReturn(true);
+    when(executionPayloadManager.getExecutionPayloadImportFailure(block.getRoot()))
+        .thenReturn(SafeFuture.completedFuture(Optional.empty()));
 
     assertThat(publish(contents))
         .isCompletedWithValue(PublishSignedExecutionPayloadResult.success(block.getRoot()));
@@ -181,9 +182,9 @@ class ExecutionPayloadPublisherGloasTest {
     final SignedBeaconBlock block = blockCommittingTo(payload, executionRequests, 0);
     prepareKnownBlock(block);
     when(executionPayloadManager.isExecutionPayloadRecentlySeen(block.getRoot())).thenReturn(true);
-    final SafeFuture<Optional<FailureReason>> importFailure = new SafeFuture<>();
-    when(executionPayloadManager.getRecentExecutionPayloadImportFailure(block.getRoot()))
-        .thenReturn(Optional.of(importFailure));
+    final SafeFuture<Optional<String>> importFailure = new SafeFuture<>();
+    when(executionPayloadManager.getExecutionPayloadImportFailure(block.getRoot()))
+        .thenReturn(importFailure);
 
     final SafeFuture<PublishSignedExecutionPayloadResult> result = publish(contentsFor(block));
 
@@ -204,9 +205,8 @@ class ExecutionPayloadPublisherGloasTest {
     final SignedBeaconBlock block = blockCommittingTo(payload, executionRequests, 0);
     prepareKnownBlock(block);
     when(executionPayloadManager.isExecutionPayloadRecentlySeen(block.getRoot())).thenReturn(true);
-    when(executionPayloadManager.getRecentExecutionPayloadImportFailure(block.getRoot()))
-        .thenReturn(
-            Optional.of(SafeFuture.completedFuture(Optional.of(FailureReason.FAILED_EXECUTION))));
+    when(executionPayloadManager.getExecutionPayloadImportFailure(block.getRoot()))
+        .thenReturn(SafeFuture.completedFuture(Optional.of("FAILED_EXECUTION")));
 
     assertThat(publish(contentsFor(block)))
         .isCompletedWithValue(
