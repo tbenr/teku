@@ -1739,6 +1739,8 @@ checkpoint nodes went through the DAG.
     backlog; it is not a measurement of physical disk reads, peak heap, or
     recovery delay. An earlier 8 GB figure used the 5.35 MB per node of entry
     61, which predates payload v2, and is superseded.
+    Since measured in part: see entry 93 (the delete itself, warm, and the
+    archive reconstruction loop; live nodes are about 1.3 MB).
 
     **Baseline.** Master copies each finalized block's body from the hot
     column to the finalized column in transactions of up to 500 blocks
@@ -1879,3 +1881,94 @@ branch is cut yet.
     call sites behave exactly as before, which stage 2 should show by landing
     with the existing tests untouched; the full unit, integration and
     reference suites on this tip.
+
+## Stall cleanup measurement (2026-11-26, tip 7b3a59f45a, no code change)
+
+93. **DERIVED. Measured locally: the delete of entry 89 is cheap; the archive finalization loop, which reconstructs every finalized checkpoint node, is the larger cost.**
+    This is a micro measurement of the two operations, not the stall test of
+    entry 87, and it changes no code. The fixes stay parked.
+
+    **Method.** A measurement test, never committed (kept with its result in
+    `tmp/stall-cleanup-harness` of the main checkout), run with the coverage
+    agent and assertions off. From a mainnet finalized state (slot 15695168,
+    2,411,440 validators, Fulu) it builds one non-finalizing branch of 400
+    epochs with no blocks: each epoch a third of the validators are marked as
+    having attested (4% of them without the head flag) and every validator of
+    35 supernodes is changed, then the epoch transition runs. One node per
+    epoch is written through `StateDiffDagTransaction.writeNode` into a
+    RocksDB with the production column settings. Everything is then read from
+    a warm cache, on a 16-core laptop.
+
+    **Synthetic nodes against live ones.** Level 3 nodes averaged 2.68 MB
+    with 77,400 leaves and 35 supernode references; all 400 nodes averaged
+    2.80 MB. The live boxes (Grafana, 7 days to 2026-11-26, both boxes alike)
+    write 1.23 MB at level 3, 2.46 MB at level 2, 3.39 MB at level 1 and
+    13.0 MB per snapshot, with 40,500 leaves and 35 supernode references per
+    node, about 1.3 MB on average. The synthetic nodes are therefore about
+    twice as large, and the delete figures below are pessimistic by about that
+    factor. The live figures also disagree with the section averages of entry
+    75 (65,700 leaves, about 2.2 MB per node), which entry 89 uses for its
+    3.5 GB per week; the cause is not traced. At 1.3 MB a one-week stall is
+    about 2.1 GB per branch.
+
+    **Delete (`deleteNodes`, one transaction per row).**
+    - 50 nodes, 137 MB: 76 ms, 1.5 ms per node.
+    - 100 nodes with one snapshot, 299 MB: 207 ms, 2.1 ms per node.
+    - 200 nodes, 558 MB: 343 ms, 1.7 ms per node.
+    - Prune-mode `retainFinalizedChain` moving the anchor over 50 epochs: 37
+      nodes deleted (two snapshots among them), 97 ms, 2.6 ms per node.
+    - 6,200 roots without a node, as fork pruning passes for the non-checkpoint
+      blocks: 28 ms in all.
+
+    The cost is linear, about 0.6 ms per MB. Reading and parsing a node are
+    of the same order (0.6 ms and 0.9 ms per synthetic node); the reference
+    count work in `commit()` and the database commit are about 10% of the
+    total. Extrapolated to the 9,450 nodes of a two-week stall with three
+    branches in prune mode: 10 to 20 seconds on this machine.
+
+    **Not covered by that figure: cold reads.** After two weeks the nodes are
+    not in any cache. The highest read rate the archive box's data disk
+    showed in 14 days is about 100 MB/s (an observed peak, not a capacity
+    figure); at that rate 8 to 12 GB is one to two minutes, which would
+    dominate the delete there. Entry 86's header column would remove these
+    reads; bounded steps would only spread them.
+
+    **Archive finalization loop (not in entry 89).** In archive mode
+    `updateFinalizedDataArchiveMode` asks for the state of every newly
+    finalized block: `finalizedStates.get(blockRoot)` or else
+    `getHotState(blockRoot)`. With state diffs `getHotState` reconstructs the
+    block's node (`dag.reconstructOrEmpty`), and
+    `StoreTransactionUpdatesFactory.collectFinalizedStates` only supplies the
+    state of the newly finalized block. In steady state that is the only
+    checkpoint node of the step, so nothing is reconstructed (the archive box
+    shows 19 reconstructions in 7 days). After a stall every canonical
+    checkpoint node of the stall is reconstructed, before the hot transaction,
+    in the same storage update. The result is not stored
+    (`addFinalizedState` writes nothing in this mode); it only feeds
+    `StateRootRecorder`.
+    - Measured with an empty base cache, which is what the running node has
+      for nodes written long before: 0.3 s for a snapshot alone plus about
+      45 ms per chain link; 0.69 s on average over the 100 oldest nodes
+      (average chain 9.5), 0.98 s over the 20 newest (chain 12.3), 2.2 s at
+      worst.
+    - Extrapolated to the 3,150 canonical nodes of a two-week stall: 35 to 50
+      minutes on this machine. The live archive box reconstructs in 2.3 s at
+      the median and 2.6 s on average (7.4 links, 95th percentile 7.9 s), so
+      on that hardware the same loop is two hours or more. Neither figure was
+      run end to end.
+    - Baseline: master reads one stored hot state per finalized block that
+      has one at the same place and writes it to the finalized store, so this
+      is not shown to be a regression. It belongs in the "delay the DAG adds"
+      of the stall test.
+    - Likely fix, not tested: `StateRootRecorder` reads the state roots vector,
+      which covers 8,192 slots, so one state per 256 epochs would fill the
+      same index.
+
+    **What this changes for entry 89.** The CPU cost of the delete does not
+    by itself justify bounded cleanup steps; the cold reads and the archive
+    loop are what the stall test should size first.
+
+    **Not measured.** Cold disk reads; the box hardware; heap during either
+    operation; nodes of a long leak, where effective balances change for most
+    validators (400 epochs is too short to reach that); a stall with real
+    blocks and competing branches; master's cost for the same event.

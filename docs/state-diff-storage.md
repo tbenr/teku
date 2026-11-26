@@ -171,7 +171,12 @@ Since then, on mainnet:
 - Participation leaves are not compressed by the application and are most of
   a node's bytes (decisions log 75).
 - Retention after a long non-finality period decodes every intermediate
-  node's payload in one transaction.
+  node's payload in one transaction. Measured warm at about 2 ms per node;
+  reading the nodes back from disk is the larger part (decisions log 89, 93).
+- In archive mode the first finalization after a long non-finality period
+  reconstructs every finalized checkpoint node of the stall, in one storage
+  update, only to fill the state root index: 0.7 s each measured locally, 2.3 s
+  at the median on the archive box (decisions log 93).
 
 ## Next steps
 
