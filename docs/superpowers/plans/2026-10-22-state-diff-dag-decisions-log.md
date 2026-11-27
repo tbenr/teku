@@ -2013,3 +2013,81 @@ branch is cut yet.
     2.3 s median of the archive box.
 
     **Left as it is.** The delete and its cold reads (entries 89, 93).
+
+## Devnet stall runs (2026-11-27, tip 7ccb826764, no code change)
+
+95. **DERIVED. On a kurtosis devnet the fix of entry 94 cut the state reads of the first finalization after a stall from 119 to 17 and closed a three-slot hole in the state root index; this is not the full stall test of entry 87.**
+    Run at Enrico's request ("Yes, run it"), recorded at his request. The
+    fixes of entries 88 and 89 stay parked.
+
+    **Setup.** ethereum-package at 6886eac7b8, minimal preset (8 slots per
+    epoch, 6 s slots, state roots vector of 64 slots, so the gate of entry 94
+    is 48 slots), geth, 160 validators. Images built from 7ccb826764 (the
+    fix) and from 63f15c73e3 (the commit before it), both with the fork
+    partition test patch (a8290fb912 on `tbenr/teku:fork-partition-test-mode`,
+    inert without its control file). Every node ran in archive mode, which
+    the package forces. Reads are the increase of
+    `storage_state_diff_reconstruct_seconds_count` across the finalization
+    update, taken before any historical query. Harness, logs and samples are
+    kept in `tmp/stall-kurtosis` of the main checkout, never committed.
+
+    **Run 1, competing forks, 40 epochs.** Three nodes (64, 64 and 32
+    validators), each building on its own blocks only from slot 40 to slot
+    356. Finality then went from epoch 4 to epoch 46 in one update: 336
+    slots, 134 canonical blocks, one transaction.
+    - Reads: 4 with the fix (4 ms), 41 without it (23 ms).
+    - Both state diff nodes deleted the 68 nodes of the losing forks.
+    - State root index, slots 25 to 368: every slot found by state root on
+      the three nodes.
+    - No verification failure, no "Missing state root mappings".
+    - Sync committee duties partly failed on all three nodes after the
+      reorg, the legacy node included. Not investigated.
+
+    **Run 1, second stall of 180 epochs: lost to geth, not to Teku.** At
+    slot 720 the surviving branch reached 129 execution blocks. Geth keeps
+    128 state layers in memory and dropped the state of the other branches
+    ("missing trie node" on the three geth nodes in the same second); two
+    nodes could no longer build blocks and the chain did not recover once
+    the forks were merged. Offline `verify-state-diffs` on both state diff
+    databases of that network: 195 and 197 nodes, no problems found. With
+    geth, a fork stall cannot go deeper than 128 blocks per branch.
+
+    **Run 2, one chain, 120 epochs.** Four nodes: fix with state diffs (38
+    validators), pre-fix with state diffs (38), and two legacy archive nodes
+    on the fix build (20 and 64). The 64-validator node was stopped from
+    slot 40 to slot 1001, so 60% of the validators kept one chain growing
+    without finality. It resynced in about two minutes, and finality went
+    from epoch 4 to epoch 127 in one update: 984 slots, 584 canonical
+    blocks, two transactions.
+
+    | | Fix, state diffs | Pre-fix, state diffs | Legacy archive (fix build) |
+    |---|---|---|---|
+    | Reads during the finalization update | 17 | 119 | n/a |
+    | Time in them | 108 ms | 248 ms | n/a |
+    | Finalized slots not found by state root (25 to 1030) | 0 | 3 (865, 866, 867) | 0 |
+    | By-slot state roots differing between nodes | 0 | 0 | 0 |
+    | "Missing state root mappings" | 0 | 0 | 0 |
+    | Verification failures, skipped nodes | 0, 0 | 0, 0 | n/a |
+    | Offline `verify-state-diffs` | 132 nodes, no problems | 132 nodes, no problems | n/a |
+
+    - The 17 reads match the gate: a read is due more than 48 slots after
+      the last one and happens at the next checkpoint node, so one per 7
+      epochs (984 / 56 = 17.6).
+    - The hole on the pre-fix node is the bug of entry 94, now seen on a
+      running node: three slots at the boundary between the two
+      transactions, all three with a block. A state request by those state
+      roots returns 404 there and succeeds on the other nodes.
+    - The times mean nothing at 160 validators; the counts are the result.
+
+    **Observed on every node, not investigated.** The slots of the epoch
+    right after the finalized checkpoint, other than its first, return 404
+    by state root until the next finalization indexes them. Fix, pre-fix and
+    legacy nodes behave the same, so it is not a state diff matter.
+
+    **What entry 87 asks for and these runs do not give.** No master
+    baseline (the legacy nodes ran the fix build, so master's own index hole
+    was not shown either); no prune or minimal mode; no cold restart during
+    the stall and no interrupted recovery; no peak disk and no import delay;
+    two stall lengths with different designs, so no slope; minimal preset
+    and 160 validators, so no mainnet cost. The delete of entry 89 was
+    exercised once, on 68 small nodes.

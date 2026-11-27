@@ -177,7 +177,8 @@ Since then, on mainnet:
   reconstructs one finalized checkpoint node per 6,144 slots of the stall to
   fill the state root index (it was every node until decisions log 94): 0.7 s
   each measured locally, 2.3 s at the median on the archive box (decisions
-  log 93).
+  log 93). On a kurtosis devnet with the minimal preset, a 120-epoch stall
+  took 17 such reads where the build before took 119 (decisions log 95).
 
 ## Next steps
 
