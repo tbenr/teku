@@ -1972,3 +1972,44 @@ branch is cut yet.
     operation; nodes of a long leak, where effective balances change for most
     validators (400 epochs is too short to reach that); a stall with real
     blocks and competing branches; master's cost for the same event.
+
+## Archive finalization loop fix (2026-11-27, on tip a8b5b44f45)
+
+94. **RULING (Enrico), then DERIVED. Build the fix of entry 93 for the archive loop: a state diff archive reads a stored finalized state only when the state root index needs one.**
+
+    **Ruling.** Asked on 2026-11-27 whether to build the prototype described
+    under "Likely fix" in entry 93, Enrico answered "Yes, build it". It is the
+    first code change for the non-finality gap; entry 87 still parks the
+    fixes of entries 88 and 89.
+
+    **Change.** In `updateFinalizedDataArchiveMode`, when the storage holds
+    the finalized states itself (`HotStateStorage.holdsFinalizedStates`, true
+    for a state diff archive), a state that is not in memory is read back
+    only for the newly finalized block and when `StateRootRecorder.isStateDue`
+    says so: the block is more than three quarters of the state roots vector
+    past the last recorded slot (6,144 slots on mainnet). The last quarter
+    (2,048 slots, 64 epochs) is the room to find a node before roots are
+    missed; a miss logs the recorder's existing "Missing state root
+    mappings" warning. Legacy archive storage reads every state as before,
+    because it stores them.
+
+    **Bug found on the way, also on master.** The loop created a recorder
+    per transaction of 500 roots, starting at the last block of the previous
+    transaction. The slots between the last state of a transaction and its
+    last block were never indexed. The new test fails on the unchanged loop
+    at slot 497. The recorder position is now carried from one transaction to
+    the next. Master's loop reads the same in the code; not run there.
+
+    **Verified.** `stateDiffs_archiveIndexesEveryStateRootAfterLongNonFinality`
+    (minimal spec, 70 epochs without finality, 562 blocks, empty slots): the
+    state root of every slot is indexed. With a temporary print, removed
+    since, the finalization read 9 stored states per database with the gate
+    and 67 without it. The gate itself is unit tested in
+    `StateRootRecorderTest`; no automated test counts the reads.
+
+    **Expected on mainnet, not run.** One reconstruction per 6,144 to about
+    6,200 slots: about 17 for a two-week stall (100,800 slots) in place of
+    3,150, so about 12 s at the 0.7 s measured locally and about 40 s at the
+    2.3 s median of the archive box.
+
+    **Left as it is.** The delete and its cold reads (entries 89, 93).

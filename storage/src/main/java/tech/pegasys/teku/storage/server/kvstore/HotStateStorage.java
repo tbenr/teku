@@ -69,6 +69,12 @@ interface HotStateStorage {
       HotUpdater updater, Checkpoint anchorCheckpoint, BeaconState anchorState);
 
   /**
+   * Whether this storage already holds the finalized states of an archive database, as the state
+   * diff DAG does: {@link #addFinalizedState} then writes nothing.
+   */
+  boolean holdsFinalizedStates();
+
+  /**
    * Writes the finalized state of {@code blockRoot} of an archive database, unless the state diff
    * DAG holds the finalized states.
    */

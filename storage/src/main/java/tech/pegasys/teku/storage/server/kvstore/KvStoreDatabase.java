@@ -2346,12 +2346,13 @@ public class KvStoreDatabase implements Database {
             .toList();
 
     int i = 0;
-    UInt64 lastSlot = baseBlock.getSlot();
+    // The state root index position, carried from one transaction to the next
+    UInt64 recordedSlot = baseBlock.getSlot();
     while (i < finalizedRoots.size()) {
       final int start = i;
       try (final FinalizedUpdater updater = finalizedUpdater()) {
         final StateRootRecorder recorder =
-            new StateRootRecorder(lastSlot, updater::addFinalizedStateRoot, spec);
+            new StateRootRecorder(recordedSlot, updater::addFinalizedStateRoot, spec);
 
         while (i < finalizedRoots.size() && (i - start) < TX_BATCH_SIZE) {
           final Bytes32 blockRoot = finalizedRoots.get(i);
@@ -2361,20 +2362,24 @@ public class KvStoreDatabase implements Database {
           updateExecutionPayloadEnvelopeOfFinalizedBlock(
               blockRoot, blindedExecutionPayloads, orphanedExecutionPayloadRoots, updater);
 
+          // A storage that holds the finalized states needs a state here only to index state
+          // roots, and reading one back can be costly (a state diff reconstruction): the newly
+          // finalized state and one per stretch of its state roots vector are enough
+          final boolean readStoredState =
+              !hotStateStorage.holdsFinalizedStates()
+                  || i == finalizedRoots.size() - 1
+                  || maybeBlockSlot.map(recorder::isStateDue).orElse(true);
           Optional.ofNullable(finalizedStates.get(blockRoot))
-              .or(() -> getHotState(blockRoot))
+              .or(() -> readStoredState ? getHotState(blockRoot) : Optional.empty())
               .ifPresent(
                   state -> {
                     hotStateStorage.addFinalizedState(updater, blockRoot, state);
                     recorder.acceptNextState(state);
                   });
-
-          lastSlot =
-              maybeBlockSlot.orElseGet(
-                  () -> initialCheckpoint.orElseThrow().getEpochStartSlot(spec));
           i++;
         }
         updater.commit();
+        recordedSlot = recorder.getSlot();
         if (i >= TX_BATCH_SIZE) {
           STATUS_LOG.recordedFinalizedBlocks(i, finalizedRoots.size());
         }

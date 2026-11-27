@@ -61,4 +61,26 @@ public class StateRootRecorderTest {
     assertThat(stateRoots.size())
         .isEqualTo(spec.getGenesisSpecConfig().getSlotsPerHistoricalRoot() + 1);
   }
+
+  @Test
+  public void shouldContinueFromTheLastAcceptedState() {
+    final StateRootRecorder stateRootRecorder =
+        new StateRootRecorder(
+            slot.minus(2), (stateRoot, slot) -> stateRoots.put(slot, stateRoot), spec);
+    assertThat(stateRootRecorder.getSlot()).isEqualTo(slot.minus(2));
+    stateRootRecorder.acceptNextState(state);
+    assertThat(stateRootRecorder.getSlot()).isEqualTo(slot);
+  }
+
+  @Test
+  public void shouldNeedAStateOnlyNearTheEndOfTheStateRootsVector() {
+    final int slotsPerHistoricalRoot = spec.getGenesisSpecConfig().getSlotsPerHistoricalRoot();
+    final int threshold = slotsPerHistoricalRoot - slotsPerHistoricalRoot / 4;
+    final StateRootRecorder stateRootRecorder =
+        new StateRootRecorder(slot, (stateRoot, slot) -> stateRoots.put(slot, stateRoot), spec);
+    assertThat(stateRootRecorder.isStateDue(slot.plus(ONE))).isFalse();
+    assertThat(stateRootRecorder.isStateDue(slot.plus(threshold))).isFalse();
+    assertThat(stateRootRecorder.isStateDue(slot.plus(threshold + 1))).isTrue();
+    assertThat(stateRootRecorder.isStateDue(slot.plus(slotsPerHistoricalRoot + 1))).isTrue();
+  }
 }

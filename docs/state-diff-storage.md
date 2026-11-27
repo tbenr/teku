@@ -174,9 +174,10 @@ Since then, on mainnet:
   node's payload in one transaction. Measured warm at about 2 ms per node;
   reading the nodes back from disk is the larger part (decisions log 89, 93).
 - In archive mode the first finalization after a long non-finality period
-  reconstructs every finalized checkpoint node of the stall, in one storage
-  update, only to fill the state root index: 0.7 s each measured locally, 2.3 s
-  at the median on the archive box (decisions log 93).
+  reconstructs one finalized checkpoint node per 6,144 slots of the stall to
+  fill the state root index (it was every node until decisions log 94): 0.7 s
+  each measured locally, 2.3 s at the median on the archive box (decisions
+  log 93).
 
 ## Next steps
 

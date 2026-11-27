@@ -34,6 +34,22 @@ public class StateRootRecorder {
     this.slotsPerHistoricalRoot = UInt64.valueOf(spec.getSlotsPerHistoricalRoot(slot));
   }
 
+  /** The slot from which the next accepted state records state roots. */
+  public UInt64 getSlot() {
+    return slot;
+  }
+
+  /**
+   * Whether a state at {@code stateSlot} should be accepted rather than left out for a later one. A
+   * state records the roots of every slot since the last accepted state from its state roots
+   * vector, so states in between add nothing; one is due once three quarters of the vector are
+   * used, which leaves the last quarter to find a state before roots are missed.
+   */
+  public boolean isStateDue(final UInt64 stateSlot) {
+    final UInt64 margin = slotsPerHistoricalRoot.dividedBy(4);
+    return stateSlot.isGreaterThan(slot.plus(slotsPerHistoricalRoot).minus(margin));
+  }
+
   public void acceptNextState(final BeaconState state) {
     if (slot.plus(slotsPerHistoricalRoot).compareTo(state.getSlot()) < 0) {
       final UInt64 floor = state.getSlot().minus(slotsPerHistoricalRoot);

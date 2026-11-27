@@ -118,6 +118,11 @@ class LegacyHotStateStorage implements HotStateStorage {
   }
 
   @Override
+  public boolean holdsFinalizedStates() {
+    return false;
+  }
+
+  @Override
   public void addFinalizedState(
       final FinalizedUpdater updater, final Bytes32 blockRoot, final BeaconState state) {
     updater.addFinalizedState(blockRoot, state);

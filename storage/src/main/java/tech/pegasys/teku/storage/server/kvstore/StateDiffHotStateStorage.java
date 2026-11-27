@@ -205,6 +205,11 @@ class StateDiffHotStateStorage implements HotStateStorage {
     return Optional.empty();
   }
 
+  @Override
+  public boolean holdsFinalizedStates() {
+    return storesFinalizedStates;
+  }
+
   /**
    * {@inheritDoc}
    *

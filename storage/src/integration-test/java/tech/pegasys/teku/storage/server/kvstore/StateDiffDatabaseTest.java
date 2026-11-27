@@ -587,6 +587,27 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
   }
 
   @TestTemplate
+  public void stateDiffs_archiveIndexesEveryStateRootAfterLongNonFinality(
+      final DatabaseContext context) throws IOException {
+    initialize(context, StateStorageMode.ARCHIVE);
+    // 70 epochs without finality: more blocks than one finalized transaction takes, and several
+    // times the slots a state's state roots vector covers. Slots 100 to 102 and the first slot of
+    // epoch 25 are empty
+    chainBuilder.generateBlocksUpToSlot(99);
+    chainBuilder.generateBlockAtSlot(103);
+    chainBuilder.generateBlocksUpToSlot(199);
+    chainBuilder.generateBlockAtSlot(201);
+    chainBuilder.generateBlocksUpToSlot(566);
+    chainBuilder.streamBlocksAndStates(1, 566).forEach(block -> addBlocks(block));
+    final SignedBlockAndState anchor = chainBuilder.getLatestBlockAndStateAtEpochBoundary(70);
+
+    justifyAndFinalizeEpoch(UInt64.valueOf(70), anchor);
+
+    assertStateRootsIndexed(anchor.getSlot());
+    assertStateDiffsVerify();
+  }
+
+  @TestTemplate
   public void stateDiffs_archiveWindowKeepsWindowNodesAndOldestChain(final DatabaseContext context)
       throws IOException {
     final int windowEpochs = 3;
@@ -767,6 +788,31 @@ public class StateDiffDatabaseTest extends AbstractDatabaseTest {
           .contains(block.getState().hashTreeRoot());
       assertThat(database.getSlotForFinalizedStateRoot(block.getState().hashTreeRoot()))
           .contains(slot);
+    }
+  }
+
+  /**
+   * Checks that the state root of every slot from genesis to {@code toSlot} is indexed, the roots
+   * of the empty slots included.
+   */
+  private void assertStateRootsIndexed(final UInt64 toSlot) {
+    final long slotsPerHistoricalRoot = spec.getSlotsPerHistoricalRoot(ZERO);
+    final List<SignedBlockAndState> blocks =
+        chainBuilder.streamBlocksAndStates(ZERO, toSlot).toList();
+    for (int i = 1; i < blocks.size(); i++) {
+      final BeaconState state = blocks.get(i).getState();
+      for (UInt64 slot = blocks.get(i - 1).getSlot();
+          slot.isLessThan(state.getSlot());
+          slot = slot.increment()) {
+        final Bytes32 stateRoot =
+            state.getStateRoots().getElement(slot.mod(slotsPerHistoricalRoot).intValue());
+        assertThat(database.getSlotForFinalizedStateRoot(stateRoot))
+            .describedAs("state root of slot %s", slot)
+            .contains(slot);
+      }
+      assertThat(database.getSlotForFinalizedStateRoot(state.hashTreeRoot()))
+          .describedAs("state root of slot %s", state.getSlot())
+          .contains(state.getSlot());
     }
   }
 
